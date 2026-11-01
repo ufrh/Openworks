@@ -13,6 +13,18 @@ function Cut.split(solid, planePoint, planeNormal)
     assert(planeNormal.Magnitude > 0, 'Plane normal cannot be zero')
 
     local normal = planeNormal.Unit
+    local FORM = require(script.Parent)
+    if not FORM.validate(solid).ok then return nil, 'INVALID_INPUT' end
+
+    for _, face in solid.triangles do
+        local a, b, c = solid.vertices[face[1]], solid.vertices[face[2]], solid.vertices[face[3]]
+        local faceNormal = (b - a):Cross(c - a)
+        for _, vertex in solid.vertices do
+            if (vertex - a):Dot(faceNormal) > 1e-5 * faceNormal.Magnitude then
+                return nil, 'NON_CONVEX_INPUT'
+            end
+        end
+    end
     local distances = {}
     local minDistance, maxDistance = math.huge, -math.huge
     local tolerance = 1e-6
@@ -115,6 +127,16 @@ function Cut.split(solid, planePoint, planeNormal)
         end
         side.originals = nil
         side.intersections = nil
+    end
+
+    for _, side in sides do
+        if not FORM.validate(side).ok then return nil, 'INVALID_OUTPUT' end
+    end
+
+    local initial = FORM.signedVolume(solid)
+    local combined = FORM.signedVolume(sides[1]) + FORM.signedVolume(sides[2])
+    if math.abs(initial - combined) > math.max(1e-5, initial * 1e-8) then
+        return nil, 'VOLUME_MISMATCH'
     end
 
     return sides[1], sides[2]
