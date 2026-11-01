@@ -1,0 +1,35 @@
+{
+  "name": "OPENWORKS",
+  "servePort": 34872,
+  "servePlaceIds": [
+    137849526438269
+  ],
+  "placeId": 137849526438269,
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "$ignoreUnknownInstances": true,
+      "Openworks": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "$ignoreUnknownInstances": true,
+      "Openworks": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$ignoreUnknownInstances": true,
+        "Openworks": {
+          "$path": "src/client"
+        }
+      }
+    }
+  }
+}

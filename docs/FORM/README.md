@@ -1,7 +1,9 @@
 # FORM
 
-FORM is the proposed geometry kernel for OPENWORKS.
+Geometry kernel for OPENWORKS.
 
-Start with [SPEC.md](SPEC.md), then [OPERATIONS.md](OPERATIONS.md) and [TEST_PLAN.md](TEST_PLAN.md).
+Implementation: `src/shared/FORM/init.luau`. Studio smoke tests: `src/server/FORMTests.server.luau`.
 
-Status: **specification only**. Do not treat previous experimental snippets as production implementation.
+Current scope: centered box generation, bounds, signed volume, and basic triangle edge incidence / winding validation.
+
+Not implemented: full manifold validity, self-intersection detection, planar splitting, CSG, bevels, EditableMesh rendering. Tests have not yet run in Studio.

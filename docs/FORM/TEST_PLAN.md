@@ -24,3 +24,7 @@ All tests must run without Roblox gameplay, with separate Studio integration tes
 - Performance: fixed workpiece complexity budgets, peak memory, client rehydration time, operation log growth.
 
 A test that checks only triangle count or only edge incidence is insufficient to assert a valid solid.
+
+## v0.1 smoke test coverage (not Studio-verified)
+
+Centered box: 8 vertices, 12 triangles, correct bounds and volume. Reversed triangle and missing triangle should fail basic edge checks. This is not yet full solid manifold validation.
