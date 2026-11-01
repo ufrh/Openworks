@@ -1,27 +1,28 @@
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 
 local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'))
+local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Cut'))
 local Renderer = require(script:WaitForChild('FORMRenderer'))
 
-local workpiece = FORM.box(Vector3.new(100, 50, 20))
-local validation = FORM.validate(workpiece)
-assert(validation.ok, '[FORM] Preview solid failed validation')
+local stock = FORM.box(Vector3.new(100, 50, 20))
+local positive, negative = Cut.split(stock, Vector3.zero, Vector3.new(1, 0.4, 0.7))
+assert(positive and negative, '[FORM] Preview cut failed: ' .. tostring(negative))
 
-local success, result = pcall(function()
-    local part = Renderer.create(workpiece, 0.04)
-    part.Name = 'FORM Preview - 100x50x20 mm'
-    part.Anchored = true
-    part.CanCollide = false
-    part.Material = Enum.Material.Metal
-    part.Color = Color3.fromRGB(78, 156, 120)
-    part.CFrame = CFrame.new(0, 7, -12)
-    part.Parent = workspace
-    return part
-end)
+for index, solid in {positive, negative} do
+    local success, result = pcall(function()
+        local part = Renderer.create(solid, 0.04)
+        part.Name = 'FORM Cut ' .. index
+        part.Anchored = true
+        part.CanCollide = false
+        part.Material = Enum.Material.Metal
+        part.Color = if index == 1 then Color3.fromRGB(78, 156, 120) else Color3.fromRGB(183, 155, 95)
+        part.CFrame = CFrame.new(0, 7, -12) * CFrame.new((if index == 1 then 1 else -1) * 1.5, 0, 0)
+        part.Parent = workspace
+    end)
 
-if success then
-    print('[FORM] Mesh rendered | Volume:', FORM.signedVolume(workpiece), 'mm^3')
-else
-    warn('[FORM] Mesh preview unavailable: ' .. tostring(result))
-    warn('[FORM] Check EditableMesh permissions in Creator Dashboard and Studio output.')
+    if not success then
+        warn('[FORM] Cut preview failed: ' .. tostring(result))
+    end
 end
+
+print('[FORM] Split volumes:', FORM.signedVolume(positive), FORM.signedVolume(negative), 'mm^3')
