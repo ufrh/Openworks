@@ -34,7 +34,13 @@ local function run()
         local positive, negative = Cut.split(box, Vector3.zero, normal)
         assert(positive and negative, 'Planar split failed: ' .. tostring(negative))
         assert(FORM.validate(positive).ok and FORM.validate(negative).ok, 'Open cut surfaces')
-        assert(close(FORM.signedVolume(positive) + FORM.signedVolume(negative), 100000), 'Split lost material')
+        local expected = FORM.signedVolume(box)
+        local actual = FORM.signedVolume(positive) + FORM.signedVolume(negative)
+        local difference = actual - expected
+        local tolerance = math.max(1e-5, expected * 1e-8)
+        print(string.format('[FORM] Cut volume delta: %+.9f mm^3 (limit %.9f)', difference, tolerance))
+        assert(math.abs(difference) <= tolerance,
+            string.format('Split volume mismatch: expected %.9f, actual %.9f, delta %+.9f mm^3', expected, actual, difference))
     end
 
     local outside, reason = Cut.split(box, Vector3.new(200, 0, 0), Vector3.xAxis)
