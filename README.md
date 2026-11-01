@@ -1,15 +1,30 @@
 # OPENWORKS
 
-An open-ended engineering and manufacturing sandbox for Roblox.
+An open-ended Roblox engineering and manufacturing sandbox.
 
-`src/` is the authoritative source tree. Studio is the runtime and editor, not the source of truth.
+**Source of truth:** `src/`. One Roblox place, one Rojo project. Do not hand-edit Rojo-owned scripts in Studio.
 
-## Quick start
+## Workflow
 
-Clone this repository on Windows, install Rojo and Git, open the Openworks place in Roblox Studio, and run `START_OPENWORKS.bat`. Connect the Rojo Studio plugin to `localhost:34872`.
+1. Clone `https://github.com/ufrh/Openworks.git` on Windows.
+2. Install Git and Rojo and its Studio plugin (Foreman is supported).
+3. Open your Openworks place in Roblox Studio.
+4. Run `START_OPENWORKS.bat`, select your branch, and connect the Studio Rojo plugin to `localhost:34872`.
+5. Run `STOP_OPENWORKS.bat` when finished.
+6. Run `PUSH_OPENWORKS.bat` to commit and push changes.
 
-- `START_OPENWORKS.bat` — select a branch, launch Rojo, and start background pull-only Git sync.
-- `STOP_OPENWORKS.bat` — stop only this project's tracked development processes.
-- `PUSH_OPENWORKS.bat` — commit and push local changes.
+START supports current branch, switching branches, and a **destructive** opt-in reset to `origin/dev`. The live sync only fast-forward pulls a clean local branch; it never auto-commits or overwrites edits.
 
-See `docs/ARCHITECTURE.md` and `docs/DECISIONS.md` for scope and conventions.
+## Layout
+
+- `src/shared` -> ReplicatedStorage/Openworks
+- `src/server` -> ServerScriptService/Openworks
+- `src/client` -> StarterPlayerScripts/Openworks
+- `scripts` -> project startup, shutdown, Git live sync and pushing
+- `docs` -> architecture, decisions and milestones
+
+The solid-modeling kernel FORM is **planned**, not implemented. Experimental code remains outside production source until reviewed.
+
+## First milestone
+
+Design and test procedural solid representations, planar slicing, topology validation and an EditableMesh adapter. No gameplay systems are implemented yet.
