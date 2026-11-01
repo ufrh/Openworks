@@ -2,7 +2,7 @@
 
 Geometry kernel for OPENWORKS.
 
-Implementation: `src/shared/FORM/init.luau`. Studio smoke tests: `src/server/FORMTests.server.luau`.
+Implementation: `src/shared/FORM/init.lua`. Studio smoke tests: `src/server/FORMTests.server.lua`.
 
 Current scope: centered box generation, bounds, signed volume, and basic triangle edge incidence / winding validation.
 
