@@ -1,1 +1,0 @@
-print('[OPENWORKS] Client booted')
