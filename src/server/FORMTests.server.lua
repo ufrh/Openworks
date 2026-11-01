@@ -1,6 +1,8 @@
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'))
 
+local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Cut'))
+
 local function close(a, b)
     return math.abs(a - b) <= math.max(1e-6, math.abs(b) * 1e-9)
 end
@@ -23,7 +25,22 @@ local function run()
     table.remove(open.triangles)
     assert(not FORM.validate(open).ok, 'Open mesh undetected')
 
-    print('[FORM] Foundation tests passed')
+    for _, normal in {
+        Vector3.xAxis,
+        Vector3.yAxis,
+        Vector3.zAxis,
+        Vector3.new(1, 0.4, 0.7).Unit,
+    } do
+        local positive, negative = Cut.split(box, Vector3.zero, normal)
+        assert(positive and negative, 'Planar split failed: ' .. tostring(negative))
+        assert(FORM.validate(positive).ok and FORM.validate(negative).ok, 'Open cut surfaces')
+        assert(close(FORM.signedVolume(positive) + FORM.signedVolume(negative), 100000), 'Split lost material')
+    end
+
+    local outside, reason = Cut.split(box, Vector3.new(200, 0, 0), Vector3.xAxis)
+    assert(not outside and reason == 'PLANE_DOES_NOT_INTERSECT', 'Outside plane not rejected')
+
+    print('[FORM] Foundation and planar split tests passed')
 end
 
 run()
