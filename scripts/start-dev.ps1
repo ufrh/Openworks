@@ -44,16 +44,3 @@ if (-not (Test-Path $PidPath)) {
     if ($Proc.HasExited) { throw 'Rojo exited unexpectedly. Check logs/rojo.error.log.' }
     Write-Host "[OPENWORKS] Rojo running on localhost:34872 (PID $($Proc.Id))."
 }
-
-$LivePidPath = Join-Path $Logs 'live-sync.pid'
-$LiveRunning = $false
-if (Test-Path $LivePidPath) {
-    $OldId = 0
-    [void][int]::TryParse((Get-Content $LivePidPath -Raw).Trim(), [ref]$OldId)
-    if ($OldId -gt 0 -and (Get-Process -Id $OldId -ErrorAction SilentlyContinue)) { $LiveRunning = $true }
-}
-if (-not $LiveRunning) {
-    $Sync = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'live-sync.ps1')) -WorkingDirectory $Root -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $Logs 'live-sync.log') -RedirectStandardError (Join-Path $Logs 'live-sync.error.log')
-    Set-Content $LivePidPath $Sync.Id -Encoding ascii
-    Write-Host "[OPENWORKS] Pull-only live Git sync running (PID $($Sync.Id))."
-}
