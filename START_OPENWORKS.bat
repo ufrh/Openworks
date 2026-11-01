@@ -63,6 +63,9 @@ goto start
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-dev.ps1"
 if errorlevel 1 goto failure
 echo OPENWORKS running. Connect Rojo plugin to localhost:34872.
+echo Live sync output appears below. Press Ctrl+C to stop watching.
+echo.
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\live-sync.ps1"
 exit /b 0
 
 :failure
