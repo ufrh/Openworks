@@ -27,6 +27,7 @@ end)
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
 local active = {}
 local locked = {}
+local modifiedSolids = {}
 
 local function finite(n)
     return type(n) == 'number' and n == n and math.abs(n) < 1e6
@@ -457,6 +458,9 @@ local function startFabrication(player, material, tool)
         roll = 0,
         awaitRelease = false,
         fileSide = 1,
+        fileShape = 'Round',
+        fileRadius = 1.25,
+        processing = false,
         lastMove = 0,
     }
 
@@ -498,26 +502,54 @@ local function cutSheet(state)
     end
 
     if state.kind == 'File' then
-        local size = work.Size
-        local axis = state.axis
-        local side = state.fileSide
-        local span = if axis == 'X' then size.X else size.Z
-        local shave = math.min(0.024, span * 0.08)
-        if span - shave < 0.18 then
-            return nil, 'Edge is too narrow to file any further'
+        local Stock = require(Openworks:WaitForChild('Stock'))
+        local FileShape = require(Openworks:WaitForChild('FileShape'))
+        local MeshRenderer = require(Openworks:WaitForChild('FORMWorkpieceRender'))
+
+        local item = modifiedSolids[work]
+        if not item then
+            local dimensions = work.Size / Stock.SCALE
+            item = Stock.create(1, 'Block', 'Steel', {
+                x = dimensions.X, y = dimensions.Y, z = dimensions.Z,
+            }, work.CFrame)
         end
 
-        if axis == 'X' then
-            work.Size = Vector3.new(size.X - shave, size.Y, size.Z)
-            work.CFrame *= CFrame.new(-side * shave * 0.5, 0, 0)
+        local axis, side = state.axis, state.fileSide
+        local half = work.Size * 0.5
+        local target = if axis == 'X' then Vector3.new(side * half.X, half.Y, 0)
+            else Vector3.new(0, half.Y, side * half.Z)
+        local worldHit = work.CFrame:PointToWorldSpace(target)
+        local spec, failure = FileShape.preview(item, worldHit, state.fileRadius)
+        if not spec then return nil, failure end
+
+        local solid, stats
+        if state.fileShape == 'Chamfer' then
+            solid, stats = FileShape.chamfer(item, spec)
         else
-            work.Size = Vector3.new(size.X, size.Y, size.Z - shave)
-            work.CFrame *= CFrame.new(0, 0, -side * shave * 0.5)
+            solid, stats = FileShape.apply(item, spec)
         end
+        if not solid then return nil, stats end
 
+        local visual = MeshRenderer.create(solid, work)
+        local weld = Instance.new('WeldConstraint')
+        weld.Part0 = work
+        weld.Part1 = visual
+        weld.Parent = visual
+
+        local previous = work:FindFirstChild('FORMFiledVisual')
+        visual.Parent = work
+        if previous then previous:Destroy() end
+        work.Transparency = 1
+
+        item.solid = solid
+        modifiedSolids[work] = item
         work:SetAttribute('FilePasses', (work:GetAttribute('FilePasses') or 0) + 1)
+        work:SetAttribute('FileProfile', state.fileShape)
+        work:SetAttribute('FileRadiusMM', state.fileRadius)
         work:SetAttribute('LastFiledEdge', axis .. (if side == 1 then '+' else '-'))
-        return work, 'Edge filed. Move to another edge or press Esc'
+
+        return work, string.format('%s edge %.2f mm — select another edge or Esc',
+            state.fileShape, state.fileRadius)
     end
 
     local FORM = require(Openworks:WaitForChild('FORM'))
@@ -622,7 +654,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.fileSide = fileSide
 
     local travelLength = if axis == 'X' then size.Z else size.X
-    local travelRange = math.min(0.9, math.max(0.2, travelLength * 0.35))
+    local travelRange = math.max(0.12, travelLength * 0.5 - 0.04)
     local travel = if axis == 'X' then Vector3.new(0, 0, stroke * travelRange)
         else Vector3.new(stroke * travelRange, 0, 0)
 
@@ -663,7 +695,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         return
     end
 
-    if state.awaitRelease then return end
+    if state.awaitRelease or state.processing then return end
 
     local delta = stroke - state.lastStroke
     local direction = if delta > 0.035 then 1 elseif delta < -0.035 then -1 else 0
@@ -680,8 +712,10 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     if direction ~= 0 then state.direction = direction end
     state.lastStroke = stroke
 
-    if state.reversals < 5 then return end
+    if state.reversals < 5 or state.processing then return end
 
+    state.processing = true
+    state.awaitRelease = true
     local ok, selected, message = pcall(cutSheet, state)
     if not ok then
         message = 'Fabrication failed: ' .. tostring(selected)
@@ -694,9 +728,11 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.lastTurn = 0
     state.direction = 0
     state.reversals = 0
-    state.awaitRelease = true
+    state.processing = false
 
-    remote:FireClient(player, 'MachiningCompleted', selected, message)
+    if active[player] == state then
+        remote:FireClient(player, 'MachiningCompleted', selected, message)
+    end
 end
 
 onRequest = function(player, action, ...)
@@ -727,6 +763,15 @@ onRequest = function(player, action, ...)
         state.target.CFrame = CFrame.new(point) * rotation
     elseif action == 'FabricationMove' and state.mode == 'Fabrication' then
         moveFabrication(player, state, ...)
+    elseif action == 'FabricationSettings' and state.mode == 'Fabrication' then
+        local profile, radius = ...
+        if state.kind == 'File' and (profile == 'Round' or profile == 'Chamfer')
+            and finite(radius) and radius >= 0.5 and radius <= 12 then
+            state.fileShape = profile
+            state.fileRadius = radius
+        else
+            remote:FireClient(player, 'Feedback', 'Invalid file profile or size')
+        end
     elseif action == 'FabricationRotate' and state.mode == 'Fabrication' then
         local step = ...
         if step == 1 or step == -1 then
