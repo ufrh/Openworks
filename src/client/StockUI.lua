@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService('ReplicatedStorage')
 
 local Stock = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('Stock'))
 local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'))
+local SawTube = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('SawTube'))
 local Renderer = require(script.Parent.FORMRenderer)
 local Grab = require(script.Parent.StockGrab)
 
@@ -225,7 +226,7 @@ function UI.start()
         return copy
     end
 
-    local function fragmentRecord(id, source, solid, originalFrame)
+    local function fragmentRecord(id, source, solid, originalFrame, tubeProfile)
         local low, high = FORM.bounds(solid)
         local offset = (low + high) / 2
         local centered = cloneSolid(solid)
@@ -235,19 +236,23 @@ function UI.start()
         return {
             id = id, shape = 'Fabricated', material = source.material,
             dimensions = nil, solid = centered, frame = originalFrame * CFrame.new(offset * Stock.SCALE),
+            tubeProfile = tubeProfile and SawTube.offsetProfile(tubeProfile, offset) or nil,
             volume = vol, massKg = vol * Stock.MATERIALS[source.material].density / 1000000,
         }
     end
 
-    local function separate(part, solids)
+    local function separate(part, solids, stats)
         local id = part:GetAttribute('StockId')
         local source = id and current[id]
         if not source or bindings[id].part ~= part then return nil, 'Workpiece no longer exists' end
         if not part.Anchored then return nil, 'Secure the metal before cutting' end
         if countPieces() >= Stock.MAX_ITEMS then return nil, 'Stock limit reached' end
         if #solids ~= 2 then return nil, 'Saw must produce two pieces' end
-        local first = fragmentRecord(nextId + 1, source, solids[1], source.frame)
-        local second = fragmentRecord(nextId + 2, source, solids[2], source.frame)
+        local profiles = stats and stats.tubeProfiles
+        local first = fragmentRecord(nextId + 1, source, solids[1], source.frame,
+            profiles and profiles[1])
+        local second = fragmentRecord(nextId + 2, source, solids[2], source.frame,
+            profiles and profiles[2])
         local prepared = {}
         local ok, err = pcall(function()
             prepared[1] = createDisplay(first)
@@ -335,7 +340,7 @@ function UI.start()
             else
                 assert(countPieces() < Stock.MAX_ITEMS, 'Stock limit reached')
                 local copy = fragmentRecord(nextId + 1, item, item.solid,
-                    bindings[item.id].part.CFrame + Vector3.new(1.5, 1, 0))
+                    item.frame + Vector3.new(1.5, 1, 0), item.tubeProfile)
                 install(copy, createDisplay(copy), false)
             end
         end)
