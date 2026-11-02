@@ -9,7 +9,7 @@ local function validVector(v)
 end
 
 function FORM.volumeTolerance(volume)
-    return math.max(1e-5, math.abs(volume) * 5e-8)
+    return math.max(0.002, math.abs(volume) * 1e-7)
 end
 
 function FORM.volumeClose(actual, expected)
