@@ -11,7 +11,7 @@ end
 local function convex(solid)
     local lower, upper = FORM.bounds(solid)
     local extent = (upper - lower).Magnitude
-    local threshold = math.max(EPSILON, extent * 2e-6)
+    local threshold = math.max(EPSILON, extent * 1e-5)
     local worst = 0
 
     for _, face in solid.triangles do
