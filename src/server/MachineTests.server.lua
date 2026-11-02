@@ -4,6 +4,14 @@ local Machine = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild
 
 local function assertUnified(machine, label, expectedEuler)
     local mesh, reason, stats = machine:mesh()
+    if not mesh and stats and stats.weld then
+        local weld = stats.weld
+        warn(string.format('[FORM:Machine] %s rejected: %s, %d triangles, %d components, Euler=%d',
+            label, tostring(reason), weld.trianglesAfter, weld.connectedComponents, weld.eulerCharacteristic))
+        for code, count in weld.issueCounts do
+            warn(string.format('[FORM:Machine] %s: %s x%d', label, code, count))
+        end
+    end
     assert(mesh, label .. ' unified mesh failed: ' .. tostring(reason))
     assert(FORM.validate(mesh).ok, label .. ' unified mesh is not watertight')
     assert(FORM.volumeClose(FORM.signedVolume(mesh), machine:volume()), label .. ' changed volume')
@@ -46,6 +54,10 @@ local function run()
     assert(not invalid and reason, 'Invalid cutter was accepted')
     assert(machine:status().operations == beforeFailure.operations, 'Invalid cutter mutated history')
     assert(FORM.volumeClose(machine:volume(), beforeFailure.volume), 'Invalid cutter mutated workpiece')
+    local untouched, untouchedReason = machine:apply({kind = 'drill',
+        center = Vector3.new(1000, 0, 0), radius = 3, height = 70, segments = 12})
+    assert(not untouched and untouchedReason == 'NO_MATERIAL_REMOVED', 'No-op machining was committed')
+    assert(machine:status().operations == beforeFailure.operations, 'No-op changed operation history')
 
     apply(machine, {kind = 'pocket', center = Vector3.new(22, 23, -7),
         size = Vector3.new(16, 16, 16)}, 'Blind pocket')
