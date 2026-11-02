@@ -139,6 +139,14 @@ UserInputService.InputBegan:Connect(function(input, processed)
         return
     end
 
+    if input.KeyCode == Enum.KeyCode.R and fabrication and not processed then
+        local backwards = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        remote:FireServer('FabricationRotate', if backwards then -1 else 1)
+        inspector:status('Saw roll adjusted 90 degrees')
+        return
+    end
+
     if input.UserInputType ~= Enum.UserInputType.MouseButton1 or processed then return end
     if fabrication then
         fabrication.down = true
