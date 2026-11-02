@@ -318,15 +318,14 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
         fabrication = {
             kind = a, material = b, tool = c,
             down = false, stroke = 0, offset = 0, axis = 'X',
-            pointerMoved = false,
+            fileSide = 1, pointerMoved = false,
         }
         inspector:setTool(a)
+        guide.Parent = workspace
         if a == 'Saw' then
-            inspector:status('Hover metal to position cut, then hold LMB and stroke')
-            guide.Parent = workspace
+            inspector:status('Hover the sheet to set a cut, then hold LMB to saw')
         else
-            inspector:status('Hold LMB and stroke the physical file back and forth')
-            guide.Parent = nil
+            inspector:status('Hover an edge, hold LMB and stroke to file it')
         end
     elseif action == 'Progress' then
         if fabrication then
@@ -429,7 +428,19 @@ RunService.RenderStepped:Connect(function(dt)
 
                 if hit and hit.Instance == work then
                     local point = work.CFrame:PointToObjectSpace(hit.Position)
-                    fabrication.offset = if fabrication.axis == 'X' then point.X else point.Z
+                    if fabrication.kind == 'File' then
+                        local distanceX = size.X * 0.5 - math.abs(point.X)
+                        local distanceZ = size.Z * 0.5 - math.abs(point.Z)
+                        if distanceX <= distanceZ then
+                            fabrication.axis = 'X'
+                            fabrication.fileSide = if point.X >= 0 then 1 else -1
+                        else
+                            fabrication.axis = 'Z'
+                            fabrication.fileSide = if point.Z >= 0 then 1 else -1
+                        end
+                    else
+                        fabrication.offset = if fabrication.axis == 'X' then point.X else point.Z
+                    end
                 end
             end
 
@@ -437,15 +448,28 @@ RunService.RenderStepped:Connect(function(dt)
             local maximum = math.max(0, span * 0.5 - 0.17)
             fabrication.offset = math.clamp(fabrication.offset, -maximum, maximum)
 
-            if fabrication.kind == 'Saw' then
-                local cutHeight = size.Y * 0.5 + 0.025
+            local guideHeight = size.Y * 0.5 + 0.025
+            guide.Color = if fabrication.kind == 'File'
+                then Color3.fromRGB(125, 215, 184)
+                else Color3.fromRGB(239, 182, 81)
+            if fabrication.kind == 'File' then
                 if fabrication.axis == 'X' then
-                    guide.Size = Vector3.new(0.055, 0.02, size.Z)
-                    guide.CFrame = work.CFrame * CFrame.new(fabrication.offset, cutHeight, 0)
+                    guide.Size = Vector3.new(0.06, 0.02, size.Z)
+                    guide.CFrame = work.CFrame
+                        * CFrame.new(fabrication.fileSide * size.X * 0.5,
+                            guideHeight, 0)
                 else
-                    guide.Size = Vector3.new(size.X, 0.02, 0.055)
-                    guide.CFrame = work.CFrame * CFrame.new(0, cutHeight, fabrication.offset)
+                    guide.Size = Vector3.new(size.X, 0.02, 0.06)
+                    guide.CFrame = work.CFrame
+                        * CFrame.new(0, guideHeight,
+                            fabrication.fileSide * size.Z * 0.5)
                 end
+            elseif fabrication.axis == 'X' then
+                guide.Size = Vector3.new(0.055, 0.02, size.Z)
+                guide.CFrame = work.CFrame * CFrame.new(fabrication.offset, guideHeight, 0)
+            else
+                guide.Size = Vector3.new(size.X, 0.02, 0.055)
+                guide.CFrame = work.CFrame * CFrame.new(0, guideHeight, fabrication.offset)
             end
         end
     end
@@ -461,7 +485,8 @@ RunService.RenderStepped:Connect(function(dt)
             ray.Origin + ray.Direction.Unit * dragging.distance, dragging.rotation)
     elseif fabrication then
         send('FabricationMove',
-            fabrication.stroke, fabrication.offset, fabrication.axis, fabrication.down)
+            fabrication.stroke, fabrication.offset, fabrication.axis,
+            fabrication.down, fabrication.fileSide)
     end
 end)
 
