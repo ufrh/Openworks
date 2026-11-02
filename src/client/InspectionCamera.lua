@@ -2,6 +2,8 @@ local Players = game:GetService('Players')
 local RunService = game:GetService('RunService')
 local UserInputService = game:GetService('UserInputService')
 local ContextActionService = game:GetService('ContextActionService')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local FORMMaterial = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORMMaterial'))
 
 local player = Players.LocalPlayer
 local Inspector = {}
@@ -43,11 +45,13 @@ local function makeButton(parent, text, callback)
     return button
 end
 
-function Inspector.new(onTool, onExit, onFileSettings)
+function Inspector.new(onTool, onExit, onFileSettings, onMaterial)
     local self = setmetatable({}, Inspector)
     self.onTool = onTool
     self.onExit = onExit
     self.onFileSettings = onFileSettings
+    self.onMaterial = onMaterial
+    self.materials = {}
     self.fileShape = 'Round'
     self.fileRadius = 1.25
     self.fileMaxRadius = 12
@@ -319,6 +323,84 @@ function Inspector:refreshTools()
     end
 end
 
+function Inspector:refreshMaterials(force)
+    if not self.material or not self.kind then return end
+
+    local found = {}
+    for _, node in workspace:GetDescendants() do
+        if (node:IsA('BasePart') or node:IsA('Model'))
+            and FORMMaterial.isMarked(node)
+            and node:GetAttribute('OnWorkbench') == true then
+            table.insert(found, node)
+        end
+    end
+
+    table.sort(found, function(a, b)
+        if a.Name ~= b.Name then return a.Name < b.Name end
+        return a:GetFullName() < b:GetFullName()
+    end)
+
+    local changed = force == true or #found ~= #self.materials
+    if not changed then
+        for i, item in found do
+            if self.materials[i] ~= item then
+                changed = true
+                break
+            end
+        end
+    end
+    self.materials = found
+    if not changed then return end
+
+    for _, child in self.choices:GetChildren() do
+        if child:IsA('TextButton') or child:IsA('TextLabel') then
+            child:Destroy()
+        end
+    end
+
+    if #found == 0 then
+        makeText(self.choices, 'No workpieces on the bench', 44, 12)
+        return
+    end
+
+    for i, item in found do
+        local current = item == self.material
+        local text = tostring(i) .. '  ' .. item.Name
+            .. (if current then '  [ACTIVE]' else '')
+        local choice = makeButton(self.choices, text, function()
+            if self.onMaterial then self.onMaterial(item) end
+        end)
+        choice.LayoutOrder = i
+        if current then
+            choice.BackgroundColor3 = Color3.fromRGB(91, 112, 81)
+        end
+    end
+end
+
+function Inspector:focusMaterial(material)
+    if not material or not material.Parent or not self.material then return end
+
+    self.material = material
+    self.name.Text = material.Name
+    self.focusOffset = Vector3.zero
+
+    local size = if material:IsA('BasePart') then material.Size else material:GetExtentsSize()
+    self.distance = math.clamp(math.max(size.X, size.Y, size.Z) * 3.5, 4, 15)
+
+    if self.kind == 'File' then
+        local limit = math.floor(size.Y / 0.04 * 0.42 * 100) / 100
+        self.fileMaxRadius = math.max(0.5, math.min(12, limit))
+        self.fileRadius = math.clamp(self.fileRadius, 0.5, self.fileMaxRadius)
+        self.sizeEntry.Text = string.format('%.2f', self.fileRadius)
+        self.fileSizeHelp.Text = string.format('Profile size 0.50–%.2f mm', self.fileMaxRadius)
+        if self.onFileSettings then
+            self.onFileSettings(self.fileShape, self.fileRadius)
+        end
+    end
+
+    self:refreshMaterials(true)
+end
+
 function Inspector:open(material)
     if not material or not material.Parent then return end
 
@@ -367,7 +449,7 @@ function Inspector:setTool(kind)
     self.fileSettings.Visible = kind == 'File'
     self.gui.Enabled = self.material ~= nil
     local panel = self.title.Parent
-    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 485 else 330)
+    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 485 else 350)
 
     if kind == 'File' and self.material then
         local thickness = if self.material:IsA('BasePart') then self.material.Size.Y
@@ -386,8 +468,14 @@ function Inspector:setTool(kind)
         elseif kind == 'File' then
         'Hover an edge: select filing side\nHold LMB + mouse: file strokes\nR: roll tool | RMB: orbit | ESC: exit'
         else 'RMB: orbit | MMB: pan | wheel: zoom\nChoose a physical tool resting on the table.'
-    self.choices.Visible = kind == nil
-    if not kind then self.tools = {} self:refreshTools() end
+    self.choices.Visible = true
+    if kind then
+        self:refreshMaterials(true)
+    else
+        self.materials = {}
+        self.tools = {}
+        self:refreshTools()
+    end
 end
 
 function Inspector:status(message)
@@ -405,6 +493,7 @@ function Inspector:close()
 
     self.material = nil
     self.kind = nil
+    self.materials = {}
     self.gui.Enabled = false
     self.exiting = true
 
