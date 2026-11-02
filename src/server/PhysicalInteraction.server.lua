@@ -272,6 +272,47 @@ local function supportOnWorkbench(item)
     end
 end
 
+local function exposedFace(part)
+    local up = part.CFrame:VectorToObjectSpace(Vector3.yAxis)
+    local dx, dy, dz = math.abs(up.X), math.abs(up.Y), math.abs(up.Z)
+    if dx >= dy and dx >= dz then return 'X', if up.X >= 0 then 1 else -1 end
+    if dz >= dy then return 'Z', if up.Z >= 0 then 1 else -1 end
+    return 'Y', if up.Y >= 0 then 1 else -1
+end
+
+local function basis(axis)
+    if axis == 'X' then return Vector3.xAxis end
+    if axis == 'Y' then return Vector3.yAxis end
+    return Vector3.zAxis
+end
+
+local function measure(v, axis)
+    if axis == 'X' then return v.X end
+    if axis == 'Y' then return v.Y end
+    return v.Z
+end
+
+local function exposedEdge(part, wanted)
+    local face, sign = exposedFace(part)
+    local side = wanted
+    if side == face then side = if face == 'X' then 'Z' else 'X' end
+    local travel
+    for _, axis in {'X', 'Y', 'Z'} do
+        if axis ~= face and axis ~= side then travel = axis break end
+    end
+    return face, sign, side, travel
+end
+
+local function centerSolid(solid, center)
+    local vertices = {}
+    for i, vertex in solid.vertices do vertices[i] = vertex - center end
+    local triangles = {}
+    for i, triangle in solid.triangles do
+        triangles[i] = {triangle[1], triangle[2], triangle[3]}
+    end
+    return {vertices = vertices, triangles = triangles}
+end
+
 local function finish(player)
     local state = active[player]
     if not state then return end
@@ -538,10 +579,10 @@ local function cutSheet(state)
         end
         item.frame = work.CFrame
 
-        local axis, side = state.axis, state.fileSide
-        local half = work.Size * 0.5
-        local target = if axis == 'X' then Vector3.new(side * half.X, half.Y, 0)
-            else Vector3.new(0, half.Y, side * half.Z)
+        local face, faceSign, axis = exposedEdge(work, state.axis)
+        local side = state.fileSide
+        local target = basis(axis) * (side * measure(work.Size, axis) * 0.5)
+            + basis(face) * (faceSign * measure(work.Size, face) * 0.5)
         local worldHit = work.CFrame:PointToWorldSpace(target)
         local spec, failure = FileShape.preview(item, worldHit, state.fileRadius)
         if not spec then return nil, failure end
@@ -578,9 +619,7 @@ local function cutSheet(state)
             state.fileShape, state.fileRadius)
     end
 
-    if modifiedSolids[work] then
-        return nil, 'This filed shape needs the mesh-aware saw adapter; use unfiled stock for cutting'
-    end
+    local wasFiled = modifiedSolids[work] ~= nil
 
     local FORM = require(Openworks:WaitForChild('FORM'))
     local Stock = require(Openworks:WaitForChild('Stock'))
@@ -588,11 +627,16 @@ local function cutSheet(state)
 
     local originalFrame = work.CFrame
     local dimensions = work.Size / Stock.SCALE
-    local item = Stock.create(1, 'Block', 'Steel', {
-        x = dimensions.X,
-        y = dimensions.Y,
-        z = dimensions.Z,
-    }, originalFrame)
+    local item = modifiedSolids[work]
+    if item then
+        item.frame = originalFrame
+    else
+        item = Stock.create(1, 'Block', 'Steel', {
+            x = dimensions.X,
+            y = dimensions.Y,
+            z = dimensions.Z,
+        }, originalFrame)
+    end
 
     local normal = if state.axis == 'X' then originalFrame.RightVector
         else originalFrame.LookVector
@@ -614,6 +658,7 @@ local function cutSheet(state)
             size = size,
             frame = originalFrame * CFrame.new((low + high) * 0.5 * Stock.SCALE),
             volume = FORM.signedVolume(solid),
+            solid = if wasFiled then centerSolid(solid, (low + high) * 0.5) else nil,
         })
     end
 
@@ -644,8 +689,55 @@ local function cutSheet(state)
     fragment:SetAttribute('FORMNativeStock', true)
     FORMMaterial.mark(fragment)
 
+    local mainVisual, offcutVisual
+    local previous = work:FindFirstChild('FORMFiledVisual')
+    if wasFiled then
+        local Renderer = require(Openworks:WaitForChild('FORMWorkpieceRender'))
+        local mainSource = Instance.new('Part')
+        mainSource.CFrame = main.frame
+        mainSource.Size = main.size
+        local offcutSource = Instance.new('Part')
+        offcutSource.CFrame = offcut.frame
+        offcutSource.Size = offcut.size
+
+        local appearance = previous or work
+        local ok, result, other = pcall(function()
+            return Renderer.create(main.solid, mainSource, appearance),
+                Renderer.create(offcut.solid, offcutSource, appearance)
+        end)
+        mainSource:Destroy()
+        offcutSource:Destroy()
+        if not ok then return nil, 'Unable to render filed cut: ' .. tostring(result) end
+        mainVisual, offcutVisual = result, other
+    end
+
     work.Size = main.size
     work.CFrame = main.frame
+    if wasFiled then
+        if previous then previous:Destroy() end
+        local weld = Instance.new('WeldConstraint')
+        weld.Part0 = work
+        weld.Part1 = mainVisual
+        weld.Parent = mainVisual
+        mainVisual.Parent = work
+        work.Transparency = 1
+        work.CanCollide = false
+        work.CanQuery = false
+        fragment.Transparency = 1
+        fragment.CanCollide = false
+        fragment.CanQuery = false
+        local offcutWeld = Instance.new('WeldConstraint')
+        offcutWeld.Part0 = fragment
+        offcutWeld.Part1 = offcutVisual
+        offcutWeld.Parent = offcutVisual
+        offcutVisual.Parent = fragment
+        modifiedSolids[work] = {
+            frame = main.frame, solid = main.solid, shape = 'Block',
+        }
+        modifiedSolids[fragment] = {
+            frame = offcut.frame, solid = offcut.solid, shape = 'Block',
+        }
+    end
 
     fragment.Parent = work.Parent
     supportOnWorkbench(fragment)
