@@ -516,7 +516,7 @@ local function cutSheet(state)
         end
 
         work:SetAttribute('FilePasses', (work:GetAttribute('FilePasses') or 0) + 1)
-        work:SetAttribute('LastFiledEdge', axis .. if side == 1 then '+' else '-')
+        work:SetAttribute('LastFiledEdge', axis .. (if side == 1 then '+' else '-'))
         return work, 'Edge filed. Move to another edge or press Esc'
     end
 
