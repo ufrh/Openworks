@@ -444,6 +444,13 @@ function UI.start()
         selected = function()
             return selected and bindings[selected] and bindings[selected].part or nil
         end,
+        select = function(part)
+            local id = part and part:GetAttribute('StockId')
+            if not id or not bindings[id] or bindings[id].part ~= part then return false end
+            selected = id
+            refreshSelection()
+            return true
+        end,
         separate = separate,
         refine = refine,
         status = displayStatus,
