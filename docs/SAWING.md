@@ -13,9 +13,9 @@ The saw is a player-operated interaction on top of FORM and the M1 physical work
 ## Manual test
 
 1. Run Play and equip the Hacksaw through the Roblox hotbar or the compact **Equip Hacksaw** control on the right.
-2. Click a raw piece (or use **Select Next Piece**) and choose **Temporarily Secure / Release** on the **left-docked** Raw Stock panel. The piece must be anchored for this temporary vise prototype.
-3. Hover the mouse over the secured piece. A gold intersection outline previews the actual cutting plane. No EditableMesh is allocated for the preview.
-4. Press **Q/E** to rotate the cutting plane by 15 degrees; **V** toggles workpiece-centered orbit camera; **T** selects top-down; hold RMB and move the mouse to orbit, mouse wheel to zoom.
+2. Click/select a raw piece. You can **temporarily secure it** for a stable cut and close-up camera, or leave it **loose** and cut it using the normal player camera.
+3. Hover over the metal. A gold section outline and the actual **working saw model** appear while positioning; no EditableMesh is allocated for the preview. The held cosmetic saw returns when you stop targeting.
+4. **Q/E** yaw the cutting plane by 15 degrees; **Z/X** tilt it 15 degrees for oblique cuts. **R** rotates the model for alignment; Shift+R flips teeth; **F** selects hovered stock; **V** toggles secured-stock camera focus. Secured stock uses normal Roblox RMB camera rotation and scroll-wheel zoom, starting at a close-up distance; loose stock does not take over the camera.
 5. **Hold LMB** to operate the equipped Tool. The actual Workspace saw model reciprocates along its blade and advances progressively into the stock while progress fills (3.8 seconds for steel, 2.6 for aluminum). Releasing early cancels without any changes.
 6. A dark noncolliding kerf proxy visually follows penetration, without modifying the EditableMesh every frame. At completion, `SawCut.split` applies a **0.8 mm kerf**. Convex solids use the existing FORM splitter; hollow tubes use a tube profile splitter that preserves both inner and outer walls and caps the cut with annular end faces. Both fragments remain watertight. The larger fragment inherits the temporary anchored workholding state; the other is released into physics.
 7. New geometry is rendered once per completed cut. Rectangular fragments become inexpensive native Parts; oblique cuts can require fresh EditableMeshes.
@@ -28,7 +28,7 @@ The saw is a player-operated interaction on top of FORM and the M1 physical work
 - `src/client/StockUI.lua`: atomic two-piece workpiece replacement, density and physical state retention, fragment recentring, and stock palette docking.
 - `src/client/SawUI.lua`: Tool detection, fabricating controls, preview part pool, procedural Tool.Grip animation, and optional orbit camera.
 - `src/client/FabricationVisual.lua`: clone and move the real model in Workspace, with optional `BladeEdge` attachment alignment. See `docs/FABRICATION_MODELS.md`.
-- `src/server/SawTests.server.lua`: geometric tests for centered/rotated steel cut, kerf volume and thin sheet.
+- `src/server/SawTests.server.lua`: tests centered, 3D angled and moving-stock cuts, geometric tests for centered/rotated steel cut, kerf volume and thin sheet.
 
 ## Known scope
 
