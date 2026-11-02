@@ -212,8 +212,13 @@ local function finish(player)
     locked[state.item] = nil
     if state.material then locked[state.material] = nil end
     if state.collisions then
-        for part, wasCollidable in state.collisions do
-            if part.Parent then part.CanCollide = wasCollidable end
+        for part, original in state.collisions do
+            if part.Parent then
+                part.CanQuery = true
+                part.CanCollide = original.collide
+                part.CanTouch = original.touch
+                part.CanQuery = original.query
+            end
         end
     end
     destroyMotor(state)
@@ -313,20 +318,12 @@ local function startFabrication(player, material, tool)
     state.material = material
     state.work = work
 
-    local marker = contactMarker(tool, if kind == 'Saw' then 'BladeEdge' else 'FileFace')
-    local contact
-    if marker then
-        contact = marker.WorldCFrame
-    elseif tool:IsA('Model') then
-        local boxFrame, boxSize = tool:GetBoundingBox()
-        contact = boxFrame * CFrame.new(0, -boxSize.Y * 0.5, 0)
-    else
-        contact = part.CFrame * CFrame.new(0, -part.Size.Y * 0.5, 0)
-    end
+    local contact = toolContact(tool, part, kind)
     state.grab.CFrame = part.CFrame:ToObjectSpace(contact)
     state.target.CFrame = contact
 
     setToolCollision(tool, state)
+    state.roll = 0
     state.offset = 0
     state.stroke = 0
     state.lastStroke = 0
@@ -435,6 +432,7 @@ local function moveFabrication(player, state, stroke, offset, axis)
     local upward = work.CFrame.UpVector
     state.target.CFrame = CFrame.fromMatrix(pos, strokeDirection,
         upward, strokeDirection:Cross(upward))
+        * CFrame.Angles(math.rad(state.roll), 0, 0)
 
     local difference = stroke - state.lastStroke
     local direction = if difference > 0.05 then 1 elseif difference < -0.05 then -1 else 0
@@ -489,11 +487,27 @@ remote.OnServerEvent:Connect(function(player, action, ...)
         state.target.CFrame = CFrame.new(point) * rotation
     elseif action == 'FabricationMove' and state.mode == 'Fabrication' then
         moveFabrication(player, state, ...)
+    elseif action == 'FabricationRotate' and state.mode == 'Fabrication' then
+        local step = ...
+        if step == 1 or step == -1 then
+            state.roll = (state.roll + step * 90) % 360
+            state.lastInput = os.clock()
+        end
     end
 end)
 
 RunService.Heartbeat:Connect(function()
     for player, state in active do
+        if state.mode == 'Fabrication' and state.collisions then
+            for part in state.collisions do
+                if part.Parent then
+                    part.CanCollide = false
+                    part.CanTouch = false
+                    part.CanQuery = false
+                end
+            end
+        end
+
         local root = rootOf(player)
         if not root or not state.part.Parent
             or (state.part.Position - root.Position).Magnitude > 38
