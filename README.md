@@ -38,3 +38,7 @@ Older machining/workshop documents under `docs/` describe experiments and do **n
 ## Workbench material detection test
 
 In Roblox Studio Play mode, a small bottom-right **Spawn Test Sheet** button creates one physical steel sheet a short distance above the largest `Workspace.Workbench.surface` region. The workbench detector generates an invisible, anchored collision support immediately beneath each authored surface, separate from its non-colliding detection volume; this protects thin imported tabletops from dropped stock passing through. The sheet is server-created and marked by `FORMMaterial.mark`, using the same material tag the workbench detector recognizes. Its `MaterialCount` is displayed on the test panel after the sheet settles. Clicking again replaces the previous sheet. This temporary test UI is disabled outside Studio; it does not reintroduce equipment, tool inventory or fabrication controls.
+
+## Physical workbench interaction
+
+Click a FORM-tagged physical material object to enter inspection. Mouse-drag and hold objects to carry them through physics. A physical saw/file with `isTool = true` resting on the table is selectable from inspection. The new precision camera has orbit/pan/zoom, and manual sideways-mouse strokes drive the same tool's rigid physical assembly. Test sheet stock supports FORM straight saw splitting and a simple planar filing pass. See [interaction guide](docs/PHYSICAL_INTERACTION.md). No inventory or equippable tools are used.

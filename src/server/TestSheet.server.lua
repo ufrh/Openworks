@@ -77,6 +77,7 @@ remote.OnServerEvent:Connect(function(player)
     sheet.TopSurface = Enum.SurfaceType.Smooth
     sheet.BottomSurface = Enum.SurfaceType.Smooth
 
+    sheet:SetAttribute('FORMNativeStock', true)
     FORMMaterial.mark(sheet)
     sheet.Parent = sheets
     owned[player] = sheet
