@@ -1,6 +1,6 @@
 # OPENWORKS — Physical Work Models (Prototype)
 
-The equipped Roblox Tool is the **interaction trigger**, not the geometry that performs fabrication. The actual visual tool is cloned from **ReplicatedStorage** into Workspace and independently positioned against a secured workpiece. It remains local to the player in the current prototype.
+The equipped Roblox Tool retains its **visible cosmetic model in the player's hand**. During an active fabrication pass, the hand cosmetic is temporarily hidden and the matching **ReplicatedStorage working model** is cloned into Workspace and independently moved through the secured workpiece. At release or completion, the hand cosmetic returns. The working model remains local to the player in the current prototype.
 
 ## Required assets
 
@@ -10,13 +10,13 @@ ReplicatedStorage
 └── Metal File             Model (or BasePart; world-space moving file)
 
 StarterPack (optional for local prototype)
-├── Hacksaw                Tool (activation only)
-└── Metal File             Tool (activation only)
+├── Hacksaw                Tool (equipped cosmetic + input)
+└── Metal File             Tool (equipped cosmetic + input)
 ```
 
 You can use your existing Tools in StarterPack and equip from the Roblox hotbar. The prototype's Equip buttons also look for Tools in Backpack, Character, or ReplicatedStorage. **If there is only a visual Model in ReplicatedStorage, the Equip button makes a local handleless activation Tool** so a missing Tool doesn't block testing.
 
-The original model is **not** moved or welded into the hand Tool. A clone is made under Workspace when aiming at a valid secured workpiece. All cloned pieces are anchored, noncolliding, nonqueryable, and locally controlled. They cannot push stock around by contact yet; stock separation and mass are still determined by FORM.
+The original asset is never moved out of ReplicatedStorage. A clone can be attached cosmetically to an otherwise empty hand Tool, while a **separate clone** drives actual working motion in Workspace. The two do not appear simultaneously: the hand cosmetic hides for the active pass and is restored afterward. All moving working-model pieces are anchored, noncolliding, nonqueryable, and locally controlled. They cannot push stock by contact yet; stock separation and mass remain determined by FORM.
 
 ## Alignment markers (recommended)
 
@@ -25,22 +25,22 @@ Put a Roblox `Attachment` inside a BasePart of each **ReplicatedStorage Model**:
 - **Hacksaw: `BladeEdge`** — place at the teeth's contact point. Orient its **+X axis along the blade's back-and-forth stroke**, **+Y outward from the metal**, and **+Z perpendicular to the blade's cutting plane**.
 - **Metal File: `FileFace`** — place where the filing teeth should touch the edge. Set **+X along the long filing stroke**, **+Y pointing away from the metal**, and **+Z completing the right-handed frame**.
 
-The controller aligns these markers with the chosen cutting/filing frame. If an Attachment is missing, it uses the **bottom center of the model bounds** as an approximate contact point. That fallback will likely look off with complex Blender meshes: a properly oriented Attachment is best.
+The controller aligns these markers with the chosen cutting/filing frame. For Hacksaw models missing a marker, it first looks for a BasePart named `Blade`, `SawBlade`, or `BladePart` and uses its dimensions and orientation. Otherwise it estimates the contact point from the model bounds, rotating its longest axis to follow the stroke. This heuristic cannot know where the teeth are on a single exported mesh: for precise alignment, place a `BladeEdge` Attachment. **R** rotates the working saw model in 90-degree steps when testing an ambiguous orientation.
 
 ## Saw interaction
 
 1. Equip `Hacksaw`, secure stock, aim at the surface.
-2. Gold guide shows FORM's cutting plane; the actual workspace saw aligns to that plane.
-3. Holding LMB reciprocates the saw **along its blade length** while its contact point moves **from the entry surface through the cross-section**. Its penetration distance drives the progress bar.
-4. A thin, dark **visual kerf proxy** grows during the stroke. This is intentionally a cheap overlay rather than an EditableMesh change every frame.
-5. Upon reaching the other side, FORM performs the true cut exactly once and the offcut falls. Releasing early cancels without changing the stock.
-6. Q/E rotate the plane; V, T, RMB drag and wheel retain the existing fabrication camera controls.
+2. On equip, the hand-held cosmetic remains visible and the camera automatically orbits the selected metal workpiece (V toggle; T top-down; hold RMB to orbit; wheel zoom). Gold guide shows FORM's cutting plane.
+3. Holding LMB hides the hand cosmetic, shows the actual Workspace saw and reciprocates the blade **along its length**, while its contact point feeds **from one side of the intended cut to the other** and progressively penetrates the metal. The combined cut travel drives the progress bar.
+4. A thin, dark **visual kerf proxy** grows **along the cut** as the saw advances. This is intentionally a cheap overlay rather than an EditableMesh change every frame.
+5. When the saw completes its full travel, FORM performs the true cut exactly once and the offcut falls. Releasing early cancels without changing the stock. The original equipped cosmetic is restored at either outcome.
+6. Q/E rotate the plane; **R rotates the working model** by 90 degrees for alignment (not the cut plane); V toggles workpiece orbit, T sets top-down, RMB drag orbits, and the wheel zooms.
 
 ## File interaction
 
 1. Equip `Metal File`, secure a block or sheet and aim near an outside edge.
 2. The gold arc shows the future roundover. The actual workspace file is positioned at the corner.
-3. Holding LMB slides the model along the edge while progressively moving it toward the rounded contour.
+3. Holding LMB temporarily hides the hand-held Metal File and slides the independent working model along the edge while progressing toward the rounded contour. On completion or cancellation, the cosmetic returns.
 4. FORM validates the roundover when filing starts, but applies the geometric update **once when the pass finishes**. Releasing early cancels.
 
 ## Known scope
