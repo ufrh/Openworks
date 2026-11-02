@@ -109,4 +109,24 @@ function Renderer.create(solid, studsPerMillimeter, smoothAngle)
     return part, editable
 end
 
+function Renderer.createMany(solids, studsPerMillimeter, smoothAngle)
+    local combined = {vertices = {}, triangles = {}}
+
+    for _, solid in solids do
+        local offset = #combined.vertices
+        for _, vertex in solid.vertices do
+            combined.vertices[#combined.vertices + 1] = vertex
+        end
+        for _, triangle in solid.triangles do
+            combined.triangles[#combined.triangles + 1] = {
+                triangle[1] + offset,
+                triangle[2] + offset,
+                triangle[3] + offset,
+            }
+        end
+    end
+
+    return Renderer.create(combined, studsPerMillimeter, smoothAngle)
+end
+
 return Renderer
