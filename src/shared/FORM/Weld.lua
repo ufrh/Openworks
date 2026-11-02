@@ -3,17 +3,180 @@ local FORM = require(script.Parent)
 local Weld = {}
 
 local function key(x, y, z)
-    return x .. ':' .. y .. ':' .. z
+    return tostring(x) .. ':' .. tostring(y) .. ':' .. tostring(z)
+end
+
+local function edgeKey(a, b)
+    return key(math.min(a, b), math.max(a, b), 0)
+end
+
+local function vertexOnEdge(vertex, a, b, tolerance)
+    local delta = b - a
+    local lengthSquared = delta:Dot(delta)
+    if lengthSquared <= tolerance * tolerance then return nil end
+
+    local t = (vertex - a):Dot(delta) / lengthSquared
+    local margin = tolerance / math.sqrt(lengthSquared)
+    if t <= margin or t >= 1 - margin then return nil end
+    if (vertex - (a + delta * t)).Magnitude > tolerance then return nil end
+    return t
+end
+
+local function faceArea(vertices, face)
+    local a, b, c = vertices[face[1]], vertices[face[2]], vertices[face[3]]
+    return (b - a):Cross(c - a).Magnitude
+end
+
+local function compactFaces(solid, tolerance)
+    local seen = {}
+    local output = {}
+    local removed = 0
+
+    for _, face in solid.triangles do
+        local a, b, c = face[1], face[2], face[3]
+        if a == b or b == c or c == a or faceArea(solid.vertices, face) <= tolerance * tolerance then
+            removed += 1
+        else
+            local sorted = {a, b, c}
+            table.sort(sorted)
+            local signature = table.concat(sorted, ':')
+            if seen[signature] then
+                removed += 1
+            else
+                seen[signature] = true
+                output[#output + 1] = face
+            end
+        end
+    end
+
+    solid.triangles = output
+    return removed
+end
+
+local function findJunction(solid, face, tolerance)
+    local vertices = solid.vertices
+    local foundEdge, foundVertex, foundT
+
+    for edge = 1, 3 do
+        local a = face[edge]
+        local b = face[edge % 3 + 1]
+        local other = face[(edge + 1) % 3 + 1]
+
+        for index, vertex in vertices do
+            if index == a or index == b or index == other then continue end
+            local t = vertexOnEdge(vertex, vertices[a], vertices[b], tolerance)
+            if t and (not foundT or t < foundT) then
+                foundEdge, foundVertex, foundT = edge, index, t
+            end
+        end
+    end
+
+    return foundEdge, foundVertex, foundT
+end
+
+local function junctions(solid, tolerance)
+    local count = 0
+    local details = {}
+    local seen = {}
+    local used = {}
+
+    for _, face in solid.triangles do
+        for _, index in face do used[index] = true end
+    end
+
+    for _, face in solid.triangles do
+        for edge = 1, 3 do
+            local a, b = face[edge], face[edge % 3 + 1]
+            local signature = edgeKey(a, b)
+            if not seen[signature] then
+                seen[signature] = true
+                for index, vertex in solid.vertices do
+                    if used[index] and index ~= a and index ~= b then
+                        local t = vertexOnEdge(vertex, solid.vertices[a], solid.vertices[b], tolerance)
+                        if t then
+                            count += 1
+                            if #details < 12 then
+                                details[#details + 1] = string.format('edge %d:%d vertex %d t=%.6f at %s',
+                                    a, b, index, t, tostring(vertex))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return count, details
+end
+
+local function fanDefects(solid)
+    local incident = {}
+    local adjacency = {}
+
+    for i, face in solid.triangles do
+        for _, v in face do
+            incident[v] = incident[v] or {}
+            incident[v][#incident[v] + 1] = i
+            adjacency[v] = adjacency[v] or {}
+            adjacency[v][i] = {}
+        end
+    end
+
+    local edges = {}
+    for i, face in solid.triangles do
+        for edge = 1, 3 do
+            local a, b = face[edge], face[edge % 3 + 1]
+            local signature = edgeKey(a, b)
+            edges[signature] = edges[signature] or {a = a, b = b, faces = {}}
+            edges[signature].faces[#edges[signature].faces + 1] = i
+        end
+    end
+
+    for _, edge in edges do
+        if #edge.faces == 2 then
+            local a, b = edge.faces[1], edge.faces[2]
+            for _, vertex in {edge.a, edge.b} do
+                adjacency[vertex][a][b] = true
+                adjacency[vertex][b][a] = true
+            end
+        end
+    end
+
+    local defects = 0
+    for vertex, faces in incident do
+        local visited = {}
+        local stack = {faces[1]}
+        visited[faces[1]] = true
+        while #stack > 0 do
+            local current = table.remove(stack)
+            for neighbor in adjacency[vertex][current] do
+                if not visited[neighbor] then
+                    visited[neighbor] = true
+                    stack[#stack + 1] = neighbor
+                end
+            end
+        end
+
+        for _, face in faces do
+            if not visited[face] then
+                defects += 1
+                break
+            end
+        end
+    end
+
+    return defects
 end
 
 function Weld.build(surface, tolerance)
     tolerance = tolerance or 1e-4
     assert(type(tolerance) == 'number' and tolerance > 0, 'Invalid weld tolerance')
+    assert(type(surface) == 'table' and type(surface.vertices) == 'table'
+        and type(surface.triangles) == 'table', 'Invalid surface')
 
     local output = {vertices = {}, triangles = {}}
     local buckets = {}
     local mapped = {}
-    local collapsed = 0
 
     for i, vertex in surface.vertices do
         local x = math.floor(vertex.X / tolerance + 0.5)
@@ -37,128 +200,63 @@ function Weld.build(surface, tolerance)
             if found then break end
         end
 
-        if found then
-            mapped[i] = found
-        else
-            local index = #output.vertices + 1
-            output.vertices[index] = vertex
-            mapped[i] = index
+        if not found then
+            found = #output.vertices + 1
+            output.vertices[found] = vertex
             local bucket = key(x, y, z)
             buckets[bucket] = buckets[bucket] or {}
-            table.insert(buckets[bucket], index)
+            buckets[bucket][#buckets[bucket] + 1] = found
         end
+
+        mapped[i] = found
     end
 
-    local faces = {}
-    for _, triangle in surface.triangles do
-        local a, b, c = mapped[triangle[1]], mapped[triangle[2]], mapped[triangle[3]]
-        if a == b or b == c or c == a then
-            collapsed += 1
-        else
-            local indices = {a, b, c}
-            local sorted = {a, b, c}
-            table.sort(sorted)
-            local signature = table.concat(sorted, ':')
-            if not faces[signature] then
-                faces[signature] = true
-                output.triangles[#output.triangles + 1] = indices
+    for _, face in surface.triangles do
+        output.triangles[#output.triangles + 1] = {
+            mapped[face[1]], mapped[face[2]], mapped[face[3]],
+        }
+    end
+
+    local removed = compactFaces(output, tolerance)
+    local repaired = 0
+    local converged = false
+
+    for _ = 1, 64 do
+        local nextFaces = {}
+        local changed = false
+
+        for _, face in output.triangles do
+            local edge, vertex = findJunction(output, face, tolerance)
+            if edge then
+                local a = face[edge]
+                local b = face[edge % 3 + 1]
+                local other = face[(edge + 1) % 3 + 1]
+                nextFaces[#nextFaces + 1] = {a, vertex, other}
+                nextFaces[#nextFaces + 1] = {vertex, b, other}
+                repaired += 1
+                changed = true
             else
-                collapsed += 1
+                nextFaces[#nextFaces + 1] = face
             end
         end
-    end
 
-    local function splitJunctions()
-        local resolved = 0
-        for pass = 1, 12 do
-            local changed = false
-            local nextTriangles = {}
-
-            for _, face in output.triangles do
-                local bestEdge, bestVertex, bestT
-
-                for edgeIndex = 1, 3 do
-                    local a = face[edgeIndex]
-                    local b = face[edgeIndex % 3 + 1]
-                    local start = output.vertices[a]
-                    local delta = output.vertices[b] - start
-                    local lengthSquared = delta:Dot(delta)
-
-                    if lengthSquared > tolerance * tolerance then
-                        local margin = tolerance / math.sqrt(lengthSquared)
-                        for index, vertex in output.vertices do
-                            if index == a or index == b or index == face[(edgeIndex + 1) % 3 + 1] then continue end
-                            local t = (vertex - start):Dot(delta) / lengthSquared
-
-                            if t > margin and t < 1 - margin
-                                and (vertex - (start + delta * t)).Magnitude <= tolerance then
-                                if not bestT or t < bestT then
-                                    bestEdge, bestVertex, bestT = edgeIndex, index, t
-                                end
-                            end
-                        end
-                    end
-                end
-
-                if bestEdge then
-                    local a = face[bestEdge]
-                    local b = face[bestEdge % 3 + 1]
-                    local third = face[(bestEdge + 1) % 3 + 1]
-                    nextTriangles[#nextTriangles + 1] = {a, bestVertex, third}
-                    nextTriangles[#nextTriangles + 1] = {bestVertex, b, third}
-                    resolved += 1
-                    changed = true
-                else
-                    nextTriangles[#nextTriangles + 1] = face
-                end
-            end
-
-            output.triangles = nextTriangles
-            if not changed then return resolved, true end
-        end
-
-        return resolved, false
-    end
-
-    local resolved, converged = splitJunctions()
-
-    local edges = {}
-    local used = {}
-    for _, face in output.triangles do
-        for _, index in face do used[index] = true end
-        for i = 1, 3 do
-            local a, b = face[i], face[i % 3 + 1]
-            if a > b then a, b = b, a end
-            edges[key(a, b, 0)] = {a, b}
+        output.triangles = nextFaces
+        removed += compactFaces(output, tolerance)
+        if not changed then
+            converged = true
+            break
         end
     end
 
-    local junctions = 0
-    local junctionDetails = {}
-    for _, edge in edges do
-        local a, b = output.vertices[edge[1]], output.vertices[edge[2]]
-        local delta = b - a
-        local lengthSquared = delta:Dot(delta)
-        if lengthSquared > tolerance * tolerance then
-            for i, vertex in output.vertices do
-                if not used[i] or i == edge[1] or i == edge[2] then continue end
-                local t = (vertex - a):Dot(delta) / lengthSquared
-                if t > tolerance / math.sqrt(lengthSquared) and t < 1 - tolerance / math.sqrt(lengthSquared)
-                    and (vertex - (a + delta * t)).Magnitude <= tolerance then
-                    junctions += 1
-                    junctionDetails[#junctionDetails + 1] = string.format('edge %d:%d vertex %d t=%.6f at %s',
-                        edge[1], edge[2], i, t, tostring(vertex))
-                end
-            end
-        end
-    end
-
-    local result = FORM.validate(output)
-    local issueDetails = {}
+    local remaining, junctionDetails = junctions(output, tolerance)
+    local validation = FORM.validate(output)
     local issueCounts = {}
-    for _, issue in result.issues do
+    local issueDetails = {}
+
+    for _, issue in validation.issues do
         issueCounts[issue.code] = (issueCounts[issue.code] or 0) + 1
-        if issue.code == 'NON_MANIFOLD_EDGE' or issue.code == 'INCONSISTENT_WINDING' then
+        if (issue.code == 'NON_MANIFOLD_EDGE' or issue.code == 'INCONSISTENT_WINDING')
+            and #issueDetails < 12 then
             local first, second = string.match(tostring(issue.index), '^(%d+):(%d+)$')
             local a, b = tonumber(first), tonumber(second)
             if a and b then
@@ -168,16 +266,20 @@ function Weld.build(surface, tolerance)
         end
     end
 
+    local bows = fanDefects(output)
+    if bows > 0 then issueCounts.BOWTIE_VERTEX = bows end
+
     return output, {
-        valid = result.ok and junctions == 0 and converged,
-        issues = result.issues,
+        valid = validation.ok and converged and remaining == 0 and bows == 0,
+        issues = validation.issues,
         issueCounts = issueCounts,
         issueDetails = issueDetails,
-        tJunctions = junctions,
+        tJunctions = remaining,
         junctionDetails = junctionDetails,
-        collapsedFaces = collapsed,
-        repairedJunctions = resolved,
-        converged = converged and junctions == 0,
+        collapsedFaces = removed,
+        repairedJunctions = repaired,
+        converged = converged and remaining == 0,
+        bowtieVertices = bows,
         verticesBefore = #surface.vertices,
         verticesAfter = #output.vertices,
         trianglesAfter = #output.triangles,
