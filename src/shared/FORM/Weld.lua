@@ -68,6 +68,60 @@ function Weld.build(surface, tolerance)
         end
     end
 
+    local function splitJunctions()
+        local resolved = 0
+        for pass = 1, 12 do
+            local changed = false
+            local nextTriangles = {}
+
+            for _, face in output.triangles do
+                local bestEdge, bestVertex, bestT
+
+                for edgeIndex = 1, 3 do
+                    local a = face[edgeIndex]
+                    local b = face[edgeIndex % 3 + 1]
+                    local start = output.vertices[a]
+                    local delta = output.vertices[b] - start
+                    local lengthSquared = delta:Dot(delta)
+
+                    if lengthSquared > tolerance * tolerance then
+                        local margin = tolerance / math.sqrt(lengthSquared)
+                        for index, vertex in output.vertices do
+                            if index == a or index == b or index == face[edgeIndex % 3 + 2] then continue end
+                            local t = (vertex - start):Dot(delta) / lengthSquared
+
+                            if t > margin and t < 1 - margin
+                                and (vertex - (start + delta * t)).Magnitude <= tolerance then
+                                if not bestT or t < bestT then
+                                    bestEdge, bestVertex, bestT = edgeIndex, index, t
+                                end
+                            end
+                        end
+                    end
+                end
+
+                if bestEdge then
+                    local a = face[bestEdge]
+                    local b = face[bestEdge % 3 + 1]
+                    local third = face[bestEdge % 3 + 2]
+                    nextTriangles[#nextTriangles + 1] = {a, bestVertex, third}
+                    nextTriangles[#nextTriangles + 1] = {bestVertex, b, third}
+                    resolved += 1
+                    changed = true
+                else
+                    nextTriangles[#nextTriangles + 1] = face
+                end
+            end
+
+            output.triangles = nextTriangles
+            if not changed then return resolved, true end
+        end
+
+        return resolved, false
+    end
+
+    local resolved, converged = splitJunctions()
+
     local edges = {}
     for _, face in output.triangles do
         for i = 1, 3 do
@@ -96,10 +150,12 @@ function Weld.build(surface, tolerance)
 
     local result = FORM.validate(output)
     return output, {
-        valid = result.ok and junctions == 0 and collapsed == 0,
+        valid = result.ok and junctions == 0 and converged,
         issues = result.issues,
         tJunctions = junctions,
         collapsedFaces = collapsed,
+        repairedJunctions = resolved,
+        converged = converged,
         verticesBefore = #surface.vertices,
         verticesAfter = #output.vertices,
         trianglesAfter = #output.triangles,
