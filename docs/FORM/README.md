@@ -159,3 +159,11 @@ The 22:10 Studio run passed rectangular and drilled unified boundary tests. Mach
 This is a **bounded float32 geometry workaround**, not exact convex arithmetic. If accumulated drift routinely approaches 0.01 mm, the correct next architectural change is a high-precision canonical geometry representation rather than further widening tolerances.
 
 **Runtime verification:** the lineage patch has been committed but has not yet been tested in Roblox Studio.
+
+## Studio integration: combined operations now validated; direct convex finishing
+
+The 22:21 Studio run established successful **runtime** results (not just reference checks) for 12-sided through drilling, a blind rectangular pocket, a rounded through-slot, the combined 796-triangle workpiece (Euler -2), a saw cut after undo, and the 45-degree chamfer (Euler 2). The only remaining failure at that point was faceted fillet reconstruction: the fillet removed 168.0681 mm³, but rebuilding the exterior from overlapping large half-space proxy cutters resulted in 12 non-manifold edges and 12 bowtie vertices.
+
+`Machine:mesh()` now uses the **validated native convex-piece mesh directly** whenever a machining state consists of exactly one convex piece with matching volume and Euler characteristic 2. This avoids an unnecessary second Boolean representation of a filleted or chamfered solid. Multiple-piece machined models continue using the original-stock-plus-cutter-history reconstruction pipeline. Regression tests require both chamfer and fillet to select this direct mesh path.
+
+**Verification:** direct convex fast path committed, but its Roblox Studio runtime test has not yet been run. Previous Studio results remain authoritative for the earlier completed operations.
