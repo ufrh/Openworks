@@ -456,6 +456,7 @@ local function startFabrication(player, material, tool)
         axis = 'X',
         roll = 0,
         awaitRelease = false,
+        fileSide = 1,
         lastMove = 0,
     }
 
@@ -497,14 +498,26 @@ local function cutSheet(state)
     end
 
     if state.kind == 'File' then
-        local shave = math.min(0.025, work.Size.Y * 0.12)
-        if work.Size.Y - shave < 0.06 then
-            return nil, 'Sheet is too thin to file further'
+        local size = work.Size
+        local axis = state.axis
+        local side = state.fileSide
+        local span = if axis == 'X' then size.X else size.Z
+        local shave = math.min(0.024, span * 0.08)
+        if span - shave < 0.18 then
+            return nil, 'Edge is too narrow to file any further'
         end
-        work.Size -= Vector3.new(0, shave, 0)
-        work.CFrame *= CFrame.new(0, -shave * 0.5, 0)
+
+        if axis == 'X' then
+            work.Size = Vector3.new(size.X - shave, size.Y, size.Z)
+            work.CFrame *= CFrame.new(-side * shave * 0.5, 0, 0)
+        else
+            work.Size = Vector3.new(size.X, size.Y, size.Z - shave)
+            work.CFrame *= CFrame.new(0, 0, -side * shave * 0.5)
+        end
+
         work:SetAttribute('FilePasses', (work:GetAttribute('FilePasses') or 0) + 1)
-        return work, 'Filed the surface; continue working or press Esc'
+        work:SetAttribute('LastFiledEdge', axis .. if side == 1 then '+' else '-')
+        return work, 'Edge filed. Move to another edge or press Esc'
     end
 
     local FORM = require(Openworks:WaitForChild('FORM'))
@@ -581,9 +594,10 @@ local function cutSheet(state)
     return work, 'Cut complete. Move the guide for another cut or press Esc'
 end
 
-local function moveFabrication(player, state, stroke, offset, axis, isDown)
+local function moveFabrication(player, state, stroke, offset, axis, isDown, fileSide)
     if not finite(stroke) or not finite(offset)
-        or (axis ~= 'X' and axis ~= 'Z') or type(isDown) ~= 'boolean' then
+        or (axis ~= 'X' and axis ~= 'Z') or type(isDown) ~= 'boolean'
+        or (fileSide ~= 1 and fileSide ~= -1) then
         return
     end
 
@@ -605,12 +619,26 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown)
     state.offset = math.clamp(offset, -maximum, maximum)
     stroke = math.clamp(stroke, -1, 1)
 
-    local travel = if axis == 'X' then Vector3.new(0, 0, stroke * 0.9)
-        else Vector3.new(stroke * 0.9, 0, 0)
-    local cross = if axis == 'X' then Vector3.new(state.offset, 0, 0)
-        else Vector3.new(0, 0, state.offset)
+    state.fileSide = fileSide
+
+    local travelLength = if axis == 'X' then size.Z else size.X
+    local travelRange = math.min(0.9, math.max(0.2, travelLength * 0.35))
+    local travel = if axis == 'X' then Vector3.new(0, 0, stroke * travelRange)
+        else Vector3.new(stroke * travelRange, 0, 0)
+
+    local cross
+    if state.kind == 'File' then
+        cross = if axis == 'X'
+            then Vector3.new(fileSide * (size.X * 0.5 + 0.012), 0, 0)
+            else Vector3.new(0, 0, fileSide * (size.Z * 0.5 + 0.012))
+    else
+        cross = if axis == 'X' then Vector3.new(state.offset, 0, 0)
+            else Vector3.new(0, 0, state.offset)
+    end
+
+    local height = if state.kind == 'File' then 0.015 else 0.12
     local pos = work.CFrame:PointToWorldSpace(cross + travel
-        + Vector3.new(0, size.Y * 0.5 + 0.12, 0))
+        + Vector3.new(0, size.Y * 0.5 + height, 0))
 
     if (pos - root.Position).Magnitude > 30 then
         remote:FireClient(player, 'Feedback', 'Workpiece is out of reach')
