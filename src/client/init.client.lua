@@ -23,7 +23,7 @@ local panel = Instance.new('Frame')
 panel.Name = 'Tools'
 panel.AnchorPoint = Vector2.new(0, 1)
 panel.Position = UDim2.new(0, 24, 1, -24)
-panel.Size = UDim2.fromOffset(300, 412)
+panel.Size = UDim2.fromOffset(300, 468)
 panel.BackgroundColor3 = Color3.fromRGB(24, 28, 29)
 panel.BackgroundTransparency = 0.08
 panel.BorderSizePixel = 0
@@ -140,6 +140,15 @@ local commands = {
         return machine:apply({kind = 'slot', from = Vector3.new(-32, 0, -10),
             to = Vector3.new(-17, 0, -10), radius = 3, height = 70, segments = 12})
     end,
+    profile = function()
+        return machine:apply({kind = 'profile',
+            points = {
+                Vector3.new(-29, 0, 12),
+                Vector3.new(-13, 0, 12),
+                Vector3.new(-13, 0, 1),
+            },
+            radius = 2.5, height = 70, segments = 12})
+    end,
     chamfer = function()
         return machine:apply({kind = 'chamfer', axisA = 'X', signA = 1,
             axisB = 'Z', signB = 1, distance = 4})
@@ -176,6 +185,7 @@ end
 button('Drill', '[1]  Drill 8 mm through-hole', function() run('drill') end)
 button('Pocket', '[2]  Mill a rectangular pocket', function() run('pocket') end)
 button('Slot', '[3]  Cut a rounded through-slot', function() run('slot') end)
+button('Profile', '[7]  Sweep elbow milling path', function() run('profile') end)
 button('Chamfer', '[4]  Chamfer outer edge', function() run('chamfer') end)
 button('Fillet', '[5]  Faceted outer fillet', function() run('fillet') end)
 button('Saw', '[6]  Trim right edge', function() run('saw') end)
@@ -191,6 +201,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
     elseif key == Enum.KeyCode.Four then run('chamfer')
     elseif key == Enum.KeyCode.Five then run('fillet')
     elseif key == Enum.KeyCode.Six then run('saw')
+    elseif key == Enum.KeyCode.Seven then run('profile')
     elseif key == Enum.KeyCode.Z then run('undo')
     elseif key == Enum.KeyCode.Y then run('redo')
     elseif key == Enum.KeyCode.R then run('reset')
