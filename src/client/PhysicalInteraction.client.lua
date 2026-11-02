@@ -15,7 +15,40 @@ local held
 local dragging
 local fabrication
 local pendingTool
+local fabricationCollision
 local elapsed = 0
+
+local function applyFabricationCollision(entries)
+    fabricationCollision = {}
+    for _, entry in entries do
+        local part = entry[1]
+        if typeof(part) == 'Instance' and part:IsA('BasePart') then
+            fabricationCollision[part] = {
+                collide = entry[2],
+                touch = entry[3],
+                query = entry[4],
+            }
+            part.CanCollide = false
+            part.CanTouch = false
+            part.CanQuery = false
+        end
+    end
+end
+
+local function restoreFabricationCollision()
+    if not fabricationCollision then return end
+
+    for part, original in fabricationCollision do
+        if part.Parent then
+            part.CanQuery = true
+            part.CanCollide = original.collide
+            part.CanTouch = original.touch
+            part.CanQuery = original.query
+        end
+    end
+
+    fabricationCollision = nil
+end
 
 local guide = Instance.new('Part')
 guide.Name = 'OpenworksCutGuide'
@@ -189,7 +222,7 @@ UserInputService.InputChanged:Connect(function(input)
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
                 fabrication.offset += input.Delta.X * 0.006
             elseif fabrication.down then
-                fabrication.stroke = math.clamp(fabrication.stroke + input.Delta.X * 0.012, -1, 1)
+                fabrication.stroke = math.clamp(fabrication.stroke + input.Delta.X * 0.03, -1, 1)
             else
                 fabrication.pointerMoved = true
             end
@@ -241,7 +274,7 @@ UserInputService.WindowFocusReleased:Connect(function()
     end
 end)
 
-remote.OnClientEvent:Connect(function(action, a, b, c)
+remote.OnClientEvent:Connect(function(action, a, b, c, d)
     if action == 'DragStarted' then
         if not held or held.part ~= a then
             remote:FireServer('End')
@@ -262,6 +295,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c)
         end
     elseif action == 'FabricationStarted' then
         pendingTool = nil
+        applyFabricationCollision(d or {})
         fabrication = {
             kind = a, material = b, tool = c,
             down = false, stroke = 0, offset = 0, axis = 'X',
@@ -280,6 +314,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c)
             inspector:status('Manual passes: ' .. math.floor(a * 100) .. '%')
         end
     elseif action == 'MachiningCompleted' then
+        restoreFabricationCollision()
         guide.Parent = nil
         fabrication = nil
         pendingTool = nil
@@ -294,6 +329,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c)
         pendingTool = nil
         if inspector.material then inspector:status(a) end
     elseif action == 'Ended' then
+        restoreFabricationCollision()
         dragging = nil
         if fabrication then
             if fabrication.previousMouseBehavior then
@@ -325,6 +361,16 @@ ContextActionService:BindActionAtPriority('OpenworksDragDepth', function(_, stat
 end, false, 3000, Enum.UserInputType.MouseWheel)
 
 RunService.RenderStepped:Connect(function(dt)
+    if fabricationCollision then
+        for part in fabricationCollision do
+            if part.Parent then
+                part.CanCollide = false
+                part.CanTouch = false
+                part.CanQuery = false
+            end
+        end
+    end
+
     if inspector.material and not fabrication and os.clock() - inspector.lastRefresh > 0.65 then
         inspector.lastRefresh = os.clock()
         inspector:refreshTools()
