@@ -25,6 +25,7 @@ remote.OnServerEvent:Connect(function(player, action, ...)
 end)
 
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
+local WorkSurface = require(Openworks:WaitForChild('FORMWorkSurface'))
 local active = {}
 local locked = {}
 local modifiedSolids = setmetatable({}, {__mode = 'k'})
@@ -272,6 +273,51 @@ local function supportOnWorkbench(item)
     end
 end
 
+local function seatMaterial(part, desired)
+    local bench = workspace:FindFirstChild('Workbench')
+    if not bench or not part:IsA('BasePart') then return false end
+
+    local nearest
+    local best = math.huge
+    for _, surface in bench:GetDescendants() do
+        if surface:IsA('BasePart') and surface.Name:lower() == 'surface' then
+            local localPoint = surface.CFrame:PointToObjectSpace(desired)
+            local dx = math.max(0, math.abs(localPoint.X) - surface.Size.X * 0.5)
+            local dz = math.max(0, math.abs(localPoint.Z) - surface.Size.Z * 0.5)
+            local score = dx * dx + dz * dz
+            if score < best then nearest, best = surface, score end
+        end
+    end
+    if not nearest then return false end
+
+    local pivot = part.CFrame
+    local axes = {pivot.RightVector, pivot.UpVector, pivot.LookVector}
+    local half = part.Size * 0.5
+    local sizes = {half.X, half.Y, half.Z}
+
+    local function projection(direction)
+        local amount = 0
+        for i, axis in axes do amount += math.abs(axis:Dot(direction)) * sizes[i] end
+        return amount
+    end
+
+    local reachX = projection(nearest.CFrame.RightVector)
+    local reachY = projection(nearest.CFrame.UpVector)
+    local reachZ = projection(nearest.CFrame.LookVector)
+    local localPoint = nearest.CFrame:PointToObjectSpace(desired)
+    local limitX = math.max(0, nearest.Size.X * 0.5 - reachX - 0.035)
+    local limitZ = math.max(0, nearest.Size.Z * 0.5 - reachZ - 0.035)
+
+    local position = nearest.CFrame:PointToWorldSpace(Vector3.new(
+        math.clamp(math.round(localPoint.X / 0.04) * 0.04, -limitX, limitX),
+        nearest.Size.Y * 0.5 + reachY + 0.045,
+        math.clamp(math.round(localPoint.Z / 0.04) * 0.04, -limitZ, limitZ)
+    ))
+
+    part.CFrame = CFrame.new(position) * pivot.Rotation
+    return true
+end
+
 local function finish(player)
     local state = active[player]
     if not state then return end
@@ -433,6 +479,8 @@ local function startFabrication(player, material, tool)
     end
 
     local restingFrame = tool:GetPivot()
+    local toolBounds, toolBoundsSize = if tool:IsA('Model')
+        then tool:GetBoundingBox() else tool.CFrame, tool.Size
     local contact = toolContact(tool, part, kind)
 
     local state = {
@@ -443,6 +491,8 @@ local function startFabrication(player, material, tool)
         material = material,
         work = work,
         restingFrame = restingFrame,
+        toolBoundsOffset = restingFrame:ToObjectSpace(toolBounds),
+        toolBoundsSize = toolBoundsSize,
         contactOffset = contact:ToObjectSpace(restingFrame),
         currentFrame = restingFrame,
         goalFrame = restingFrame,
@@ -460,6 +510,8 @@ local function startFabrication(player, material, tool)
         fileSide = 1,
         fileShape = 'Round',
         fileRadius = 1.25,
+        positioning = false,
+        manualRoll = false,
         processing = false,
         lastMove = 0,
     }
@@ -516,10 +568,7 @@ local function cutSheet(state)
         item.frame = work.CFrame
 
         local axis, side = state.axis, state.fileSide
-        local half = work.Size * 0.5
-        local target = if axis == 'X' then Vector3.new(side * half.X, half.Y, 0)
-            else Vector3.new(0, half.Y, side * half.Z)
-        local worldHit = work.CFrame:PointToWorldSpace(target)
+        local _, _, _, worldHit = WorkSurface.path(work, axis, side, 0, 0.015)
         local spec, failure = FileShape.preview(item, worldHit, state.fileRadius)
         if not spec then return nil, failure end
 
@@ -647,6 +696,8 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         return
     end
 
+    if state.positioning then return end
+
     local now = os.clock()
     if now - state.lastMove < 1 / 40 then return end
     state.lastMove = now
@@ -660,24 +711,23 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
 
     state.fileSide = fileSide
 
-    local travelLength = if axis == 'X' then size.Z else size.X
-    local travelRange = math.max(0.12, travelLength * 0.5 - 0.04)
-    local travel = if axis == 'X' then Vector3.new(0, 0, stroke * travelRange)
-        else Vector3.new(stroke * travelRange, 0, 0)
-
-    local cross
+    local pos, forward, upward
     if state.kind == 'File' then
-        cross = if axis == 'X'
-            then Vector3.new(fileSide * (size.X * 0.5 + 0.012), 0, 0)
-            else Vector3.new(0, 0, fileSide * (size.Z * 0.5 + 0.012))
+        pos, forward, upward = WorkSurface.path(work, axis, fileSide, stroke, 0.015)
     else
-        cross = if axis == 'X' then Vector3.new(state.offset, 0, 0)
+        local travelLength = if axis == 'X' then size.Z else size.X
+        local travelRange = math.max(0.12, travelLength * 0.5 - 0.04)
+        local travel = if axis == 'X' then Vector3.new(0, 0, -stroke * travelRange)
+            else Vector3.new(-stroke * travelRange, 0, 0)
+        local cross = if axis == 'X' then Vector3.new(state.offset, 0, 0)
             else Vector3.new(0, 0, state.offset)
-    end
 
-    local height = if state.kind == 'File' then 0.015 else 0.12
-    local pos = work.CFrame:PointToWorldSpace(cross + travel
-        + Vector3.new(0, size.Y * 0.5 + height, 0))
+        pos = work.CFrame:PointToWorldSpace(cross + travel
+            + Vector3.new(0, size.Y * 0.5 + 0.12, 0))
+        forward = if axis == 'X' then work.CFrame.LookVector
+            else work.CFrame.RightVector
+        upward = work.CFrame.UpVector
+    end
 
     if (pos - root.Position).Magnitude > 30 then
         remote:FireClient(player, 'Feedback', 'Workpiece is out of reach')
@@ -685,14 +735,41 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         return
     end
 
-    local forward = if axis == 'X' then work.CFrame.LookVector
-        else work.CFrame.RightVector
-    local upward = work.CFrame.UpVector
-    local contactFrame = CFrame.fromMatrix(pos, forward,
+    local orientation = CFrame.fromMatrix(pos, forward,
         upward, forward:Cross(upward))
-        * CFrame.Angles(math.rad(state.roll), 0, 0)
 
-    state.goalFrame = contactFrame * state.contactOffset
+    local function projectedGoal(roll)
+        local contact = orientation * CFrame.Angles(math.rad(roll), 0, 0)
+        local goal = contact * state.contactOffset
+        local bounds = goal * state.toolBoundsOffset
+        local half = state.toolBoundsSize * 0.5
+        local lowest = bounds.Position.Y
+            - math.abs(bounds.RightVector.Y) * half.X
+            - math.abs(bounds.UpVector.Y) * half.Y
+            - math.abs(bounds.LookVector.Y) * half.Z
+        return goal, lowest
+    end
+
+    local target, lowest = projectedGoal(state.roll)
+    if state.kind == 'Saw' and not state.manualRoll then
+        local alternative, alternativeLow = projectedGoal(state.roll + 180)
+        if alternativeLow > lowest + 0.04 then
+            target, lowest = alternative, alternativeLow
+        end
+    end
+
+    if state.kind == 'Saw' then
+        local half = size * 0.5
+        local top = work.Position.Y
+            + math.abs(work.CFrame.RightVector.Y) * half.X
+            + math.abs(work.CFrame.UpVector.Y) * half.Y
+            + math.abs(work.CFrame.LookVector.Y) * half.Z
+        if lowest < top + 0.025 then
+            target += Vector3.new(0, top + 0.025 - lowest, 0)
+        end
+    end
+
+    state.goalFrame = target
 
     if not isDown then
         state.awaitRelease = false
@@ -787,6 +864,7 @@ onRequest = function(player, action, ...)
         local step = ...
         if step == 1 or step == -1 then
             state.roll = (state.roll + step * 90) % 360
+            state.manualRoll = true
             state.lastInput = os.clock()
         end
     end
