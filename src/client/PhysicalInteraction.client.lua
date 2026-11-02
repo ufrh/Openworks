@@ -423,6 +423,12 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
     elseif action == 'MaterialPositionChanged' then
         if fabrication then
             fabrication.pointerMoved = true
+            if fabrication.kind == 'File' and fabrication.material:IsA('BasePart') then
+                local face = WorkSurface.face(fabrication.material)
+                if fabrication.axis == face then
+                    fabrication.axis = if face == 'X' then 'Z' else 'X'
+                end
+            end
         end
     elseif action == 'Progress' then
         if fabrication then
