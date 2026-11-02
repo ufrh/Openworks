@@ -11,6 +11,9 @@ local part
 local editable
 local busy = false
 local smoothAngle = 30
+local materialMode = 1
+local materialModes = {Enum.Material.Metal, Enum.Material.SmoothPlastic, Enum.Material.Neon}
+local materialLabels = {'Metal reflection', 'SmoothPlastic lighting', 'Neon unlit geometry'}
 local position = CFrame.new(0, 7, -12)
 
 local player = Players.LocalPlayer
@@ -24,7 +27,7 @@ local panel = Instance.new('Frame')
 panel.Name = 'Tools'
 panel.AnchorPoint = Vector2.new(0, 1)
 panel.Position = UDim2.new(0, 24, 1, -24)
-panel.Size = UDim2.fromOffset(300, 510)
+panel.Size = UDim2.fromOffset(300, 553)
 panel.BackgroundColor3 = Color3.fromRGB(24, 28, 29)
 panel.BackgroundTransparency = 0.08
 panel.BorderSizePixel = 0
@@ -62,7 +65,7 @@ local function textLabel(name, value, height, size, color)
 end
 
 textLabel('Title', 'OPENWORKS  /  FORM', 27, 21, Color3.fromRGB(242, 231, 206))
-local status = textLabel('Status', '', 50, 13, Color3.fromRGB(167, 192, 174))
+local status = textLabel('Status', '', 62, 13, Color3.fromRGB(167, 192, 174))
 
 local function button(name, label, callback)
     local control = Instance.new('TextButton')
@@ -103,17 +106,22 @@ local function refresh(message)
     if ok and not solid then warn('[FORM] Unified reconstruction rejected: ' .. tostring(reason)) end
 
     local success, result = pcall(function()
-        local newPart, newEditable
+        local newPart, newEditable, renderStats
         if ok and solid then
-            newPart, newEditable = Renderer.create(solid, 0.04, smoothAngle)
+            newPart, newEditable, renderStats = Renderer.create(solid, 0.04, smoothAngle)
         else
-            newPart, newEditable = Renderer.createMany(machine:pieces(), 0.04, smoothAngle)
+            newPart, newEditable, renderStats = Renderer.createMany(machine:pieces(), 0.04, smoothAngle)
+        end
+        if renderStats and renderStats.planarization then
+            local planar = renderStats.planarization
+            print(string.format('[FORM:Render] Flattened %d display vertices across %d planar groups; max shift %.6f mm; conflicts %d',
+                planar.snappedVertices, planar.planeGroups, planar.maxAxisShift, planar.conflicts))
         end
         part, editable = newPart, newEditable
         part.Name = 'OPENWORKS Machined Workpiece'
         part.Anchored = true
         part.CanCollide = false
-        part.Material = Enum.Material.Metal
+        part.Material = materialModes[materialMode]
         part.Color = Color3.fromRGB(78, 156, 120)
         part.CFrame = position
         part.Parent = workspace
@@ -122,8 +130,9 @@ local function refresh(message)
 
     local info = machine:status()
     local meshLabel = if ok and solid then 'UNIFIED' else 'FRAGMENT FALLBACK'
-    status.Text = string.format('%s  |  %.1f mm^3 left\n%d operations  |  %d convex pieces\n%s',
-        meshLabel, info.volume, info.operations, info.pieceCount, message or 'Ready')
+    status.Text = string.format('%s  |  %.1f mm^3 left\n%d operations  |  %d convex pieces\n%s  |  %s',
+        meshLabel, info.volume, info.operations, info.pieceCount,
+        message or 'Ready', materialLabels[materialMode])
     print(string.format('[FORM] %s: %d operations, %d convex pieces, %.4f mm^3 remaining',
         meshLabel, info.operations, info.pieceCount, info.volume))
 end
@@ -197,6 +206,14 @@ button('Shading', '[N]  Compare flat / smooth normals', function()
     smoothAngle = if smoothAngle == 30 then 0 else 30
     refresh(if smoothAngle == 0 then 'Flat shading diagnostic' else 'Protected planar smoothing')
 end)
+button('Material', '[M]  Metal / plastic / neon diagnostic', function()
+    materialMode = materialMode % #materialModes + 1
+    if part then part.Material = materialModes[materialMode] end
+    print('[FORM:Render] Material diagnostic: ' .. materialLabels[materialMode])
+    local info = machine:status()
+    status.Text = string.format('%d operations  |  %d convex pieces\n%.1f mm^3 remaining\n%s',
+        info.operations, info.pieceCount, info.volume, materialLabels[materialMode])
+end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
@@ -210,6 +227,13 @@ UserInputService.InputBegan:Connect(function(input, processed)
     elseif key == Enum.KeyCode.Seven then run('profile')
     elseif key == Enum.KeyCode.Z then run('undo')
     elseif key == Enum.KeyCode.Y then run('redo')
+    elseif key == Enum.KeyCode.M then
+        materialMode = materialMode % #materialModes + 1
+        if part then part.Material = materialModes[materialMode] end
+        print('[FORM:Render] Material diagnostic: ' .. materialLabels[materialMode])
+        local info = machine:status()
+        status.Text = string.format('%d operations  |  %d convex pieces\n%.1f mm^3 remaining\n%s',
+            info.operations, info.pieceCount, info.volume, materialLabels[materialMode])
     elseif key == Enum.KeyCode.N then
         if not busy then
             smoothAngle = if smoothAngle == 30 then 0 else 30
