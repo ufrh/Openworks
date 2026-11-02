@@ -1,6 +1,7 @@
 local Players = game:GetService('Players')
 local RunService = game:GetService('RunService')
 local UserInputService = game:GetService('UserInputService')
+local ContextActionService = game:GetService('ContextActionService')
 
 local player = Players.LocalPlayer
 local Inspector = {}
@@ -54,6 +55,7 @@ function Inspector.new(onTool, onExit)
     self.distance = 8
     self.rightHeld = false
     self.middleHeld = false
+    self.previousMouseBehavior = nil
     self.connections = {}
     self.lastRefresh = 0
     self.tools = {}
@@ -108,14 +110,24 @@ function Inspector.new(onTool, onExit)
     end)
     close.LayoutOrder = 5
 
-    table.insert(self.connections, UserInputService.InputBegan:Connect(function(input, processed)
-        if not self.material or processed then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton2 then self.rightHeld = true end
-        if input.UserInputType == Enum.UserInputType.MouseButton3 then self.middleHeld = true end
+    table.insert(self.connections, UserInputService.InputBegan:Connect(function(input)
+        if not self.material then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            self.rightHeld = true
+            self.previousMouseBehavior = UserInputService.MouseBehavior
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+        elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
+            self.middleHeld = true
+        end
     end))
     table.insert(self.connections, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton2 then self.rightHeld = false end
-        if input.UserInputType == Enum.UserInputType.MouseButton3 then self.middleHeld = false end
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            self.rightHeld = false
+            UserInputService.MouseBehavior = self.previousMouseBehavior or Enum.MouseBehavior.Default
+            self.previousMouseBehavior = nil
+        elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
+            self.middleHeld = false
+        end
     end))
     table.insert(self.connections, UserInputService.InputChanged:Connect(function(input, processed)
         if not self.material then return end
@@ -133,7 +145,8 @@ function Inspector.new(onTool, onExit)
             end
         end
     end))
-    table.insert(self.connections, RunService.RenderStepped:Connect(function()
+    RunService:BindToRenderStep('OpenworksInspectionCamera',
+        Enum.RenderPriority.Camera.Value + 2, function()
         if not self.material then return end
         local origin = itemPosition(self.material)
         if not origin then self.onExit() return end
@@ -146,8 +159,10 @@ function Inspector.new(onTool, onExit)
             math.sin(self.pitch) * self.distance,
             math.cos(self.yaw) * horizontal
         )
+        camera.CameraType = Enum.CameraType.Scriptable
         camera.CFrame = CFrame.lookAt(focus + displacement, focus)
-    end))
+        camera.Focus = CFrame.new(focus)
+    end)
 
     return self
 end
@@ -205,10 +220,13 @@ function Inspector:open(material)
     camera.CameraType = Enum.CameraType.Scriptable
     camera.FieldOfView = 62
 
-    local ok, controls = pcall(function()
-        return require(player:WaitForChild('PlayerScripts'):WaitForChild('PlayerModule')):GetControls()
-    end)
-    if ok then self.controls = controls controls:Disable() end
+    ContextActionService:BindActionAtPriority('OpenworksInspectMovement',
+        function()
+            return Enum.ContextActionResult.Sink
+        end, false, 4000, Enum.KeyCode.W, Enum.KeyCode.A,
+        Enum.KeyCode.S, Enum.KeyCode.D, Enum.KeyCode.Space,
+        Enum.KeyCode.Up, Enum.KeyCode.Down,
+        Enum.KeyCode.Left, Enum.KeyCode.Right)
 
     self.name.Text = material.Name
     self.gui.Enabled = true
@@ -221,7 +239,7 @@ function Inspector:setTool(kind)
     self.progress.Text = ''
     self.title.Text = if kind then 'OPENWORKS / ' .. string.upper(kind) else 'OPENWORKS / INSPECT'
     self.instructions.Text = if kind then
-        'LMB + move mouse sideways: manual strokes\nSHIFT + move mouse: position cut\nQ: change cut axis | RMB: orbit | ESC: exit'
+        'LMB + move mouse sideways: manual strokes\nSHIFT + move mouse: position cut\nQ: turn cut 90° | RMB: orbit | ESC: exit'
         else 'RMB: orbit | MMB: pan | wheel: zoom\nChoose a physical tool resting on the table.'
     self.choices.Visible = kind == nil
     if not kind then self.tools = {} self:refreshTools() end
@@ -236,9 +254,14 @@ function Inspector:close()
     self.material = nil
     self.kind = nil
     self.gui.Enabled = false
+    local wasRightHeld = self.rightHeld
     self.rightHeld = false
     self.middleHeld = false
-    if self.controls then self.controls:Enable() self.controls = nil end
+    ContextActionService:UnbindAction('OpenworksInspectMovement')
+    if wasRightHeld or self.previousMouseBehavior then
+        UserInputService.MouseBehavior = self.previousMouseBehavior or Enum.MouseBehavior.Default
+        self.previousMouseBehavior = nil
+    end
     local camera = workspace.CurrentCamera
     camera.CameraType = self.savedType or Enum.CameraType.Custom
     if self.savedSubject then camera.CameraSubject = self.savedSubject end
