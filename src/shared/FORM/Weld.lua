@@ -134,6 +134,7 @@ function Weld.build(surface, tolerance)
     end
 
     local junctions = 0
+    local junctionDetails = {}
     for _, edge in edges do
         local a, b = output.vertices[edge[1]], output.vertices[edge[2]]
         local delta = b - a
@@ -145,12 +146,46 @@ function Weld.build(surface, tolerance)
                 if t > tolerance / math.sqrt(lengthSquared) and t < 1 - tolerance / math.sqrt(lengthSquared)
                     and (vertex - (a + delta * t)).Magnitude <= tolerance then
                     junctions += 1
+                    junctionDetails[#junctionDetails + 1] = string.format('edge %d:%d vertex %d t=%.6f at %s',
+                        edge[1], edge[2], i, t, tostring(vertex))
                 end
             end
         end
     end
 
     local result = FORM.validate(output)
+    local issueDetails = {}
+    for _, issue in result.issues do
+        if issue.code == 'NON_MANIFOLD_EDGE' or issue.code == 'INCONSISTENT_WINDING' then
+            local first, second = string.match(tostring(issue.index), '^(%d+):(%d+)
+    for _, issue in result.issues do
+        issueCounts[issue.code] = (issueCounts[issue.code] or 0) + 1
+    end
+    return output, {
+        valid = result.ok and junctions == 0 and converged,
+        issues = result.issues,
+        issueCounts = issueCounts,
+        issueDetails = issueDetails,
+        tJunctions = junctions,
+        junctionDetails = junctionDetails,
+        collapsedFaces = collapsed,
+        repairedJunctions = resolved,
+        converged = converged and junctions == 0,
+        verticesBefore = #surface.vertices,
+        verticesAfter = #output.vertices,
+        trianglesAfter = #output.triangles,
+    }
+end
+
+return Weld
+)
+            local a, b = tonumber(first), tonumber(second)
+            if a and b then
+                issueDetails[#issueDetails + 1] = string.format('%s %s: %s -> %s',
+                    issue.code, tostring(issue.index), tostring(output.vertices[a]), tostring(output.vertices[b]))
+            end
+        end
+    end
     local issueCounts = {}
     for _, issue in result.issues do
         issueCounts[issue.code] = (issueCounts[issue.code] or 0) + 1
