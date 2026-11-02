@@ -25,6 +25,19 @@ remote.OnServerEvent:Connect(function(player, action, ...)
 end)
 
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
+local ScorePath = require(Openworks:WaitForChild('ScorePath'))
+
+local function registerScorer(item)
+    if item and (item:IsA('Model') or item:IsA('BasePart')) then
+        item:SetAttribute('isTool', true)
+        item:SetAttribute('FabricationKind', 'Scorer')
+    end
+end
+
+registerScorer(workspace:FindFirstChild('Scorer'))
+workspace.ChildAdded:Connect(function(item)
+    if item.Name == 'Scorer' then registerScorer(item) end
+end)
 local active = {}
 local locked = {}
 local modifiedSolids = setmetatable({}, {__mode = 'k'})
@@ -88,8 +101,9 @@ end
 
 local function toolKind(item)
     local explicit = item:GetAttribute('FabricationKind')
-    if explicit == 'Saw' or explicit == 'File' then return explicit end
+    if explicit == 'Saw' or explicit == 'File' or explicit == 'Scorer' then return explicit end
     local name = item.Name:lower()
+    if name == 'scorer' then return 'Scorer' end
     if name:find('saw', 1, true) then return 'Saw' end
     if name:find('file', 1, true) then return 'File' end
 end
@@ -102,7 +116,9 @@ local function contactMarker(item, name)
 end
 
 local function toolContact(tool, part, kind)
-    local marker = contactMarker(tool, if kind == 'Saw' then 'BladeEdge' else 'FileFace')
+    local marker = contactMarker(tool,
+        if kind == 'Saw' then 'BladeEdge'
+        elseif kind == 'Scorer' then 'ScoreTip' else 'FileFace')
     if marker then return marker.WorldCFrame end
 
     local blade
@@ -453,7 +469,7 @@ local function startFabrication(player, material, tool)
     local root = rootOf(player)
 
     if not kind then
-        reject('Set FabricationKind to Saw or File')
+        reject('Set FabricationKind to Saw, File, or Scorer')
         return
     end
     if not work or not part or not root or not movable(tool)
@@ -757,6 +773,12 @@ local function cutSheet(state)
         }
     end
 
+    if work:GetAttribute(ScorePath.ATTRIBUTE) then
+        work:SetAttribute(ScorePath.ATTRIBUTE, nil)
+        local marks = work:FindFirstChild('OpenworksScoreMarks')
+        if marks then marks:Destroy() end
+    end
+
     fragment.Parent = work.Parent
     supportOnWorkbench(fragment)
     fragment.AssemblyLinearVelocity = Vector3.zero
@@ -788,6 +810,10 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.lastMove = now
 
     local size = work.Size
+    if state.kind == 'Saw' then
+        local aligned = ScorePath.straight(work, axis, offset, 0.12)
+        if aligned then offset = aligned end
+    end
     local span = if axis == 'X' then size.X else size.Z
     local maximum = math.max(0, span * 0.5 - 0.17)
     state.axis = axis
@@ -950,6 +976,106 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     if active[player] == state then
         remote:FireClient(player, 'MachiningCompleted', selected, message, aimWorld)
     end
+end
+
+local function drawScore(work, paths)
+    local previous = work:FindFirstChild('OpenworksScoreMarks')
+    if previous then previous:Destroy() end
+    local folder = Instance.new('Folder')
+    folder.Name = 'OpenworksScoreMarks'
+    folder.Parent = work
+
+    for _, path in paths do
+        local localNormal = ScorePath.normal(path.face, path.sign)
+        local worldNormal = work.CFrame:VectorToWorldSpace(localNormal)
+        local points = path.points
+        for i = 2, #points do
+            local a = work.CFrame:PointToWorldSpace(points[i - 1]) + worldNormal * 0.011
+            local b = work.CFrame:PointToWorldSpace(points[i]) + worldNormal * 0.011
+            local length = (b - a).Magnitude
+            if length < 0.006 then continue end
+
+            local groove = Instance.new('Part')
+            groove.Name = 'Score'
+            groove.Size = Vector3.new(0.014, 0.009, length)
+            groove.CFrame = CFrame.lookAt((a + b) * 0.5, b)
+            groove.Color = Color3.fromRGB(37, 48, 54)
+            groove.Material = Enum.Material.SmoothPlastic
+            groove.CanCollide = false
+            groove.CanTouch = false
+            groove.CanQuery = false
+            groove.Massless = true
+            groove.CastShadow = false
+            groove.Anchored = false
+            groove.Parent = folder
+
+            local weld = Instance.new('WeldConstraint')
+            weld.Part0 = work
+            weld.Part1 = groove
+            weld.Parent = groove
+        end
+    end
+end
+
+local function scorePosition(state, point)
+    local work = state.work
+    local face = state.score
+    if not face then return end
+    local up = work.CFrame:VectorToWorldSpace(ScorePath.normal(face.face, face.sign))
+    local world = work.CFrame:PointToWorldSpace(point) + up * 0.008
+    local forward = work.CFrame.RightVector
+    if math.abs(forward:Dot(up)) > 0.9 then forward = work.CFrame.LookVector end
+    state.goalFrame = CFrame.fromMatrix(world, forward, up, forward:Cross(up))
+        * state.contactOffset
+end
+
+local function beginScore(player, state, point)
+    local work = state.work
+    local face, sign = ScorePath.face(work)
+    if state.positioning or state.processing or not ScorePath.valid(work, point, face, sign) then return end
+    if (work.CFrame:PointToWorldSpace(point) - rootOf(player).Position).Magnitude > 27 then return end
+    state.score = {face = face, sign = sign, points = {point}}
+    state.lastScoreAt = os.clock()
+    scorePosition(state, point)
+end
+
+local function extendScore(state, point)
+    local score = state.score
+    if not score or state.positioning or state.processing then return end
+    local work = state.work
+    local face, sign = ScorePath.face(work)
+    if face ~= score.face or sign ~= score.sign
+        or not ScorePath.valid(work, point, face, sign) then return end
+
+    local now = os.clock()
+    if now - (state.lastScoreAt or 0) < 1 / 45 then return end
+    state.lastScoreAt = now
+
+    local points = score.points
+    if #points >= ScorePath.MAX_POINTS then return end
+    local previous = points[#points]
+    local movement = point - previous
+    if movement.Magnitude < 0.018 then return end
+    if movement.Magnitude > 0.3 then
+        point = previous + movement.Unit * 0.3
+    end
+    points[#points + 1] = point
+    scorePosition(state, point)
+end
+
+local function endScore(player, state)
+    local score = state.score
+    state.score = nil
+    if not score or #score.points < 2 then return end
+    local simplified = ScorePath.reduce(score.points, 0.014)
+    if #simplified < 2 or (simplified[1] - simplified[#simplified]).Magnitude < 0.08 then return end
+    score.points = simplified
+    local paths = ScorePath.read(state.work)
+    paths[#paths + 1] = score
+    while #paths > ScorePath.MAX_PATHS do table.remove(paths, 1) end
+    ScorePath.write(state.work, paths)
+    drawScore(state.work, paths)
+    remote:FireClient(player, 'ScoreSaved', #simplified)
 end
 
 local function setMaterialPositioning(player, state, value)
@@ -1137,7 +1263,17 @@ onRequest = function(player, action, ...)
         local delta = point - root.Position
         if delta.Magnitude > 28 then point = root.Position + delta.Unit * 28 end
         state.target.CFrame = CFrame.new(point) * rotation
-    elseif action == 'FabricationMove' and state.mode == 'Fabrication' then
+    elseif action == 'FabricationScoreBegin' and state.mode == 'Fabrication'
+        and state.kind == 'Scorer' then
+        beginScore(player, state, ...)
+    elseif action == 'FabricationScoreMove' and state.mode == 'Fabrication'
+        and state.kind == 'Scorer' then
+        extendScore(state, ...)
+    elseif action == 'FabricationScoreEnd' and state.mode == 'Fabrication'
+        and state.kind == 'Scorer' then
+        endScore(player, state)
+    elseif action == 'FabricationMove' and state.mode == 'Fabrication'
+        and state.kind ~= 'Scorer' then
         moveFabrication(player, state, ...)
     elseif action == 'FabricationTarget' and state.mode == 'Fabrication' then
         switchFabricationMaterial(player, state, ...)
