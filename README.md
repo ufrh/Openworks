@@ -9,7 +9,7 @@ An open-ended Roblox engineering and manufacturing sandbox.
 1. Clone `https://github.com/ufrh/Openworks.git` on Windows.
 2. Install Git and Rojo and its Studio plugin (Foreman is supported).
 3. Open your Openworks place in Roblox Studio.
-4. Run `START_OPENWORKS.bat`, select your branch, and connect the Studio Rojo plugin to `localhost:34872`.
+4. Run `START_OPENWORKS.bat`, select `dev`, and connect the Studio Rojo plugin to `localhost:34872`.
 5. Run `STOP_OPENWORKS.bat` when finished.
 6. Run `PUSH_OPENWORKS.bat` to commit and push changes.
 
@@ -23,14 +23,14 @@ START supports current branch, switching branches, and a **destructive** opt-in 
 - `scripts` -> project startup, shutdown, Git live sync and pushing
 - `docs` -> architecture, decisions and milestones
 
-## Current prototype
+## Current status — interaction reset
 
-**FORM** is an implemented experimental machining kernel with validated convex cutting, subtractive drilling, pockets, slots, saw cuts, chamfers, faceted fillets, signed-volume checks, and unified watertight boundary reconstruction for supported cutters.
+The old gameplay interaction prototype has been retired from `dev`. Its stock creation UI, saw/file UI, equipped-tool/backpack code, dragging controls, fabrication tool visuals/motion, timeline editor, and WorkshopStorage remote were removed. The client bootstrap no longer creates UI, spawns stock, or starts fabrication. No replacement interaction or detection code is installed yet.
 
-**Workshop phase** adds a playable parameter editor, stock setup, editable/reorderable operation timeline, tool-path overlays, project JSON import/export and optional per-player server save/load. Start Play after connecting Rojo; the new editor replaces the old preset-only demonstration.
+The **FORM geometry kernel** remains, as do reusable pure geometry, material, and project-operation modules (`Stock`, `SawCut`, `SawTube`, `FileShape`, `Workshop`), the optional `FORMRenderer` adapter, and headless geometry tests.
 
-- [Machining workshop guide](docs/WORKSHOP.md)
-- [FORM kernel specification](docs/FORM/SPEC.md)
-- [Geometry history and diagnostics](docs/FORM/README.md)
+The next prototype will be built around the player's Studio-authored `Workspace.Workbench`, whose parts named `surface` will be the references for automatically generated workspace detection proxies. Physical saw and file models are rigid assemblies; there will be no Roblox Tool equip workflow. Implement detection in a separate step rather than restoring the retired UI.
 
-The geometry and manufacturing systems are **prototypes**. Studio runtime tests are necessary; source commits do not imply that a new feature has passed live verification. This is not a production CAD or CNC control system.
+Older machining/workshop documents under `docs/` describe experiments and do **not** mean those interfaces are active.
+
+**Verification:** this change is a source reset, not a Roblox Studio runtime test.
