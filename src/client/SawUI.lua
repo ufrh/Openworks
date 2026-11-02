@@ -200,6 +200,8 @@ function SawUI.start(workpieces)
             }
             groove = Instance.new('Part')
             groove.Name = 'Saw Kerf Progress'
+            groove.Transparency = 1
+            groove.Size = Vector3.new(0.02, 0.02, 0.02)
             groove.Anchored = true
             groove.CanCollide = false
             groove.CanTouch = false
@@ -347,6 +349,7 @@ function SawUI.start(workpieces)
             end
             if groove then
                 local plan = operation.plan
+                groove.Transparency = 0.25
                 local visibleDepth = math.max(0.006, operation.advanced)
                 groove.Size = Vector3.new(math.max(0.08, plan.across), visibleDepth,
                     SawCut.KERF_MM * 0.04 + 0.014)
