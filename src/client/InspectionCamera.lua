@@ -45,13 +45,14 @@ local function makeButton(parent, text, callback)
     return button
 end
 
-function Inspector.new(onTool, onExit, onFileSettings, onMaterial, onSawFlip)
+function Inspector.new(onTool, onExit, onFileSettings, onMaterial, onSawFlip, onMaterialFlip)
     local self = setmetatable({}, Inspector)
     self.onTool = onTool
     self.onExit = onExit
     self.onFileSettings = onFileSettings
     self.onMaterial = onMaterial
     self.onSawFlip = onSawFlip
+    self.onMaterialFlip = onMaterialFlip
     self.materials = {}
     self.fileShape = 'Round'
     self.fileRadius = 1.25
@@ -212,10 +213,27 @@ function Inspector.new(onTool, onExit, onFileSettings, onMaterial, onSawFlip)
     sawFlipButton.Visible = false
     self.sawFlipButton = sawFlipButton
 
+    local materialFlip = Instance.new('Frame')
+    materialFlip.Name = 'FlipMaterial'
+    materialFlip.Size = UDim2.new(1, -14, 0, 34)
+    materialFlip.BackgroundTransparency = 1
+    materialFlip.Visible = false
+    materialFlip.LayoutOrder = 7
+    materialFlip.Parent = panel
+    self.materialFlip = materialFlip
+
+    for index, axis in {'X', 'Z'} do
+        local button = makeButton(materialFlip, 'FLIP MATERIAL ' .. axis, function()
+            if self.kind and self.onMaterialFlip then self.onMaterialFlip(axis) end
+        end)
+        button.Size = UDim2.new(0.5, -4, 1, 0)
+        button.Position = UDim2.new((index - 1) * 0.5, if index == 1 then 0 else 4, 0, 0)
+    end
+
     local close = makeButton(panel, 'EXIT  [ESC]', function()
         self.onExit()
     end)
-    close.LayoutOrder = 7
+    close.LayoutOrder = 8
 
     table.insert(self.connections, UserInputService.InputBegan:Connect(function(input)
         if not self.material then return end
@@ -458,10 +476,11 @@ function Inspector:setTool(kind)
     self.kind = kind
     self.fileSettings.Visible = kind == 'File'
     self.sawFlipButton.Visible = kind == 'Saw'
+    self.materialFlip.Visible = kind ~= nil
     self.gui.Enabled = self.material ~= nil
     local panel = self.title.Parent
-    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 485
-        elseif kind == 'Saw' then 395 else 350)
+    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 540
+        elseif kind == 'Saw' then 440 else 350)
 
     if kind == 'File' and self.material then
         local thickness = if self.material:IsA('BasePart') then self.material.Size.Y
