@@ -171,7 +171,13 @@ local function chooseMaterial(material)
     end
 end
 
-inspector = Inspector.new(chooseTool, exitInspect, setFileSettings, chooseMaterial)
+local function flipSaw()
+    if fabrication and fabrication.kind == 'Saw' and not pendingMaterial then
+        send('FabricationSawFlip')
+    end
+end
+
+inspector = Inspector.new(chooseTool, exitInspect, setFileSettings, chooseMaterial, flipSaw)
 
 local function inspect(material)
     if not material or not material.Parent then return end
@@ -222,6 +228,12 @@ UserInputService.InputBegan:Connect(function(input, processed)
             local step = if reverse then -1 else 1
             chooseMaterial(materials[((index - 1 + step) % #materials) + 1])
         end
+        return
+    end
+
+    if input.KeyCode == Enum.KeyCode.F and fabrication
+        and fabrication.kind == 'Saw' and not processed then
+        flipSaw()
         return
     end
 
@@ -384,6 +396,12 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             inspector:status('Hover the sheet to set a cut, then hold LMB to saw')
         else
             inspector:status('Hover an edge, hold LMB and stroke to file it')
+        end
+    elseif action == 'SawFlipChanged' then
+        if fabrication and fabrication.kind == 'Saw' then
+            inspector:status(if a
+                then 'Saw flipped 180° — press F to reverse'
+                else 'Saw unflipped — press F to reverse')
         end
     elseif action == 'FabricationTargetChanged' then
         pendingMaterial = nil
