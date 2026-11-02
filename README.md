@@ -27,7 +27,7 @@ START supports current branch, switching branches, and a **destructive** opt-in 
 
 The old gameplay interaction prototype has been retired from `dev`. Its stock creation UI, saw/file UI, equipped-tool/backpack code, dragging controls, fabrication tool visuals/motion, timeline editor, and WorkshopStorage remote were removed. The client bootstrap no longer creates UI, spawns stock, or starts fabrication. No replacement interaction or detection code is installed yet.
 
-The **FORM geometry kernel** remains, as do reusable pure geometry, material, and project-operation modules (`Stock`, `SawCut`, `SawTube`, `FileShape`, `Workshop`), the optional `FORMRenderer` adapter, and headless geometry tests.
+The **FORM geometry kernel** remains, as do reusable pure geometry, material, and project-operation modules (`Stock`, `SawCut`, `SawTube`, `FileShape`, `Workshop`), the optional `FORMRenderer` adapter, with the old automatic runtime tests removed.
 
 The next prototype will be built around the player's Studio-authored `Workspace.Workbench`, whose parts named `surface` will be the references for automatically generated workspace detection proxies. Physical saw and file models are rigid assemblies; there will be no Roblox Tool equip workflow. Implement detection in a separate step rather than restoring the retired UI.
 
