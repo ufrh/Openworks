@@ -84,6 +84,7 @@ function SawUI.start(workpieces)
     local activeToolConnection = {}
     local connections = {}
     local sawRotation = 0
+    local sawFlip = 0
     local startOrbit
 
     local function clearLines()
@@ -320,8 +321,14 @@ function SawUI.start(workpieces)
         elseif input.KeyCode == Enum.KeyCode.E then
             turn += 15
         elseif input.KeyCode == Enum.KeyCode.R and not cutting then
-            sawRotation = (sawRotation + 90) % 360
-            hint.Text = 'Working blade alignment: ' .. sawRotation .. ' degrees'
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+                or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
+                sawFlip = (sawFlip + 180) % 360
+                hint.Text = 'Blade tooth direction flipped'
+            else
+                sawRotation = (sawRotation + 90) % 360
+                hint.Text = 'Working blade alignment: ' .. sawRotation .. ' degrees'
+            end
         elseif input.KeyCode == Enum.KeyCode.F and not cutting then
             local hovered = mouse.Target
             if hovered and workpieces.select(hovered) then
@@ -387,7 +394,8 @@ function SawUI.start(workpieces)
             fill.Size = UDim2.fromScale(progress, 1)
             if working then
                 working:pose(Motion.sawPose(operation.plan, progress, operation.phase)
-                    * CFrame.Angles(0, 0, math.rad(sawRotation)))
+                    * CFrame.Angles(0, 0, math.rad(sawRotation))
+                    * CFrame.Angles(math.rad(sawFlip), 0, 0))
             end
             if groove then
                 local plan = operation.plan
