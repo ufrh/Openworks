@@ -34,3 +34,7 @@ Workbench detection uses the Studio-authored `Workspace.Workbench`: every descen
 Older machining/workshop documents under `docs/` describe experiments and do **not** mean those interfaces are active.
 
 **Verification:** this change is a source reset, not a Roblox Studio runtime test.
+
+## Workbench material detection test
+
+In Roblox Studio Play mode, a small bottom-right **Spawn Test Sheet** button creates one physical steel sheet above the largest `Workspace.Workbench.surface` region. The sheet is server-created and marked by `FORMMaterial.mark`, using the same material tag the workbench detector recognizes. Its `MaterialCount` is displayed on the test panel after the sheet settles. Clicking again replaces the previous sheet. This temporary test UI is disabled outside Studio; it does not reintroduce equipment, tool inventory or fabrication controls.
