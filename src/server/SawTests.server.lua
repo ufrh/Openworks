@@ -27,6 +27,29 @@ local function run()
         stock.frame:PointToWorldSpace(Vector3.new(30, 0, 0) * Stock.SCALE), normal)
     assert(not clipped and badReason, 'Cut preview should reject boundary tangent')
 
+    local angledLocal = Vector3.new(1, 0.28, 0.22).Unit
+    local angledPoint = stock.frame.Position
+    local angledNormal = stock.frame:VectorToWorldSpace(angledLocal)
+    local sloped, slopedStats = SawCut.split(stock, angledPoint, angledNormal)
+    assert(sloped and slopedStats, '3D sloped cut must produce two pieces: ' .. tostring(slopedStats))
+    assert(FORM.validate(sloped[1]).ok and FORM.validate(sloped[2]).ok,
+        '3D angled cut produced nonmanifold geometry')
+    assert(FORM.volumeClose(FORM.signedVolume(sloped[1])
+        + FORM.signedVolume(sloped[2]) + slopedStats.removed, stock.volume),
+        '3D angled cut did not conserve metal')
+
+    local capturedLocalPoint = stock.frame:PointToObjectSpace(angledPoint)
+    local movedFrame = CFrame.new(-8, 10, 3)
+        * CFrame.Angles(math.rad(17), math.rad(61), math.rad(-13))
+    Stock.move(stock, movedFrame)
+    local movedPoint = stock.frame:PointToWorldSpace(capturedLocalPoint)
+    local movedNormal = stock.frame:VectorToWorldSpace(angledLocal)
+    local movingCut, movingStats = SawCut.split(stock, movedPoint, movedNormal)
+    assert(movingCut and movingStats, 'Loose rotating stock must retain its local cut plane')
+    assert(FORM.volumeClose(FORM.signedVolume(movingCut[1])
+        + FORM.signedVolume(movingCut[2]) + movingStats.removed, stock.volume),
+        'Loose stock moving through space changed cut volume')
+
     local sheet = Stock.create(1002, 'Sheet', 'Aluminum', {x = 90, y = 4, z = 60})
     local sheetParts, sheetStats = SawCut.split(sheet, Vector3.zero, Vector3.zAxis)
     assert(sheetParts and sheetStats, 'Saw cut failed on thin sheet: ' .. tostring(sheetStats))
@@ -34,7 +57,7 @@ local function run()
         + FORM.signedVolume(sheetParts[2]) + sheetStats.removed, sheet.volume),
         'Sheet cut violated volume conservation')
 
-    print(string.format('[SAW] Tests passed: 2 sealed steel fragments, kerf %.2f mm, %.2f mm³ removed; thin-sheet split valid',
+    print(string.format('[SAW] Tests passed: sealed steel, 3D angled cuts, moving local-plane tracking, kerf %.2f mm; thin-sheet split',
         SawCut.KERF_MM, stats.removed))
 end
 
