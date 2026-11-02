@@ -43,10 +43,14 @@ local function makeButton(parent, text, callback)
     return button
 end
 
-function Inspector.new(onTool, onExit)
+function Inspector.new(onTool, onExit, onFileSettings)
     local self = setmetatable({}, Inspector)
     self.onTool = onTool
     self.onExit = onExit
+    self.onFileSettings = onFileSettings
+    self.fileShape = 'Round'
+    self.fileRadius = 1.25
+    self.fileMaxRadius = 12
     self.material = nil
     self.kind = nil
     self.focusOffset = Vector3.zero
@@ -91,6 +95,90 @@ function Inspector.new(onTool, onExit)
     self.progress = makeText(panel, '', 24, 12)
     self.progress.LayoutOrder = 3
 
+    local fileSettings = Instance.new('Frame')
+    fileSettings.Name = 'FileSettings'
+    fileSettings.BackgroundTransparency = 1
+    fileSettings.Size = UDim2.new(1, -14, 0, 120)
+    fileSettings.Visible = false
+    fileSettings.LayoutOrder = 4
+    fileSettings.Parent = panel
+    self.fileSettings = fileSettings
+
+    local fileLayout = Instance.new('UIListLayout')
+    fileLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    fileLayout.Padding = UDim.new(0, 3)
+    fileLayout.Parent = fileSettings
+
+    local heading = makeText(fileSettings, 'FILE PROFILE', 19, 12)
+    heading.LayoutOrder = 1
+
+    local function updateFileSize()
+        self.fileRadius = math.clamp(self.fileRadius, 0.5, self.fileMaxRadius)
+        self.sizeEntry.Text = string.format('%.2f', self.fileRadius)
+        self.fileSizeHelp.Text = string.format('Profile size %.2f–%.2f mm', 0.5, self.fileMaxRadius)
+        if self.kind == 'File' and self.onFileSettings then
+            self.onFileSettings(self.fileShape, self.fileRadius)
+        end
+    end
+
+    local profile = makeButton(fileSettings, 'ROUND  /  SWITCH PROFILE', function()
+        self.fileShape = if self.fileShape == 'Round' then 'Chamfer' else 'Round'
+        self.profileButton.Text = string.upper(self.fileShape) .. '  /  SWITCH PROFILE'
+        updateFileSize()
+    end)
+    profile.LayoutOrder = 2
+    self.profileButton = profile
+
+    local sizeRow = Instance.new('Frame')
+    sizeRow.BackgroundTransparency = 1
+    sizeRow.Size = UDim2.new(1, -14, 0, 32)
+    sizeRow.LayoutOrder = 3
+    sizeRow.Parent = fileSettings
+
+    local minus = makeButton(sizeRow, '-', function()
+        self.fileRadius -= 0.25
+        updateFileSize()
+    end)
+    minus.Position = UDim2.fromOffset(0, 0)
+    minus.Size = UDim2.fromOffset(42, 32)
+
+    local plus = makeButton(sizeRow, '+', function()
+        self.fileRadius += 0.25
+        updateFileSize()
+    end)
+    plus.AnchorPoint = Vector2.new(1, 0)
+    plus.Position = UDim2.fromScale(1, 0)
+    plus.Size = UDim2.fromOffset(42, 32)
+
+    local sizeEntry = Instance.new('TextBox')
+    sizeEntry.Name = 'FileSizeMM'
+    sizeEntry.AnchorPoint = Vector2.new(0.5, 0)
+    sizeEntry.Position = UDim2.fromScale(0.5, 0)
+    sizeEntry.Size = UDim2.new(1, -94, 0, 32)
+    sizeEntry.BackgroundColor3 = Color3.fromRGB(45, 54, 55)
+    sizeEntry.BorderSizePixel = 0
+    sizeEntry.TextColor3 = Color3.fromRGB(244, 248, 243)
+    sizeEntry.Font = Enum.Font.Code
+    sizeEntry.TextSize = 14
+    sizeEntry.Text = '1.25'
+    sizeEntry.PlaceholderText = 'mm'
+    sizeEntry.ClearTextOnFocus = false
+    sizeEntry.Parent = sizeRow
+    local inputCorner = Instance.new('UICorner')
+    inputCorner.CornerRadius = UDim.new(0, 5)
+    inputCorner.Parent = sizeEntry
+    self.sizeEntry = sizeEntry
+
+    sizeEntry.FocusLost:Connect(function()
+        local number = tonumber(sizeEntry.Text)
+        if number then self.fileRadius = number end
+        updateFileSize()
+    end)
+
+    local sizeHelp = makeText(fileSettings, 'Profile size in mm', 19, 11)
+    sizeHelp.LayoutOrder = 4
+    self.fileSizeHelp = sizeHelp
+
     local choices = Instance.new('ScrollingFrame')
     choices.Size = UDim2.new(1, -14, 0, 118)
     choices.BackgroundTransparency = 1
@@ -98,7 +186,7 @@ function Inspector.new(onTool, onExit)
     choices.ScrollBarThickness = 3
     choices.CanvasSize = UDim2.new()
     choices.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    choices.LayoutOrder = 4
+    choices.LayoutOrder = 5
     choices.Parent = panel
     self.choices = choices
     local choiceStack = Instance.new('UIListLayout')
@@ -108,7 +196,7 @@ function Inspector.new(onTool, onExit)
     local close = makeButton(panel, 'EXIT  [ESC]', function()
         self.onExit()
     end)
-    close.LayoutOrder = 5
+    close.LayoutOrder = 6
 
     table.insert(self.connections, UserInputService.InputBegan:Connect(function(input)
         if not self.material then return end
@@ -237,6 +325,21 @@ end
 
 function Inspector:setTool(kind)
     self.kind = kind
+    self.fileSettings.Visible = kind == 'File'
+    self.gui.Enabled = self.material ~= nil
+    local panel = self.title.Parent
+    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 455 else 330)
+
+    if kind == 'File' and self.material then
+        local thickness = if self.material:IsA('BasePart') then self.material.Size.Y
+            else self.material:GetExtentsSize().Y
+        self.fileMaxRadius = math.max(0.5, math.min(12,
+            math.floor(thickness / 0.04 * 0.42 * 100) / 100))
+        self.fileRadius = math.clamp(self.fileRadius, 0.5, self.fileMaxRadius)
+        self.sizeEntry.Text = string.format('%.2f', self.fileRadius)
+        self.fileSizeHelp.Text = string.format('Profile size 0.50–%.2f mm', self.fileMaxRadius)
+        self.profileButton.Text = string.upper(self.fileShape) .. '  /  SWITCH PROFILE'
+    end
     self.progress.Text = ''
     self.title.Text = if kind then 'OPENWORKS / ' .. string.upper(kind) else 'OPENWORKS / INSPECT'
     self.instructions.Text = if kind == 'Saw' then
