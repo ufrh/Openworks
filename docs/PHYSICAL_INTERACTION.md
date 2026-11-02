@@ -31,7 +31,7 @@ The physical tool is never cloned into a separate cosmetic. **Precision fabricat
 - Short-click a material, or short-click a tool when exactly one workpiece is on the bench.
 - **RMB drag** orbits; **MMB drag** pans; **wheel** zooms around the physical workpiece.
 - In the right-side panel, select a saw/file that is physically present on the bench.
-- **Escape** exits, restores normal camera, and releases the temporary kinematic fabrication control. Finishing a cut does **not** exit inspection.
+- **Escape** exits, restores normal camera, and releases the temporary kinematic fabrication control. Finishing a cut or filing pass does **not** exit inspection.
 - The inspection camera no longer requires the default Roblox `PlayerModule`, which may not exist in customized player scripts.
 
 ## Saw positioning and cutting
@@ -45,7 +45,19 @@ The physical tool is never cloned into a separate cosmetic. **Precision fabricat
 7. **Move the cutting guide and saw again without exiting**. Progress resets for the next cut. Release LMB before starting another stroke sequence. RMB orbit, pan, wheel zoom and R/Shift+R tool roll continue to work.
 8. **Only Esc (or Exit)** ends precision mode, restores the camera, and returns the saw to its physical resting position.
 
-For a file, the same manual-stroke controls are available, but native test sheets currently support only a simple planar shave, **not** the older curved edge-filing preview.
+## Filing a physical metal edge
+
+1. Place a rigid unanchored file Model on the workbench, tag it `isTool = true`, and name it with `File` or set `FabricationKind = File`. Optional `FileFace` Attachment defines the physical working contact and orientation.
+2. Inspect a test sheet and select the file from the same workbench tool list. The actual file moves kinematically toward the sheet—no force-driven alignment constraints or collision.
+3. Hover the sheet near any edge. A **teal line** previews which of the four top-side X/Z edges is selected.
+4. Hold LMB and move the mouse back and forth. Five qualified direction reversals shave approximately **0.024 studs** off the selected side, translating the same Part to keep the opposite edge fixed. This is a measurable physical edge-sizing operation, not a fabricated hit counter.
+5. Release LMB, hover another edge, and continue as often as needed. **Esc** is the only regular exit.
+
+**Current representation limit:** Rectangular native Parts can be resized to file their sides, but they cannot visibly round/chamfer an edge. The existing `FileShape` geometry kernel supports edge-rounding solids, but rendering those true shapes requires a FORM-to-EditableMesh replacement path. No fake curved filing is claimed in this phase.
+
+## Receiver health
+
+The shared `PhysicalInteraction` RemoteEvent is reused on server restart instead of creating a new one. The server installs its receiver before loading the rest of the interaction code and publishes a replicated readiness flag and heartbeat. The client stops sending movement events when the receiver is offline or stale, rather than exhausting Roblox's invocation queue. Verify `[OPENWORKS:Interaction] Server ready on ...` appears in **server Output** on a fresh Play session. If a Studio/Rojo reload leaves a stale remote, stop and restart Play before testing further.
 
 ## Scope and safety
 
