@@ -6,7 +6,7 @@ local Boolean = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild
 local Renderer = require(script:WaitForChild('FORMRenderer'))
 
 local stock = FORM.box(Vector3.new(100, 50, 20))
-local tool = FORM.cylinder(10, 30, 12)
+local tool = FORM.cylinder(10, 70, 12)
 local pieces, removed = Boolean.subtract(stock, tool)
 assert(pieces, '[FORM] Subtraction preview failed: ' .. tostring(removed))
 
