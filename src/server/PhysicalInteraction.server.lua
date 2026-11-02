@@ -3,14 +3,28 @@ local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local RunService = game:GetService('RunService')
 
 local Openworks = ReplicatedStorage:WaitForChild('Openworks')
+
+local remote = Openworks:FindFirstChild('PhysicalInteraction')
+if not remote or not remote:IsA('RemoteEvent') then
+    remote = Instance.new('RemoteEvent')
+    remote.Name = 'PhysicalInteraction'
+    remote.Parent = Openworks
+end
+
+remote:SetAttribute('Ready', false)
+
+local onRequest
+remote.OnServerEvent:Connect(function(player, action, ...)
+    if not onRequest then return end
+
+    local ok, reason = pcall(onRequest, player, action, ...)
+    if not ok then
+        warn('[OPENWORKS:Interaction] Request failed:', action, reason)
+        remote:FireClient(player, 'Feedback', 'Interaction failed; check server Output')
+    end
+end)
+
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
-
--- Physics interaction must boot independently from machining geometry modules.
-
-local remote = Instance.new('RemoteEvent')
-remote.Name = 'PhysicalInteraction'
-remote.Parent = Openworks
-
 local active = {}
 local locked = {}
 
@@ -657,7 +671,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown)
     remote:FireClient(player, 'MachiningCompleted', selected, message)
 end
 
-remote.OnServerEvent:Connect(function(player, action, ...)
+onRequest = function(player, action, ...)
     if action == 'DragStart' then
         startDrag(player, ...)
         return
@@ -692,7 +706,7 @@ remote.OnServerEvent:Connect(function(player, action, ...)
             state.lastInput = os.clock()
         end
     end
-end)
+end
 
 RunService.Heartbeat:Connect(function(dt)
     for player, state in active do
@@ -734,4 +748,5 @@ Players.PlayerAdded:Connect(watch)
 for _, player in Players:GetPlayers() do watch(player) end
 Players.PlayerRemoving:Connect(function() finish(player) end)
 
-print('[OPENWORKS:Interaction] Server ready')
+remote:SetAttribute('Ready', true)
+print('[OPENWORKS:Interaction] Server ready on', remote:GetFullName())
