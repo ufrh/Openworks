@@ -356,8 +356,38 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             fabrication.down = false
             fabrication.stroke = 0
             fabrication.pointerMoved = false
-            fabrication.offset = 0
-            inspector:status(b or 'Cut complete. Move the guide and continue.')
+
+            if fabrication.kind == 'Saw' and typeof(c) == 'Vector3'
+                and a and a:IsA('BasePart') and a.Parent then
+                local aim = c
+                local camera = workspace.CurrentCamera
+                local cursor = UserInputService:GetMouseLocation()
+                local ray = camera:ViewportPointToRay(cursor.X, cursor.Y)
+                local normal = a.CFrame.UpVector
+                local top = a.Position + normal * a.Size.Y * 0.5
+                local denominator = ray.Direction:Dot(normal)
+
+                if math.abs(denominator) > 0.01 then
+                    local t = (top - ray.Origin):Dot(normal) / denominator
+                    if t > 0 then
+                        local hit = ray.Origin + ray.Direction * t
+                        local localHit = a.CFrame:PointToObjectSpace(hit)
+                        if math.abs(localHit.X) <= a.Size.X * 0.5
+                            and math.abs(localHit.Z) <= a.Size.Z * 0.5 then
+                            aim = hit
+                        end
+                    end
+                end
+
+                local localAim = a.CFrame:PointToObjectSpace(aim)
+                local extent = if fabrication.axis == 'X' then a.Size.X else a.Size.Z
+                local target = if fabrication.axis == 'X' then localAim.X else localAim.Z
+                fabrication.offset = math.clamp(target,
+                    -math.max(0, extent * 0.5 - 0.17),
+                    math.max(0, extent * 0.5 - 0.17))
+            end
+
+            inspector:status(b or 'Finished. Aim at the next cut and continue.')
         end
     elseif action == 'Feedback' then
         pendingTool = nil
@@ -442,7 +472,7 @@ RunService.RenderStepped:Connect(function(dt)
                 rayParams.FilterDescendantsInstances = {fabrication.tool, guide}
                 local hit = workspace:Raycast(ray.Origin, ray.Direction * 150, rayParams)
 
-                if hit and hit.Instance == work then
+                if hit and (hit.Instance == work or hit.Instance:IsDescendantOf(work)) then
                     local point = work.CFrame:PointToObjectSpace(hit.Position)
                     if fabrication.kind == 'File' then
                         local distanceX = size.X * 0.5 - math.abs(point.X)
