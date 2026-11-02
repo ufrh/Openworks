@@ -105,37 +105,70 @@ local function toolContact(tool, part, kind)
     local marker = contactMarker(tool, if kind == 'Saw' then 'BladeEdge' else 'FileFace')
     if marker then return marker.WorldCFrame end
 
-    local blade
+    local bounds, size
     if kind == 'Saw' then
-        for _, node in tool:GetDescendants() do
-            if node:IsA('BasePart') and (node.Name == 'Blade'
-                or node.Name == 'SawBlade' or node.Name == 'BladePart') then
-                blade = node
-                break
+        local blade, handle
+        for _, node in allParts(tool) do
+            local name = node.Name:lower()
+            if not blade and name:find('blade', 1, true) then blade = node end
+            if not handle and (name:find('handle', 1, true)
+                or name:find('grip', 1, true)) then
+                handle = node
             end
         end
-        if not blade and tool:IsA('BasePart') then blade = tool end
+
+        if blade then
+            bounds, size = blade.CFrame, blade.Size
+        elseif tool:IsA('Model') then
+            bounds, size = tool:GetBoundingBox()
+        else
+            bounds, size = part.CFrame, part.Size
+        end
+
+        local direction = bounds.RightVector
+        if size.Z >= size.X and size.Z >= size.Y then
+            direction = bounds.LookVector
+        elseif size.Y >= size.X and size.Y >= size.Z then
+            direction = bounds.UpVector
+        end
+
+        local up
+        if blade and handle then
+            up = handle.Position - blade.Position
+            up -= direction * up:Dot(direction)
+        end
+        if not up or up.Magnitude < 0.05 then
+            up = Vector3.yAxis - direction * direction.Y
+        end
+        if up.Magnitude < 0.05 then
+            up = bounds.UpVector - direction * bounds.UpVector:Dot(direction)
+        end
+        up = up.Unit
+
+        local across = direction:Cross(up).Unit
+        up = across:Cross(direction).Unit
+        local verticalRadius =
+            math.abs(bounds.RightVector:Dot(up)) * size.X * 0.5
+            + math.abs(bounds.UpVector:Dot(up)) * size.Y * 0.5
+            + math.abs(bounds.LookVector:Dot(up)) * size.Z * 0.5
+
+        local contactPoint
+        if blade then
+            contactPoint = bounds.Position - up * math.min(verticalRadius, 0.14)
+        else
+            contactPoint = bounds.Position - up * verticalRadius
+        end
+        return CFrame.fromMatrix(contactPoint, direction, up, across)
     end
 
-    local bounds, size
-    if blade then
-        bounds, size = blade.CFrame, blade.Size
-    elseif tool:IsA('Model') then
+    if tool:IsA('Model') then
         bounds, size = tool:GetBoundingBox()
     else
         bounds, size = part.CFrame, part.Size
     end
 
-    local rotation = CFrame.identity
-    if size.Z > math.max(size.X, size.Y) * 1.12 then
-        rotation = CFrame.Angles(0, math.rad(-90), 0)
-    elseif size.Y > math.max(size.X, size.Z) * 1.12 then
-        rotation = CFrame.Angles(0, 0, math.rad(90))
-    end
-
-    return bounds * CFrame.new(0, -size.Y * 0.5, 0) * rotation
+    return bounds * CFrame.new(0, -size.Y * 0.5, 0)
 end
-
 local function setToolCollision(item, state)
     state.collisions = {}
 
@@ -455,7 +488,7 @@ local function startFabrication(player, material, tool)
         direction = 0,
         reversals = 0,
         axis = 'X',
-        roll = if kind == 'Saw' and not contactMarker(tool, 'BladeEdge') then 180 else 0,
+        roll = 0,
         awaitRelease = false,
         fileSide = 1,
         fileShape = 'Round',
