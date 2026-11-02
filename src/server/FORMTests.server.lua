@@ -145,6 +145,12 @@ local function run()
 
     verifyUnified('Rectangular', box, tool, remaining)
 
+    local unifiedApi, removedApi = Boolean.subtractUnified(box, tool)
+    assert(unifiedApi, 'subtractUnified failed: ' .. tostring(removedApi))
+    assert(FORM.validate(unifiedApi).ok and close(FORM.signedVolume(unifiedApi), remaining),
+        'subtractUnified returned invalid topology or volume')
+    assert(close(removedApi, removed), 'subtractUnified returned incorrect removal volume')
+
     local joinedA = FORM.box(Vector3.new(30, 20, 10))
     local joinedB = FORM.box(Vector3.new(30, 20, 10))
     for i, vertex in joinedA.vertices do joinedA.vertices[i] = vertex - Vector3.new(15, 0, 0) end
