@@ -89,6 +89,29 @@ local function run()
     assert(close(remaining, 84000), 'Subtraction did not conserve stock material')
 
     print(string.format('[FORM] Boolean subtract: %d pieces, removed %.4f mm^3', #leftovers, removed))
+    local cylinder = FORM.cylinder(10, 30, 12)
+    assert(FORM.validate(cylinder).ok, 'Cylindrical cutter is not watertight')
+
+    local expectedCylinder = 12 * 10 * 10 * math.sin(2 * math.pi / 12) * 30 / 2
+    assert(math.abs(FORM.signedVolume(cylinder) - expectedCylinder) < 0.05,
+        'Cylinder mesh has incorrect volume')
+
+    local drilled, drillRemoved = Boolean.subtract(box, cylinder)
+    assert(drilled, 'Cylindrical subtraction failed: ' .. tostring(drillRemoved))
+
+    local drillRemaining = 0
+    for _, piece in drilled do
+        assert(FORM.validate(piece).ok, 'Drilling generated invalid topology')
+        drillRemaining += FORM.signedVolume(piece)
+    end
+
+    assert(math.abs(drillRemoved - expectedCylinder * 20 / 30) < 0.1,
+        'Incorrect drilling removal volume')
+    assert(math.abs(drillRemaining + drillRemoved - FORM.signedVolume(box)) < 0.01,
+        'Drilling failed volume conservation')
+    print(string.format('[FORM] Drilled %d-sided opening: removed %.4f mm^3 across %d solids',
+        12, drillRemoved, #drilled))
+
     print('[FORM] Foundation, coincident cuts, chained cuts and convex subtraction passed')
 end
 
