@@ -5,7 +5,7 @@ Filing is a manual, hold-to-complete process separate from the geometry engine. 
 ## Setup
 
 - Visual model: `ReplicatedStorage["Metal File"]` (Model or BasePart).
-- Equippable Roblox Tool: `StarterPack["Metal File"]`. Same name, different container; see the existing `src/client/ToolVisual.lua` binding used by the hacksaw.
+- Equippable Roblox Tool: `StarterPack["Metal File"]`. Same name, different container; see `src/client/FabricationVisual.lua` for independent workspace-model motion.
 - A small **EQUIP METAL FILE** button appears in the top-right while the file is not equipped. It looks in the player's Backpack, Character, or ReplicatedStorage for a matching Tool. A File panel appears on the right **only while Metal File is equipped**. The hacksaw panel hides while filing. The stock UI remains left-docked.
 
 ## In Play
@@ -20,7 +20,7 @@ Filing is a manual, hold-to-complete process separate from the geometry engine. 
 ## Architecture
 
 - `src/shared/FileShape.lua`: pick the two nearest axis-aligned bounding faces, show curved preview, and clip a convex FORM solid using the existing convex splitter.
-- `src/client/FileUI.lua`: Tool activation, radius presets, pooled Neon guide lines, lightweight grip-based file stroke, completion-only geometry update.
+- `src/client/FileUI.lua`: Tool activation, radius presets, pooled Neon guide lines, kinematic working-model file strokes, completion-only geometry update. Optional model marker: `FileFace`. See `docs/FABRICATION_MODELS.md`.
 - `src/client/StockUI.lua`: workpiece-level `refine` callback for transactional one-piece replacement.
 - `src/server/FileTests.server.lua`: volume conservation, analytical radius sanity check, two separate edges, thin sheets, full-face edge snapping, already-rounded edge rejection, and tube rejection.
 
