@@ -153,7 +153,17 @@ function UI.start()
         assert(count < Stock.MAX_ITEMS, 'Maximum number of stock items reached')
         local id = nextId + 1
         local item = Stock.create(id, shapeName, materialName, dims, at)
-        local part, editable = Renderer.create(item.solid, Stock.SCALE, 0)
+        local part, editable
+        if shapeName == 'Block' or shapeName == 'Sheet' then
+            part = Instance.new('Part')
+            part.Size = Vector3.new(dims.x, dims.y, dims.z) * Stock.SCALE
+        elseif shapeName == 'Rod' then
+            part = Instance.new('Part')
+            part.Shape = Enum.PartType.Cylinder
+            part.Size = Vector3.new(dims.radius * 2, dims.length, dims.radius * 2) * Stock.SCALE
+        else
+            part, editable = Renderer.create(item.solid, Stock.SCALE, 0)
+        end
         part.Name = string.format('Stock %03d - %s', id, shapeName)
         part.Anchored = false
         part.CanCollide = true
