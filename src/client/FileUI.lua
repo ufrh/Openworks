@@ -19,7 +19,7 @@ function FileUI.start(workpieces)
 
     local panel = Instance.new('Frame')
     panel.Name = 'FilingPanel'
-    panel.Size = UDim2.fromOffset(235, 160)
+    panel.Size = UDim2.fromOffset(235, 194)
     panel.AnchorPoint = Vector2.new(1, 0.5)
     panel.Position = UDim2.new(1, -14, 0.5, 0)
     panel.BackgroundColor3 = Color3.fromRGB(25, 31, 32)
@@ -130,6 +130,27 @@ function FileUI.start(workpieces)
         fill.Size = UDim2.fromScale(0, 1)
     end
 
+    local function findTool()
+        local character = player.Character
+        local equippedTool = character and character:FindFirstChild('Metal File')
+        if equippedTool and equippedTool:IsA('Tool') then return equippedTool end
+
+        local backpack = player:FindFirstChildOfClass('Backpack')
+        local owned = backpack and backpack:FindFirstChild('Metal File')
+        if owned and owned:IsA('Tool') then return owned end
+
+        if backpack then
+            for _, source in ReplicatedStorage:GetDescendants() do
+                if source:IsA('Tool') and source.Name == 'Metal File' then
+                    local tool = source:Clone()
+                    tool.Parent = backpack
+                    return tool
+                end
+            end
+        end
+        return nil
+    end
+
     local function connect(tool)
         if currentTool == tool then return end
         for _, connection in toolConnections do connection:Disconnect() end
@@ -139,7 +160,10 @@ function FileUI.start(workpieces)
         preview = nil
         currentTool = tool
         if not tool then return end
-        ToolVisual.attach(tool)
+        local visualReady = ToolVisual.attach(tool)
+        if not visualReady then
+            warn('[FILE] Metal File Tool needs a Handle or a visible matching Model')
+        end
 
         toolConnections[#toolConnections + 1] = tool.Activated:Connect(function()
             if not equipped() or filing then return end
@@ -193,6 +217,35 @@ function FileUI.start(workpieces)
             status.Text = 'Rounding radius: ' .. value .. ' mm'
         end)
     end
+
+    local equipButton = Instance.new('TextButton')
+    equipButton.Name = 'EquipMetalFile'
+    equipButton.Size = UDim2.new(1, -16, 0, 30)
+    equipButton.Font = Enum.Font.Code
+    equipButton.TextSize = 13
+    equipButton.TextColor3 = Color3.fromRGB(240, 236, 218)
+    equipButton.BackgroundColor3 = Color3.fromRGB(55, 64, 62)
+    equipButton.BorderSizePixel = 0
+    equipButton.Text = 'EQUIP METAL FILE'
+    equipButton.Parent = panel
+    equipButton.MouseButton1Click:Connect(function()
+        local tool = findTool()
+        if not tool then
+            status.Text = 'No Metal File Tool in StarterPack, Backpack or ReplicatedStorage'
+            return
+        end
+        connect(tool)
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass('Humanoid')
+        if not humanoid then
+            status.Text = 'Character is not ready'
+            return
+        end
+        if tool.RequiresHandle and not tool:FindFirstChild('Handle') then
+            status.Text = 'Tool needs a direct Handle or RequiresHandle=false'
+            return
+        end
+        humanoid:EquipTool(tool)
+    end)
 
     local function watchCharacter(character)
         for _, child in character:GetChildren() do
@@ -260,6 +313,8 @@ function FileUI.start(workpieces)
         local item = workpieces.get(part)
         if not item or not part.Anchored then
             if preview then preview = nil clearLines() end
+            status.Text = if item and not part.Anchored then 'Secure the metal first'
+                else 'Aim at a stock face to select an outer edge'
             return
         end
 
