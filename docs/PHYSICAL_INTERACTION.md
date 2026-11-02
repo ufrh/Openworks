@@ -20,6 +20,8 @@ In precision mode, **R** rolls the physical tool 90 degrees around the stroke ax
 
 The physical tool is never cloned into a separate cosmetic. **Precision fabrication does not use AlignPosition or AlignOrientation.** Instead, the server temporarily anchors the entire rigid tool assembly and interpolates its pivot toward the blade-aligned target each Heartbeat (smooth kinematic CFrame motion). Every working tool part stays non-collidable, non-touchable, and non-queryable during the session. On exit, it returns to its resting pose above the tabletop, then its original anchor and collision states are restored. **Normal free dragging continues to use physics constraints**, unchanged.
 
+For saws without an authored `BladeEdge`, the initial tool roll now starts inverted 180° relative to the old fallback. This corrects the upside-down default for the test saw; `R` / `Shift+R` remain available to adjust custom tool geometry. A properly oriented `BladeEdge` Attachment continues to override the fallback without the automatic flip.
+
 ## Free-mode interaction
 
 - **Hold LMB** on material or tool: physically lift and drag it. Release to drop.
@@ -29,7 +31,7 @@ The physical tool is never cloned into a separate cosmetic. **Precision fabricat
 ## Material inspection
 
 - Short-click a material, or short-click a tool when exactly one workpiece is on the bench.
-- **RMB drag** orbits; **MMB drag** pans; **wheel** zooms around the physical workpiece.
+- **RMB drag** orbits; **MMB drag** pans; **wheel** zooms around the physical workpiece. Entering inspection and refocusing on another material ease toward the target instead of snapping. Exiting blends the inspection camera back to the gameplay camera over roughly 0.65 seconds.
 - In the right-side panel, select a saw/file that is physically present on the bench.
 - **Escape** exits, restores normal camera, and releases the temporary kinematic fabrication control. Finishing a cut or filing pass does **not** exit inspection.
 - The inspection camera no longer requires the default Roblox `PlayerModule`, which may not exist in customized player scripts.
@@ -52,10 +54,10 @@ The physical tool is never cloned into a separate cosmetic. **Precision fabricat
 3. Hover the sheet near any edge. A **teal line** previews which of the four top-side X/Z edges is selected.
 4. The **File Settings** section of the inspection panel lets you switch between **Round** and **Chamfer** and change **Size (mm)** with +/- buttons or an editable value. Sizes are clamped based on the selected plate thickness and validated again on the server.
 5. Hold LMB and move the mouse back and forth. The physical file now sweeps almost the full edge length, from one endpoint to the other. Five qualified direction reversals apply a real FORM geometry modification to the chosen top edge.
-6. On completion, FORM generates a rounded multi-segment edge or flat chamfer. A server-side EditableMesh becomes a welded MeshPart with convex-hull collision, while the original Part remains as an invisible non-colliding, non-queryable identity backing (mouse hit-testing and convex-hull collision use the shaped MeshPart instead).
+6. On completion, FORM generates a rounded multi-segment edge or flat chamfer. The server bakes an EditableMesh using `AssetService:CreateDataModelContentAsync` into static, replicating mesh content, and builds a welded MeshPart with convex-hull collision. The mesh is explicitly untextured, while the original Part remains invisible and non-colliding as the workpiece's identity backing.
 7. Release LMB, hover another edge, and continue as often as needed. **Esc** is the only regular exit.
 
-**Limitations:** The current physical renderer supports convex edge geometry and hull collision rather than perfect microscopic contact fidelity. Re-filing the exact same previously rounded edge may be refused by the FORM edge detector; select a different unworked edge. Sawing an already filed mesh is blocked until the mesh-aware saw split adapter is installed. EditableMesh requires appropriate Creator Hub Mesh / Image API permissions and sufficient mesh memory; failures are reported rather than silently resizing the stock.
+**Limitations:** The current physical renderer supports convex edge geometry and hull collision rather than perfect microscopic contact fidelity. Re-filing the exact same previously rounded edge may be refused by the FORM edge detector; select a different unworked edge. Sawing an already filed mesh is blocked until the mesh-aware saw split adapter is installed. EditableMesh and static content baking require appropriate Creator Hub Mesh / Image API permissions and sufficient mesh memory; failures are reported rather than silently resizing the stock. Direct server EditableMesh references caused a magenta/cyan placeholder on clients, which is why finished geometry is now baked into replicating data-model content.
 
 ## Receiver health
 
