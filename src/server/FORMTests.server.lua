@@ -46,7 +46,24 @@ local function run()
     local outside, reason = Cut.split(box, Vector3.new(200, 0, 0), Vector3.xAxis)
     assert(not outside and reason == 'PLANE_DOES_NOT_INTERSECT', 'Outside plane not rejected')
 
-    print('[FORM] Foundation and planar split tests passed')
+    local first, remainder = Cut.split(box, Vector3.zero, Vector3.xAxis)
+    assert(first and remainder, 'First chained cut failed: ' .. tostring(remainder))
+
+    local second, third = Cut.split(first, Vector3.new(0, 7, 0), Vector3.yAxis)
+    assert(second and third, 'Second chained cut failed: ' .. tostring(third))
+
+    local pieces = {remainder, second, third}
+    local total = 0
+    for i, piece in pieces do
+        local checked = FORM.validate(piece)
+        assert(checked.ok, 'Chained piece ' .. i .. ' has invalid topology')
+        total += FORM.signedVolume(piece)
+    end
+
+    print(string.format('[FORM] Chained cuts: %d solids, total volume %.6f mm^3', #pieces, total))
+    assert(close(total, FORM.signedVolume(box)), 'Chained cuts changed total material volume')
+
+    print('[FORM] Foundation, planar split and chained-cut tests passed')
 end
 
 run()
