@@ -193,11 +193,11 @@ local function makeMotor(part, hit)
     }
 end
 
-local function destroyMotor(state)
+local function destroyMotor(state, returnOwnership)
     for _, key in {'position', 'rotation', 'grab', 'destination', 'target'} do
         if state[key] then state[key]:Destroy() end
     end
-    if state.part and state.part.Parent then
+    if returnOwnership ~= false and state.part and state.part.Parent then
         local ok, allowed = pcall(function() return state.part:CanSetNetworkOwnership() end)
         if ok and allowed then
             pcall(function() state.part:SetNetworkOwnershipAuto() end)
@@ -211,6 +211,26 @@ local function finish(player)
     active[player] = nil
     locked[state.item] = nil
     if state.material then locked[state.material] = nil end
+
+    destroyMotor(state, state.mode ~= 'Fabrication')
+
+    if state.mode == 'Fabrication' and state.item and state.item.Parent and state.restingFrame then
+        pcall(function() state.part:SetNetworkOwner(nil) end)
+        state.item:PivotTo(state.restingFrame)
+
+        local function settle(part)
+            part.AssemblyLinearVelocity = Vector3.zero
+            part.AssemblyAngularVelocity = Vector3.zero
+        end
+        if state.item:IsA('BasePart') then
+            settle(state.item)
+        else
+            for _, part in state.item:GetDescendants() do
+                if part:IsA('BasePart') then settle(part) end
+            end
+        end
+    end
+
     if state.collisions then
         for part, original in state.collisions do
             if part.Parent then
@@ -220,8 +240,15 @@ local function finish(player)
                 part.CanQuery = original.query
             end
         end
+
+        if state.part and state.part.Parent then
+            local ok, allowed = pcall(function() return state.part:CanSetNetworkOwnership() end)
+            if ok and allowed then
+                pcall(function() state.part:SetNetworkOwnershipAuto() end)
+            end
+        end
     end
-    destroyMotor(state)
+
     if state.mode == 'Drag' then
         print('[OPENWORKS:Drag] Released:', state.item.Name)
     end
@@ -320,6 +347,7 @@ local function startFabrication(player, material, tool)
     state.kind = kind
     state.material = material
     state.work = work
+    state.restingFrame = tool:GetPivot()
 
     local contact = toolContact(tool, part, kind)
     state.grab.CFrame = part.CFrame:ToObjectSpace(contact)
@@ -334,7 +362,15 @@ local function startFabrication(player, material, tool)
     state.reversals = 0
     state.axis = 'X'
     locked[material] = player
-    remote:FireClient(player, 'FabricationStarted', kind, material, tool)
+
+    local initialCollisions = {}
+    for toolPart, original in state.collisions do
+        table.insert(initialCollisions, {
+            toolPart, original.collide, original.touch, original.query,
+        })
+    end
+
+    remote:FireClient(player, 'FabricationStarted', kind, material, tool, initialCollisions)
 end
 
 local function cutSheet(state)
@@ -438,19 +474,19 @@ local function moveFabrication(player, state, stroke, offset, axis)
         * CFrame.Angles(math.rad(state.roll), 0, 0)
 
     local difference = stroke - state.lastStroke
-    local direction = if difference > 0.05 then 1 elseif difference < -0.05 then -1 else 0
+    local direction = if difference > 0.035 then 1 elseif difference < -0.035 then -1 else 0
     if direction ~= 0 and state.direction ~= 0 and state.direction ~= direction
-        and math.abs(stroke - state.lastTurn) > 0.28 then
+        and math.abs(stroke - state.lastTurn) > 0.2 then
         state.reversals += 1
         state.lastTurn = stroke
-        remote:FireClient(player, 'Progress', math.min(1, state.reversals / 12))
+        remote:FireClient(player, 'Progress', math.min(1, state.reversals / 5))
     elseif state.direction == 0 and direction ~= 0 then
         state.lastTurn = stroke
     end
     if direction ~= 0 then state.direction = direction end
     state.lastStroke = stroke
 
-    if state.reversals >= 12 then
+    if state.reversals >= 5 then
         local ok, replacement, message = pcall(cutSheet, state)
         if not ok then
             warn('[OPENWORKS:Fabrication]', replacement)
