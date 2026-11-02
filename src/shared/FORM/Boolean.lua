@@ -69,7 +69,7 @@ function Boolean.subtract(stock, cutter)
     end
 
     local original = FORM.signedVolume(stock)
-    if math.abs(original - remaining - removed) > math.max(1e-5, original * 1e-8) then
+    if not FORM.volumeClose(remaining + removed, original) then
         return nil, 'VOLUME_MISMATCH'
     end
 
