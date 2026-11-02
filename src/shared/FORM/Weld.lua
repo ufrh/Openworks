@@ -53,7 +53,7 @@ local function compactFaces(solid, tolerance)
     return removed
 end
 
-local function findJunction(solid, face, tolerance)
+local function findJunction(solid, face, tolerance, used)
     local vertices = solid.vertices
     local foundEdge, foundVertex, foundT
 
@@ -63,7 +63,7 @@ local function findJunction(solid, face, tolerance)
         local other = face[(edge + 1) % 3 + 1]
 
         for index, vertex in vertices do
-            if index == a or index == b or index == other then continue end
+            if not used[index] or index == a or index == b or index == other then continue end
             local t = vertexOnEdge(vertex, vertices[a], vertices[b], tolerance)
             if t and (not foundT or t < foundT) then
                 foundEdge, foundVertex, foundT = edge, index, t
@@ -222,11 +222,15 @@ function Weld.build(surface, tolerance)
     local converged = false
 
     for _ = 1, 64 do
+        local used = {}
+        for _, face in output.triangles do
+            for _, index in face do used[index] = true end
+        end
         local nextFaces = {}
         local changed = false
 
         for _, face in output.triangles do
-            local edge, vertex = findJunction(output, face, tolerance)
+            local edge, vertex = findJunction(output, face, tolerance, used)
             if edge then
                 local a = face[edge]
                 local b = face[edge % 3 + 1]
