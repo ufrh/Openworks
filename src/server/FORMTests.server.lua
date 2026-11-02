@@ -65,15 +65,18 @@ local function run()
 
     local beforeVertices, beforeTriangles = #box.vertices, #box.triangles
     local touching, touchReason = Cut.split(box, Vector3.new(50, 0, 0), Vector3.xAxis)
-    assert(not touching and touchReason == 'PLANE_TOUCHES_VERTEX', 'Vertex-touching cut was not rejected')
+    assert(not touching and touchReason == 'PLANE_DOES_NOT_INTERSECT', 'Tangent plane should not split material')
 
     local diagonal, diagonalReason = Cut.split(box, Vector3.zero, Vector3.new(1, 2, 0))
-    assert(not diagonal and diagonalReason == 'PLANE_TOUCHES_VERTEX', 'Edge-touching cut was not rejected')
+    assert(diagonal and diagonalReason, 'Vertex-intersecting cut failed: ' .. tostring(diagonalReason))
+    assert(FORM.validate(diagonal).ok and FORM.validate(diagonalReason).ok, 'Coincident cut topology failed')
+    assert(close(FORM.signedVolume(diagonal) + FORM.signedVolume(diagonalReason), 100000),
+        'Coincident cut lost material')
 
     assert(#box.vertices == beforeVertices and #box.triangles == beforeTriangles, 'Failed cut mutated input')
     assert(FORM.validate(box).ok, 'Failed cut damaged original geometry')
 
-    print('[FORM] Foundation, planar split, chained-cut and rejection tests passed')
+    print('[FORM] Foundation, planar split, chained-cut and coincident-intersection tests passed')
 end
 
 run()
