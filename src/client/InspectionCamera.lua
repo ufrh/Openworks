@@ -464,9 +464,9 @@ function Inspector:setTool(kind)
     self.progress.Text = ''
     self.title.Text = if kind then 'OPENWORKS / ' .. string.upper(kind) else 'OPENWORKS / INSPECT'
     self.instructions.Text = if kind == 'Saw' then
-        'Hover metal: position cut | Q: switch axis\nHold LMB + mouse: saw strokes\nR: roll tool | RMB: orbit | ESC: exit'
+        'Hover: position cut | Q: switch axis | LMB: saw\nTab / click sheet: switch workpiece\nR: roll tool | RMB: orbit | ESC: exit'
         elseif kind == 'File' then
-        'Hover an edge: select filing side\nHold LMB + mouse: file strokes\nR: roll tool | RMB: orbit | ESC: exit'
+        'Hover: choose edge | LMB: file strokes\nTab / click sheet: switch workpiece\nR: roll tool | RMB: orbit | ESC: exit'
         else 'RMB: orbit | MMB: pan | wheel: zoom\nChoose a physical tool resting on the table.'
     self.choices.Visible = true
     if kind then
