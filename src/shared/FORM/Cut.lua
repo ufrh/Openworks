@@ -123,44 +123,46 @@ function Cut.split(solid, planePoint, planeNormal)
             end
         end
 
-        local ring = {}
-        local seen = {}
+        local boundary = {}
         for _, edge in planeEdges do
             if edge.count == 1 then
-                for _, index in {edge.a, edge.b} do
-                    if not seen[index] then
-                        seen[index] = true
-                        ring[#ring + 1] = index
-                    end
-                end
+                if boundary[edge.a] then return nil, 'BRANCHED_CUT_BOUNDARY' end
+                boundary[edge.a] = edge.b
             end
         end
 
-        if #ring < 3 then return nil, 'INVALID_INTERSECTION_LOOP' end
+        local start = nil
+        for vertex in boundary do
+            if not start or vertex < start then start = vertex end
+        end
+        if not start then return nil, 'INVALID_INTERSECTION_LOOP' end
+
+        local ring = {}
+        local visited = {}
+        local current = start
+        while not visited[current] do
+            if not boundary[current] then return nil, 'OPEN_CUT_BOUNDARY' end
+            visited[current] = true
+            ring[#ring + 1] = current
+            current = boundary[current]
+        end
+
+        if current ~= start or #ring < 3 then
+            return nil, 'INVALID_INTERSECTION_LOOP'
+        end
+        for vertex in boundary do
+            if not visited[vertex] then return nil, 'MULTIPLE_CUT_LOOPS' end
+        end
 
         local center = Vector3.zero
         for _, index in ring do center += output.vertices[index] end
         center /= #ring
 
-        local reference = if math.abs(normal.Y) < 0.9 then Vector3.yAxis else Vector3.xAxis
-        local axisX = reference:Cross(normal).Unit
-        local axisY = normal:Cross(axisX)
-
-        table.sort(ring, function(a, b)
-            local pa, pb = output.vertices[a] - center, output.vertices[b] - center
-            return math.atan2(pa:Dot(axisY), pa:Dot(axisX))
-                < math.atan2(pb:Dot(axisY), pb:Dot(axisX))
-        end)
-
         local centerId = #output.vertices + 1
         output.vertices[centerId] = center
         for i = 1, #ring do
             local a, b = ring[i], ring[i % #ring + 1]
-            if sideIndex == 1 then
-                triangle(centerId, b, a)
-            else
-                triangle(centerId, a, b)
-            end
+            triangle(centerId, b, a)
         end
 
         if not FORM.validate(output).ok then return nil, 'INVALID_OUTPUT' end
