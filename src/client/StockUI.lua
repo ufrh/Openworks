@@ -159,7 +159,6 @@ function UI.start()
         part.CanCollide = true
         part.CanTouch = true
         part.CFrame = item.frame
-        part.CollisionFidelity = Enum.CollisionFidelity.Hull
         part.CustomPhysicalProperties = PhysicalProperties.new(if materialName == 'Steel' then 7.85 else 2.7, 0.65, 0.15, 100, 100)
         part.Material = Enum.Material.SmoothPlastic
         part:SetAttribute('StockId', id)
