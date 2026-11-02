@@ -101,6 +101,17 @@ function UI.start()
     local world = Instance.new('Folder')
     world.Name = 'OPENWORKS Raw Stock'
     world.Parent = workspace
+
+    local surface = Instance.new('Part')
+    surface.Name = 'Stock Work Surface'
+    surface.Anchored = true
+    surface.CanCollide = true
+    surface.Size = Vector3.new(36, 0.6, 20)
+    surface.CFrame = CFrame.new(0, 3.2, 3)
+    surface.Material = Enum.Material.Metal
+    surface.Color = Color3.fromRGB(62, 68, 70)
+    surface.Parent = world
+
     local bindings = {}
     local grab = Grab.new()
     local status = label(frame, 'Select a shape and material', 48)
