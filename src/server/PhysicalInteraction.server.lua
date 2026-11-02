@@ -750,7 +750,8 @@ end
 
 local function moveFabrication(player, state, stroke, offset, axis, isDown, fileSide)
     if not finite(stroke) or not finite(offset)
-        or (axis ~= 'X' and axis ~= 'Z') or type(isDown) ~= 'boolean'
+        or (axis ~= 'X' and axis ~= 'Z' and (state.kind ~= 'File' or axis ~= 'Y'))
+        or type(isDown) ~= 'boolean'
         or (fileSide ~= 1 and fileSide ~= -1) then
         return
     end
