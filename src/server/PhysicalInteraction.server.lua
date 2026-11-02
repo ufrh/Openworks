@@ -136,64 +136,6 @@ local function toolContact(tool, part, kind)
     return bounds * CFrame.new(0, -size.Y * 0.5, 0) * rotation
 end
 
-local function sawBladeReference(tool, parts, restingFrame)
-    local bladeMarker = contactMarker(tool, 'BladeEdge')
-    local blade, handle
-    for _, part in parts do
-        local name = part.Name:lower()
-        if name:find('blade', 1, true) or name:find('teeth', 1, true) then
-            blade = part
-        elseif name:find('handle', 1, true) or name:find('grip', 1, true) then
-            handle = part
-        end
-    end
-
-    if not bladeMarker and not blade and #parts > 1 then
-        local best = 0
-        for _, part in parts do
-            if part ~= handle then
-                local size = part.Size
-                local longest = math.max(size.X, size.Y, size.Z)
-                local shortest = math.max(0.01, math.min(size.X, size.Y, size.Z))
-                local ratio = longest / shortest
-                local color = part.Color
-                local darkness = 1 - (color.R + color.G + color.B) / 3
-                local score = ratio * (1 + math.max(0, darkness) * 0.4)
-                if score > best then
-                    best = score
-                    blade = part
-                end
-            end
-        end
-        if best < 3 then blade = nil end
-    end
-
-    local bladePoint = if bladeMarker then bladeMarker.WorldPosition
-        elseif blade then blade.Position else nil
-    if not bladePoint then return nil, nil end
-
-    local bodyPoint = if handle then handle.Position else nil
-    if not bodyPoint then
-        local total = Vector3.zero
-        local count = 0
-        for _, part in parts do
-            if part ~= blade then
-                total += part.Position
-                count += 1
-            end
-        end
-        if count > 0 then
-            bodyPoint = total / count
-        else
-            bodyPoint = tool:GetPivot().Position
-        end
-    end
-
-    if (bodyPoint - bladePoint).Magnitude < 0.03 then return nil, nil end
-    return restingFrame:PointToObjectSpace(bladePoint),
-        restingFrame:PointToObjectSpace(bodyPoint)
-end
-
 local function setToolCollision(item, state)
     state.collisions = {}
 
@@ -492,14 +434,6 @@ local function startFabrication(player, material, tool)
 
     local restingFrame = tool:GetPivot()
     local contact = toolContact(tool, part, kind)
-    local sawBladeLocal, sawBodyLocal
-    if kind == 'Saw' then
-        sawBladeLocal, sawBodyLocal = sawBladeReference(tool, toolParts, restingFrame)
-        if not sawBladeLocal then
-            warn('[OPENWORKS:Fabrication] Cannot identify the blade and handle on '
-                .. tool.Name .. '; add a BladeEdge attachment or name the blade part')
-        end
-    end
     local toolBounds, toolSize
     if kind == 'Saw' then
         if tool:IsA('Model') then
@@ -518,8 +452,6 @@ local function startFabrication(player, material, tool)
         work = work,
         restingFrame = restingFrame,
         contactOffset = contact:ToObjectSpace(restingFrame),
-        sawBladeLocal = sawBladeLocal,
-        sawBodyLocal = sawBodyLocal,
         toolBoundsOffset = if toolBounds then restingFrame:ToObjectSpace(toolBounds) else nil,
         toolBoundsSize = toolSize,
         currentFrame = restingFrame,
@@ -533,7 +465,7 @@ local function startFabrication(player, material, tool)
         direction = 0,
         reversals = 0,
         axis = 'X',
-        roll = 0,
+        roll = if kind == 'Saw' then 180 else 0,
         awaitRelease = false,
         fileSide = 1,
         fileShape = 'Round',
@@ -740,9 +672,8 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
 
     local travelLength = if axis == 'X' then size.Z else size.X
     local travelRange = math.max(0.12, travelLength * 0.5 - 0.04)
-    local travelDirection = 1
-    local travel = if axis == 'X' then Vector3.new(0, 0, stroke * travelRange * travelDirection)
-        else Vector3.new(stroke * travelRange * travelDirection, 0, 0)
+    local travel = if axis == 'X' then Vector3.new(0, 0, stroke * travelRange)
+        else Vector3.new(stroke * travelRange, 0, 0)
 
     local cross
     if state.kind == 'File' then
@@ -772,31 +703,6 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         * CFrame.Angles(math.rad(state.roll), 0, 0)
 
     state.goalFrame = contactFrame * state.contactOffset
-
-    if state.kind == 'Saw' then
-        local baseFrame = CFrame.fromMatrix(pos, forward, upward, forward:Cross(upward))
-        if state.sawAutoQuarter == nil then
-            local bestQuarter = 0
-            if state.sawBladeLocal and state.sawBodyLocal then
-                local bestHeight = math.huge
-                for quarter = 0, 3 do
-                    local candidate = baseFrame * CFrame.Angles(
-                        math.rad(quarter * 90), 0, 0) * state.contactOffset
-                    local height = (candidate:PointToWorldSpace(state.sawBladeLocal)
-                        - candidate:PointToWorldSpace(state.sawBodyLocal)).Y
-                    if height < bestHeight then
-                        bestQuarter = quarter * 90
-                        bestHeight = height
-                    end
-                end
-            end
-            state.sawAutoQuarter = bestQuarter
-        end
-
-        state.goalFrame = baseFrame * CFrame.Angles(
-            math.rad(state.roll + state.sawAutoQuarter), 0, 0)
-            * state.contactOffset
-    end
 
     if state.kind == 'Saw' then
         local bounds = state.goalFrame * state.toolBoundsOffset
