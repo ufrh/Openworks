@@ -60,5 +60,5 @@ local tube = Stock.create(3, 'Tube', 'Steel', {radius = 8, innerRadius = 5, leng
 local refused, reason = FileShape.preview(tube, Vector3.zero, 3)
 assert(not refused and reason, 'Tube should be rejected by convex-only edge rounding')
 
-print(string.format('[FILE] Tests passed: convex rounding (%.3f mm³), repeated edges, thin sheet, invalid target and hollow-tube guard',
+print(string.format('[FILE] Tests passed: convex rounding (%.3f mm³), repeated edges, thin sheet, face snap, previously rounded edge and tube guard',
     result.removed))
