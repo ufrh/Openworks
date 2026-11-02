@@ -49,7 +49,7 @@ end
 
 local params = OverlapParams.new()
 params.FilterType = Enum.RaycastFilterType.Exclude
-params.FilterDescendantsInstances = {workbench}
+params.FilterDescendantsInstances = {proxies}
 params.MaxParts = 0
 
 local detected = {}
