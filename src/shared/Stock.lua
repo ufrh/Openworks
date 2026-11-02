@@ -4,7 +4,7 @@ local Stock = {}
 Stock.__index = Stock
 
 Stock.SCALE = 0.04
-Stock.MAX_ITEMS = 40
+Stock.MAX_ITEMS = 200
 Stock.MATERIALS = {
     Steel = {density = 7.85, color = Color3.fromRGB(121, 131, 138)},
     Aluminum = {density = 2.70, color = Color3.fromRGB(189, 199, 206)},
