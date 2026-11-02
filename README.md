@@ -25,11 +25,11 @@ START supports current branch, switching branches, and a **destructive** opt-in 
 
 ## Current status — interaction reset
 
-The old gameplay interaction prototype has been retired from `dev`. Its stock creation UI, saw/file UI, equipped-tool/backpack code, dragging controls, fabrication tool visuals/motion, timeline editor, and WorkshopStorage remote were removed. The client bootstrap no longer creates UI, spawns stock, or starts fabrication. No replacement interaction or detection code is installed yet.
+The old gameplay interaction prototype has been retired from `dev`. Its stock creation UI, saw/file UI, equipped-tool/backpack code, dragging controls, fabrication tool visuals/motion, timeline editor, and WorkshopStorage remote were removed. The client bootstrap no longer creates UI, spawns stock, or starts fabrication. No old tool UI, drag controls, or fabrication interactions are active. A new workbench detector is installed independently.
 
 The **FORM geometry kernel** remains, as do reusable pure geometry, material, and project-operation modules (`Stock`, `SawCut`, `SawTube`, `FileShape`, `Workshop`), the optional `FORMRenderer` adapter, with the old automatic runtime tests removed.
 
-The next prototype will be built around the player's Studio-authored `Workspace.Workbench`, whose parts named `surface` will be the references for automatically generated workspace detection proxies. Physical saw and file models are rigid assemblies; there will be no Roblox Tool equip workflow. Implement detection in a separate step rather than restoring the retired UI.
+Workbench detection uses the Studio-authored `Workspace.Workbench`: every descendant BasePart named `surface` generates an invisible proximity proxy at runtime. Tag tool Models (or standalone Parts) with Boolean attribute `isTool = true`. FORM-rendered parts receive `isMaterial = true` and the CollectionService tag `FORMMaterial` via `FORMMaterial.mark(instance)`. The detector publishes `OnWorkbench` on detected objects and `ToolCount` / `MaterialCount` on the workbench. FORM meshes created only on a client are not visible to the server detector; authoritative world materials must be replicated/server-created.
 
 Older machining/workshop documents under `docs/` describe experiments and do **not** mean those interfaces are active.
 

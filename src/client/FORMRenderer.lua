@@ -1,5 +1,6 @@
 local AssetService = game:GetService('AssetService')
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local FORMMaterial = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORMMaterial'))
 
 local Shading = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Shading'))
 local Planarize = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Planarize'))
@@ -44,6 +45,7 @@ function Renderer.create(solid, studsPerMillimeter, smoothAngle)
         CollisionFidelity = Enum.CollisionFidelity.Hull,
     })
 
+    FORMMaterial.mark(part)
     shadingStats.planarization = planarStats
     return part, editable, shadingStats
 end

@@ -20,7 +20,10 @@
 - Initial `Workspace.Workbench` is authored directly in Studio. Parts named `surface` define its usable surface regions; collision/detection proxies will be generated from them at runtime.
 - Starter tools: one rigid saw assembly and one rigid file assembly, both ordinary physical world objects, not Roblox Tool instances.
 - Fabrication tools should be usable through a workbench when physically resting on it, with a future dedicated precision camera and mouse-driven strokes.
-- The old interaction implementation is retired, and no new detection/fabrication interaction code has yet been installed.
+- Workbench surface detection now generates invisible runtime proxies from the parts named `surface` inside `Workspace.Workbench`.
+- Tool assemblies are Model/BasePart instances with Boolean attribute `isTool = true`.
+- Physical FORM materials carry the `FORMMaterial` CollectionService tag and `isMaterial = true` attribute, applied by the renderer (or `FORMMaterial.mark(instance)` for server-created materials).
+- Workbench presence is exposed via `OnWorkbench` on detected objects, and `ToolCount` / `MaterialCount` on the workbench; no interaction or fabrication controls have been restored.
 
 ## Not decided
 
