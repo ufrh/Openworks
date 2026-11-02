@@ -153,6 +153,7 @@ local function scorePoint(work)
 end
 
 local function drawPreview(work, a, b)
+    if #scorePreview:GetChildren() >= ScorePath.MAX_POINTS then return end
     local distance = (b - a).Magnitude
     if distance < 0.02 then return end
     local face, sign = ScorePath.face(work)
@@ -739,7 +740,11 @@ RunService.RenderStepped:Connect(function(dt)
                         drawPreview(work, score.lastDrawn, nextTip)
                         score.lastDrawn = nextTip
                     end
-                    send('FabricationScoreMove', nextTip)
+                    score.lastSentAt = score.lastSentAt or 0
+                    if os.clock() - score.lastSentAt >= 1 / 30 then
+                        score.lastSentAt = os.clock()
+                        send('FabricationScoreMove', nextTip)
+                    end
                 end
             end
         else
