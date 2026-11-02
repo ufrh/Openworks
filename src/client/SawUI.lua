@@ -320,7 +320,7 @@ function SawUI.start(workpieces)
             turn -= 15
         elseif input.KeyCode == Enum.KeyCode.E then
             turn += 15
-        elseif input.KeyCode == Enum.KeyCode.R and not cutting then
+        elseif input.KeyCode == Enum.KeyCode.R then
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
                 sawFlip = (sawFlip + 180) % 360
