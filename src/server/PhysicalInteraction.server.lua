@@ -108,12 +108,15 @@ local function toolContact(tool, part, kind)
     local bounds, size
     if kind == 'Saw' then
         local blade, handle
-        for _, node in allParts(tool) do
-            local name = node.Name:lower()
-            if not blade and name:find('blade', 1, true) then blade = node end
-            if not handle and (name:find('handle', 1, true)
-                or name:find('grip', 1, true)) then
-                handle = node
+        local candidates = if tool:IsA('Model') then tool:GetDescendants() else {tool}
+        for _, node in candidates do
+            if node:IsA('BasePart') then
+                local name = node.Name:lower()
+                if not blade and name:find('blade', 1, true) then blade = node end
+                if not handle and (name:find('handle', 1, true)
+                    or name:find('grip', 1, true)) then
+                    handle = node
+                end
             end
         end
 
