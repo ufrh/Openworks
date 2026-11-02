@@ -79,7 +79,10 @@ function SawUI.start(workpieces)
     local working
     local groove
     local turn = 0
-    local orbit
+    local tilt = 0
+    local focus
+    local cameraEnabled = true
+    local oldCamera
     local lines = {}
     local activeToolConnection = {}
     local connections = {}
@@ -125,10 +128,14 @@ function SawUI.start(workpieces)
         if groove then groove:Destroy() groove = nil end
     end
 
-    local function stopCut()
-        cutting = nil
+    local function resetWorking()
         if currentTool then FabricationTool.restore(currentTool) end
         if working then working:hide() end
+    end
+
+    local function stopCut()
+        cutting = nil
+        resetWorking()
         clearGroove()
         fill.Size = UDim2.fromScale(0, 1)
     end
@@ -138,15 +145,49 @@ function SawUI.start(workpieces)
     end
 
     local function stopOrbit()
-        if not orbit then return end
+        if not focus then return end
         local camera = workspace.CurrentCamera
-        if camera then
-            camera.CameraType = orbit.oldType
-            if orbit.oldSubject and orbit.oldSubject.Parent then
-                camera.CameraSubject = orbit.oldSubject
+        if camera and oldCamera then
+            camera.CameraType = oldCamera.type
+            if oldCamera.subject and oldCamera.subject.Parent then
+                camera.CameraSubject = oldCamera.subject
+            else
+                local humanoid = player.Character and player.Character:FindFirstChildOfClass('Humanoid')
+                if humanoid then camera.CameraSubject = humanoid end
             end
         end
-        orbit = nil
+        if oldCamera then
+            player.CameraMinZoomDistance = oldCamera.minZoom
+            player.CameraMaxZoomDistance = oldCamera.maxZoom
+        end
+        focus = nil
+        oldCamera = nil
+    end
+
+    local function focusSecured(part)
+        local camera = workspace.CurrentCamera
+        if not camera or not cameraEnabled or not equipped() then return end
+        if not part or not part.Parent or not part.Anchored then
+            stopOrbit()
+            return
+        end
+        if focus == part then return end
+        if not oldCamera then
+            oldCamera = {
+                type = camera.CameraType,
+                subject = camera.CameraSubject,
+                minZoom = player.CameraMinZoomDistance,
+                maxZoom = player.CameraMaxZoomDistance,
+            }
+        end
+        focus = part
+        player.CameraMinZoomDistance = 0.7
+        player.CameraMaxZoomDistance = 22
+        local viewDirection = camera.CFrame.Position - part.Position
+        if viewDirection.Magnitude < 0.01 then viewDirection = Vector3.new(1, 0.7, 1) end
+        camera.CameraType = Enum.CameraType.Custom
+        camera.CameraSubject = part
+        camera.CFrame = CFrame.lookAt(part.Position + viewDirection.Unit * 4.5, part.Position)
     end
 
     local function equipped()
@@ -185,14 +226,10 @@ function SawUI.start(workpieces)
         activeToolConnection[#activeToolConnection + 1] = tool.Activated:Connect(function()
             if not equipped() or cutting then return end
             if not preview or not preview.part or not preview.part.Parent then
-                hint.Text = 'Aim at a secured workpiece'
+                hint.Text = 'Aim at a metal workpiece'
                 return
             end
-            if not preview.part.Anchored then
-                hint.Text = 'Secure the workpiece first'
-                return
-            end
-            if not preview.motion or not showModel() then
+             if not preview.motion or not showModel() then
                 hint.Text = 'No valid saw movement for this cut'
                 return
             end
@@ -204,6 +241,9 @@ function SawUI.start(workpieces)
                 item = preview.item,
                 point = preview.data.point,
                 normal = preview.data.normal,
+                baseFrame = workpieces.frame(preview.part),
+                localPoint = preview.item.frame:PointToObjectSpace(preview.data.point),
+                localNormal = preview.item.frame:VectorToObjectSpace(preview.data.normal),
                 plan = plan,
                 advanced = 0,
                 travel = depth,
@@ -242,10 +282,10 @@ function SawUI.start(workpieces)
         end)
         activeToolConnection[#activeToolConnection + 1] = tool.Equipped:Connect(function()
             mouse.TargetFilter = player.Character
-            if startOrbit then startOrbit() end
-            hint.Text = 'Aim at secured metal. Hold click to drive the working saw along the cut.'
+            focusSecured(workpieces.selected())
+            hint.Text = 'Position saw against metal. Hold click to cut; RMB rotates when secured.'
         end)
-        if equipped() and startOrbit then startOrbit() end
+        if equipped() then focusSecured(workpieces.selected()) end
     end
 
     makeButton(panel, 'EQUIP HACKSAW', function()
@@ -277,33 +317,10 @@ function SawUI.start(workpieces)
             end
         end)
     end
-    makeLabel(panel, 'Metal orbit | F: focus hovered | V: toggle | T: top | Q/E: cut | R: rotate blade | RMB: orbit', 56)
+    makeLabel(panel, 'RMB: rotate secured metal view | wheel: zoom | Q/E: angle | Z/X: tilt | F: focus | V: camera', 56)
 
-    startOrbit = function(focusPart)
-        local target = focusPart or workpieces.selected()
-        if not target or not target.Parent then
-            hint.Text = 'Select a metal workpiece to focus the camera'
-            return
-        end
-        local camera = workspace.CurrentCamera
-        if not camera then return end
-        if orbit then
-            orbit.part = target
-            return
-        end
-        local offset = camera.CFrame.Position - target.Position
-        local distance = math.clamp(offset.Magnitude, 4, 26)
-        local yaw = math.atan2(offset.X, offset.Z)
-        local pitch = math.asin(math.clamp(offset.Y / math.max(offset.Magnitude, 0.001), -1, 1))
-        orbit = {
-            part = target, oldType = camera.CameraType,
-            oldSubject = camera.CameraSubject,
-            distance = distance,
-            yaw = yaw,
-            pitch = math.clamp(pitch, math.rad(18), math.rad(85)),
-        }
-        camera.CameraSubject = target
-        camera.CameraType = Enum.CameraType.Scriptable
+    startOrbit = function(part)
+        focusSecured(part or workpieces.selected())
     end
 
     if player.Character then observe(player.Character) end
@@ -312,75 +329,55 @@ function SawUI.start(workpieces)
     connections[#connections + 1] = UserInputService.InputBegan:Connect(function(input, processed)
         if processed or not equipped() then return end
         if input.KeyCode == Enum.KeyCode.V then
-            if orbit then stopOrbit() else startOrbit() end
-        elseif input.KeyCode == Enum.KeyCode.T then
-            if not orbit then startOrbit() end
-            if orbit then orbit.pitch = math.rad(87) end
+            cameraEnabled = not cameraEnabled
+            if cameraEnabled then focusSecured(workpieces.selected())
+            else stopOrbit() end
         elseif input.KeyCode == Enum.KeyCode.Q then
             turn -= 15
         elseif input.KeyCode == Enum.KeyCode.E then
             turn += 15
+        elseif input.KeyCode == Enum.KeyCode.Z then
+            tilt -= 15
+        elseif input.KeyCode == Enum.KeyCode.X then
+            tilt += 15
         elseif input.KeyCode == Enum.KeyCode.R then
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
                 sawFlip = (sawFlip + 180) % 360
-                hint.Text = 'Blade tooth direction flipped'
+                hint.Text = 'Blade teeth flipped'
             else
                 sawRotation = (sawRotation + 90) % 360
-                hint.Text = 'Working blade alignment: ' .. sawRotation .. ' degrees'
+                hint.Text = 'Working saw rotated to ' .. sawRotation .. ' degrees'
             end
         elseif input.KeyCode == Enum.KeyCode.F and not cutting then
             local hovered = mouse.Target
             if hovered and workpieces.select(hovered) then
-                startOrbit(hovered)
-                hint.Text = 'Camera centered on selected metal'
+                if hovered.Anchored then focusSecured(hovered)
+                else stopOrbit() end
+                hint.Text = 'Selected ' .. hovered.Name
             else
-                startOrbit()
+                focusSecured(workpieces.selected())
             end
-        end
-    end)
-    connections[#connections + 1] = UserInputService.InputChanged:Connect(function(input, processed)
-        if processed or not orbit then return end
-        if input.UserInputType == Enum.UserInputType.MouseWheel then
-            orbit.distance = math.clamp(orbit.distance - input.Position.Z * 1.5, 3, 32)
-        elseif input.UserInputType == Enum.UserInputType.MouseMovement
-            and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-            orbit.yaw -= input.Delta.X * 0.007
-            orbit.pitch = math.clamp(orbit.pitch - input.Delta.Y * 0.007,
-                math.rad(12), math.rad(88))
         end
     end)
 
     local clock = 0
     connections[#connections + 1] = RunService.RenderStepped:Connect(function(dt)
         panel.Visible = not (player.Character and player.Character:FindFirstChild('Metal File'))
-        if orbit then
-            local desired = if cutting then cutting.part else workpieces.selected()
-            if desired and desired.Parent then
-                if orbit.part ~= desired then
-                    orbit.part = desired
-                    local camera = workspace.CurrentCamera
-                    if camera then camera.CameraSubject = desired end
-                end
-            elseif not orbit.part.Parent then
+        if equipped() then
+            local active = if cutting then cutting.part else workpieces.selected()
+            if active and active.Parent and active.Anchored and cameraEnabled then
+                focusSecured(active)
+            else
                 stopOrbit()
             end
-            if orbit then
-                local camera = workspace.CurrentCamera
-                if camera then
-                    local focus = orbit.part.Position
-                    local offset = Vector3.new(
-                        math.sin(orbit.yaw) * math.cos(orbit.pitch),
-                        math.sin(orbit.pitch),
-                        math.cos(orbit.yaw) * math.cos(orbit.pitch)) * orbit.distance
-                    camera.CFrame = CFrame.lookAt(focus + offset, focus)
-                end
-            end
+        elseif focus then
+            stopOrbit()
         end
 
         if cutting then
             local operation = cutting
-            if not equipped() or not operation.part.Parent or not operation.part.Anchored
+            if not equipped() or not operation.part.Parent
                 or workpieces.get(operation.part) ~= operation.item then
                 stopCut()
                 clearLines()
@@ -388,12 +385,18 @@ function SawUI.start(workpieces)
                 return
             end
 
+            local currentFrame = workpieces.frame(operation.part)
+            if not currentFrame then
+                stopCut()
+                return
+            end
+            local relative = currentFrame * operation.baseFrame:Inverse()
             operation.advanced = math.min(operation.travel, operation.advanced + dt * operation.rate)
             operation.phase += dt * 23
             local progress = operation.advanced / operation.travel
             fill.Size = UDim2.fromScale(progress, 1)
             if working then
-                working:pose(Motion.sawPose(operation.plan, progress, operation.phase)
+                working:pose(relative * Motion.sawPose(operation.plan, progress, operation.phase)
                     * CFrame.Angles(0, 0, math.rad(sawRotation))
                     * CFrame.Angles(math.rad(sawFlip), 0, 0))
             end
@@ -407,13 +410,15 @@ function SawUI.start(workpieces)
                 local surface = plan.center
                     + plan.forward * (plan.alongStart + visibleLength / 2)
                     + plan.outward * (plan.start + 0.012)
-                groove.CFrame = FabricationVisual.contactFrame(
+                groove.CFrame = relative * FabricationVisual.contactFrame(
                     surface, plan.forward, plan.outward)
             end
 
             if progress >= 1 then
+                local point = currentFrame:PointToWorldSpace(operation.localPoint)
+                local normal = currentFrame:VectorToWorldSpace(operation.localNormal)
                 local success, solids, stats = pcall(SawCut.split, operation.item,
-                    operation.point, operation.normal)
+                    point, normal)
                 stopCut()
                 clearLines()
                 preview = nil
@@ -444,25 +449,29 @@ function SawUI.start(workpieces)
 
         local part = mouse.Target
         local item = workpieces.get(part)
-        if not item or not part.Anchored then
+        if not item then
             if preview then clearLines() preview = nil end
-            if working then working:hide() end
+            resetWorking()
             return
         end
+        workpieces.frame(part)
 
         local tube = item.shape == 'Tube' or item.tubeProfile ~= nil
-        local up = item.frame:VectorToWorldSpace(
-            if tube then Vector3.xAxis else Vector3.yAxis)
         local attachment = currentTool:FindFirstChild('CutNormal', true)
-        local baseAxis = if attachment and attachment:IsA('Attachment')
-            then attachment.WorldAxis else item.frame:VectorToWorldSpace(
-                if tube then Vector3.yAxis else Vector3.xAxis)
-        local axis = CFrame.fromAxisAngle(up, math.rad(turn)):VectorToWorldSpace(baseAxis).Unit
+        local localBase = if attachment and attachment:IsA('Attachment')
+            then item.frame:VectorToObjectSpace(attachment.WorldAxis)
+            elseif tube then Vector3.yAxis else Vector3.xAxis
+        local yawAxis = if tube then Vector3.xAxis else Vector3.yAxis
+        local tiltAxis = Vector3.zAxis
+        local orientation = CFrame.fromAxisAngle(yawAxis, math.rad(turn))
+            * CFrame.fromAxisAngle(tiltAxis, math.rad(tilt))
+        local axis = item.frame:VectorToWorldSpace(
+            orientation:VectorToWorldSpace(localBase)).Unit
 
         local candidate, reason = SawCut.preview(item, mouse.Hit.Position, axis)
         if not candidate then
             if preview then clearLines() preview = nil end
-            if working then working:hide() end
+            resetWorking()
             hint.Text = tostring(reason or 'No valid cut at this position')
             return
         end
@@ -472,15 +481,21 @@ function SawUI.start(workpieces)
         local plan, planReason = Motion.sawPlan(candidate, mouse.Hit.Position,
             surfaceNormal or item.frame.UpVector)
         if not plan then
-            if working then working:hide() end
+            resetWorking()
             if preview then clearLines() preview = nil end
             hint.Text = tostring(planReason)
             return
         end
         preview = {part = part, item = item, data = candidate, motion = plan}
         drawRing(candidate.rings or {candidate.ring})
-        if working then working:hide() end
-        hint.Text = 'Saw ready - hold LMB to follow cut (' .. item.material .. ')'
+        if showModel() then
+            FabricationTool.hideEquipped(currentTool)
+            working:pose(Motion.sawPose(plan, 0, 0)
+                * CFrame.Angles(0, 0, math.rad(sawRotation))
+                * CFrame.Angles(math.rad(sawFlip), 0, 0))
+        end
+        hint.Text = 'Saw positioned - hold LMB to cut ' .. item.material
+            .. (if part.Anchored then ' (secured)' else ' (loose)')
     end)
 
     return gui
