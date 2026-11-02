@@ -67,7 +67,7 @@ remote.OnServerEvent:Connect(function(player)
         0.18,
         math.min(2.5, surface.Size.Z * 0.6)
     )
-    sheet.CFrame = surface.CFrame * CFrame.new(0, surface.Size.Y / 2 + 2.5, 0)
+    sheet.CFrame = surface.CFrame * CFrame.new(0, surface.Size.Y / 2 + sheet.Size.Y / 2 + 0.7, 0)
     sheet.Anchored = false
     sheet.CanCollide = true
     sheet.CanTouch = true

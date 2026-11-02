@@ -28,7 +28,23 @@ end
 
 local regionHeight = 1.2
 local bottomInset = 0.08
+local supportThickness = 0.45
+local supportTopOffset = 0.015
 local regions = {}
+
+local function alignRegion(region)
+    local surface = region.surface
+    local proxy = region.proxy
+    local support = region.support
+
+    proxy.Size = Vector3.new(surface.Size.X, regionHeight, surface.Size.Z)
+    proxy.CFrame = surface.CFrame
+        * CFrame.new(0, surface.Size.Y * 0.5 + regionHeight * 0.5 - bottomInset, 0)
+
+    support.Size = Vector3.new(surface.Size.X, supportThickness, surface.Size.Z)
+    support.CFrame = surface.CFrame
+        * CFrame.new(0, surface.Size.Y * 0.5 + supportTopOffset - supportThickness * 0.5, 0)
+end
 
 for index, surface in surfaces do
     local proxy = Instance.new('Part')
@@ -40,7 +56,20 @@ for index, surface in surfaces do
     proxy.CastShadow = false
     proxy.Transparency = 1
     proxy.Parent = proxies
-    table.insert(regions, {surface = surface, proxy = proxy})
+
+    local support = Instance.new('Part')
+    support.Name = 'SurfaceSupport_' .. index
+    support.Anchored = true
+    support.CanCollide = true
+    support.CanTouch = false
+    support.CanQuery = false
+    support.CastShadow = false
+    support.Transparency = 1
+    support.Parent = proxies
+
+    local region = {surface = surface, proxy = proxy, support = support}
+    alignRegion(region)
+    table.insert(regions, region)
 end
 
 if #regions == 0 then
@@ -99,9 +128,7 @@ local function scan()
             continue
         end
 
-        proxy.Size = Vector3.new(surface.Size.X, regionHeight, surface.Size.Z)
-        proxy.CFrame = surface.CFrame
-            * CFrame.new(0, surface.Size.Y * 0.5 + regionHeight * 0.5 - bottomInset, 0)
+        alignRegion(region)
 
         for _, part in workspace:GetPartsInPart(proxy, params) do
             local item, kind = classify(part)
