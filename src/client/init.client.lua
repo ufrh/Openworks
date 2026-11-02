@@ -2,41 +2,37 @@ local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local UserInputService = game:GetService('UserInputService')
 
 local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'))
-local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Cut'))
+local Boolean = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Boolean'))
 local Renderer = require(script:WaitForChild('FORMRenderer'))
 
 local stock = FORM.box(Vector3.new(100, 50, 20))
-local first, remainder = Cut.split(stock, Vector3.zero, Vector3.xAxis)
-assert(first and remainder, '[FORM] First preview cut failed: ' .. tostring(remainder))
-
-local second, third = Cut.split(first, Vector3.new(0, 7, 0), Vector3.yAxis)
-assert(second and third, '[FORM] Second preview cut failed: ' .. tostring(third))
-
-local colors = {
-    Color3.fromRGB(78, 156, 120),
-    Color3.fromRGB(183, 155, 95),
-    Color3.fromRGB(126, 145, 193),
-}
-local pieces = {remainder, second, third}
+local tool = FORM.box(Vector3.new(40, 20, 30))
+local pieces, removed = Boolean.subtract(stock, tool)
+assert(pieces, '[FORM] Subtraction preview failed: ' .. tostring(removed))
 
 local rendered = {}
-local separation = 1.5
+local offsets = {}
+local separation = 0
 local basePosition = Vector3.new(0, 7, -12)
 
 local function arrange()
     for index, part in rendered do
-        part.CFrame = CFrame.new(basePosition + Vector3.new((index - 2) * separation, 0, 0))
+        part.CFrame = CFrame.new(basePosition + offsets[index] * separation)
     end
 end
 
 for index, solid in pieces do
     local success, result = pcall(function()
         local part = Renderer.create(solid, 0.04, 30)
-        part.Name = 'FORM Sequential Cut ' .. index
+        part.Name = 'FORM Subtraction ' .. index
         part.Anchored = true
         part.CanCollide = false
         part.Material = Enum.Material.Metal
-        part.Color = colors[index]
+        part.Color = Color3.fromRGB(78, 156, 120)
+
+        local low, high = FORM.bounds(solid)
+        local center = (low + high) / 2
+        offsets[index] = if center.Magnitude > 0 then center.Unit else Vector3.xAxis
         rendered[index] = part
         part.Parent = workspace
     end)
@@ -46,13 +42,8 @@ for index, solid in pieces do
     end
 end
 
-local total = 0
-for _, solid in pieces do
-    total += FORM.signedVolume(solid)
-end
-print('[FORM] Three-piece preview volume:', total, 'mm^3')
-
 arrange()
+print(string.format('[FORM] Rectangular through-slot removed %.4f mm^3 across %d pieces', removed, #pieces))
 
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
