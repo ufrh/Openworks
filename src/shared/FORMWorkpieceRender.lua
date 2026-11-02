@@ -7,8 +7,9 @@ local Stock = require(script.Parent.Stock)
 
 local Renderer = {}
 
-function Renderer.create(solid, source)
+function Renderer.create(solid, source, appearance)
     assert(FORM.validate(solid).ok, 'Filed geometry is invalid')
+    appearance = appearance or source
 
     local low, high = FORM.bounds(solid)
     local center = (low + high) * 0.5
@@ -46,15 +47,15 @@ function Renderer.create(solid, source)
     mesh.Size = (high - low) * Stock.SCALE
     mesh.Anchored = false
     mesh.Massless = true
-    mesh.CanCollide = false
+    mesh.CanCollide = true
     mesh.CanTouch = false
-    mesh.CanQuery = false
-    mesh.CastShadow = source.CastShadow
-    mesh.Material = source.Material
-    mesh.MaterialVariant = source.MaterialVariant
-    mesh.Color = source.Color
-    mesh.Transparency = source.Transparency
-    mesh.Reflectance = source.Reflectance
+    mesh.CanQuery = true
+    mesh.CastShadow = appearance.CastShadow
+    mesh.Material = appearance.Material
+    mesh.MaterialVariant = appearance.MaterialVariant
+    mesh.Color = appearance.Color
+    mesh.Transparency = appearance.Transparency
+    mesh.Reflectance = appearance.Reflectance
     mesh.CFrame = source.CFrame * CFrame.new(center * Stock.SCALE)
 
     return mesh
