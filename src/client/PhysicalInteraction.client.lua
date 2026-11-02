@@ -231,6 +231,14 @@ UserInputService.InputBegan:Connect(function(input, processed)
         return
     end
 
+    if fabrication and not processed
+        and (input.KeyCode == Enum.KeyCode.X or input.KeyCode == Enum.KeyCode.Z) then
+        if not fabrication.down then
+            send('FabricationMaterialFlip', if input.KeyCode == Enum.KeyCode.X then 'X' else 'Z')
+        end
+        return
+    end
+
     if input.KeyCode == Enum.KeyCode.F and fabrication
         and fabrication.kind == 'Saw' and not processed then
         flipSaw()
@@ -306,7 +314,7 @@ UserInputService.InputChanged:Connect(function(input)
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
                 fabrication.offset += input.Delta.X * 0.006
             elseif fabrication.down then
-                fabrication.stroke = math.clamp(fabrication.stroke + input.Delta.X * 0.03, -1, 1)
+                fabrication.stroke = math.clamp(fabrication.stroke + input.Delta.X * 0.008, -12, 12)
             else
                 fabrication.pointerMoved = true
             end
@@ -396,6 +404,18 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             inspector:status('Hover the sheet to set a cut, then hold LMB to saw')
         else
             inspector:status('Hover an edge, hold LMB and stroke to file it')
+        end
+    elseif action == 'MaterialFlipped' then
+        if fabrication then
+            fabrication.down = false
+            fabrication.stroke = 0
+            fabrication.offset = 0
+            fabrication.pointerMoved = true
+            if fabrication.previousMouseBehavior then
+                UserInputService.MouseBehavior = fabrication.previousMouseBehavior
+                fabrication.previousMouseBehavior = nil
+            end
+            inspector:status('Workpiece flipped. Top-facing surface is now active.')
         end
     elseif action == 'SawFlipChanged' then
         if fabrication and fabrication.kind == 'Saw' then
@@ -560,15 +580,27 @@ RunService.RenderStepped:Connect(function(dt)
                 if hit and (hit.Instance == work or hit.Instance:IsDescendantOf(work)) then
                     local point = work.CFrame:PointToObjectSpace(hit.Position)
                     if fabrication.kind == 'File' then
-                        local distanceX = size.X * 0.5 - math.abs(point.X)
-                        local distanceZ = size.Z * 0.5 - math.abs(point.Z)
-                        if distanceX <= distanceZ then
-                            fabrication.axis = 'X'
-                            fabrication.fileSide = if point.X >= 0 then 1 else -1
-                        else
-                            fabrication.axis = 'Z'
-                            fabrication.fileSide = if point.Z >= 0 then 1 else -1
+                        local normal = work.CFrame:VectorToObjectSpace(Vector3.yAxis)
+                        local face = if math.abs(normal.X) >= math.abs(normal.Y)
+                            and math.abs(normal.X) >= math.abs(normal.Z) then 'X'
+                            elseif math.abs(normal.Z) >= math.abs(normal.Y) then 'Z'
+                            else 'Y'
+                        local distances = {
+                            X = size.X * 0.5 - math.abs(point.X),
+                            Y = size.Y * 0.5 - math.abs(point.Y),
+                            Z = size.Z * 0.5 - math.abs(point.Z),
+                        }
+                        local candidate
+                        for _, checkAxis in {'X', 'Y', 'Z'} do
+                            if checkAxis ~= face and
+                                (not candidate or distances[checkAxis] < distances[candidate]) then
+                                candidate = checkAxis
+                            end
                         end
+                        fabrication.axis = candidate
+                        local coordinate = if candidate == 'X' then point.X
+                            elseif candidate == 'Y' then point.Y else point.Z
+                        fabrication.fileSide = if coordinate >= 0 then 1 else -1
                     else
                         fabrication.offset = if fabrication.axis == 'X' then point.X else point.Z
                     end
@@ -584,17 +616,31 @@ RunService.RenderStepped:Connect(function(dt)
                 then Color3.fromRGB(125, 215, 184)
                 else Color3.fromRGB(239, 182, 81)
             if fabrication.kind == 'File' then
-                if fabrication.axis == 'X' then
-                    guide.Size = Vector3.new(0.06, 0.02, size.Z)
-                    guide.CFrame = work.CFrame
-                        * CFrame.new(fabrication.fileSide * size.X * 0.5,
-                            guideHeight, 0)
-                else
-                    guide.Size = Vector3.new(size.X, 0.02, 0.06)
-                    guide.CFrame = work.CFrame
-                        * CFrame.new(0, guideHeight,
-                            fabrication.fileSide * size.Z * 0.5)
+                local up = work.CFrame:VectorToObjectSpace(Vector3.yAxis)
+                local face = if math.abs(up.X) >= math.abs(up.Y)
+                    and math.abs(up.X) >= math.abs(up.Z) then 'X'
+                    elseif math.abs(up.Z) >= math.abs(up.Y) then 'Z'
+                    else 'Y'
+                local sign = if (if face == 'X' then up.X
+                    elseif face == 'Y' then up.Y else up.Z) >= 0 then 1 else -1
+                local sideAxis = fabrication.axis
+                if sideAxis == face then
+                    sideAxis = if face == 'X' then 'Z' else 'X'
+                    fabrication.axis = sideAxis
                 end
+                local along
+                for _, a in {'X', 'Y', 'Z'} do
+                    if a ~= face and a ~= sideAxis then along = a break end
+                end
+                local vectors = {X = Vector3.xAxis, Y = Vector3.yAxis, Z = Vector3.zAxis}
+                local extent = {X = size.X, Y = size.Y, Z = size.Z}
+                local center = vectors[face] * sign * (extent[face] * 0.5 + 0.025)
+                    + vectors[sideAxis] * fabrication.fileSide * extent[sideAxis] * 0.5
+                local travel = vectors[along]
+                local top = vectors[face] * sign
+                guide.Size = Vector3.new(extent[along], 0.02, 0.055)
+                guide.CFrame = work.CFrame
+                    * CFrame.fromMatrix(center, travel, top, travel:Cross(top))
             elseif fabrication.axis == 'X' then
                 guide.Size = Vector3.new(0.055, 0.02, size.Z)
                 guide.CFrame = work.CFrame * CFrame.new(fabrication.offset, guideHeight, 0)
