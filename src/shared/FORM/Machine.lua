@@ -155,13 +155,32 @@ local function operationCutters(spec)
         }
     end
 
+    if spec.kind == 'profile' then
+        assert(type(spec.points) == 'table' and #spec.points >= 2 and #spec.points <= 9,
+            'Profile requires 2-9 path points')
+        local cutters = {}
+        for i = 1, #spec.points - 1 do
+            local step = operationCutters({
+                kind = 'slot',
+                from = spec.points[i],
+                to = spec.points[i + 1],
+                radius = spec.radius,
+                height = spec.height,
+                segments = spec.segments or 12,
+            })
+            for _, cutter in step do cutters[#cutters + 1] = cutter end
+        end
+        assert(#cutters <= MAX_CUTTERS, 'Tool path exceeds cutter budget')
+        return cutters
+    end
+
     error('Unknown cutting operation: ' .. tostring(spec.kind))
 end
 
 local function execute(pieces, spec)
     assert(type(spec) == 'table' and type(spec.kind) == 'string', 'Invalid machining operation')
 
-    if spec.kind == 'drill' or spec.kind == 'pocket' or spec.kind == 'slot' then
+    if spec.kind == 'drill' or spec.kind == 'pocket' or spec.kind == 'slot' or spec.kind == 'profile' then
         local cutters = operationCutters(spec)
         assert(#cutters <= MAX_CUTTERS, 'Too many cutters per operation')
         local current = pieces
