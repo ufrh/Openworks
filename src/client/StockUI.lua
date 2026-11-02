@@ -1,5 +1,6 @@
 local Players = game:GetService('Players')
 local UserInputService = game:GetService('UserInputService')
+local RunService = game:GetService('RunService')
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 
 local Stock = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('Stock'))
@@ -148,7 +149,7 @@ function UI.start()
         part.CanTouch = true
         part.CFrame = item.frame
         part.CollisionFidelity = Enum.CollisionFidelity.Hull
-        part.CustomPhysicalProperties = PhysicalProperties.new(if materialName == 'Steel' then 7.85 else 2.7, 0.65, 0.15)
+        part.CustomPhysicalProperties = PhysicalProperties.new(if materialName == 'Steel' then 7.85 else 2.7, 0.65, 0.15, 100, 100)
         part.Material = Enum.Material.SmoothPlastic
         part:SetAttribute('StockId', id)
         part.Parent = world
@@ -258,6 +259,14 @@ function UI.start()
         selected = id
         refreshSelection()
         grab:begin(target, mouse.Hit.Position, mouse)
+    end)
+    RunService.Heartbeat:Connect(function()
+        for id, binding in bindings do
+            local item = current[id]
+            if item and binding.part.Parent then
+                Stock.move(item, binding.part.CFrame)
+            end
+        end
     end)
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then grab:release() end
