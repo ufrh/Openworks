@@ -72,6 +72,16 @@ local function run()
         axisB = 'Z', signB = 1, radius = 4, segments = 6}, 'Faceted edge fillet')
     assertUnified(fillet, 'Filleted box', 2)
 
+    local profile = Machine.new(box)
+    apply(profile, {kind = 'profile',
+        points = {
+            Vector3.new(-29, 0, 12),
+            Vector3.new(-13, 0, 12),
+            Vector3.new(-13, 0, 1),
+        },
+        radius = 2.5, height = 70, segments = 12}, 'Swept milling profile')
+    assertUnified(profile, 'Polyline through-cut', 0)
+
     local saw = Machine.new(box)
     apply(saw, {kind = 'saw', point = Vector3.new(45, 0, 0), normal = Vector3.xAxis},
         'Plane trim')
