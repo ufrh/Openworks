@@ -49,11 +49,32 @@ function FabricationVisual.new(name, markerName)
     local anchor
     if marker then
         anchor = marker.WorldCFrame
-    elseif model:IsA('Model') then
-        local bounds, size = model:GetBoundingBox()
-        anchor = bounds * CFrame.new(0, -size.Y / 2, 0)
     else
-        anchor = model.CFrame * CFrame.new(0, -model.Size.Y / 2, 0)
+        local blade
+        if name == 'Hacksaw' then
+            for _, item in model:GetDescendants() do
+                if item:IsA('BasePart') and (item.Name == 'Blade' or item.Name == 'SawBlade'
+                    or item.Name == 'BladePart') then
+                    blade = item
+                    break
+                end
+            end
+        end
+        local bounds, size
+        if blade then
+            bounds, size = blade.CFrame, blade.Size
+        elseif model:IsA('Model') then
+            bounds, size = model:GetBoundingBox()
+        else
+            bounds, size = model.CFrame, model.Size
+        end
+        local rotation = CFrame.identity
+        if size.Z > math.max(size.X, size.Y) * 1.12 then
+            rotation = CFrame.Angles(0, math.rad(-90), 0)
+        elseif size.Y > math.max(size.X, size.Z) * 1.12 then
+            rotation = CFrame.Angles(0, 0, math.rad(90))
+        end
+        anchor = bounds * CFrame.new(0, -size.Y / 2, 0) * rotation
     end
 
     for _, part in parts do
