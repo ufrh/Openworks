@@ -17,6 +17,20 @@ local fabrication
 local pendingTool
 local elapsed = 0
 
+local guide = Instance.new('Part')
+guide.Name = 'OpenworksCutGuide'
+guide.Anchored = true
+guide.CanCollide = false
+guide.CanTouch = false
+guide.CanQuery = false
+guide.CastShadow = false
+guide.Material = Enum.Material.Neon
+guide.Color = Color3.fromRGB(239, 182, 81)
+guide.Transparency = 0.15
+guide.Size = Vector3.new(0.05, 0.018, 1)
+guide.Parent = workspace
+guide.Parent = nil
+
 local highlight = Instance.new('Highlight')
 highlight.Name = 'OpenworksSelectedMaterial'
 highlight.FillTransparency = 1
@@ -56,11 +70,16 @@ local function cancel()
     dragging = nil
     fabrication = nil
     pendingTool = nil
+    guide.Parent = nil
     remote:FireServer('End')
 end
 
 local function exitInspect()
+    local previous = fabrication
     cancel()
+    if previous and previous.previousMouseBehavior then
+        UserInputService.MouseBehavior = previous.previousMouseBehavior
+    end
     inspector:close()
     highlight.Adornee = nil
     highlight.Enabled = false
@@ -123,6 +142,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
     if input.UserInputType ~= Enum.UserInputType.MouseButton1 or processed then return end
     if fabrication then
         fabrication.down = true
+        if not inspector.rightHeld and not inspector.middleHeld then
+            fabrication.previousMouseBehavior = UserInputService.MouseBehavior
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+        end
         return
     end
 
@@ -169,6 +192,10 @@ UserInputService.InputEnded:Connect(function(input)
 
     if fabrication then
         fabrication.down = false
+        if fabrication.previousMouseBehavior then
+            UserInputService.MouseBehavior = fabrication.previousMouseBehavior
+            fabrication.previousMouseBehavior = nil
+        end
         return
     end
 
@@ -210,11 +237,14 @@ remote.OnClientEvent:Connect(function(action, a, b, c)
             down = false, stroke = 0, offset = 0, axis = 'X',
         }
         inspector:setTool(a)
+        inspector:status('Position the cut using Shift + mouse, then hold LMB to saw')
+        guide.Parent = workspace
     elseif action == 'Progress' then
         if fabrication then
             inspector:status('Manual passes: ' .. math.floor(a * 100) .. '%')
         end
     elseif action == 'MachiningCompleted' then
+        guide.Parent = nil
         fabrication = nil
         pendingTool = nil
         if a and a.Parent then
@@ -230,6 +260,10 @@ remote.OnClientEvent:Connect(function(action, a, b, c)
     elseif action == 'Ended' then
         dragging = nil
         if fabrication then
+            if fabrication.previousMouseBehavior then
+                UserInputService.MouseBehavior = fabrication.previousMouseBehavior
+            end
+            guide.Parent = nil
             fabrication = nil
             if inspector.material then inspector:setTool(nil) end
         end
@@ -268,6 +302,30 @@ RunService.RenderStepped:Connect(function(dt)
         if yaw ~= 0 or pitch ~= 0 then
             dragging.rotation = CFrame.Angles(0, yaw * math.rad(95) * dt, 0)
                 * dragging.rotation * CFrame.Angles(pitch * math.rad(95) * dt, 0, 0)
+        end
+    end
+
+    if fabrication then
+        local item = fabrication.material
+        local work = if item and item:IsA('BasePart') then item
+            elseif item and item:IsA('Model') then item.PrimaryPart
+            else nil
+
+        if not work or not work.Parent then
+            guide.Parent = nil
+        else
+            local size = work.Size
+            local span = if fabrication.axis == 'X' then size.X else size.Z
+            local maximum = math.max(0, span * 0.5 - 0.17)
+            fabrication.offset = math.clamp(fabrication.offset, -maximum, maximum)
+            local cutHeight = size.Y * 0.5 + 0.025
+            if fabrication.axis == 'X' then
+                guide.Size = Vector3.new(0.055, 0.02, size.Z)
+                guide.CFrame = work.CFrame * CFrame.new(fabrication.offset, cutHeight, 0)
+            else
+                guide.Size = Vector3.new(size.X, 0.02, 0.055)
+                guide.CFrame = work.CFrame * CFrame.new(0, cutHeight, fabrication.offset)
+            end
         end
     end
 
