@@ -4,6 +4,7 @@ local RunService = game:GetService('RunService')
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 
 local Stock = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('Stock'))
+local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'))
 local Renderer = require(script.Parent.FORMRenderer)
 local Grab = require(script.Parent.StockGrab)
 
@@ -76,9 +77,9 @@ function UI.start()
 
     local frame = Instance.new('ScrollingFrame')
     frame.Name = 'StockPanel'
-    frame.AnchorPoint = Vector2.new(0.5, 0)
-    frame.Position = UDim2.new(0.5, 0, 0, 25)
-    frame.Size = UDim2.fromOffset(312, 420)
+    frame.AnchorPoint = Vector2.new(0, 0.5)
+    frame.Position = UDim2.new(0, 14, 0.5, 0)
+    frame.Size = UDim2.fromOffset(290, 370)
     frame.ScrollBarThickness = 4
     frame.CanvasSize = UDim2.fromOffset(0, 0)
     frame.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -146,39 +147,124 @@ function UI.start()
         end
     end
 
-    local function spawn(shapeName, materialName, dims, at)
-        assert(nextId < 10000, 'Stock ID budget exceeded')
-        local count = 0
-        for _ in current do count += 1 end
-        assert(count < Stock.MAX_ITEMS, 'Maximum number of stock items reached')
-        local id = nextId + 1
-        local item = Stock.create(id, shapeName, materialName, dims, at)
+    local function countPieces()
+        local n = 0
+        for _ in current do n += 1 end
+        return n
+    end
+
+    local function createDisplay(item)
         local part, editable
-        if shapeName == 'Block' or shapeName == 'Sheet' then
+        local dims = item.dimensions
+        if item.shape == 'Block' or item.shape == 'Sheet' then
             part = Instance.new('Part')
             part.Size = Vector3.new(dims.x, dims.y, dims.z) * Stock.SCALE
-        elseif shapeName == 'Rod' then
+        elseif item.shape == 'Rod' then
             part = Instance.new('Part')
             part.Shape = Enum.PartType.Cylinder
             part.Size = Vector3.new(dims.radius * 2, dims.length, dims.radius * 2) * Stock.SCALE
         else
-            part, editable = Renderer.create(item.solid, Stock.SCALE, 0)
+            local low, high = FORM.bounds(item.solid)
+            local bounds = high - low
+            local expected = bounds.X * bounds.Y * bounds.Z
+            if math.abs(expected - item.volume) < math.max(0.02, expected * 1e-5)
+                and bounds.X > 0.001 and bounds.Y > 0.001 and bounds.Z > 0.001 then
+                part = Instance.new('Part')
+                part.Size = bounds * Stock.SCALE
+            else
+                part, editable = Renderer.create(item.solid, Stock.SCALE, 0)
+            end
         end
-        part.Name = string.format('Stock %03d - %s', id, shapeName)
-        part.Anchored = false
+        part.Name = string.format('Stock %03d - %s', item.id, item.shape)
+        part.Anchored = true
         part.CanCollide = true
         part.CanTouch = true
         part.CFrame = item.frame
-        part.CustomPhysicalProperties = PhysicalProperties.new(if materialName == 'Steel' then 7.85 else 2.7, 0.65, 0.15, 100, 100)
+        part.CustomPhysicalProperties = PhysicalProperties.new(
+            if item.material == 'Steel' then 7.85 else 2.7, 0.65, 0.15, 100, 100)
         part.Material = Enum.Material.SmoothPlastic
-        part:SetAttribute('StockId', id)
-        part.Parent = world
-        nextId = id
-        current[id] = item
-        bindings[id] = {part = part, editable = editable}
-        selected = id
+        part.Color = Stock.MATERIALS[item.material].color
+        part:SetAttribute('StockId', item.id)
+        return {part = part, editable = editable}
+    end
+
+    local function destroyDisplay(binding)
+        if not binding then return end
+        if grab.active and grab.active.part == binding.part then grab:release() end
+        binding.part:Destroy()
+        if binding.editable then
+            pcall(function() binding.editable:Destroy() end)
+        end
+    end
+
+    local function install(item, binding, anchored)
+        assert(not current[item.id], 'Workpiece identity already allocated')
+        nextId = math.max(nextId, item.id)
+        current[item.id] = item
+        bindings[item.id] = binding
+        binding.part.Parent = world
+        binding.part.Anchored = anchored == true
+        selected = item.id
+    end
+
+    local function spawn(shapeName, materialName, dims, at)
+        assert(nextId < 10000, 'Stock ID budget exceeded')
+        assert(countPieces() < Stock.MAX_ITEMS, 'Maximum number of stock items reached')
+        local item = Stock.create(nextId + 1, shapeName, materialName, dims, at)
+        local binding = createDisplay(item)
+        install(item, binding, false)
         refreshSelection()
         return item
+    end
+
+    local function cloneSolid(solid)
+        local copy = {vertices = table.clone(solid.vertices), triangles = {}}
+        for i, face in solid.triangles do copy.triangles[i] = table.clone(face) end
+        return copy
+    end
+
+    local function fragmentRecord(id, source, solid, originalFrame)
+        local low, high = FORM.bounds(solid)
+        local offset = (low + high) / 2
+        local centered = cloneSolid(solid)
+        for i, vertex in centered.vertices do centered.vertices[i] = vertex - offset end
+        local vol = FORM.signedVolume(centered)
+        assert(vol > 0 and FORM.validate(centered).ok, 'Invalid saw fragment')
+        return {
+            id = id, shape = 'Fabricated', material = source.material,
+            dimensions = nil, solid = centered, frame = originalFrame * CFrame.new(offset * Stock.SCALE),
+            volume = vol, massKg = vol * Stock.MATERIALS[source.material].density / 1000000,
+        }
+    end
+
+    local function separate(part, solids)
+        local id = part:GetAttribute('StockId')
+        local source = id and current[id]
+        if not source or bindings[id].part ~= part then return nil, 'Workpiece no longer exists' end
+        if not part.Anchored then return nil, 'Secure the metal before cutting' end
+        if countPieces() >= Stock.MAX_ITEMS then return nil, 'Stock limit reached' end
+        if #solids ~= 2 then return nil, 'Saw must produce two pieces' end
+        local first = fragmentRecord(nextId + 1, source, solids[1], part.CFrame)
+        local second = fragmentRecord(nextId + 2, source, solids[2], part.CFrame)
+        local prepared = {}
+        local ok, err = pcall(function()
+            prepared[1] = createDisplay(first)
+            prepared[2] = createDisplay(second)
+        end)
+        if not ok then
+            for _, binding in prepared do destroyDisplay(binding) end
+            return nil, 'Could not render both cut pieces: ' .. tostring(err)
+        end
+        local original = bindings[id]
+        local holdFirst = first.volume >= second.volume
+        destroyDisplay(original)
+        bindings[id] = nil
+        current[id] = nil
+        install(first, prepared[1], holdFirst)
+        install(second, prepared[2], not holdFirst)
+        selected = if holdFirst then first.id else second.id
+        refreshSelection()
+        return true
     end
 
     local function selectedAction(action)
@@ -241,15 +327,20 @@ function UI.start()
 
     button(frame, 'DUPLICATE SELECTED', function()
         selectedAction(function(item)
-            spawn(item.shape, item.material, item.dimensions, bindings[item.id].part.CFrame + Vector3.new(1.5, 1, 0))
+            if item.shape ~= 'Fabricated' then
+                spawn(item.shape, item.material, item.dimensions,
+                    bindings[item.id].part.CFrame + Vector3.new(1.5, 1, 0))
+            else
+                assert(countPieces() < Stock.MAX_ITEMS, 'Stock limit reached')
+                local copy = fragmentRecord(nextId + 1, item, item.solid,
+                    bindings[item.id].part.CFrame + Vector3.new(1.5, 1, 0))
+                install(copy, createDisplay(copy), false)
+            end
         end)
     end)
     button(frame, 'DELETE SELECTED', function()
         selectedAction(function(item)
-            local display = bindings[item.id]
-            if grab.active and grab.active.part == display.part then grab:release() end
-            display.part:Destroy()
-            if display.editable then pcall(function() display.editable:Destroy() end) end
+            destroyDisplay(bindings[item.id])
             bindings[item.id] = nil
             current[item.id] = nil
             selected = nil
@@ -272,6 +363,7 @@ function UI.start()
     UserInputService.InputBegan:Connect(function(input, processed)
         if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
         if UserInputService:GetFocusedTextBox() then return end
+        if player.Character and player.Character:FindFirstChild('Hacksaw') then return end
         local target = mouse.Target
         if not target then return end
         local id = target:GetAttribute('StockId')
@@ -308,7 +400,20 @@ function UI.start()
         if not ok then warn('[STOCK] Initial stock ' .. i .. ' failed: ' .. tostring(err)) end
     end
     refreshSelection()
-    return gui
+    return {
+        gui = gui,
+        get = function(part)
+            if not part then return nil end
+            local id = part:GetAttribute('StockId')
+            if id and bindings[id] and bindings[id].part == part then return current[id] end
+            return nil
+        end,
+        selected = function()
+            return selected and bindings[selected] and bindings[selected].part or nil
+        end,
+        separate = separate,
+        status = displayStatus,
+    }
 end
 
 return UI
