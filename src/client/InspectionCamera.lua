@@ -57,6 +57,11 @@ function Inspector.new(onTool, onExit, onFileSettings)
     self.yaw = 0
     self.pitch = 0.3
     self.distance = 8
+    self.exiting = false
+    self.returnElapsed = 0
+    self.returnFrame = nil
+    self.returnFocus = nil
+    self.returnFOV = 70
     self.rightHeld = false
     self.middleHeld = false
     self.previousMouseBehavior = nil
@@ -235,12 +240,33 @@ function Inspector.new(onTool, onExit, onFileSettings)
         end
     end))
     RunService:BindToRenderStep('OpenworksInspectionCamera',
-        Enum.RenderPriority.Camera.Value + 2, function()
-        if not self.material then return end
+        Enum.RenderPriority.Camera.Value + 2, function(dt)
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+
+        if not self.material then
+            if not self.exiting then return end
+
+            self.returnElapsed += math.min(dt, 0.1)
+            local t = math.clamp(self.returnElapsed / 0.65, 0, 1)
+            local eased = t * t * (3 - 2 * t)
+            local naturalFrame = camera.CFrame
+            local naturalFocus = camera.Focus
+
+            camera.CFrame = self.returnFrame:Lerp(naturalFrame, eased)
+            camera.Focus = self.returnFocus:Lerp(naturalFocus, eased)
+            camera.FieldOfView = self.returnFOV
+                + ((self.savedFOV or 70) - self.returnFOV) * eased
+
+            if t >= 1 then
+                self.exiting = false
+            end
+            return
+        end
+
         local origin = itemPosition(self.material)
         if not origin then self.onExit() return end
 
-        local camera = workspace.CurrentCamera
         local focus = origin + self.focusOffset
         local horizontal = math.cos(self.pitch) * self.distance
         local displacement = Vector3.new(
@@ -248,10 +274,17 @@ function Inspector.new(onTool, onExit, onFileSettings)
             math.sin(self.pitch) * self.distance,
             math.cos(self.yaw) * horizontal
         )
+        local goal = CFrame.lookAt(focus + displacement, focus)
+        local alpha = 1 - math.exp(-11 * math.min(dt, 0.1))
+
         camera.CameraType = Enum.CameraType.Scriptable
-        camera.CFrame = CFrame.lookAt(focus + displacement, focus)
-        camera.Focus = CFrame.new(focus)
+        camera.CFrame = camera.CFrame:Lerp(goal, alpha)
+        camera.Focus = camera.Focus:Lerp(CFrame.new(focus), alpha)
+        camera.FieldOfView += (62 - camera.FieldOfView) * alpha
     end)
+
+    return self
+end
 
     return self
 end
@@ -290,24 +323,33 @@ function Inspector:refreshTools()
 end
 
 function Inspector:open(material)
-    self:close()
-    self.material = material
-    local camera = workspace.CurrentCamera
-    self.savedType = camera.CameraType
-    self.savedSubject = camera.CameraSubject
-    self.savedFOV = camera.FieldOfView
+    if not material or not material.Parent then return end
 
+    local camera = workspace.CurrentCamera
+    local wasInspecting = self.material ~= nil
+
+    if not wasInspecting and not self.exiting then
+        self.savedType = camera.CameraType
+        self.savedSubject = camera.CameraSubject
+        self.savedFOV = camera.FieldOfView
+    end
+
+    self.exiting = false
+
+    if not wasInspecting then
+        local center = itemPosition(material)
+        local offset = camera.CFrame.Position - center
+        if offset.Magnitude > 0.01 then
+            self.yaw = math.atan2(offset.X, offset.Z)
+            self.pitch = math.asin(math.clamp(offset.Y / offset.Magnitude, -0.95, 0.95))
+        end
+    end
+
+    self.material = material
     local size = if material:IsA('BasePart') then material.Size else material:GetExtentsSize()
     self.distance = math.clamp(math.max(size.X, size.Y, size.Z) * 3.5, 4, 15)
-    local center = itemPosition(material)
-    local offset = camera.CFrame.Position - center
-    if offset.Magnitude > 0.01 then
-        self.yaw = math.atan2(offset.X, offset.Z)
-        self.pitch = math.asin(math.clamp(offset.Y / offset.Magnitude, -0.95, 0.95))
-    end
     self.focusOffset = Vector3.zero
     camera.CameraType = Enum.CameraType.Scriptable
-    camera.FieldOfView = 62
 
     ContextActionService:BindActionAtPriority('OpenworksInspectMovement',
         function()
@@ -357,9 +399,18 @@ end
 
 function Inspector:close()
     if not self.material then return end
+
+    local camera = workspace.CurrentCamera
+    self.returnFrame = camera.CFrame
+    self.returnFocus = camera.Focus
+    self.returnFOV = camera.FieldOfView
+    self.returnElapsed = 0
+
     self.material = nil
     self.kind = nil
     self.gui.Enabled = false
+    self.exiting = true
+
     local wasRightHeld = self.rightHeld
     self.rightHeld = false
     self.middleHeld = false
@@ -368,10 +419,9 @@ function Inspector:close()
         UserInputService.MouseBehavior = self.previousMouseBehavior or Enum.MouseBehavior.Default
         self.previousMouseBehavior = nil
     end
-    local camera = workspace.CurrentCamera
+
     camera.CameraType = self.savedType or Enum.CameraType.Custom
     if self.savedSubject then camera.CameraSubject = self.savedSubject end
-    if self.savedFOV then camera.FieldOfView = self.savedFOV end
 end
 
 return Inspector
