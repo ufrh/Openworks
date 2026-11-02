@@ -2,6 +2,7 @@ local AssetService = game:GetService('AssetService')
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 
 local Shading = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Shading'))
+local Planarize = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Planarize'))
 
 local Renderer = {}
 
@@ -9,12 +10,13 @@ function Renderer.create(solid, studsPerMillimeter, smoothAngle)
     assert(type(studsPerMillimeter) == 'number' and studsPerMillimeter > 0, 'Invalid display scale')
     smoothAngle = smoothAngle or 30
 
-    local shading, shadingStats = Shading.normals(solid, smoothAngle)
+    local display, planarStats = Planarize.display(solid)
+    local shading, shadingStats = Shading.normals(display, smoothAngle)
     local editable = AssetService:CreateEditableMesh()
     assert(editable, 'EditableMesh could not be allocated. Check mesh permissions and memory limits.')
 
     local ids = {}
-    for i, position in solid.vertices do
+    for i, position in display.vertices do
         ids[i] = editable:AddVertex(position * studsPerMillimeter)
     end
 
@@ -29,7 +31,7 @@ function Renderer.create(solid, studsPerMillimeter, smoothAngle)
         return id
     end
 
-    for i, triangle in solid.triangles do
+    for i, triangle in display.triangles do
         local faceId = editable:AddTriangle(ids[triangle[1]], ids[triangle[2]], ids[triangle[3]])
         editable:SetFaceNormals(faceId, {
             normalId(shading[i][1]),
@@ -42,6 +44,7 @@ function Renderer.create(solid, studsPerMillimeter, smoothAngle)
         CollisionFidelity = Enum.CollisionFidelity.Hull,
     })
 
+    shadingStats.planarization = planarStats
     return part, editable, shadingStats
 end
 
