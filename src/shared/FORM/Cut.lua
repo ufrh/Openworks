@@ -6,6 +6,63 @@ local EPSILON = 1e-5
 local lineage = setmetatable({}, {__mode = 'k'})
 local MAX_PROPAGATED_DRIFT = 0.01
 
+local function scalarPlane(a, b, c)
+    local ux, uy, uz = b.X - a.X, b.Y - a.Y, b.Z - a.Z
+    local vx, vy, vz = c.X - a.X, c.Y - a.Y, c.Z - a.Z
+    local nx = uy * vz - uz * vy
+    local ny = uz * vx - ux * vz
+    local nz = ux * vy - uy * vx
+    local magnitude = math.sqrt(nx * nx + ny * ny + nz * nz)
+    if magnitude <= 1e-12 then return nil end
+    nx, ny, nz = nx / magnitude, ny / magnitude, nz / magnitude
+    return {x = nx, y = ny, z = nz, distance = nx * a.X + ny * a.Y + nz * a.Z}
+end
+
+local function sourceConstraints(solid)
+    local constraints = {}
+    for _, face in solid.triangles do
+        local a, b, c = solid.vertices[face[1]], solid.vertices[face[2]], solid.vertices[face[3]]
+        local plane = scalarPlane(a, b, c)
+        if not plane then return nil end
+        constraints[#constraints + 1] = plane
+    end
+    return constraints
+end
+
+local function unchanged(solid, record)
+    if #solid.vertices ~= #record.vertices or #solid.triangles ~= #record.triangles then
+        return false
+    end
+    for i, vertex in solid.vertices do
+        if vertex ~= record.vertices[i] then return false end
+    end
+    for i, face in solid.triangles do
+        local old = record.triangles[i]
+        if face[1] ~= old[1] or face[2] ~= old[2] or face[3] ~= old[3] then
+            return false
+        end
+    end
+    return true
+end
+
+local function recordLineage(solid, constraints)
+    local vertices = table.clone(solid.vertices)
+    local triangles = {}
+    for i, face in solid.triangles do triangles[i] = table.clone(face) end
+    lineage[solid] = {planes = constraints, vertices = vertices, triangles = triangles}
+end
+
+local function constraintViolation(solid, constraints)
+    local worst = 0
+    for _, vertex in solid.vertices do
+        for _, plane in constraints do
+            local d = vertex.X * plane.x + vertex.Y * plane.y + vertex.Z * plane.z - plane.distance
+            if d > worst then worst = d end
+        end
+    end
+    return worst
+end
+
 local function edgeKey(a, b)
     return tostring(math.min(a, b)) .. ':' .. tostring(math.max(a, b))
 end
@@ -34,15 +91,25 @@ function Cut.split(solid, planePoint, planeNormal)
     assert(typeof(planePoint) == 'Vector3' and typeof(planeNormal) == 'Vector3', 'Expected plane vectors')
     assert(planeNormal.Magnitude > 0, 'Plane normal cannot be zero')
     if not FORM.validate(solid).ok then return nil, 'INVALID_INPUT' end
-    local isConvex, violation, threshold = convex(solid)
-    if not isConvex then
-        if not lineage[solid] then
-            return nil, string.format('NON_CONVEX_INPUT max=%.9f mm tolerance=%.9f mm', violation, threshold)
-        end
-        if violation > math.max(MAX_PROPAGATED_DRIFT, threshold) then
+    local provenance = lineage[solid]
+    local constraints
+
+    if provenance then
+        if not unchanged(solid, provenance) then return nil, 'STALE_CUT_LINEAGE' end
+        constraints = provenance.planes
+        local deviation = constraintViolation(solid, constraints)
+        if deviation > MAX_PROPAGATED_DRIFT then
             return nil, string.format('CONVEX_LINEAGE_DRIFT max=%.9f mm limit=%.9f mm',
-                violation, math.max(MAX_PROPAGATED_DRIFT, threshold))
+                deviation, MAX_PROPAGATED_DRIFT)
         end
+    else
+        local isConvex, violation, threshold = convex(solid)
+        if not isConvex then
+            return nil, string.format('NON_CONVEX_INPUT max=%.9f mm tolerance=%.9f mm',
+                violation, threshold)
+        end
+        constraints = sourceConstraints(solid)
+        if not constraints then return nil, 'DEGENERATE_CONVEX_PLANE' end
     end
 
     local normal = planeNormal.Unit
@@ -212,8 +279,27 @@ function Cut.split(solid, planePoint, planeNormal)
         )
     end
 
-    lineage[sides[1]] = true
-    lineage[sides[2]] = true
+    local cutDistance = px * nx + py * ny + pz * nz
+    local positiveConstraints = table.clone(constraints)
+    positiveConstraints[#positiveConstraints + 1] = {
+        x = -nx, y = -ny, z = -nz, distance = -cutDistance,
+    }
+    local negativeConstraints = table.clone(constraints)
+    negativeConstraints[#negativeConstraints + 1] = {
+        x = nx, y = ny, z = nz, distance = cutDistance,
+    }
+
+    for index, side in sides do
+        local planes = if index == 1 then positiveConstraints else negativeConstraints
+        local deviation = constraintViolation(side, planes)
+        if deviation > MAX_PROPAGATED_DRIFT then
+            return nil, string.format('OUTPUT_HALFSPACE_DRIFT max=%.9f mm limit=%.9f mm',
+                deviation, MAX_PROPAGATED_DRIFT)
+        end
+    end
+
+    recordLineage(sides[1], positiveConstraints)
+    recordLineage(sides[2], negativeConstraints)
     return sides[1], sides[2]
 end
 
