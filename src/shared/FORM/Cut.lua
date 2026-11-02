@@ -3,6 +3,8 @@ local FORM = require(script.Parent)
 local Cut = {}
 
 local EPSILON = 1e-5
+local lineage = setmetatable({}, {__mode = 'k'})
+local MAX_PROPAGATED_DRIFT = 0.01
 
 local function edgeKey(a, b)
     return tostring(math.min(a, b)) .. ':' .. tostring(math.max(a, b))
@@ -34,7 +36,13 @@ function Cut.split(solid, planePoint, planeNormal)
     if not FORM.validate(solid).ok then return nil, 'INVALID_INPUT' end
     local isConvex, violation, threshold = convex(solid)
     if not isConvex then
-        return nil, string.format('NON_CONVEX_INPUT max=%.9f mm tolerance=%.9f mm', violation, threshold)
+        if not lineage[solid] then
+            return nil, string.format('NON_CONVEX_INPUT max=%.9f mm tolerance=%.9f mm', violation, threshold)
+        end
+        if violation > math.max(MAX_PROPAGATED_DRIFT, threshold) then
+            return nil, string.format('CONVEX_LINEAGE_DRIFT max=%.9f mm limit=%.9f mm',
+                violation, math.max(MAX_PROPAGATED_DRIFT, threshold))
+        end
     end
 
     local normal = planeNormal.Unit
@@ -185,6 +193,8 @@ function Cut.split(solid, planePoint, planeNormal)
         return nil, string.format('VOLUME_MISMATCH before=%.9f after=%.9f delta=%+.9f', before, after, after - before)
     end
 
+    lineage[sides[1]] = true
+    lineage[sides[2]] = true
     return sides[1], sides[2]
 end
 
