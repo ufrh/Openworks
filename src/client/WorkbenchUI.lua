@@ -613,8 +613,14 @@ function UI.start()
     end)
 
     importJson.MouseButton1Click:Connect(function()
-        local project, reason = Workshop.deserialize(jsonBox.Text)
-        if not project then report('Import rejected: ' .. tostring(reason), true) return end
+        if busy then return end
+        busy = true
+        local called, project, reason = pcall(Workshop.deserialize, jsonBox.Text)
+        if not called or not project then
+            report('Import rejected: ' .. tostring(if called then reason else project), true)
+            busy = false
+            return
+        end
         job = project
         nameEdit.Text = job.name
         stockX.Text, stockY.Text, stockZ.Text = tostring(job.stock.x), tostring(job.stock.y), tostring(job.stock.z)
@@ -622,11 +628,28 @@ function UI.start()
         showTool('drill')
         modal.Visible = false
         refreshAll('Imported project')
+        busy = false
     end)
 
     UserInputService.InputBegan:Connect(function(inputEvent, processed)
         if processed or UserInputService:GetFocusedTextBox() or modal.Visible then return end
-        if inputEvent.KeyCode == Enum.KeyCode.Z then
+        local quickTools = {
+            [Enum.KeyCode.One] = 'drill',
+            [Enum.KeyCode.Two] = 'pocket',
+            [Enum.KeyCode.Three] = 'slot',
+            [Enum.KeyCode.Four] = 'chamfer',
+            [Enum.KeyCode.Five] = 'fillet',
+            [Enum.KeyCode.Six] = 'saw',
+            [Enum.KeyCode.Seven] = 'profile',
+        }
+        local quickTool = quickTools[inputEvent.KeyCode]
+        if quickTool then
+            selectedIndex = nil
+            showTool(quickTool)
+            refreshTimeline()
+            refreshToolpath()
+            report('Selected ' .. quickTool .. ' tool')
+        elseif inputEvent.KeyCode == Enum.KeyCode.Z then
             act('Undo', function() selectedIndex = nil return job:undo() end)
         elseif inputEvent.KeyCode == Enum.KeyCode.Y then
             act('Redo', function() selectedIndex = nil return job:redo() end)
