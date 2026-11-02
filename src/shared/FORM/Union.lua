@@ -301,9 +301,11 @@ local function subtractFace(polygon, cutter)
         local remainder = {}
         for _, section in pending do
             local minimum, maximum = positiveOutside(section, plane)
-            if minimum >= PLANE_TOLERANCE then
+            if minimum >= -PLANE_TOLERANCE and maximum <= PLANE_TOLERANCE then
+                remainder[#remainder + 1] = section
+            elseif minimum >= -PLANE_TOLERANCE then
                 exposed[#exposed + 1] = section
-            elseif maximum <= -PLANE_TOLERANCE then
+            elseif maximum <= PLANE_TOLERANCE then
                 remainder[#remainder + 1] = section
             else
                 local outside = cut(section, plane, true)
