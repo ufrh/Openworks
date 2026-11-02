@@ -246,10 +246,10 @@ function Union.surface(pieces)
                 end
 
                 fragments = nextFragments
-                cells += #fragments
-                if cells > MAX_CELLS then return nil, 'CELL_BUDGET_EXCEEDED' end
+                if #fragments > MAX_CELLS - cells then return nil, 'CELL_BUDGET_EXCEEDED' end
             end
 
+            cells += #fragments
             for _, polygon in fragments do
                 local center = Vector3.zero
                 for _, vertex in polygon do center += vertex end
