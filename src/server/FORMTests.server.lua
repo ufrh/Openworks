@@ -15,6 +15,13 @@ local function run()
     assert(result.ok, 'Box topology failed: ' .. tostring(result.issues[1] and result.issues[1].code))
     assert(#box.vertices == 8 and #box.triangles == 12, 'Unexpected topology')
     assert(close(FORM.signedVolume(box), 100000), 'Incorrect volume')
+    local shifted = FORM.box(Vector3.new(100, 50, 20))
+    for i, vertex in shifted.vertices do
+        shifted.vertices[i] = vertex + Vector3.new(10000, -12000, 18000)
+    end
+    assert(close(FORM.signedVolume(shifted), 100000),
+        'Signed volume depends on workpiece translation')
+
 
     local lo, hi = FORM.bounds(box)
     assert(lo == Vector3.new(-50, -25, -10) and hi == Vector3.new(50, 25, 10), 'Incorrect bounds')
