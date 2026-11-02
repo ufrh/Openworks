@@ -167,3 +167,15 @@ The 22:21 Studio run established successful **runtime** results (not just refere
 `Machine:mesh()` now uses the **validated native convex-piece mesh directly** whenever a machining state consists of exactly one convex piece with matching volume and Euler characteristic 2. This avoids an unnecessary second Boolean representation of a filleted or chamfered solid. Multiple-piece machined models continue using the original-stock-plus-cutter-history reconstruction pipeline. Regression tests require both chamfer and fillet to select this direct mesh path.
 
 **Verification:** direct convex fast path committed, but its Roblox Studio runtime test has not yet been run. Previous Studio results remain authoritative for the earlier completed operations.
+
+## Visual reflection-band investigation: render-only planarization
+
+After FORM's unified surface passed topology/volume tests, the reflective green machined workpiece still showed a visible diagonal band despite switching between protected smoothing and flat normals. This is not proof of broken manifold geometry. It can arise from subtle noncoplanarity of displayed triangles or simply from Roblox's environment-reflective Metal material.
+
+The renderer now uses `FORM/Planarize.lua` to build a **display-only** mesh copy. It groups near-axis-aligned coplanar surface triangles, calculates an area-weighted common plane, and aligns participating display vertices to that plane when the correction is <= 0.03 mm. The canonical mesh and machining volumes are never modified. Both geometric vertices and the custom per-corner normals are generated from the corrected display mesh. Each workpiece render prints `[FORM:Render] Flattened ... max shift ... mm; conflicts ...`.
+
+The machining UI retains **N** for flat-versus-protected normal comparison, and adds **M** to cycle Metal -> SmoothPlastic -> Neon on the *same MeshPart*, without regenerating its geometry. This isolates environment/specular lighting from geometric shading. If the diagonal band disappears in SmoothPlastic or Neon, the Metal shading/environment is responsible or amplifying it; if it remains with Neon, it is not a conventional specular reflection and needs further geometry/material diagnostics.
+
+`ShadingTests.server.lua` now includes a deliberately warped plate test. It confirms that render-only planarization flattens the top face without modifying canonical vertex positions.
+
+This is committed, but the in-Studio appearance and runtime regression remain to be verified. Do not describe the reflection defect as fixed before comparing the new modes.
