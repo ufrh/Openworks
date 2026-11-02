@@ -1,6 +1,7 @@
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'))
 local Machine = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Machine'))
+local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Cut'))
 
 local function assertUnified(machine, label, expectedEuler)
     local mesh, reason, stats = machine:mesh()
@@ -42,6 +43,11 @@ local function run()
         height = 70, segments = 12}, 'Drill')
     local drilledVolume = machine:volume()
     assertUnified(machine, 'Drilled through-hole', 0)
+    local drilledMesh = machine:mesh()
+    local nonconvexResult, nonconvexReason = Cut.split(drilledMesh, Vector3.zero, Vector3.xAxis)
+    assert(not nonconvexResult and string.find(tostring(nonconvexReason), 'NON_CONVEX_INPUT', 1, true),
+        'General non-convex input bypassed strict convexity validation')
+
 
     assert(machine:undo(), 'Undo failed')
     assert(FORM.volumeClose(machine:volume(), stock), 'Undo failed to restore volume')
@@ -64,6 +70,7 @@ local function run()
     apply(machine, {kind = 'slot', from = Vector3.new(-32, 0, -10),
         to = Vector3.new(-17, 0, -10), radius = 3, height = 70, segments = 12}, 'Machined slot')
     assertUnified(machine, 'Repeated drilling and milling', 2 - 2 * 2)
+    print('[FORM:Machine] Sequential drill + pocket + slot passed convex-lineage validation')
 
     local status = machine:status()
     assert(status.operations == 3 and status.redo == 0, 'Incorrect operation state')
