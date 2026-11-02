@@ -108,7 +108,7 @@ Operations are **atomic** at the workpiece level. On rejection, neither the curr
 
 ### Interactive Studio demo
 
-The client starts with a drilled plate and opens a machining controls panel. Use **1** for a second drill, **2** for a blind pocket, **3** for a rounded slot, **4** for a chamfer, **5** for a faceted fillet, **6** for a saw cut, **Z** undo, **Y** redo and **R** reset. Equivalent buttons are displayed. Only one EditableMesh/MeshPart preview is retained at a time; the previous pair is destroyed before rerendering. If manifold reconstruction fails, the preview renders the full convex-component geometry instead of dropping exterior triangles.
+The client starts with a drilled plate and opens a machining controls panel. Use **1** for a second drill, **2** for a blind pocket, **3** for a rounded slot, **4** for a chamfer, **5** for a faceted fillet, **6** for a saw cut, **7** for a multi-segment milling sweep, **Z** undo, **Y** redo and **R** reset. Equivalent buttons are displayed. Only one EditableMesh/MeshPart preview is retained at a time; the previous pair is destroyed before rerendering. If manifold reconstruction fails, the preview renders the full convex-component geometry instead of dropping exterior triangles.
 
 Server regression tests include `FORMTests.server.lua` and `MachineTests.server.lua`. The former verifies foundational cuts, adjacent-box union, rectangular slot and 14-mm drilled hole; the latter verifies machining, history, failure atomicity, genus checks and volume.
 
