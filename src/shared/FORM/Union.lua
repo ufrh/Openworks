@@ -349,8 +349,10 @@ function Union.fromStockAndCutters(stock, cutters, expectedVolume, tolerance)
     end
 
     for _, face in stockFaces do
+        if os.clock() - started > MAX_CPU_SECONDS then return nil, 'TIME_BUDGET_EXCEEDED' end
         local visible = {face.polygon}
         for _, cutter in cutterGroups do
+            if os.clock() - started > MAX_CPU_SECONDS then return nil, 'TIME_BUDGET_EXCEEDED' end
             local nextVisible = {}
             for _, polygon in visible do
                 for _, section in subtractFace(polygon, cutter) do
@@ -368,6 +370,7 @@ function Union.fromStockAndCutters(stock, cutters, expectedVolume, tolerance)
 
     for index, cutter in cutterGroups do
         for _, face in cutter do
+            if os.clock() - started > MAX_CPU_SECONDS then return nil, 'TIME_BUDGET_EXCEEDED' end
             local patch = face.polygon
             for _, stockPlane in stockFaces do
                 patch = cut(patch, stockPlane, false)
@@ -377,6 +380,7 @@ function Union.fromStockAndCutters(stock, cutters, expectedVolume, tolerance)
             if #patch >= 3 then
                 local visible = {patch}
                 for otherIndex, other in cutterGroups do
+                    if os.clock() - started > MAX_CPU_SECONDS then return nil, 'TIME_BUDGET_EXCEEDED' end
                     if index == otherIndex then continue end
                     local coplanarSame = false
                     for _, plane in other do
