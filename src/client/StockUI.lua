@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService('ReplicatedStorage')
 
 local Stock = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('Stock'))
 local Renderer = require(script.Parent.FORMRenderer)
+local Grab = require(script.Parent.StockGrab)
 
 local UI = {}
 
@@ -100,6 +101,7 @@ function UI.start()
     world.Name = 'OPENWORKS Raw Stock'
     world.Parent = workspace
     local bindings = {}
+    local grab = Grab.new()
     local status = label(frame, 'Select a shape and material', 48)
 
     local sizeA = entry(frame, 'X / Outer diameter (mm)', 60)
@@ -141,9 +143,12 @@ function UI.start()
         local item = Stock.create(id, shapeName, materialName, dims, at)
         local part, editable = Renderer.create(item.solid, Stock.SCALE, 0)
         part.Name = string.format('Stock %03d - %s', id, shapeName)
-        part.Anchored = true
-        part.CanCollide = false
+        part.Anchored = false
+        part.CanCollide = true
+        part.CanTouch = true
         part.CFrame = item.frame
+        part.CollisionFidelity = Enum.CollisionFidelity.Hull
+        part.CustomPhysicalProperties = PhysicalProperties.new(if materialName == 'Steel' then 7.85 else 2.7, 0.65, 0.15)
         part.Material = Enum.Material.SmoothPlastic
         part:SetAttribute('StockId', id)
         part.Parent = world
@@ -197,37 +202,31 @@ function UI.start()
         if not ok then displayStatus('Spawn failed: ' .. tostring(err)) end
     end)
 
-    row(frame, {'X-', 'X+', 'Y-', 'Y+'}, function(name)
+    label(frame, 'CLICK + HOLD a piece to drag with physics. Mouse wheel changes reach.', 42)
+    button(frame, 'TEMPORARILY SECURE / RELEASE', function()
         selectedAction(function(item)
-            local axis = string.sub(name, 1, 1)
-            local step = if string.sub(name, 2, 2) == '+' then 0.5 else -0.5
-            local direction = if axis == 'X' then Vector3.xAxis else Vector3.yAxis
-            Stock.move(item, item.frame + direction * step)
-            bindings[item.id].part.CFrame = item.frame
-        end)
-    end)
-    row(frame, {'Z-', 'Z+', 'RY', 'RZ'}, function(name)
-        selectedAction(function(item)
-            if name == 'Z-' or name == 'Z+' then
-                local shift = if name == 'Z+' then 0.5 else -0.5
-                Stock.move(item, item.frame + Vector3.zAxis * shift)
+            if grab.active and grab.active.part == bindings[item.id].part then grab:release() end
+            local part = bindings[item.id].part
+            part.Anchored = not part.Anchored
+            if part.Anchored then
+                part.AssemblyLinearVelocity = Vector3.zero
+                part.AssemblyAngularVelocity = Vector3.zero
+                displayStatus('Workpiece secured (temporary workholding)')
             else
-                local rotation = if name == 'RY' then CFrame.Angles(0, math.rad(15), 0)
-                    else CFrame.Angles(0, 0, math.rad(15))
-                Stock.move(item, item.frame * rotation)
+                displayStatus('Workpiece released to physics')
             end
-            bindings[item.id].part.CFrame = item.frame
         end)
     end)
 
     button(frame, 'DUPLICATE SELECTED', function()
         selectedAction(function(item)
-            spawn(item.shape, item.material, item.dimensions, item.frame + Vector3.new(1, 0, 0))
+            spawn(item.shape, item.material, item.dimensions, bindings[item.id].part.CFrame + Vector3.new(1.5, 1, 0))
         end)
     end)
     button(frame, 'DELETE SELECTED', function()
         selectedAction(function(item)
             local display = bindings[item.id]
+            if grab.active and grab.active.part == display.part then grab:release() end
             display.part:Destroy()
             if display.editable then pcall(function() display.editable:Destroy() end) end
             bindings[item.id] = nil
@@ -249,10 +248,23 @@ function UI.start()
     end)
 
     local mouse = player:GetMouse()
-    mouse.Button1Down:Connect(function()
-        if not mouse.Target then return end
-        local id = mouse.Target:GetAttribute('StockId')
-        if id and current[id] then selected = id refreshSelection() end
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        if UserInputService:GetFocusedTextBox() then return end
+        local target = mouse.Target
+        if not target then return end
+        local id = target:GetAttribute('StockId')
+        if not id or not current[id] then return end
+        selected = id
+        refreshSelection()
+        grab:begin(target, mouse.Hit.Position, mouse)
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then grab:release() end
+    end)
+    UserInputService.InputChanged:Connect(function(input, processed)
+        if processed or input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+        grab:changeDistance(-input.Position.Z * 0.75)
     end)
 
     local defaults = {
