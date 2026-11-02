@@ -83,6 +83,8 @@ function SawUI.start(workpieces)
     local lines = {}
     local activeToolConnection = {}
     local connections = {}
+    local sawRotation = 0
+    local startOrbit
 
     local function clearLines()
         for _, line in lines do line:Destroy() end
@@ -124,6 +126,8 @@ function SawUI.start(workpieces)
 
     local function stopCut()
         cutting = nil
+        if currentTool then FabricationTool.restore(currentTool) end
+        if working then working:hide() end
         clearGroove()
         fill.Size = UDim2.fromScale(0, 1)
     end
@@ -135,7 +139,12 @@ function SawUI.start(workpieces)
     local function stopOrbit()
         if not orbit then return end
         local camera = workspace.CurrentCamera
-        if camera then camera.CameraType = orbit.oldType end
+        if camera then
+            camera.CameraType = orbit.oldType
+            if orbit.oldSubject and orbit.oldSubject.Parent then
+                camera.CameraSubject = orbit.oldSubject
+            end
+        end
         orbit = nil
     end
 
@@ -170,6 +179,7 @@ function SawUI.start(workpieces)
         preview = nil
         currentTool = tool
         if not tool then return end
+        FabricationTool.ensureCosmetic(tool)
 
         activeToolConnection[#activeToolConnection + 1] = tool.Activated:Connect(function()
             if not equipped() or cutting then return end
@@ -185,8 +195,9 @@ function SawUI.start(workpieces)
                 hint.Text = 'No valid saw movement for this cut'
                 return
             end
+            FabricationTool.hideEquipped(tool)
             local plan = preview.motion
-            local depth = plan.span + plan.clearance
+            local depth = plan.travel
             cutting = {
                 part = preview.part,
                 item = preview.item,
@@ -209,7 +220,7 @@ function SawUI.start(workpieces)
             groove.CastShadow = false
             groove.Material = Enum.Material.SmoothPlastic
             groove.Color = Color3.fromRGB(30, 33, 35)
-            groove.Transparency = 0.25
+            groove.Transparency = 1
             groove.Parent = workspace
             hint.Text = 'Blade engaged - hold to saw through the metal'
         end)
@@ -221,7 +232,6 @@ function SawUI.start(workpieces)
         end)
         activeToolConnection[#activeToolConnection + 1] = tool.Unequipped:Connect(function()
             if mouse.TargetFilter == player.Character then mouse.TargetFilter = nil end
-            FabricationTool.restore(tool)
             stopCut()
             stopOrbit()
             closeWorking()
@@ -231,14 +241,10 @@ function SawUI.start(workpieces)
         end)
         activeToolConnection[#activeToolConnection + 1] = tool.Equipped:Connect(function()
             mouse.TargetFilter = player.Character
-            FabricationTool.hideEquipped(tool)
-            showModel()
-            hint.Text = 'Aim at secured metal. Hold click to move the actual saw.'
+            if startOrbit then startOrbit() end
+            hint.Text = 'Aim at secured metal. Hold click to drive the working saw along the cut.'
         end)
-        if equipped() then
-            FabricationTool.hideEquipped(tool)
-            showModel()
-        end
+        if equipped() and startOrbit then startOrbit() end
     end
 
     makeButton(panel, 'EQUIP HACKSAW', function()
@@ -270,21 +276,37 @@ function SawUI.start(workpieces)
             end
         end)
     end
-    if player.Character then observe(player.Character) end
-    connections[#connections + 1] = player.CharacterAdded:Connect(observe)
+    makeLabel(panel, 'Auto orbit: metal | V: toggle | T: top down | Q/E: cut | R: rotate saw | RMB: orbit', 56)
 
-    makeLabel(panel, 'V: orbit camera | T: top down | Q/E: rotate cut | RMB: orbit | wheel: zoom', 56)
-
-    local function startOrbit()
-        local focusPart = if preview then preview.part else workpieces.selected()
-        if not focusPart then hint.Text = 'Select a workpiece to focus the camera' return end
+    startOrbit = function(focusPart)
+        local target = focusPart or workpieces.selected()
+        if not target or not target.Parent then
+            hint.Text = 'Select a metal workpiece to focus the camera'
+            return
+        end
         local camera = workspace.CurrentCamera
         if not camera then return end
-        orbit = {part = focusPart, oldType = camera.CameraType,
-            distance = math.clamp((camera.CFrame.Position - focusPart.Position).Magnitude, 4, 26),
-            yaw = math.rad(35), pitch = math.rad(40)}
+        if orbit then
+            orbit.part = target
+            return
+        end
+        local offset = camera.CFrame.Position - target.Position
+        local distance = math.clamp(offset.Magnitude, 4, 26)
+        local yaw = math.atan2(offset.X, offset.Z)
+        local pitch = math.asin(math.clamp(offset.Y / math.max(offset.Magnitude, 0.001), -1, 1))
+        orbit = {
+            part = target, oldType = camera.CameraType,
+            oldSubject = camera.CameraSubject,
+            distance = distance,
+            yaw = yaw,
+            pitch = math.clamp(pitch, math.rad(18), math.rad(85)),
+        }
+        camera.CameraSubject = target
         camera.CameraType = Enum.CameraType.Scriptable
     end
+
+    if player.Character then observe(player.Character) end
+    connections[#connections + 1] = player.CharacterAdded:Connect(observe)
 
     connections[#connections + 1] = UserInputService.InputBegan:Connect(function(input, processed)
         if processed or not equipped() then return end
@@ -297,6 +319,9 @@ function SawUI.start(workpieces)
             turn -= 15
         elseif input.KeyCode == Enum.KeyCode.E then
             turn += 15
+        elseif input.KeyCode == Enum.KeyCode.R and not cutting then
+            sawRotation = (sawRotation + 90) % 360
+            hint.Text = 'Working blade alignment: ' .. sawRotation .. ' degrees'
         end
     end)
     connections[#connections + 1] = UserInputService.InputChanged:Connect(function(input, processed)
@@ -315,9 +340,17 @@ function SawUI.start(workpieces)
     connections[#connections + 1] = RunService.RenderStepped:Connect(function(dt)
         panel.Visible = not (player.Character and player.Character:FindFirstChild('Metal File'))
         if orbit then
-            if not orbit.part.Parent then
+            local desired = if cutting then cutting.part else workpieces.selected()
+            if desired and desired.Parent then
+                if orbit.part ~= desired then
+                    orbit.part = desired
+                    local camera = workspace.CurrentCamera
+                    if camera then camera.CameraSubject = desired end
+                end
+            elseif not orbit.part.Parent then
                 stopOrbit()
-            else
+            end
+            if orbit then
                 local camera = workspace.CurrentCamera
                 if camera then
                     local focus = orbit.part.Position
@@ -345,16 +378,19 @@ function SawUI.start(workpieces)
             local progress = operation.advanced / operation.travel
             fill.Size = UDim2.fromScale(progress, 1)
             if working then
-                working:pose(Motion.sawPose(operation.plan, progress, operation.phase))
+                working:pose(Motion.sawPose(operation.plan, progress, operation.phase)
+                    * CFrame.Angles(0, 0, math.rad(sawRotation)))
             end
             if groove then
                 local plan = operation.plan
-                groove.Transparency = 0.25
-                local visibleDepth = math.max(0.006, operation.advanced)
-                groove.Size = Vector3.new(math.max(0.08, plan.across), visibleDepth,
-                    SawCut.KERF_MM * 0.04 + 0.014)
-                local surface = plan.center + plan.outward
-                    * (plan.start + plan.clearance - visibleDepth / 2)
+                local advanceAlong = plan.across * progress
+                local visibleLength = math.max(0.006, advanceAlong)
+                groove.Transparency = 0.28
+                groove.Size = Vector3.new(visibleLength, 0.018,
+                    SawCut.KERF_MM * 0.04 + 0.012)
+                local surface = plan.center
+                    + plan.forward * (plan.alongStart + visibleLength / 2)
+                    + plan.outward * (plan.start + 0.012)
                 groove.CFrame = FabricationVisual.contactFrame(
                     surface, plan.forward, plan.outward)
             end
@@ -427,8 +463,8 @@ function SawUI.start(workpieces)
         end
         preview = {part = part, item = item, data = candidate, motion = plan}
         drawRing(candidate.rings or {candidate.ring})
-        if showModel() then working:pose(Motion.sawPose(plan, 0, 0)) end
-        hint.Text = 'Saw aligned - hold LMB to drive the blade (' .. item.material .. ')'
+        if working then working:hide() end
+        hint.Text = 'Saw ready - hold LMB to follow cut (' .. item.material .. ')'
     end)
 
     return gui
