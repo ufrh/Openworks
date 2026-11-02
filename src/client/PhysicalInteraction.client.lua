@@ -6,6 +6,15 @@ local ContextActionService = game:GetService('ContextActionService')
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
+
+task.spawn(function()
+    local bench = workspace:WaitForChild('Workbench', 15)
+    if not bench then return end
+    local proxies = bench:WaitForChild('OpenworksDetectionProxies', 15)
+    if proxies then
+        mouse.TargetFilter = proxies
+    end
+end)
 local Openworks = ReplicatedStorage:WaitForChild('Openworks')
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
 local Inspector = require(script.Parent:WaitForChild('InspectionCamera'))
@@ -201,6 +210,14 @@ remote.OnClientEvent:Connect(function(action, a, b, c)
     elseif action == 'Feedback' then
         pendingTool = nil
         if inspector.material then inspector:status(a) end
+    elseif action == 'DragDenied' then
+        if requested then
+            warn('[OPENWORKS:Drag] ' .. tostring(a))
+            if inspector.material then inspector:status(tostring(a)) end
+            requested = false
+            click = nil
+            drag = nil
+        end
     elseif action == 'Ended' then
         drag = nil
         requested = false

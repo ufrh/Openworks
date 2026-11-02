@@ -152,14 +152,19 @@ local function finish(player)
 end
 
 local function acquire(player, item, part, hit)
-    if locked[item] or not movable(item) then return nil end
+    if locked[item] then return nil, 'Object is already being used' end
+    if not movable(item) then return nil, 'Assembly has anchored parts; unanchor the tool or material' end
     local root = rootOf(player)
-    if not root or (hit - root.Position).Magnitude > 22 then return nil end
+    if not root then return nil, 'Character is not ready' end
+    if (hit - root.Position).Magnitude > 22 then return nil, 'Move closer before grabbing' end
     local ok, allowed = pcall(function() return part:CanSetNetworkOwnership() end)
-    if not ok or not allowed then return nil end
+    if not ok or not allowed then return nil, 'Assembly cannot be physically moved; check anchored weld connections' end
     local state = makeMotor(part, hit)
     local success = pcall(function() part:SetNetworkOwner(player) end)
-    if not success then destroyMotor(state) return nil end
+    if not success then
+        destroyMotor(state)
+        return nil, 'Failed to assign physics ownership'
+    end
     state.item = item
     active[player] = state
     locked[item] = player
@@ -168,14 +173,35 @@ end
 
 local function startDrag(player, part, hit)
     finish(player)
-    if typeof(part) ~= 'Instance' or not part:IsA('BasePart') or not validVector(hit) then return end
+
+    local function reject(message)
+        remote:FireClient(player, 'DragDenied', message)
+    end
+
+    if typeof(part) ~= 'Instance' or not part:IsA('BasePart') or not validVector(hit) then
+        reject('Invalid object selection')
+        return
+    end
+
     local item = classify(part)
-    if not item then return end
+    if not item then
+        reject('Object is not tagged as a tool or FORM material')
+        return
+    end
+
     local localHit = part.CFrame:PointToObjectSpace(hit)
     local half = part.Size * 0.5 + Vector3.new(0.7, 0.7, 0.7)
-    if math.abs(localHit.X) > half.X or math.abs(localHit.Y) > half.Y or math.abs(localHit.Z) > half.Z then return end
-    local state = acquire(player, item, part, hit)
-    if not state then return end
+    if math.abs(localHit.X) > half.X or math.abs(localHit.Y) > half.Y or math.abs(localHit.Z) > half.Z then
+        reject('Grab point falls outside the selected part')
+        return
+    end
+
+    local state, reason = acquire(player, item, part, hit)
+    if not state then
+        reject(reason or 'Unable to grab object')
+        return
+    end
+
     state.mode = 'Drag'
     remote:FireClient(player, 'DragStarted', part, hit)
 end

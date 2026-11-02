@@ -52,7 +52,7 @@ for index, surface in surfaces do
     proxy.Anchored = true
     proxy.CanCollide = false
     proxy.CanTouch = false
-    proxy.CanQuery = true
+    proxy.CanQuery = false
     proxy.CastShadow = false
     proxy.Transparency = 1
     proxy.Parent = proxies
@@ -130,7 +130,7 @@ local function scan()
 
         alignRegion(region)
 
-        for _, part in workspace:GetPartsInPart(proxy, params) do
+        for _, part in workspace:GetPartBoundsInBox(proxy.CFrame, proxy.Size, params) do
             local item, kind = classify(part)
 
             if item and not current[item]
