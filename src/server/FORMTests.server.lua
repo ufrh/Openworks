@@ -3,6 +3,7 @@ local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('F
 
 local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Cut'))
 local Boolean = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Boolean'))
+local Surface = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Surface'))
 
 local function close(a, b)
     return FORM.volumeClose(a, b)
@@ -109,6 +110,16 @@ local function run()
         'Incorrect drilling removal volume')
     assert(math.abs(drillRemaining + drillRemoved - FORM.signedVolume(box)) < 0.01,
         'Drilling failed volume conservation')
+    local exposed, stats = Surface.extract(drilled)
+    local originalFaces = 0
+    for _, piece in drilled do originalFaces += #piece.triangles end
+    assert(#exposed.triangles > 0 and #exposed.triangles <= originalFaces,
+        'Surface pass produced invalid triangle count')
+    assert(stats.discarded + #exposed.triangles == originalFaces,
+        'Surface pass failed triangle accounting')
+    print(string.format('[FORM] Surface pass: %d of %d triangles retained; %d partial-overlap warnings',
+        #exposed.triangles, originalFaces, stats.uncertain))
+
     print(string.format('[FORM] Drilled %d-sided opening: removed %.4f mm^3 across %d solids',
         12, drillRemoved, #drilled))
 
