@@ -76,6 +76,12 @@ function FileUI.start(workpieces)
     local lines = {}
     local toolConnections = {}
     local clock = 0
+    local feedbackUntil = 0
+
+    local function feedback(message, seconds)
+        status.Text = message
+        feedbackUntil = os.clock() + (seconds or 2.5)
+    end
 
     local function equipped()
         return currentTool and player.Character and currentTool.Parent == player.Character
@@ -168,12 +174,12 @@ function FileUI.start(workpieces)
         toolConnections[#toolConnections + 1] = tool.Activated:Connect(function()
             if not equipped() or filing then return end
             if not preview or not preview.part.Parent or not preview.part.Anchored then
-                status.Text = 'Secure a workpiece and aim near an outer edge'
+                feedback('Secure a workpiece and aim at an outside edge')
                 return
             end
             local valid, solid, stats = pcall(FileShape.apply, preview.item, preview.spec)
             if not valid or not solid then
-                status.Text = 'Cannot file this edge: ' .. tostring(if valid then stats else solid)
+                feedback('Cannot file this edge: ' .. tostring(if valid then stats else solid), 5)
                 warn('[FILE] Filing geometry rejected: ' .. status.Text)
                 return
             end
@@ -305,9 +311,10 @@ function FileUI.start(workpieces)
                 clearLines()
                 local ok, committed, reason = pcall(workpieces.refine, task.part, task.result)
                 if ok and committed then
-                    status.Text = string.format('Rounded edge: %.1f mm³ removed', task.stats.removed)
+                    feedback(string.format('Rounded edge: %.1f mm³ removed', task.stats.removed), 3)
                 else
-                    status.Text = 'Filing failed: ' .. tostring(if ok then reason else committed)
+                    feedback('Filing failed: ' .. tostring(if ok then reason else committed), 6)
+                    warn('[FILE] Workpiece update failed: ' .. status.Text)
                 end
             end
             return
@@ -321,20 +328,26 @@ function FileUI.start(workpieces)
         local item = workpieces.get(part)
         if not item or not part.Anchored then
             if preview then preview = nil clearLines() end
-            status.Text = if item and not part.Anchored then 'Secure the metal first'
-                else 'Aim at a stock face to select an outer edge'
+            if os.clock() >= feedbackUntil then
+                status.Text = if item and not part.Anchored then 'Secure the metal first'
+                    else 'Aim at a stock face to select an outer edge'
+            end
             return
         end
 
         local result, reason = FileShape.preview(item, mouse.Hit.Position, radius)
         if not result then
             if preview then preview = nil clearLines() end
-            status.Text = tostring(reason or 'Aim near an outer edge')
+            if os.clock() >= feedbackUntil then
+                status.Text = tostring(reason or 'Aim at another outer edge')
+            end
             return
         end
         preview = {part = part, item = item, spec = result}
         draw(result)
-        status.Text = 'Edge ready - hold LMB (' .. tostring(radius) .. ' mm)'
+        if os.clock() >= feedbackUntil then
+            status.Text = 'Edge ready - hold LMB (' .. tostring(radius) .. ' mm)'
+        end
     end)
 
     return gui
