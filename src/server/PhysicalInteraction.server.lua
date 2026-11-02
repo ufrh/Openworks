@@ -508,6 +508,7 @@ local function startFabrication(player, material, tool)
         toolBoundsSize = toolSize,
         sawLengthOffset = if sawLengthFrame then restingFrame:ToObjectSpace(sawLengthFrame) else nil,
         sawLengthSize = sawLengthSize,
+        positioning = false,
         currentFrame = restingFrame,
         goalFrame = restingFrame,
         anchoredParts = {},
@@ -763,6 +764,8 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         return
     end
 
+    if state.positioning then return end
+
     local now = os.clock()
     if now - state.lastMove < 1 / 40 then return end
     state.lastMove = now
@@ -784,7 +787,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         local halfTravel = measure(size, along) * 0.5
         stroke = math.clamp(stroke, -halfTravel, halfTravel)
         travel = basis(along) * stroke
-        cross = basis(sideAxis) * (fileSide * (measure(size, sideAxis) * 0.5 + 0.012))
+        cross = basis(sideAxis) * (fileSide * (measure(size, sideAxis) * 0.5 + 0.002))
         upward = work.CFrame:VectorToWorldSpace(basis(face) * faceSign)
     else
         stroke = math.clamp(stroke, -1.5, 1.5)
@@ -798,7 +801,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     local pos
     if state.kind == 'File' then
         pos = work.CFrame:PointToWorldSpace(cross + travel
-            + basis(face) * faceSign * (measure(size, face) * 0.5 + 0.015))
+            + basis(face) * faceSign * (measure(size, face) * 0.5 + 0.003))
     else
         local localPos = cross + travel
         local height = math.abs(work.CFrame.RightVector.Y) * size.X * 0.5
@@ -824,6 +827,31 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         * CFrame.Angles(math.rad(state.roll + sawFlip), 0, 0)
 
     state.goalFrame = contactFrame * state.contactOffset
+
+    if state.kind == 'File' then
+        local fileBounds = state.item:IsA('Model') and state.item:GetBoundingBox()
+            or state.part.CFrame
+        local fileSize = state.item:IsA('Model') and state.item:GetExtentsSize()
+            or state.part.Size
+        local long = fileBounds.RightVector
+        if fileSize.Y > fileSize.X and fileSize.Y >= fileSize.Z then
+            long = fileBounds.UpVector
+        elseif fileSize.Z > fileSize.X and fileSize.Z > fileSize.Y then
+            long = fileBounds.LookVector
+        end
+        local localLong = state.restingFrame:VectorToObjectSpace(long)
+        local worldLong = state.goalFrame:VectorToWorldSpace(localLong)
+        local desired = forward.Unit
+        if worldLong:Dot(desired) < 0 then desired = -desired end
+        local correctionAxis = worldLong:Cross(desired)
+        if correctionAxis.Magnitude > 0.001 then
+            local angle = math.atan2(correctionAxis.Magnitude,
+                math.clamp(worldLong:Dot(desired), -1, 1))
+            state.goalFrame = CFrame.new(pos)
+                * CFrame.fromAxisAngle(correctionAxis.Unit, angle)
+                * CFrame.new(-pos) * state.goalFrame
+        end
+    end
 
     if state.kind == 'Saw' then
         local lengthFrame = state.goalFrame * state.sawLengthOffset
@@ -916,6 +944,60 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     if active[player] == state then
         remote:FireClient(player, 'MachiningCompleted', selected, message, aimWorld)
     end
+end
+
+local function setMaterialPositioning(player, state, value)
+    if state.processing or type(value) ~= 'boolean' then return end
+    state.positioning = value
+    state.awaitRelease = true
+    state.reversals = 0
+    state.direction = 0
+    if value then state.goalFrame = state.restingFrame end
+    remote:FireClient(player, 'MaterialPositioning', value)
+end
+
+local function moveMaterial(player, state, target)
+    if not state.positioning or state.processing or not validVector(target) then return end
+    local root = rootOf(player)
+    local work = state.work
+    if not root or not work or not work:IsA('BasePart')
+        or (target - root.Position).Magnitude > 24 then return end
+
+    local now = os.clock()
+    if now - (state.lastMaterialMove or 0) < 1 / 30 then return end
+    state.lastMaterialMove = now
+
+    local bench = workspace:FindFirstChild('Workbench')
+    local closest, score = nil, math.huge
+    if not bench then return end
+    for _, surface in bench:GetDescendants() do
+        if surface:IsA('BasePart') and surface.Name:lower() == 'surface' then
+            local localPos = surface.CFrame:PointToObjectSpace(target)
+            local error = math.max(0, math.abs(localPos.X) - surface.Size.X * 0.5)
+                + math.max(0, math.abs(localPos.Z) - surface.Size.Z * 0.5)
+            if error < score then closest, score = surface, error end
+        end
+    end
+    if not closest then return end
+
+    local half = work.Size * 0.5
+    local x = math.abs(work.CFrame.RightVector:Dot(closest.CFrame.RightVector)) * half.X
+        + math.abs(work.CFrame.UpVector:Dot(closest.CFrame.RightVector)) * half.Y
+        + math.abs(work.CFrame.LookVector:Dot(closest.CFrame.RightVector)) * half.Z
+    local z = math.abs(work.CFrame.RightVector:Dot(closest.CFrame.LookVector)) * half.X
+        + math.abs(work.CFrame.UpVector:Dot(closest.CFrame.LookVector)) * half.Y
+        + math.abs(work.CFrame.LookVector:Dot(closest.CFrame.LookVector)) * half.Z
+    local y = math.abs(work.CFrame.RightVector:Dot(closest.CFrame.UpVector)) * half.X
+        + math.abs(work.CFrame.UpVector:Dot(closest.CFrame.UpVector)) * half.Y
+        + math.abs(work.CFrame.LookVector:Dot(closest.CFrame.UpVector)) * half.Z
+    local localTarget = closest.CFrame:PointToObjectSpace(target)
+    local maxX = math.max(0, closest.Size.X * 0.5 - x - 0.025)
+    local maxZ = math.max(0, closest.Size.Z * 0.5 - z - 0.025)
+    local place = closest.CFrame:PointToWorldSpace(Vector3.new(
+        math.clamp(math.round(localTarget.X / 0.04) * 0.04, -maxX, maxX),
+        closest.Size.Y * 0.5 + y + 0.035,
+        math.clamp(math.round(localTarget.Z / 0.04) * 0.04, -maxZ, maxZ)))
+    work.CFrame = CFrame.new(place) * work.CFrame.Rotation
 end
 
 local function flipFabricationMaterial(player, state, axis)
@@ -1055,6 +1137,10 @@ onRequest = function(player, action, ...)
         switchFabricationMaterial(player, state, ...)
     elseif action == 'FabricationMaterialFlip' and state.mode == 'Fabrication' then
         flipFabricationMaterial(player, state, ...)
+    elseif action == 'MaterialPositioning' and state.mode == 'Fabrication' then
+        setMaterialPositioning(player, state, ...)
+    elseif action == 'MaterialMove' and state.mode == 'Fabrication' then
+        moveMaterial(player, state, ...)
     elseif action == 'FabricationSettings' and state.mode == 'Fabrication' then
         local profile, radius = ...
         if state.kind == 'File' and (profile == 'Round' or profile == 'Chamfer')
