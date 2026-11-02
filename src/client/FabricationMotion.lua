@@ -44,10 +44,14 @@ function Motion.sawPlan(guide, worldHit, surfaceNormal)
     local forward = outward:Cross(normal).Unit
 
     local low, high = boundsProjection(rings, center, outward)
-    local acrossLow, acrossHigh = boundsProjection(rings, center, forward)
+    local alongLow, alongHigh = boundsProjection(rings, center, forward)
     local depth = high - low
-    if depth < 0.04 then return nil, 'Workpiece is too thin for a saw stroke' end
+    local across = alongHigh - alongLow
+    if depth < 0.04 or across < 0.04 then
+        return nil, 'Workpiece section is too small for a saw pass'
+    end
 
+    local clearance = math.clamp(math.min(depth, across) * 0.06, 0.04, 0.16)
     return {
         center = center,
         normal = normal,
@@ -55,16 +59,24 @@ function Motion.sawPlan(guide, worldHit, surfaceNormal)
         forward = forward,
         span = depth,
         start = high,
-        across = acrossHigh - acrossLow,
-        clearance = math.min(0.15, math.max(0.05, depth * 0.06)),
-        stroke = math.clamp((acrossHigh - acrossLow) * 0.20, 0.06, 0.45),
+        endDepth = low,
+        alongStart = alongLow,
+        alongEnd = alongHigh,
+        across = across,
+        clearance = clearance,
+        stroke = math.clamp(across * 0.14, 0.06, 0.42),
+        travel = across + depth + 2 * clearance,
     }
 end
 
-function Motion.sawPose(plan, advance, phase)
-    local distance = math.clamp(advance, 0, 1) * (plan.span + plan.clearance)
-    local position = plan.center + plan.outward * (plan.start + plan.clearance - distance)
-        + plan.forward * (math.sin(phase) * plan.stroke)
+function Motion.sawPose(plan, progress, phase)
+    local fraction = math.clamp(progress, 0, 1)
+    local along = plan.alongStart - plan.clearance
+        + (plan.across + 2 * plan.clearance) * fraction
+        + math.sin(phase) * plan.stroke
+    local depth = plan.start + plan.clearance
+        - fraction * (plan.span + 2 * plan.clearance)
+    local position = plan.center + plan.forward * along + plan.outward * depth
     return frame(position, plan.forward, plan.outward)
 end
 
