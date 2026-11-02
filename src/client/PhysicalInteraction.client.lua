@@ -8,6 +8,7 @@ local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 local Openworks = ReplicatedStorage:WaitForChild('Openworks')
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
+local ScorePath = require(Openworks:WaitForChild('ScorePath'))
 local Inspector = require(script.Parent:WaitForChild('InspectionCamera'))
 local remote = Openworks:WaitForChild('PhysicalInteraction')
 local receiverWarned = false
@@ -118,13 +119,70 @@ local function defaultMaterial()
     return chosen
 end
 
+local scorePreview = Instance.new('Folder')
+scorePreview.Name = 'OpenworksScorePreview'
+scorePreview.Parent = workspace
+
+local function clearPreview()
+    for _, child in scorePreview:GetChildren() do child:Destroy() end
+end
+
+local function scoreWork()
+    if not fabrication or not fabrication.material then return nil end
+    local item = fabrication.material
+    if item:IsA('BasePart') then return item end
+    return item.PrimaryPart or item:FindFirstChildWhichIsA('BasePart', true)
+end
+
+local function scorePoint(work)
+    if not work or not work.Parent then return nil end
+    local axis, sign = ScorePath.face(work)
+    local normal = work.CFrame:VectorToWorldSpace(ScorePath.normal(axis, sign))
+    local half = work.Size * 0.5
+    local extent = if axis == 'X' then half.X
+        elseif axis == 'Y' then half.Y else half.Z
+    local plane = work.CFrame:PointToWorldSpace(ScorePath.normal(axis, sign) * extent)
+    local pointer = UserInputService:GetMouseLocation()
+    local camera = workspace.CurrentCamera
+    local ray = camera:ViewportPointToRay(pointer.X, pointer.Y)
+    local denominator = ray.Direction:Dot(normal)
+    if math.abs(denominator) < 0.015 then return nil end
+    local t = (plane - ray.Origin):Dot(normal) / denominator
+    if t < 0 or t > 160 then return nil end
+    return ScorePath.project(work, ray.Origin + ray.Direction * t)
+end
+
+local function drawPreview(work, a, b)
+    local distance = (b - a).Magnitude
+    if distance < 0.02 then return end
+    local face, sign = ScorePath.face(work)
+    local normal = work.CFrame:VectorToWorldSpace(ScorePath.normal(face, sign))
+    local start = work.CFrame:PointToWorldSpace(a) + normal * 0.017
+    local finish = work.CFrame:PointToWorldSpace(b) + normal * 0.017
+    local segment = Instance.new('Part')
+    segment.Name = 'ScorePreview'
+    segment.Size = Vector3.new(0.019, 0.014, distance)
+    segment.CFrame = CFrame.lookAt((start + finish) * 0.5, finish)
+    segment.Anchored = true
+    segment.CanCollide = false
+    segment.CanTouch = false
+    segment.CanQuery = false
+    segment.CastShadow = false
+    segment.Material = Enum.Material.Neon
+    segment.Color = Color3.fromRGB(242, 188, 106)
+    segment.Transparency = 0.12
+    segment.Parent = scorePreview
+end
+
 local function cancel()
     held = nil
     dragging = nil
+    if fabrication and fabrication.kind == 'Scorer' then send('FabricationScoreEnd') end
     fabrication = nil
     pendingTool = nil
     pendingMaterial = nil
     guide.Parent = nil
+    clearPreview()
     send('End')
 end
 
@@ -295,6 +353,21 @@ UserInputService.InputBegan:Connect(function(input, processed)
         end
 
         if pendingMaterial then return end
+        if fabrication.kind == 'Scorer' then
+            local work = scoreWork()
+            local point = scorePoint(work)
+            if not point then
+                inspector:status('Move the pointer onto the exposed metal face')
+                return
+            end
+            clearPreview()
+            fabrication.score = {
+                tip = point, lastDrawn = point, lastAt = os.clock(),
+            }
+            fabrication.down = true
+            send('FabricationScoreBegin', point)
+            return
+        end
         fabrication.down = true
         if not inspector.rightHeld and not inspector.middleHeld then
             fabrication.previousMouseBehavior = UserInputService.MouseBehavior
@@ -333,6 +406,10 @@ UserInputService.InputChanged:Connect(function(input)
         end
 
         if fabrication and not inspector.rightHeld and not inspector.middleHeld then
+            if fabrication.kind == 'Scorer' then
+                fabrication.pointerMoved = true
+                return
+            end
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
                 fabrication.offset += input.Delta.X * 0.006
@@ -370,6 +447,11 @@ UserInputService.InputEnded:Connect(function(input)
     end
 
     if fabrication then
+        if fabrication.kind == 'Scorer' and fabrication.score then
+            send('FabricationScoreEnd')
+            fabrication.score = nil
+            clearPreview()
+        end
         fabrication.materialDrag = nil
         fabrication.down = false
         fabrication.stroke = 0
@@ -383,6 +465,11 @@ end)
 UserInputService.WindowFocusReleased:Connect(function()
     dropHeld(false)
     if fabrication and fabrication.down then
+        if fabrication.kind == 'Scorer' then
+            send('FabricationScoreEnd')
+            fabrication.score = nil
+            clearPreview()
+        end
         fabrication.down = false
         fabrication.stroke = 0
         if fabrication.previousMouseBehavior then
@@ -425,9 +512,15 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
         end
         guide.Parent = workspace
         if a == 'Saw' then
-            inspector:status('Hover the sheet to set a cut, then hold LMB to saw')
+            inspector:status('Hover to choose a cut. Straight scores attract the saw.')
+        elseif a == 'Scorer' then
+            inspector:status('Hold LMB on the metal and trace a score. Release to save.')
         else
             inspector:status('Hover an edge, hold LMB and stroke to file it')
+        end
+    elseif action == 'ScoreSaved' then
+        if fabrication and fabrication.kind == 'Scorer' then
+            inspector:status('Score saved (' .. tostring(a) .. ' path points). Curved cuts are not available yet.')
         end
     elseif action == 'MaterialPositioning' then
         if fabrication then
@@ -527,6 +620,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
         pendingTool = nil
         if inspector.material then inspector:status(a) end
     elseif action == 'Ended' then
+        clearPreview()
         pendingMaterial = nil
         restoreFabricationCollision()
         dragging = nil
@@ -611,6 +705,49 @@ RunService.RenderStepped:Connect(function(dt)
         return
     end
 
+    if fabrication and fabrication.kind == 'Scorer' then
+        local work = scoreWork()
+        local point = scorePoint(work)
+        if work and point then
+            guide.Parent = workspace
+            local face, sign = ScorePath.face(work)
+            local normal = work.CFrame:VectorToWorldSpace(ScorePath.normal(face, sign))
+            guide.Size = Vector3.new(0.06, 0.014, 0.06)
+            guide.Color = Color3.fromRGB(244, 187, 98)
+            guide.CFrame = CFrame.new(work.CFrame:PointToWorldSpace(point) + normal * 0.018)
+
+            if fabrication.down and fabrication.score then
+                local score = fabrication.score
+                local elapsedScore = math.clamp(os.clock() - score.lastAt, 1 / 120, 0.06)
+                score.lastAt = os.clock()
+                local desired = point - score.tip
+                local alpha = 1 - math.exp(-12 * elapsedScore)
+                local move = desired * alpha
+                if score.previous then
+                    local direction = score.tip - score.previous
+                    if direction.Magnitude > 0.008 then
+                        local along = direction.Unit
+                        local parallel = along * move:Dot(along)
+                        move = parallel + (move - parallel) * 0.48
+                    end
+                end
+                if move.Magnitude > 0.006 then
+                    local nextTip = score.tip + move
+                    score.previous = score.tip
+                    score.tip = nextTip
+                    if (nextTip - score.lastDrawn).Magnitude > 0.02 then
+                        drawPreview(work, score.lastDrawn, nextTip)
+                        score.lastDrawn = nextTip
+                    end
+                    send('FabricationScoreMove', nextTip)
+                end
+            end
+        else
+            guide.Parent = nil
+        end
+        return
+    end
+
     if fabrication then
         local item = fabrication.material
         local work = if item and item:IsA('BasePart') then item
@@ -665,6 +802,11 @@ RunService.RenderStepped:Connect(function(dt)
             local span = if fabrication.axis == 'X' then size.X else size.Z
             local maximum = math.max(0, span * 0.5 - 0.17)
             fabrication.offset = math.clamp(fabrication.offset, -maximum, maximum)
+            if fabrication.kind == 'Saw' then
+                local scored = ScorePath.straight(work,
+                    fabrication.axis, fabrication.offset, 0.12)
+                if scored then fabrication.offset = scored end
+            end
 
             local guideHeight = size.Y * 0.5 + 0.025
             guide.Color = if fabrication.kind == 'File'
