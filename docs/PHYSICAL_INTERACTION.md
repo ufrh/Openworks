@@ -18,7 +18,7 @@ Add `FileFace` to a file if desired. Without `BladeEdge`, OPENWORKS first looks 
 
 In precision mode, **R** rolls the physical tool 90 degrees around the stroke axis; **Shift+R** rolls it back 90 degrees. This does not change the cut plane and lets you correct models whose grip/blade faces are oriented differently.
 
-The physical tool is never cloned into a separate cosmetic. An invisible target with AlignPosition / AlignOrientation moves the same rigid assembly. **Every BasePart in the tool is forced to CanCollide=false, CanTouch=false, and CanQuery=false on both the server and physics-owning client throughout fabrication.** The saw is returned to its pre-fabrication resting pose *before* its original collision properties are restored. Dragging outside fabrication retains normal physics and collisions.
+The physical tool is never cloned into a separate cosmetic. **Precision fabrication does not use AlignPosition or AlignOrientation.** Instead, the server temporarily anchors the entire rigid tool assembly and interpolates its pivot toward the blade-aligned target each Heartbeat (smooth kinematic CFrame motion). Every working tool part stays non-collidable, non-touchable, and non-queryable during the session. On exit, it returns to its resting pose above the tabletop, then its original anchor and collision states are restored. **Normal free dragging continues to use physics constraints**, unchanged.
 
 ## Free-mode interaction
 
@@ -31,7 +31,7 @@ The physical tool is never cloned into a separate cosmetic. An invisible target 
 - Short-click a material, or short-click a tool when exactly one workpiece is on the bench.
 - **RMB drag** orbits; **MMB drag** pans; **wheel** zooms around the physical workpiece.
 - In the right-side panel, select a saw/file that is physically present on the bench.
-- **Escape** exits, restores normal camera, and releases any active fabrication motor.
+- **Escape** exits, restores normal camera, and releases the temporary kinematic fabrication control. Finishing a cut does **not** exit inspection.
 - The inspection camera no longer requires the default Roblox `PlayerModule`, which may not exist in customized player scripts.
 
 ## Saw positioning and cutting
@@ -40,8 +40,10 @@ The physical tool is never cloned into a separate cosmetic. An invisible target 
 2. A narrow **gold cutting guide** appears on the sheet. Move the mouse over the metal to position it. **Shift + horizontal mouse movement** also adjusts the cut offset.
 3. Press **Q** to switch between cuts normal to local X and local Z on native rectangular stock.
 4. **Hold LMB and manually move the mouse back and forth**. The actual physical saw follows each stroke; input is deliberately more sensitive for comfortable short wrist movements. Repeated direction reversals advance progress; releasing the mouse pauses.
-5. When five qualifying stroke reversals complete, the server calls `SawCut.split` using FORM. For a test sheet, the result is two independent unanchored physical Parts, both marked as FORM material and preserving the material appearance.
-6. **RMB orbit** and **wheel zoom** remain available throughout; the camera remains focused on the current physical piece.
+5. When five qualifying stroke reversals complete, the server calls `SawCut.split` using FORM. The larger retained piece **remains the same Part and remains selected** (only its dimensions and CFrame change). An offcut appears as a separate unanchored, tagged physical Part. Both are positioned above tabletop collision support.
+6. The retained material is temporarily stabilized on the workbench during fabrication, preventing physics tunneling and enabling successive cuts. Its original anchored state is restored after leaving the session.
+7. **Move the cutting guide and saw again without exiting**. Progress resets for the next cut. Release LMB before starting another stroke sequence. RMB orbit, pan, wheel zoom and R/Shift+R tool roll continue to work.
+8. **Only Esc (or Exit)** ends precision mode, restores the camera, and returns the saw to its physical resting position.
 
 For a file, the same manual-stroke controls are available, but native test sheets currently support only a simple planar shave, **not** the older curved edge-filing preview.
 
