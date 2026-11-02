@@ -6,7 +6,7 @@ local Boolean = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild
 local Renderer = require(script:WaitForChild('FORMRenderer'))
 
 local stock = FORM.box(Vector3.new(100, 50, 20))
-local tool = FORM.box(Vector3.new(40, 20, 30))
+local tool = FORM.cylinder(10, 30, 12)
 local pieces, removed = Boolean.subtract(stock, tool)
 assert(pieces, '[FORM] Subtraction preview failed: ' .. tostring(removed))
 
@@ -24,7 +24,7 @@ end
 for index, solid in pieces do
     local success, result = pcall(function()
         local part = Renderer.create(solid, 0.04, 30)
-        part.Name = 'FORM Subtraction ' .. index
+        part.Name = 'FORM Drilled Piece ' .. index
         part.Anchored = true
         part.CanCollide = false
         part.Material = Enum.Material.Metal
@@ -43,7 +43,7 @@ for index, solid in pieces do
 end
 
 arrange()
-print(string.format('[FORM] Rectangular through-slot removed %.4f mm^3 across %d pieces', removed, #pieces))
+print(string.format('[FORM] Drilled hole removed %.4f mm^3 across %d pieces', removed, #pieces))
 
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
