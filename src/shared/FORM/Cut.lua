@@ -43,6 +43,7 @@ function Cut.split(solid, planePoint, planeNormal)
     end
 
     local intersections = {}
+    local nextVertex = #solid.vertices
     local sides = {}
 
     local function intersection(a, b)
@@ -53,7 +54,8 @@ function Cut.split(solid, planePoint, planeNormal)
         if intersections[key] then return intersections[key] end
 
         local ratio = distances[a] / (distances[a] - distances[b])
-        local index = #solid.vertices + 1
+        nextVertex += 1
+        local index = nextVertex
         local result = solid.vertices[a]:Lerp(solid.vertices[b], ratio)
         intersections[key] = index
         intersections[index] = result
