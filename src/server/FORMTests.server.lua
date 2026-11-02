@@ -58,6 +58,15 @@ local function run()
     local first, remainder = Cut.split(box, Vector3.zero, Vector3.xAxis)
     assert(first and remainder, 'First chained cut failed: ' .. tostring(remainder))
 
+    local provenanceTest = FORM.box(Vector3.new(20, 20, 20))
+    local trusted = Cut.split(provenanceTest, Vector3.zero, Vector3.xAxis)
+    assert(trusted and FORM.validate(trusted).ok, 'Expected trusted convex fragment')
+    trusted.vertices[1] += Vector3.new(0, 0.0001, 0)
+    assert(FORM.validate(trusted).ok, 'Provenance mutation test damaged topology')
+    local invalidTrusted, staleReason = Cut.split(trusted, Vector3.zero, Vector3.yAxis)
+    assert(not invalidTrusted and staleReason == 'STALE_CUT_LINEAGE',
+        'Modified generated fragment unexpectedly retained trusted provenance')
+
     local second, third = Cut.split(first, Vector3.new(0, 7, 0), Vector3.yAxis)
     assert(second and third, 'Second chained cut failed: ' .. tostring(third))
 
