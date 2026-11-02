@@ -10,6 +10,7 @@ local machine = Machine.new(FORM.box(Vector3.new(100, 50, 40)))
 local part
 local editable
 local busy = false
+local smoothAngle = 30
 local position = CFrame.new(0, 7, -12)
 
 local player = Players.LocalPlayer
@@ -23,7 +24,7 @@ local panel = Instance.new('Frame')
 panel.Name = 'Tools'
 panel.AnchorPoint = Vector2.new(0, 1)
 panel.Position = UDim2.new(0, 24, 1, -24)
-panel.Size = UDim2.fromOffset(300, 468)
+panel.Size = UDim2.fromOffset(300, 510)
 panel.BackgroundColor3 = Color3.fromRGB(24, 28, 29)
 panel.BackgroundTransparency = 0.08
 panel.BorderSizePixel = 0
@@ -104,9 +105,9 @@ local function refresh(message)
     local success, result = pcall(function()
         local newPart, newEditable
         if ok and solid then
-            newPart, newEditable = Renderer.create(solid, 0.04, 30)
+            newPart, newEditable = Renderer.create(solid, 0.04, smoothAngle)
         else
-            newPart, newEditable = Renderer.createMany(machine:pieces(), 0.04, 30)
+            newPart, newEditable = Renderer.createMany(machine:pieces(), 0.04, smoothAngle)
         end
         part, editable = newPart, newEditable
         part.Name = 'OPENWORKS Machined Workpiece'
@@ -191,6 +192,11 @@ button('Fillet', '[5]  Faceted outer fillet', function() run('fillet') end)
 button('Saw', '[6]  Trim right edge', function() run('saw') end)
 button('Undo', '[Z]  Undo    [Y]  Redo', function() run('undo') end)
 button('Reset', '[R]  Reset workpiece', function() run('reset') end)
+button('Shading', '[N]  Compare flat / smooth normals', function()
+    if busy then return end
+    smoothAngle = if smoothAngle == 30 then 0 else 30
+    refresh(if smoothAngle == 0 then 'Flat shading diagnostic' else 'Protected planar smoothing')
+end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
@@ -204,6 +210,11 @@ UserInputService.InputBegan:Connect(function(input, processed)
     elseif key == Enum.KeyCode.Seven then run('profile')
     elseif key == Enum.KeyCode.Z then run('undo')
     elseif key == Enum.KeyCode.Y then run('redo')
+    elseif key == Enum.KeyCode.N then
+        if not busy then
+            smoothAngle = if smoothAngle == 30 then 0 else 30
+            refresh(if smoothAngle == 0 then 'Flat shading diagnostic' else 'Protected planar smoothing')
+        end
     elseif key == Enum.KeyCode.R then run('reset')
     end
 end)
