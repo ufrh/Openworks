@@ -206,7 +206,10 @@ function Cut.split(solid, planePoint, planeNormal)
     local before = FORM.signedVolume(solid)
     local after = FORM.signedVolume(sides[1]) + FORM.signedVolume(sides[2])
     if not FORM.volumeClose(after, before) then
-        return nil, string.format('VOLUME_MISMATCH before=%.9f after=%.9f delta=%+.9f', before, after, after - before)
+        return nil, string.format(
+            'VOLUME_MISMATCH before=%.9f after=%.9f delta=%+.9f limit=%.9f faces=%d',
+            before, after, after - before, FORM.volumeTolerance(before), #solid.triangles
+        )
     end
 
     lineage[sides[1]] = true
