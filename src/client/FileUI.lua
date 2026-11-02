@@ -4,7 +4,9 @@ local RunService = game:GetService('RunService')
 local UserInputService = game:GetService('UserInputService')
 
 local FileShape = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FileShape'))
-local ToolVisual = require(script.Parent.ToolVisual)
+local FabricationVisual = require(script.Parent.FabricationVisual)
+local FabricationTool = require(script.Parent.FabricationTool)
+local Motion = require(script.Parent.FabricationMotion)
 
 local FileUI = {}
 
@@ -73,6 +75,7 @@ function FileUI.start(workpieces)
     local preview
     local filing
     local currentTool
+    local working
     local lines = {}
     local toolConnections = {}
     local clock = 0
@@ -129,47 +132,40 @@ function FileUI.start(workpieces)
     end
 
     local function stop()
-        if filing and filing.tool and filing.tool.Parent then
-            filing.tool.Grip = filing.grip
-        end
         filing = nil
         fill.Size = UDim2.fromScale(0, 1)
     end
 
-    local function findTool()
-        local character = player.Character
-        local equippedTool = character and character:FindFirstChild('Metal File')
-        if equippedTool and equippedTool:IsA('Tool') then return equippedTool end
+    local function closeWorking()
+        if working then working:destroy() working = nil end
+    end
 
-        local backpack = player:FindFirstChildOfClass('Backpack')
-        local owned = backpack and backpack:FindFirstChild('Metal File')
-        if owned and owned:IsA('Tool') then return owned end
-
-        if backpack then
-            for _, source in ReplicatedStorage:GetDescendants() do
-                if source:IsA('Tool') and source.Name == 'Metal File' then
-                    local tool = source:Clone()
-                    tool.Parent = backpack
-                    return tool
-                end
-            end
+    local function showModel()
+        if working then return true end
+        local object, reason = FabricationVisual.new('Metal File', 'FileFace')
+        if not object then
+            feedback(tostring(reason), 5)
+            return false
         end
-        return nil
+        working = object
+        return true
+    end
+
+    local function findTool()
+        return FabricationTool.find(player, 'Metal File')
     end
 
     local function connect(tool)
         if currentTool == tool then return end
         for _, connection in toolConnections do connection:Disconnect() end
         table.clear(toolConnections)
+        if currentTool then FabricationTool.restore(currentTool) end
         stop()
+        closeWorking()
         clearLines()
         preview = nil
         currentTool = tool
         if not tool then return end
-        local visualReady = ToolVisual.attach(tool)
-        if not visualReady then
-            warn('[FILE] Metal File Tool needs a Handle or a visible matching Model')
-        end
 
         toolConnections[#toolConnections + 1] = tool.Activated:Connect(function()
             if not equipped() or filing then return end
@@ -183,13 +179,18 @@ function FileUI.start(workpieces)
                 warn('[FILE] Filing geometry rejected: ' .. status.Text)
                 return
             end
+            if not preview.motion or not showModel() then
+                feedback('File model or filing movement is unavailable')
+                return
+            end
             filing = {
                 part = preview.part, item = preview.item,
-                spec = preview.spec, tool = tool, grip = tool.Grip,
+                spec = preview.spec,
                 result = solid, stats = stats, elapsed = 0,
                 duration = if preview.item.material == 'Steel' then 3.2 else 2.1,
+                phase = 0, plan = preview.motion,
             }
-            status.Text = 'Filing edge... hold mouse'
+            status.Text = 'Metal file engaged - hold to shape the edge'
         end)
         toolConnections[#toolConnections + 1] = tool.Deactivated:Connect(function()
             if filing then
@@ -199,6 +200,8 @@ function FileUI.start(workpieces)
         end)
         toolConnections[#toolConnections + 1] = tool.Unequipped:Connect(function()
             stop()
+            closeWorking()
+            FabricationTool.restore(tool)
             clearLines()
             preview = nil
             panel.Visible = false
@@ -206,9 +209,15 @@ function FileUI.start(workpieces)
         end)
         toolConnections[#toolConnections + 1] = tool.Equipped:Connect(function()
             mouse.TargetFilter = player.Character
+            FabricationTool.hideEquipped(tool)
+            showModel()
             panel.Visible = true
-            status.Text = 'Hover near an edge; hold LMB to round'
+            status.Text = 'Aim at the edge; the working file follows the surface'
         end)
+        if equipped() then
+            FabricationTool.hideEquipped(tool)
+            showModel()
+        end
     end
 
     for _, value in {1, 3, 6} do
@@ -243,11 +252,11 @@ function FileUI.start(workpieces)
     equipButton.Text = 'EQUIP METAL FILE'
     equipButton.Parent = gui
     equipButton.MouseButton1Click:Connect(function()
-        local tool = findTool()
+        local tool, reason = findTool()
         if not tool then
-            status.Text = 'No Metal File Tool in StarterPack, Backpack or ReplicatedStorage'
-            equipButton.Text = 'MISSING METAL FILE TOOL'
-            warn('[FILE] No Metal File Tool found in StarterPack, Backpack or ReplicatedStorage')
+            feedback(tostring(reason), 5)
+            equipButton.Text = 'MISSING METAL FILE'
+            warn('[FILE] ' .. tostring(reason))
             return
         end
         connect(tool)
@@ -258,9 +267,7 @@ function FileUI.start(workpieces)
             return
         end
         if tool.RequiresHandle and not tool:FindFirstChild('Handle') then
-            status.Text = 'Tool needs a direct Handle or RequiresHandle=false'
-            equipButton.Text = 'MISSING TOOL HANDLE'
-            return
+            tool.RequiresHandle = false
         end
         humanoid:EquipTool(tool)
     end)
@@ -289,22 +296,28 @@ function FileUI.start(workpieces)
         if not equipped() then
             panel.Visible = false
             if preview then preview = nil clearLines() end
+            if working then working:hide() end
             return
         end
         panel.Visible = true
 
         if filing then
             local task = filing
-            if not task.part.Parent or not task.part.Anchored or workpieces.get(task.part) ~= task.item then
+            if not task.part.Parent or not task.part.Anchored
+                or workpieces.get(task.part) ~= task.item then
                 stop()
                 clearLines()
-                status.Text = 'Workpiece changed; filing cancelled'
+                if working then working:hide() end
+                feedback('Workpiece changed; filing cancelled')
                 return
             end
             task.elapsed += dt
+            task.phase += dt * 25
             local fraction = math.min(1, task.elapsed / task.duration)
             fill.Size = UDim2.fromScale(fraction, 1)
-            task.tool.Grip = task.grip * CFrame.new(0, 0, math.sin(task.elapsed * 32) * 0.13)
+            if working then
+                working:pose(Motion.filePose(task.plan, fraction, task.phase))
+            end
             if fraction >= 1 then
                 stop()
                 preview = nil
@@ -328,6 +341,7 @@ function FileUI.start(workpieces)
         local item = workpieces.get(part)
         if not item or not part.Anchored then
             if preview then preview = nil clearLines() end
+            if working then working:hide() end
             if os.clock() >= feedbackUntil then
                 status.Text = if item and not part.Anchored then 'Secure the metal first'
                     else 'Aim at a stock face to select an outer edge'
@@ -338,13 +352,16 @@ function FileUI.start(workpieces)
         local result, reason = FileShape.preview(item, mouse.Hit.Position, radius)
         if not result then
             if preview then preview = nil clearLines() end
+            if working then working:hide() end
             if os.clock() >= feedbackUntil then
                 status.Text = tostring(reason or 'Aim at another outer edge')
             end
             return
         end
-        preview = {part = part, item = item, spec = result}
+        local plan = Motion.filePlan(item, result)
+        preview = {part = part, item = item, spec = result, motion = plan}
         draw(result)
+        if showModel() then working:pose(Motion.filePose(plan, 0, 0)) end
         if os.clock() >= feedbackUntil then
             status.Text = 'Edge ready - hold LMB (' .. tostring(radius) .. ' mm)'
         end
