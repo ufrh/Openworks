@@ -6,7 +6,9 @@ local remote = Instance.new('RemoteFunction')
 remote.Name = 'WorkshopStorage'
 remote.Parent = ReplicatedStorage.Openworks
 
-local store = DataStoreService:GetDataStore('Openworks_Workshop_v1')
+local available, store = pcall(function()
+    return DataStoreService:GetDataStore('Openworks_Workshop_v1')
+end)
 local lastRequest = {}
 
 local function respond(ok, detail, data)
@@ -23,6 +25,10 @@ remote.OnServerInvoke = function(player, action, json)
         return respond(false, 'WAIT_BEFORE_RETRYING')
     end
     lastRequest[player.UserId] = now
+
+    if not available then
+        return respond(false, 'DATASTORE_UNAVAILABLE_USE_JSON_EXPORT')
+    end
 
     local key = 'user_' .. tostring(player.UserId)
     if action == 'save' then
