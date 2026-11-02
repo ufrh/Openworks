@@ -85,12 +85,32 @@ function FORM.bounds(solid)
 end
 
 function FORM.signedVolume(solid)
-    local total = 0
+    assert(type(solid) == 'table' and type(solid.vertices) == 'table'
+        and #solid.vertices > 0, 'Invalid volume input')
+
+    local origin = solid.vertices[1]
+    local ox, oy, oz = origin.X, origin.Y, origin.Z
+    local total, correction = 0, 0
+
     for _, face in solid.triangles do
         local a, b, c = solid.vertices[face[1]], solid.vertices[face[2]], solid.vertices[face[3]]
         assert(a and b and c, 'Invalid triangle')
-        total += a:Dot(b:Cross(c)) / 6
+
+        local ax, ay, az = a.X - ox, a.Y - oy, a.Z - oz
+        local bx, by, bz = b.X - ox, b.Y - oy, b.Z - oz
+        local cx, cy, cz = c.X - ox, c.Y - oy, c.Z - oz
+
+        local determinant = ax * (by * cz - bz * cy)
+            + ay * (bz * cx - bx * cz)
+            + az * (bx * cy - by * cx)
+        local term = determinant / 6
+
+        local adjusted = term - correction
+        local nextTotal = total + adjusted
+        correction = (nextTotal - total) - adjusted
+        total = nextTotal
     end
+
     return total
 end
 
