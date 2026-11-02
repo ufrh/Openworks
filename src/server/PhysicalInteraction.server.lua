@@ -293,9 +293,12 @@ local function finish(player)
             end
         end
 
+        if state.material and state.material.Parent then
+            supportOnWorkbench(state.material)
+        end
+
         for materialPart, wasAnchored in state.materialAnchors do
             if materialPart.Parent then
-                supportOnWorkbench(materialPart)
                 materialPart.AssemblyLinearVelocity = Vector3.zero
                 materialPart.AssemblyAngularVelocity = Vector3.zero
                 materialPart.Anchored = wasAnchored
@@ -456,6 +459,7 @@ local function startFabrication(player, material, tool)
         materialPart.AssemblyAngularVelocity = Vector3.zero
         materialPart.Anchored = true
     end
+    supportOnWorkbench(material)
 
     active[player] = state
     locked[tool] = player
@@ -544,7 +548,7 @@ local function cutSheet(state)
     fragment.Reflectance = work.Reflectance
     fragment.CustomPhysicalProperties = work.CustomPhysicalProperties
     fragment.CollisionGroup = work.CollisionGroup
-    fragment.Anchored = false
+    fragment.Anchored = true
     fragment.CanCollide = true
     fragment.CanTouch = true
     fragment.CanQuery = true
@@ -555,8 +559,10 @@ local function cutSheet(state)
     work.CFrame = main.frame
 
     fragment.Parent = work.Parent
+    supportOnWorkbench(fragment)
     fragment.AssemblyLinearVelocity = Vector3.zero
     fragment.AssemblyAngularVelocity = Vector3.zero
+    fragment.Anchored = false
 
     return work, 'Cut complete. Move the guide for another cut or press Esc'
 end
