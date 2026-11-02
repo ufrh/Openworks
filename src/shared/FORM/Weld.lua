@@ -123,7 +123,9 @@ function Weld.build(surface, tolerance)
     local resolved, converged = splitJunctions()
 
     local edges = {}
+    local used = {}
     for _, face in output.triangles do
+        for _, index in face do used[index] = true end
         for i = 1, 3 do
             local a, b = face[i], face[i % 3 + 1]
             if a > b then a, b = b, a end
@@ -138,7 +140,7 @@ function Weld.build(surface, tolerance)
         local lengthSquared = delta:Dot(delta)
         if lengthSquared > tolerance * tolerance then
             for i, vertex in output.vertices do
-                if i == edge[1] or i == edge[2] then continue end
+                if not used[i] or i == edge[1] or i == edge[2] then continue end
                 local t = (vertex - a):Dot(delta) / lengthSquared
                 if t > tolerance / math.sqrt(lengthSquared) and t < 1 - tolerance / math.sqrt(lengthSquared)
                     and (vertex - (a + delta * t)).Magnitude <= tolerance then
@@ -149,13 +151,18 @@ function Weld.build(surface, tolerance)
     end
 
     local result = FORM.validate(output)
+    local issueCounts = {}
+    for _, issue in result.issues do
+        issueCounts[issue.code] = (issueCounts[issue.code] or 0) + 1
+    end
     return output, {
         valid = result.ok and junctions == 0 and converged,
         issues = result.issues,
+        issueCounts = issueCounts,
         tJunctions = junctions,
         collapsedFaces = collapsed,
         repairedJunctions = resolved,
-        converged = converged,
+        converged = converged and junctions == 0,
         verticesBefore = #surface.vertices,
         verticesAfter = #output.vertices,
         trianglesAfter = #output.triangles,
