@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'))
 
 local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Cut'))
+local Boolean = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Boolean'))
 
 local function close(a, b)
     return math.abs(a - b) <= math.max(1e-6, math.abs(b) * 1e-9)
@@ -76,7 +77,19 @@ local function run()
     assert(#box.vertices == beforeVertices and #box.triangles == beforeTriangles, 'Failed cut mutated input')
     assert(FORM.validate(box).ok, 'Failed cut damaged original geometry')
 
-    print('[FORM] Foundation, planar split, chained-cut and coincident-intersection tests passed')
+    local tool = FORM.box(Vector3.new(40, 20, 30))
+    local leftovers, removed = Boolean.subtract(box, tool)
+    assert(leftovers, 'Convex subtraction failed: ' .. tostring(removed))
+    assert(close(removed, 16000), 'Incorrect subtraction volume')
+    local remaining = 0
+    for _, piece in leftovers do
+        assert(FORM.validate(piece).ok, 'Subtraction created invalid geometry')
+        remaining += FORM.signedVolume(piece)
+    end
+    assert(close(remaining, 84000), 'Subtraction did not conserve stock material')
+
+    print(string.format('[FORM] Boolean subtract: %d pieces, removed %.4f mm^3', #leftovers, removed))
+    print('[FORM] Foundation, coincident cuts, chained cuts and convex subtraction passed')
 end
 
 run()
