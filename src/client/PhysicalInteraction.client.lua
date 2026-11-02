@@ -176,12 +176,14 @@ UserInputService.InputChanged:Connect(function(input)
             held.moved = true
         end
 
-        if fabrication then
+        if fabrication and not inspector.rightHeld and not inspector.middleHeld then
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
                 fabrication.offset += input.Delta.X * 0.006
             elseif fabrication.down then
                 fabrication.stroke = math.clamp(fabrication.stroke + input.Delta.X * 0.012, -1, 1)
+            else
+                fabrication.pointerMoved = true
             end
         end
     end
@@ -235,10 +237,16 @@ remote.OnClientEvent:Connect(function(action, a, b, c)
         fabrication = {
             kind = a, material = b, tool = c,
             down = false, stroke = 0, offset = 0, axis = 'X',
+            pointerMoved = false,
         }
         inspector:setTool(a)
-        inspector:status('Position the cut using Shift + mouse, then hold LMB to saw')
-        guide.Parent = workspace
+        if a == 'Saw' then
+            inspector:status('Hover metal to position cut, then hold LMB and stroke')
+            guide.Parent = workspace
+        else
+            inspector:status('Hold LMB and stroke the physical file back and forth')
+            guide.Parent = nil
+        end
     elseif action == 'Progress' then
         if fabrication then
             inspector:status('Manual passes: ' .. math.floor(a * 100) .. '%')
@@ -315,16 +323,36 @@ RunService.RenderStepped:Connect(function(dt)
             guide.Parent = nil
         else
             local size = work.Size
+            if fabrication.pointerMoved and not fabrication.down then
+                fabrication.pointerMoved = false
+
+                local camera = workspace.CurrentCamera
+                local mousePosition = UserInputService:GetMouseLocation()
+                local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
+                local rayParams = RaycastParams.new()
+                rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                rayParams.FilterDescendantsInstances = {fabrication.tool, guide}
+                local hit = workspace:Raycast(ray.Origin, ray.Direction * 150, rayParams)
+
+                if hit and hit.Instance == work then
+                    local point = work.CFrame:PointToObjectSpace(hit.Position)
+                    fabrication.offset = if fabrication.axis == 'X' then point.X else point.Z
+                end
+            end
+
             local span = if fabrication.axis == 'X' then size.X else size.Z
             local maximum = math.max(0, span * 0.5 - 0.17)
             fabrication.offset = math.clamp(fabrication.offset, -maximum, maximum)
-            local cutHeight = size.Y * 0.5 + 0.025
-            if fabrication.axis == 'X' then
-                guide.Size = Vector3.new(0.055, 0.02, size.Z)
-                guide.CFrame = work.CFrame * CFrame.new(fabrication.offset, cutHeight, 0)
-            else
-                guide.Size = Vector3.new(size.X, 0.02, 0.055)
-                guide.CFrame = work.CFrame * CFrame.new(0, cutHeight, fabrication.offset)
+
+            if fabrication.kind == 'Saw' then
+                local cutHeight = size.Y * 0.5 + 0.025
+                if fabrication.axis == 'X' then
+                    guide.Size = Vector3.new(0.055, 0.02, size.Z)
+                    guide.CFrame = work.CFrame * CFrame.new(fabrication.offset, cutHeight, 0)
+                else
+                    guide.Size = Vector3.new(size.X, 0.02, 0.055)
+                    guide.CFrame = work.CFrame * CFrame.new(0, cutHeight, fabrication.offset)
+                end
             end
         end
     end
