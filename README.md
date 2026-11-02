@@ -23,8 +23,14 @@ START supports current branch, switching branches, and a **destructive** opt-in 
 - `scripts` -> project startup, shutdown, Git live sync and pushing
 - `docs` -> architecture, decisions and milestones
 
-The solid-modeling kernel FORM is **planned**, not implemented. Experimental code remains outside production source until reviewed.
+## Current prototype
 
-## First milestone
+**FORM** is an implemented experimental machining kernel with validated convex cutting, subtractive drilling, pockets, slots, saw cuts, chamfers, faceted fillets, signed-volume checks, and unified watertight boundary reconstruction for supported cutters.
 
-Design and test procedural solid representations, planar slicing, topology validation and an EditableMesh adapter. No gameplay systems are implemented yet.
+**Workshop phase** adds a playable parameter editor, stock setup, editable/reorderable operation timeline, tool-path overlays, project JSON import/export and optional per-player server save/load. Start Play after connecting Rojo; the new editor replaces the old preset-only demonstration.
+
+- [Machining workshop guide](docs/WORKSHOP.md)
+- [FORM kernel specification](docs/FORM/SPEC.md)
+- [Geometry history and diagnostics](docs/FORM/README.md)
+
+The geometry and manufacturing systems are **prototypes**. Studio runtime tests are necessary; source commits do not imply that a new feature has passed live verification. This is not a production CAD or CNC control system.
