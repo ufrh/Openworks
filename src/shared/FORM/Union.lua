@@ -283,6 +283,99 @@ function Union.surface(pieces)
     }
 end
 
+local function positiveOutside(polygon, plane)
+    local minimum, maximum = math.huge, -math.huge
+    for _, vertex in polygon do
+        local distance = vertex:Dot(plane.normal) - plane.distance
+        minimum = math.min(minimum, distance)
+        maximum = math.max(maximum, distance)
+    end
+    return minimum, maximum
+end
+
+local function subtractFace(polygon, cutter)
+    local exposed = {}
+    local pending = {polygon}
+
+    for _, plane in cutter do
+        local remainder = {}
+        for _, section in pending do
+            local minimum, maximum = positiveOutside(section, plane)
+            if minimum >= PLANE_TOLERANCE then
+                exposed[#exposed + 1] = section
+            elseif maximum <= -PLANE_TOLERANCE then
+                remainder[#remainder + 1] = section
+            else
+                local outside = cut(section, plane, true)
+                local inside = cut(section, plane, false)
+                if #outside >= 3 and polygonArea(outside) > EPSILON then
+                    exposed[#exposed + 1] = outside
+                end
+                if #inside >= 3 and polygonArea(inside) > EPSILON then
+                    remainder[#remainder + 1] = inside
+                end
+            end
+        end
+        pending = remainder
+        if #pending == 0 then break end
+    end
+    return exposed
+end
+
+function Union.subtractBoundary(stock, cutter, expectedVolume, tolerance)
+    if not FORM.validate(stock).ok or not FORM.validate(cutter).ok then
+        return nil, 'INVALID_INPUT'
+    end
+
+    local stockFaces = faceGroups(stock)
+    local cutterFaces = faceGroups(cutter)
+    local surface = {vertices = {}, triangles = {}}
+    local exposedCount = 0
+
+    for _, face in stockFaces do
+        local exposed = subtractFace(face.polygon, cutterFaces)
+        for _, polygon in exposed do
+            if not addPolygon(surface, polygon, face.normal) then
+                return nil, 'TRIANGLE_BUDGET_EXCEEDED'
+            end
+            exposedCount += 1
+        end
+    end
+
+    for _, face in cutterFaces do
+        local polygon = face.polygon
+        for _, plane in stockFaces do
+            polygon = cut(polygon, plane, false)
+            if #polygon < 3 then break end
+        end
+        if #polygon >= 3 then
+            if not addPolygon(surface, polygon, -face.normal) then
+                return nil, 'TRIANGLE_BUDGET_EXCEEDED'
+            end
+            exposedCount += 1
+        end
+    end
+
+    if #surface.triangles == 0 then return nil, 'EMPTY_RESULT' end
+    local welded, stats = Weld.build(surface, tolerance)
+    local details = {
+        surface = {inputTriangles = #stock.triangles + #cutter.triangles,
+            outputTriangles = #surface.triangles, outputFaces = exposedCount},
+        weld = stats,
+    }
+    if not stats.valid then return nil, 'NON_MANIFOLD_SURFACE', details end
+    if stats.connectedComponents ~= 1 then return nil, 'DISCONNECTED_SURFACE', details end
+
+    local expected = expectedVolume
+    if expected ~= nil and not FORM.volumeClose(FORM.signedVolume(welded), expected) then
+        details.volume = FORM.signedVolume(welded)
+        details.expectedVolume = expected
+        return nil, 'VOLUME_MISMATCH', details
+    end
+
+    return welded, nil, details
+end
+
 function Union.reconstruct(pieces, expectedVolume, tolerance)
     local surface, surfaceStats = Union.surface(pieces)
     if not surface then return nil, surfaceStats, {stage = 'arrangement'} end
