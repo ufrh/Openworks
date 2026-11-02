@@ -4,6 +4,7 @@ local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('F
 local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Cut'))
 local Boolean = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Boolean'))
 local Surface = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Surface'))
+local Union = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Union'))
 
 local function close(a, b)
     return FORM.volumeClose(a, b)
@@ -88,6 +89,12 @@ local function run()
         remaining += FORM.signedVolume(piece)
     end
     assert(close(remaining, 84000), 'Subtraction did not conserve stock material')
+
+    local rectangularSurface, rectangularStats = Union.surface(leftovers)
+    assert(#rectangularSurface.triangles > 0, 'Rectangular union produced no exposed triangles')
+    assert(rectangularStats.outputTriangles > 0, 'Missing union output statistics')
+    print(string.format('[FORM] Rectangular surface clipping: %d input / %d output triangles',
+        rectangularStats.inputTriangles, rectangularStats.outputTriangles))
 
     print(string.format('[FORM] Boolean subtract: %d pieces, removed %.4f mm^3', #leftovers, removed))
     local cylinder = FORM.cylinder(10, 70, 12)
