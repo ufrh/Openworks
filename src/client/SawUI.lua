@@ -4,6 +4,7 @@ local RunService = game:GetService('RunService')
 local UserInputService = game:GetService('UserInputService')
 
 local SawCut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('SawCut'))
+local ToolVisual = require(script.Parent.ToolVisual)
 
 local SawUI = {}
 
@@ -133,11 +134,14 @@ function SawUI.start(workpieces)
         local owned = backpack and backpack:FindFirstChild('Hacksaw')
         if owned and owned:IsA('Tool') then return owned end
 
-        local source = ReplicatedStorage:FindFirstChild('Hacksaw', true)
-        if source and source:IsA('Tool') and backpack then
-            local clone = source:Clone()
-            clone.Parent = backpack
-            return clone
+        if backpack then
+            for _, source in ReplicatedStorage:GetDescendants() do
+                if source:IsA('Tool') and source.Name == 'Hacksaw' then
+                    local clone = source:Clone()
+                    clone.Parent = backpack
+                    return clone
+                end
+            end
         end
         return nil
     end
@@ -152,6 +156,7 @@ function SawUI.start(workpieces)
         preview = nil
         currentTool = tool
         if not tool then return end
+        ToolVisual.attach(tool)
 
         activeToolConnection[#activeToolConnection + 1] = tool.Activated:Connect(function()
             if not equipped() or cutting then return end
@@ -182,6 +187,7 @@ function SawUI.start(workpieces)
             end
         end)
         activeToolConnection[#activeToolConnection + 1] = tool.Unequipped:Connect(function()
+            if mouse.TargetFilter == player.Character then mouse.TargetFilter = nil end
             stopCut()
             stopOrbit()
             clearLines()
@@ -189,6 +195,7 @@ function SawUI.start(workpieces)
             hint.Text = 'Equip hacksaw to begin'
         end)
         activeToolConnection[#activeToolConnection + 1] = tool.Equipped:Connect(function()
+            mouse.TargetFilter = player.Character
             hint.Text = 'Aim at secured metal. Hold click to saw.'
         end)
     end
@@ -208,6 +215,23 @@ function SawUI.start(workpieces)
         end
         humanoid:EquipTool(tool)
     end)
+
+    local function observe(character)
+        for _, child in character:GetChildren() do
+            if child:IsA('Tool') and child.Name == 'Hacksaw' then
+                connectTool(child)
+                mouse.TargetFilter = player.Character
+            end
+        end
+        connections[#connections + 1] = character.ChildAdded:Connect(function(child)
+            if child:IsA('Tool') and child.Name == 'Hacksaw' then
+                connectTool(child)
+                mouse.TargetFilter = player.Character
+            end
+        end)
+    end
+    if player.Character then observe(player.Character) end
+    connections[#connections + 1] = player.CharacterAdded:Connect(observe)
 
     makeLabel(panel, 'V: orbit camera | T: top down | Q/E: rotate cut | RMB: orbit | wheel: zoom', 56)
 
