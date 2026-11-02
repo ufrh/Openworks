@@ -44,45 +44,56 @@ end
 remote.OnServerEvent:Connect(function(player)
     local now = os.clock()
     if now - (lastSpawn[player] or -math.huge) < 0.75 then
+        remote:FireClient(player, false, 'Try again in a moment')
         return
     end
-
     lastSpawn[player] = now
 
     local surface = largestSurface()
     if not surface then
+        warn('[OPENWORKS:TestSheet] No surface found below Workspace.Workbench')
         remote:FireClient(player, false, 'No Workbench surface found')
         return
     end
 
+    local ok, result = pcall(function()
+        local sheet = Instance.new('Part')
+        sheet.Name = 'Test Steel Sheet'
+        sheet.Size = Vector3.new(
+            math.max(0.2, math.min(3.5, surface.Size.X * 0.6)),
+            0.18,
+            math.max(0.2, math.min(2.5, surface.Size.Z * 0.6))
+        )
+        sheet.CFrame = surface.CFrame
+            * CFrame.new(0, surface.Size.Y / 2 + sheet.Size.Y / 2 + 0.7, 0)
+        sheet.Anchored = false
+        sheet.CanCollide = true
+        sheet.CanTouch = true
+        sheet.CanQuery = true
+        sheet.Material = Enum.Material.Metal
+        sheet.Color = Color3.fromRGB(163, 174, 181)
+        sheet.TopSurface = Enum.SurfaceType.Smooth
+        sheet.BottomSurface = Enum.SurfaceType.Smooth
+        sheet:SetAttribute('FORMNativeStock', true)
+        FORMMaterial.mark(sheet)
+        sheet.Parent = sheets
+        return sheet
+    end)
+
+    if not ok then
+        warn('[OPENWORKS:TestSheet] Spawn failed:', result)
+        remote:FireClient(player, false, 'Spawn failed; check Output')
+        return
+    end
+
     local previous = owned[player]
-    if previous then
+    owned[player] = result
+    if previous and previous ~= result then
         previous:Destroy()
     end
 
-    local sheet = Instance.new('Part')
-    sheet.Name = 'Test Steel Sheet'
-    sheet.Size = Vector3.new(
-        math.min(3.5, surface.Size.X * 0.6),
-        0.18,
-        math.min(2.5, surface.Size.Z * 0.6)
-    )
-    sheet.CFrame = surface.CFrame * CFrame.new(0, surface.Size.Y / 2 + sheet.Size.Y / 2 + 0.7, 0)
-    sheet.Anchored = false
-    sheet.CanCollide = true
-    sheet.CanTouch = true
-    sheet.CanQuery = true
-    sheet.Material = Enum.Material.Metal
-    sheet.Color = Color3.fromRGB(163, 174, 181)
-    sheet.TopSurface = Enum.SurfaceType.Smooth
-    sheet.BottomSurface = Enum.SurfaceType.Smooth
-
-    sheet:SetAttribute('FORMNativeStock', true)
-    FORMMaterial.mark(sheet)
-    sheet.Parent = sheets
-    owned[player] = sheet
-
-    remote:FireClient(player, true, 'Dropped test sheet')
+    print('[OPENWORKS:TestSheet] Spawned', result:GetFullName(), result.Position)
+    remote:FireClient(player, true, 'Sheet created above the workbench')
 end)
 
 Players.PlayerRemoving:Connect(function(player)
