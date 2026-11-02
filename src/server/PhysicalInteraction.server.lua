@@ -136,63 +136,6 @@ local function toolContact(tool, part, kind)
     return bounds * CFrame.new(0, -size.Y * 0.5, 0) * rotation
 end
 
-local function sawBladeAndFrame(tool, parts, pivot)
-    local marker = contactMarker(tool, 'BladeEdge')
-    local blade, handle
-    local score = -math.huge
-
-    for _, part in parts do
-        if part.Transparency >= 0.95 then continue end
-
-        local name = part.Name:lower()
-        if name:find('handle', 1, true) or name:find('grip', 1, true) then
-            handle = part
-        end
-
-        local dimensions = {part.Size.X, part.Size.Y, part.Size.Z}
-        table.sort(dimensions)
-        local slenderness = dimensions[3] / math.max(dimensions[2], 0.015)
-        local darkness = 1 - (part.Color.R + part.Color.G + part.Color.B) / 3
-        local metal = if part.Material == Enum.Material.Metal
-            or part.Material == Enum.Material.DiamondPlate then 1 else 0
-
-        local candidate = slenderness * (0.5 + darkness * 2 + metal * 0.4)
-        if name:find('blade', 1, true) or name:find('teeth', 1, true) then
-            candidate += 100
-        end
-        if name:find('handle', 1, true) or name:find('grip', 1, true) then
-            candidate = -1
-        end
-
-        if candidate > score then
-            score = candidate
-            blade = part
-        end
-    end
-
-    if not marker and (not blade or (score < 2.8 and #parts > 1)) then
-        return nil, nil
-    end
-
-    local bladePoint = if marker then marker.WorldPosition else blade.Position
-    local framePoint
-    if handle and handle ~= blade then
-        framePoint = handle.Position
-    else
-        local total, count = Vector3.zero, 0
-        for _, part in parts do
-            if part ~= blade and part.Transparency < 0.95 then
-                total += part.Position
-                count += 1
-            end
-        end
-        framePoint = if count > 0 then total / count else tool:GetPivot().Position
-    end
-
-    if (bladePoint - framePoint).Magnitude < 0.035 then return nil, nil end
-    return pivot:PointToObjectSpace(bladePoint), pivot:PointToObjectSpace(framePoint)
-end
-
 local function setToolCollision(item, state)
     state.collisions = {}
 
@@ -491,14 +434,6 @@ local function startFabrication(player, material, tool)
 
     local restingFrame = tool:GetPivot()
     local contact = toolContact(tool, part, kind)
-    local sawBlade, sawFrame
-    if kind == 'Saw' then
-        sawBlade, sawFrame = sawBladeAndFrame(tool, toolParts, restingFrame)
-        if not sawBlade then
-            warn('[OPENWORKS:Saw] Blade/frame not distinguishable on ' .. tool.Name
-                .. '; add BladeEdge on the cutting teeth for deterministic orientation')
-        end
-    end
     local toolBounds, toolSize
     if kind == 'Saw' then
         if tool:IsA('Model') then
@@ -517,9 +452,7 @@ local function startFabrication(player, material, tool)
         work = work,
         restingFrame = restingFrame,
         contactOffset = contact:ToObjectSpace(restingFrame),
-        sawBlade = sawBlade,
-        sawFrame = sawFrame,
-        sawCorrection = nil,
+        sawFlip = tool:GetAttribute('SawFlip180') ~= false,
         toolBoundsOffset = if toolBounds then restingFrame:ToObjectSpace(toolBounds) else nil,
         toolBoundsSize = toolSize,
         currentFrame = restingFrame,
@@ -766,34 +699,14 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     local forward = if axis == 'X' then work.CFrame.LookVector
         else work.CFrame.RightVector
     local upward = work.CFrame.UpVector
+    local sawFlip = if state.kind == 'Saw' and state.sawFlip then 180 else 0
     local contactFrame = CFrame.fromMatrix(pos, forward,
         upward, forward:Cross(upward))
-        * CFrame.Angles(math.rad(state.roll), 0, 0)
+        * CFrame.Angles(math.rad(state.roll + sawFlip), 0, 0)
 
     state.goalFrame = contactFrame * state.contactOffset
 
     if state.kind == 'Saw' then
-        if state.sawCorrection == nil then
-            state.sawCorrection = 0
-            if state.sawBlade and state.sawFrame then
-                local flipped = contactFrame * CFrame.Angles(0, 0, 0)
-                local rotated = contactFrame * CFrame.Angles(math.pi, 0, 0)
-                local function bladeSeparation(frame)
-                    local pivot = frame * state.contactOffset
-                    return (pivot:PointToWorldSpace(state.sawBlade)
-                        - pivot:PointToWorldSpace(state.sawFrame)).Y
-                end
-                if bladeSeparation(rotated) < bladeSeparation(flipped) - 0.015 then
-                    state.sawCorrection = 180
-                end
-            end
-        end
-
-        state.goalFrame = CFrame.fromMatrix(pos, forward,
-            upward, forward:Cross(upward))
-            * CFrame.Angles(math.rad(state.roll + state.sawCorrection), 0, 0)
-            * state.contactOffset
-
         local bounds = state.goalFrame * state.toolBoundsOffset
         local half = state.toolBoundsSize * 0.5
         local lowest = bounds.Position.Y
@@ -980,6 +893,11 @@ onRequest = function(player, action, ...)
         else
             remote:FireClient(player, 'Feedback', 'Invalid file profile or size')
         end
+    elseif action == 'FabricationSawFlip' and state.mode == 'Fabrication'
+        and state.kind == 'Saw' then
+        state.sawFlip = not state.sawFlip
+        state.item:SetAttribute('SawFlip180', state.sawFlip)
+        remote:FireClient(player, 'SawFlipChanged', state.sawFlip)
     elseif action == 'FabricationRotate' and state.mode == 'Fabrication' then
         local step = ...
         if step == 1 or step == -1 then
