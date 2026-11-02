@@ -81,7 +81,9 @@ function Boolean.subtractUnified(stock, cutter)
     if not pieces then return nil, removed end
 
     local Union = require(script.Parent.Union)
-    local unified, reason, stats = Union.reconstruct(pieces)
+    local expected = 0
+    for _, piece in pieces do expected += FORM.signedVolume(piece) end
+    local unified, reason, stats = Union.subtractBoundary(stock, cutter, expected)
     if not unified then
         return nil, reason, {pieces = pieces, removed = removed, stats = stats}
     end
