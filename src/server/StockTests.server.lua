@@ -22,7 +22,7 @@ for _, item in {rod, tube} do
     assert(FORM.validate(item.solid).ok, item.shape .. ' topology invalid')
 end
 assert(tube.volume < rod.volume * 2 and tube.volume > 0, 'Tube volume incorrect')
-assert(math.abs(rod.volume - 12 * 12 * math.sin(math.pi / 8) * 80 / 2 * 16) < 1,
+assert(math.abs(rod.volume - 16 * math.sin(math.pi / 8) * 6 * 6 * 80 / 2) < 1,
     'Rod polygonal volume incorrect')
 local expectedTube = 16 * math.sin(math.pi / 8) * (8 * 8 - 5 * 5) * 80 / 2
 assert(math.abs(tube.volume - expectedTube) < 1, 'Tube cross-sectional area incorrect')
