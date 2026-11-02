@@ -266,6 +266,43 @@ function Weld.build(surface, tolerance)
         end
     end
 
+    local usedVertices = {}
+    local meshEdges = {}
+    local neighbors = {}
+    for _, face in output.triangles do
+        for edge = 1, 3 do
+            local a, b = face[edge], face[edge % 3 + 1]
+            usedVertices[a] = true
+            usedVertices[b] = true
+            meshEdges[edgeKey(a, b)] = true
+            neighbors[a] = neighbors[a] or {}
+            neighbors[b] = neighbors[b] or {}
+            neighbors[a][b] = true
+            neighbors[b][a] = true
+        end
+    end
+
+    local vertexCount, edgeCount, components = 0, 0, 0
+    for _ in usedVertices do vertexCount += 1 end
+    for _ in meshEdges do edgeCount += 1 end
+    local visited = {}
+    for vertex in usedVertices do
+        if not visited[vertex] then
+            components += 1
+            local stack = {vertex}
+            visited[vertex] = true
+            while #stack > 0 do
+                local current = table.remove(stack)
+                for adjacent in neighbors[current] do
+                    if not visited[adjacent] then
+                        visited[adjacent] = true
+                        stack[#stack + 1] = adjacent
+                    end
+                end
+            end
+        end
+    end
+
     local bows = fanDefects(output)
     if bows > 0 then issueCounts.BOWTIE_VERTEX = bows end
 
@@ -280,6 +317,8 @@ function Weld.build(surface, tolerance)
         repairedJunctions = repaired,
         converged = converged and remaining == 0,
         bowtieVertices = bows,
+        connectedComponents = components,
+        eulerCharacteristic = vertexCount - edgeCount + #output.triangles,
         verticesBefore = #surface.vertices,
         verticesAfter = #output.vertices,
         trianglesAfter = #output.triangles,
