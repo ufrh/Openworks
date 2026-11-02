@@ -5,7 +5,7 @@ local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FO
 local Boolean = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Boolean'))
 
 local function close(a, b)
-    return math.abs(a - b) <= math.max(1e-6, math.abs(b) * 1e-9)
+    return FORM.volumeClose(a, b)
 end
 
 local function run()
@@ -38,7 +38,7 @@ local function run()
         local expected = FORM.signedVolume(box)
         local actual = FORM.signedVolume(positive) + FORM.signedVolume(negative)
         local difference = actual - expected
-        local tolerance = math.max(1e-5, expected * 1e-8)
+        local tolerance = FORM.volumeTolerance(expected)
         print(string.format('[FORM] Cut volume delta: %+.9f mm^3 (limit %.9f)', difference, tolerance))
         assert(math.abs(difference) <= tolerance,
             string.format('Split volume mismatch: expected %.9f, actual %.9f, delta %+.9f mm^3', expected, actual, difference))
