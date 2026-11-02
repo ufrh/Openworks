@@ -479,8 +479,12 @@ local function startFabrication(player, material, tool)
     end
 
     local restingFrame = tool:GetPivot()
-    local toolBounds, toolBoundsSize = if tool:IsA('Model')
-        then tool:GetBoundingBox() else tool.CFrame, tool.Size
+    local toolBounds, toolBoundsSize
+    if tool:IsA('Model') then
+        toolBounds, toolBoundsSize = tool:GetBoundingBox()
+    else
+        toolBounds, toolBoundsSize = tool.CFrame, tool.Size
+    end
     local contact = toolContact(tool, part, kind)
 
     local state = {
@@ -823,6 +827,61 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     end
 end
 
+local function materialPositionMode(player, state, enabled)
+    if type(enabled) ~= 'boolean' or state.processing then return end
+    if not state.material:IsA('BasePart') then
+        remote:FireClient(player, 'Feedback', 'Positioning currently supports physical stock Parts')
+        return
+    end
+
+    state.positioning = enabled
+    state.awaitRelease = true
+    state.direction = 0
+    state.reversals = 0
+    state.lastStroke = 0
+    state.lastTurn = 0
+    state.offset = 0
+    if enabled then
+        state.goalFrame = state.restingFrame
+    end
+
+    remote:FireClient(player, 'MaterialPositionMode', enabled)
+end
+
+local function placeMaterial(player, state, position)
+    if not state.positioning or not validVector(position)
+        or not state.work:IsA('BasePart') then return end
+
+    local root = rootOf(player)
+    if not root or (position - root.Position).Magnitude > 25 then return end
+
+    local now = os.clock()
+    if now - (state.lastPlace or 0) < 1 / 35 then return end
+    state.lastPlace = now
+
+    seatMaterial(state.work, position)
+end
+
+local function rotateMaterial(player, state, axis, degrees)
+    if not state.positioning or state.processing
+        or (axis ~= 'X' and axis ~= 'Y' and axis ~= 'Z')
+        or type(degrees) ~= 'number'
+        or (degrees ~= 180 and degrees ~= -180 and degrees ~= 90
+            and degrees ~= -90 and degrees ~= 15 and degrees ~= -15) then
+        return
+    end
+    if not state.work:IsA('BasePart') then return end
+
+    local angle = math.rad(degrees)
+    local delta = if axis == 'X' then CFrame.Angles(angle, 0, 0)
+        elseif axis == 'Y' then CFrame.Angles(0, angle, 0)
+        else CFrame.Angles(0, 0, angle)
+
+    state.work.CFrame *= delta
+    seatMaterial(state.work, state.work.Position)
+    remote:FireClient(player, 'MaterialPositionChanged')
+end
+
 onRequest = function(player, action, ...)
     if action == 'DragStart' then
         startDrag(player, ...)
@@ -851,6 +910,12 @@ onRequest = function(player, action, ...)
         state.target.CFrame = CFrame.new(point) * rotation
     elseif action == 'FabricationMove' and state.mode == 'Fabrication' then
         moveFabrication(player, state, ...)
+    elseif action == 'MaterialPositionMode' and state.mode == 'Fabrication' then
+        materialPositionMode(player, state, ...)
+    elseif action == 'MaterialPlace' and state.mode == 'Fabrication' then
+        placeMaterial(player, state, ...)
+    elseif action == 'MaterialRotate' and state.mode == 'Fabrication' then
+        rotateMaterial(player, state, ...)
     elseif action == 'FabricationSettings' and state.mode == 'Fabrication' then
         local profile, radius = ...
         if state.kind == 'File' and (profile == 'Round' or profile == 'Chamfer')
