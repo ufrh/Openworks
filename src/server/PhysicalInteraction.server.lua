@@ -329,6 +329,8 @@ local function centerSolid(solid, center)
     return {vertices = vertices, triangles = triangles}
 end
 
+local endScore
+
 local function finish(player)
     local state = active[player]
     if not state then return end
@@ -338,6 +340,7 @@ local function finish(player)
     if state.material then locked[state.material] = nil end
 
     if state.mode == 'Fabrication' then
+        if state.kind == 'Scorer' and state.score then endScore(player, state) end
         if state.item and state.item.Parent then
             state.item:PivotTo(state.restingFrame)
             supportOnWorkbench(state.item)
@@ -1033,7 +1036,8 @@ local function beginScore(player, state, point)
     local work = state.work
     local face, sign = ScorePath.face(work)
     if state.positioning or state.processing or not ScorePath.valid(work, point, face, sign) then return end
-    if (work.CFrame:PointToWorldSpace(point) - rootOf(player).Position).Magnitude > 27 then return end
+    local root = rootOf(player)
+    if not root or (work.CFrame:PointToWorldSpace(point) - root.Position).Magnitude > 27 then return end
     state.score = {face = face, sign = sign, points = {point}}
     state.lastScoreAt = os.clock()
     scorePosition(state, point)
@@ -1063,7 +1067,7 @@ local function extendScore(state, point)
     scorePosition(state, point)
 end
 
-local function endScore(player, state)
+endScore = function(player, state)
     local score = state.score
     state.score = nil
     if not score or #score.points < 2 then return end
