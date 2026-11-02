@@ -13,9 +13,13 @@ local remote = Openworks:WaitForChild('PhysicalInteraction')
 local receiverWarned = false
 
 local function send(action, ...)
-    if remote:GetAttribute('Ready') ~= true then
+    local heartbeat = remote:GetAttribute('HeartbeatAt')
+    local alive = type(heartbeat) == 'number'
+        and math.abs(workspace:GetServerTimeNow() - heartbeat) < 1.8
+
+    if remote:GetAttribute('Ready') ~= true or not alive then
         if not receiverWarned then
-            warn('[OPENWORKS:Interaction] Server receiver is not ready; suppressing input')
+            warn('[OPENWORKS:Interaction] Server receiver is offline or stale; input paused')
             receiverWarned = true
         end
         return false
@@ -142,7 +146,10 @@ local function chooseTool(tool)
     end
     pendingTool = tool
     inspector:status('Preparing physical tool...')
-    send('FabricationStart', material, tool)
+    if not send('FabricationStart', material, tool) then
+        pendingTool = nil
+        inspector:status('Interaction receiver offline; restart Play if this persists')
+    end
 end
 
 inspector = Inspector.new(chooseTool, exitInspect)
