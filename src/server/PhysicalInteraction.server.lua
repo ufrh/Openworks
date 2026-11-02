@@ -455,7 +455,7 @@ local function startFabrication(player, material, tool)
         direction = 0,
         reversals = 0,
         axis = 'X',
-        roll = 0,
+        roll = if kind == 'Saw' and not contactMarker(tool, 'BladeEdge') then 180 else 0,
         awaitRelease = false,
         fileSide = 1,
         fileShape = 'Round',
