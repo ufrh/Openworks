@@ -135,3 +135,17 @@ Independent Python reference geometry checks of the arrangement algorithm (with 
 | 12-sided 14-mm drilled hole, 100x50x20 stock | 296 | all edges twice | 0 | 0 | approximately 92,650 mm^3 |
 
 **Important:** the reference validation is not the Roblox Studio runtime. The new Luau modules must still pass the actual `FORMTests.server.lua` and `MachineTests.server.lua` suites. Their failures are authoritative and should be investigated rather than bypassed.
+
+## Direct stock-and-cutter reconstruction (post-Studio failure repair)
+
+The 21:54–21:56 Studio run reported that *intermediate cutting was materially correct* while both rectangular and drilled fragment unions still failed manifold validation. It also exposed false `VOLUME_MISMATCH` rejection for 0.0005–0.0013 mm³ intermediate rounding drift, zero-removal operations being committed, and planar face grouping failures on some edge-finished pieces.
+
+The active `Machine:mesh()` implementation now **reconstructs the output surface from the original stock plus the saved convex cutter solids for all applied operations**, rather than trying to assemble a manifold from the residual convex fragments. `Union.fromStockAndCutters(stock, cutters, expectedVolume)` subtracts each cutter from the exterior stock polygons and adds inward-facing cutter surfaces clipped to the stock and other cutters. This supports overlapping cutters and multiple machining operations while retaining the convex-fragment workpiece for authoritative volume calculations and history.
+
+The single-tool `Union.subtractBoundary(stock, cutter, expectedVolume)` API is used by strict rectangular and drill tests. Edge conformity and volume validation are still required before returning a surface. An invalid result explicitly returns a reason and detailed stats; the Studio client preserves the complete convex-piece fallback preview.
+
+`Machine:apply()` now rejects `NO_MATERIAL_REMOVED` without advancing history. Stored historical cutter shapes are committed atomically with geometry states, and undo/redo rebuilds with only cutters applied at the current cursor. Saw/chamfer/faceted-fillet half-space operations are also recorded as bounded tool volumes encompassing the original stock. Cut volume tolerance scales with solid volume, capped at 0.002 mm³ for small/intermediate solids, without disabling final stock-volume checks.
+
+**Independent geometry reference results (not Roblox runtime):** A corresponding float32-quantized stock-minus-cutters implementation passes edge closure, correct winding/positive volume, and Euler checks for the 100×50×40 mm workpiece with (1) a through-hole, (2) that hole plus a blind pocket, and (3) both plus a rounded through-slot. Reconstructed meshes contain 156, 270, and 826 triangles, respectively, with expected volume 192650, 190090, and 184240 mm³ and Euler 0, 0, −2. Those reference tests support the design; Studio's Luau results are still unverified.
+
+The older `Union.reconstruct(pieces)` remains a bounded experimental convex-fragment union used for adjacent-block diagnostics. The machining workbench no longer depends on it. This is a geometry prototype with explicit budgets, not an unrestricted analytic CAD solver.
