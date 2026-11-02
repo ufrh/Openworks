@@ -31,3 +31,11 @@ See SPEC.md, OPERATIONS.md and TEST_PLAN.md for the full target design.
 This is **not a topology union**. It does not split partially overlapped faces, merge/weld common vertices, solve T-junctions, or validate one watertight manifold. A triangle-centroid visibility test can wrongly discard a partly exposed face; the result is diagnostic and visual only, not suitable for canonical manufacturing geometry or authoritative volume calculations. Volume is still determined from the original retained convex pieces.
 
 Full unification requires intersection-aware face subdivision, surface classification, vertex welding, and manifold verification. The server tests report surface counts but do not assert manifold closure.
+
+## FORM 0.8 — intersection-aware surface prototype
+
+`Union.surface(pieces)` clips each convex piece's face polygons against neighboring convex volumes instead of discarding an entire triangle based on its midpoint. Its output is an **unwelded rendering triangle soup** with subdivision statistics.
+
+The algorithm is deliberately not used in the active preview yet. It must be verified for numerical stability, matching seams, T-junctions, coincident exterior faces, and watertightness before replacing the complete-piece rendering.
+
+The current test runs it against the rectangular subtraction and reports triangle counts. It **does not** claim validated unified topology. Next milestone: stitch and weld subdivisions consistently, prove edge incidence and volume, then enable the preview. The code has not yet been playtested in Studio.
