@@ -10,6 +10,7 @@ local MAX_PLANES = 100
 local MAX_FACES = 500
 local MAX_CELLS = 3500
 local MAX_TRIANGLES = 8000
+local MAX_CPU_SECONDS = 2.5
 
 local function edgeKey(a, b)
     return tostring(math.min(a, b)) .. ':' .. tostring(math.max(a, b))
@@ -178,6 +179,7 @@ local function addPolygon(output, polygon, normal)
 end
 
 function Union.surface(pieces)
+    local started = os.clock()
     assert(type(pieces) == 'table' and #pieces > 0, 'Expected convex pieces')
     local shapes = {}
     local planes = {}
@@ -215,6 +217,7 @@ function Union.surface(pieces)
 
     for _, shape in groups do
         for _, face in shape do
+            if os.clock() - started > MAX_CPU_SECONDS then return nil, 'TIME_BUDGET_EXCEEDED' end
             local supportingPlane = {normal = face.normal, distance = face.distance}
             local planeId
             for i, plane in planes do
@@ -224,6 +227,7 @@ function Union.surface(pieces)
             local fragments = {face.polygon}
 
             for _, plane in planes do
+                if os.clock() - started > MAX_CPU_SECONDS then return nil, 'TIME_BUDGET_EXCEEDED' end
                 if samePlane(plane, supportingPlane) then continue end
                 local nextFragments = {}
 
