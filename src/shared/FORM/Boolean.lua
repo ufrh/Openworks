@@ -76,4 +76,17 @@ function Boolean.subtract(stock, cutter)
     return retained, removed
 end
 
+function Boolean.subtractUnified(stock, cutter)
+    local pieces, removed = Boolean.subtract(stock, cutter)
+    if not pieces then return nil, removed end
+
+    local Union = require(script.Parent.Union)
+    local unified, reason, stats = Union.reconstruct(pieces)
+    if not unified then
+        return nil, reason, {pieces = pieces, removed = removed, stats = stats}
+    end
+
+    return unified, removed, {pieces = pieces, stats = stats}
+end
+
 return Boolean
