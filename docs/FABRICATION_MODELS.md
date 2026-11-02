@@ -25,7 +25,7 @@ Put a Roblox `Attachment` inside a BasePart of each **ReplicatedStorage Model**:
 - **Hacksaw: `BladeEdge`** — place at the teeth's contact point. Orient its **+X axis along the blade's back-and-forth stroke**, **+Y outward from the metal**, and **+Z perpendicular to the blade's cutting plane**.
 - **Metal File: `FileFace`** — place where the filing teeth should touch the edge. Set **+X along the long filing stroke**, **+Y pointing away from the metal**, and **+Z completing the right-handed frame**.
 
-The controller aligns these markers with the chosen cutting/filing frame. For Hacksaw models missing a marker, it first looks for a BasePart named `Blade`, `SawBlade`, or `BladePart` and uses its dimensions and orientation. Otherwise it estimates the contact point from the model bounds, rotating its longest axis to follow the stroke. This heuristic cannot know where the teeth are on a single exported mesh: for precise alignment, place a `BladeEdge` Attachment. **R** rotates the working saw model in 90-degree steps when testing an ambiguous orientation.
+The controller aligns these markers with the chosen cutting/filing frame. For Hacksaw models missing a marker, it first looks for a BasePart named `Blade`, `SawBlade`, or `BladePart` and uses its dimensions and orientation. Otherwise it estimates the contact point from the model bounds, rotating its longest axis to follow the stroke. This heuristic cannot know where the teeth are on a single exported mesh: for precise alignment, place a `BladeEdge` Attachment. **R** rotates the working saw model in 90-degree steps when testing an ambiguous orientation. **Shift+R** flips the tooth-facing direction by 180 degrees around the stroke axis.
 
 ## Saw interaction
 
@@ -34,7 +34,7 @@ The controller aligns these markers with the chosen cutting/filing frame. For Ha
 3. Holding LMB hides the hand cosmetic, shows the actual Workspace saw and reciprocates the blade **along its length**, while its contact point feeds **from one side of the intended cut to the other** and progressively penetrates the metal. The combined cut travel drives the progress bar.
 4. A thin, dark **visual kerf proxy** grows **along the cut** as the saw advances. This is intentionally a cheap overlay rather than an EditableMesh change every frame.
 5. When the saw completes its full travel, FORM performs the true cut exactly once and the offcut falls. Releasing early cancels without changing the stock. The original equipped cosmetic is restored at either outcome.
-6. Q/E rotate the plane; **R rotates the working model** by 90 degrees for alignment (not the cut plane); F selects/focuses the hovered metal, V toggles workpiece orbit, T sets top-down, RMB drag orbits, and the wheel zooms.
+6. Q/E rotate the plane; **R rotates the working model** by 90 degrees, **Shift+R flips the tooth-facing direction** (neither changes the FORM cut plane); F selects/focuses hovered metal, V toggles workpiece orbit, T sets top-down, RMB drag orbits, and the wheel zooms.
 
 ## File interaction
 
