@@ -349,15 +349,18 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
         end
     elseif action == 'MachiningCompleted' then
         if fabrication then
-            if fabrication.previousMouseBehavior then
-                UserInputService.MouseBehavior = fabrication.previousMouseBehavior
-                fabrication.previousMouseBehavior = nil
+            local keepSawing = fabrication.kind == 'Saw' and fabrication.down
+            if not keepSawing then
+                if fabrication.previousMouseBehavior then
+                    UserInputService.MouseBehavior = fabrication.previousMouseBehavior
+                    fabrication.previousMouseBehavior = nil
+                end
+                fabrication.down = false
+                fabrication.stroke = 0
+                fabrication.pointerMoved = false
             end
-            fabrication.down = false
-            fabrication.stroke = 0
-            fabrication.pointerMoved = false
 
-            if fabrication.kind == 'Saw' and typeof(c) == 'Vector3'
+            if not keepSawing and fabrication.kind == 'Saw' and typeof(c) == 'Vector3'
                 and a and a:IsA('BasePart') and a.Parent then
                 local aim = c
                 local camera = workspace.CurrentCamera
