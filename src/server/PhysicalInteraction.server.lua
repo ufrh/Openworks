@@ -222,6 +222,9 @@ local function finish(player)
         end
     end
     destroyMotor(state)
+    if state.mode == 'Drag' then
+        print('[OPENWORKS:Drag] Released:', state.item.Name)
+    end
     if player.Parent then remote:FireClient(player, 'Ended') end
 end
 
