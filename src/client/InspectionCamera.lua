@@ -328,7 +328,7 @@ function Inspector:setTool(kind)
     self.fileSettings.Visible = kind == 'File'
     self.gui.Enabled = self.material ~= nil
     local panel = self.title.Parent
-    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 455 else 330)
+    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 485 else 330)
 
     if kind == 'File' and self.material then
         local thickness = if self.material:IsA('BasePart') then self.material.Size.Y
