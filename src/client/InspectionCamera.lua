@@ -45,12 +45,13 @@ local function makeButton(parent, text, callback)
     return button
 end
 
-function Inspector.new(onTool, onExit, onFileSettings, onMaterial)
+function Inspector.new(onTool, onExit, onFileSettings, onMaterial, onSawFlip)
     local self = setmetatable({}, Inspector)
     self.onTool = onTool
     self.onExit = onExit
     self.onFileSettings = onFileSettings
     self.onMaterial = onMaterial
+    self.onSawFlip = onSawFlip
     self.materials = {}
     self.fileShape = 'Round'
     self.fileRadius = 1.25
@@ -202,10 +203,19 @@ function Inspector.new(onTool, onExit, onFileSettings, onMaterial)
     choiceStack.Padding = UDim.new(0, 5)
     choiceStack.Parent = choices
 
+    local sawFlipButton = makeButton(panel, 'FLIP SAW 180°  [F]', function()
+        if self.kind == 'Saw' and self.onSawFlip then
+            self.onSawFlip()
+        end
+    end)
+    sawFlipButton.LayoutOrder = 6
+    sawFlipButton.Visible = false
+    self.sawFlipButton = sawFlipButton
+
     local close = makeButton(panel, 'EXIT  [ESC]', function()
         self.onExit()
     end)
-    close.LayoutOrder = 6
+    close.LayoutOrder = 7
 
     table.insert(self.connections, UserInputService.InputBegan:Connect(function(input)
         if not self.material then return end
@@ -447,9 +457,11 @@ end
 function Inspector:setTool(kind)
     self.kind = kind
     self.fileSettings.Visible = kind == 'File'
+    self.sawFlipButton.Visible = kind == 'Saw'
     self.gui.Enabled = self.material ~= nil
     local panel = self.title.Parent
-    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 485 else 350)
+    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 485
+        elseif kind == 'Saw' then 395 else 350)
 
     if kind == 'File' and self.material then
         local thickness = if self.material:IsA('BasePart') then self.material.Size.Y
@@ -464,7 +476,7 @@ function Inspector:setTool(kind)
     self.progress.Text = ''
     self.title.Text = if kind then 'OPENWORKS / ' .. string.upper(kind) else 'OPENWORKS / INSPECT'
     self.instructions.Text = if kind == 'Saw' then
-        'Hover: position cut | Q: switch axis | LMB: saw\nTab / click sheet: switch workpiece\nR: roll tool | RMB: orbit | ESC: exit'
+        'Hover: position cut | Q: switch axis | LMB: saw\nTab / click sheet: switch workpiece\nF: flip saw 180° | R: roll | ESC: exit'
         elseif kind == 'File' then
         'Hover: choose edge | LMB: file strokes\nTab / click sheet: switch workpiece\nR: roll tool | RMB: orbit | ESC: exit'
         else 'RMB: orbit | MMB: pan | wheel: zoom\nChoose a physical tool resting on the table.'
