@@ -85,11 +85,18 @@ local function run()
     apply(chamfer, {kind = 'chamfer', axisA = 'X', signA = 1,
         axisB = 'Z', signB = 1, distance = 4}, '45-degree chamfer')
     assertUnified(chamfer, 'Chamfered box', 2)
+    local chamferMesh, _, chamferStats = chamfer:mesh()
+    assert(chamferMesh and chamferStats.source == 'direct_convex_piece',
+        'Chamfer unexpectedly rebuilt an existing convex solid')
 
     local fillet = Machine.new(box)
     apply(fillet, {kind = 'fillet', axisA = 'X', signA = -1,
         axisB = 'Z', signB = 1, radius = 4, segments = 6}, 'Faceted edge fillet')
     assertUnified(fillet, 'Filleted box', 2)
+    local filletMesh, _, filletStats = fillet:mesh()
+    assert(filletMesh and filletStats.source == 'direct_convex_piece',
+        'Fillet should use its already validated convex component')
+    print('[FORM:Machine] Faceted fillet reused its single watertight convex result')
 
     local profile = Machine.new(box)
     apply(profile, {kind = 'profile',
