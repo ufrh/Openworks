@@ -20,6 +20,8 @@ Add `FileFace` to a file if desired. Without `BladeEdge`, OPENWORKS first looks 
 
 In precision mode, **R** rolls the physical tool 90 degrees around the stroke axis; **Shift+R** rolls it back 90 degrees. This does not change the cut plane and lets you correct models whose grip/blade faces are oriented differently.
 
+For saws, the initial blade-down correction is chosen once per fabrication session by comparing the blade and handle/frame positions. The server searches for a part named `Blade` / containing `blade` or `teeth`, with a dark slender-part fallback, or uses an authored `BladeEdge` Attachment. If blade and frame cannot be distinguished, Studio Output warns and the fallback orientation is uncalibrated; add an attachment at the saw teeth to establish a reliable reference. The existing top-of-workpiece clearance check remains in effect, and manual R rotation remains available.
+
 The physical tool is never cloned into a separate cosmetic. **Precision fabrication does not use AlignPosition or AlignOrientation.** Instead, the server temporarily anchors the entire rigid tool assembly and interpolates its pivot toward the blade-aligned target each Heartbeat (smooth kinematic CFrame motion). Every working tool part stays non-collidable, non-touchable, and non-queryable during the session. On exit, it returns to its resting pose above the tabletop, then its original anchor and collision states are restored. **Normal free dragging continues to use physics constraints**, unchanged.
 
 For saws without an authored `BladeEdge`, the initial tool roll now starts inverted 180° relative to the old fallback. This corrects the upside-down default for the test saw; `R` / `Shift+R` remain available to adjust custom tool geometry. A properly oriented `BladeEdge` Attachment continues to override the fallback without the automatic flip.
@@ -35,6 +37,7 @@ For saws without an authored `BladeEdge`, the initial tool roll now starts inver
 - Short-click a material, or short-click a tool when exactly one workpiece is on the bench.
 - **RMB drag** orbits; **MMB drag** pans; **wheel** zooms around the physical workpiece. Entering inspection and refocusing on another material ease toward the target instead of snapping. Exiting blends the inspection camera back to the gameplay camera over roughly 0.65 seconds.
 - In the right-side panel, select a saw/file that is physically present on the bench.
+- **Switch the active workpiece without exiting:** When the saw or file is active and LMB is released, click another marked material resting on the workbench, press **Tab** / **Shift+Tab** to cycle, or choose a material from the precision panel's workpiece list. The same physical tool stays active. The server secures the new piece, releases the previous one, clears stroke progress, and verifies it is on the workbench and within reach. The camera smoothly interpolates to the new selection without ending inspection. Release LMB before starting a new stroke on the switched piece.
 - **Escape** exits, restores normal camera, and releases the temporary kinematic fabrication control. Finishing a cut or filing pass does **not** exit inspection.
 - The inspection camera no longer requires the default Roblox `PlayerModule`, which may not exist in customized player scripts.
 
