@@ -434,6 +434,14 @@ local function startFabrication(player, material, tool)
 
     local restingFrame = tool:GetPivot()
     local contact = toolContact(tool, part, kind)
+    local toolBounds, toolSize
+    if kind == 'Saw' then
+        if tool:IsA('Model') then
+            toolBounds, toolSize = tool:GetBoundingBox()
+        else
+            toolBounds, toolSize = tool.CFrame, tool.Size
+        end
+    end
 
     local state = {
         mode = 'Fabrication',
@@ -444,6 +452,8 @@ local function startFabrication(player, material, tool)
         work = work,
         restingFrame = restingFrame,
         contactOffset = contact:ToObjectSpace(restingFrame),
+        toolBoundsOffset = if toolBounds then restingFrame:ToObjectSpace(toolBounds) else nil,
+        toolBoundsSize = toolSize,
         currentFrame = restingFrame,
         goalFrame = restingFrame,
         anchoredParts = {},
@@ -693,6 +703,24 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         * CFrame.Angles(math.rad(state.roll), 0, 0)
 
     state.goalFrame = contactFrame * state.contactOffset
+
+    if state.kind == 'Saw' then
+        local bounds = state.goalFrame * state.toolBoundsOffset
+        local half = state.toolBoundsSize * 0.5
+        local lowest = bounds.Position.Y
+            - math.abs(bounds.RightVector.Y) * half.X
+            - math.abs(bounds.UpVector.Y) * half.Y
+            - math.abs(bounds.LookVector.Y) * half.Z
+
+        local top = work.Position.Y
+            + math.abs(work.CFrame.RightVector.Y) * size.X * 0.5
+            + math.abs(work.CFrame.UpVector.Y) * size.Y * 0.5
+            + math.abs(work.CFrame.LookVector.Y) * size.Z * 0.5
+
+        if lowest < top + 0.03 then
+            state.goalFrame += Vector3.new(0, top + 0.03 - lowest, 0)
+        end
+    end
 
     if not isDown then
         state.awaitRelease = false
