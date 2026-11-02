@@ -88,7 +88,6 @@ function SawUI.start(workpieces)
     local connections = {}
     local sawRotation = 0
     local sawFlip = 0
-    local startOrbit
 
     local function clearLines()
         for _, line in lines do line:Destroy() end
@@ -166,7 +165,10 @@ function SawUI.start(workpieces)
 
     local function focusSecured(part)
         local camera = workspace.CurrentCamera
-        if not camera or not cameraEnabled or not equipped() then return end
+        if not camera or not cameraEnabled
+            or not (currentTool and player.Character and currentTool.Parent == player.Character) then
+            return
+        end
         if not part or not part.Parent or not part.Anchored then
             stopOrbit()
             return
@@ -188,6 +190,7 @@ function SawUI.start(workpieces)
         camera.CameraType = Enum.CameraType.Custom
         camera.CameraSubject = part
         camera.CFrame = CFrame.lookAt(part.Position + viewDirection.Unit * 4.5, part.Position)
+        camera.Focus = CFrame.new(part.Position)
     end
 
     local function equipped()
@@ -229,7 +232,7 @@ function SawUI.start(workpieces)
                 hint.Text = 'Aim at a metal workpiece'
                 return
             end
-             if not preview.motion or not showModel() then
+            if not preview.motion or not showModel() then
                 hint.Text = 'No valid saw movement for this cut'
                 return
             end
@@ -318,10 +321,6 @@ function SawUI.start(workpieces)
         end)
     end
     makeLabel(panel, 'RMB: rotate secured metal view | wheel: zoom | Q/E: angle | Z/X: tilt | F: focus | V: camera', 56)
-
-    startOrbit = function(part)
-        focusSecured(part or workpieces.selected())
-    end
 
     if player.Character then observe(player.Character) end
     connections[#connections + 1] = player.CharacterAdded:Connect(observe)
