@@ -121,6 +121,7 @@ function Inspector.new(onTool, onExit)
         end
     end))
     table.insert(self.connections, UserInputService.InputEnded:Connect(function(input)
+        if not self.material then return end
         if input.UserInputType == Enum.UserInputType.MouseButton2 then
             self.rightHeld = false
             UserInputService.MouseBehavior = self.previousMouseBehavior or Enum.MouseBehavior.Default
