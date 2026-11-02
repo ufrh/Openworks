@@ -155,30 +155,11 @@ function Weld.build(surface, tolerance)
 
     local result = FORM.validate(output)
     local issueDetails = {}
-    for _, issue in result.issues do
-        if issue.code == 'NON_MANIFOLD_EDGE' or issue.code == 'INCONSISTENT_WINDING' then
-            local first, second = string.match(tostring(issue.index), '^(%d+):(%d+)
+    local issueCounts = {}
     for _, issue in result.issues do
         issueCounts[issue.code] = (issueCounts[issue.code] or 0) + 1
-    end
-    return output, {
-        valid = result.ok and junctions == 0 and converged,
-        issues = result.issues,
-        issueCounts = issueCounts,
-        issueDetails = issueDetails,
-        tJunctions = junctions,
-        junctionDetails = junctionDetails,
-        collapsedFaces = collapsed,
-        repairedJunctions = resolved,
-        converged = converged and junctions == 0,
-        verticesBefore = #surface.vertices,
-        verticesAfter = #output.vertices,
-        trianglesAfter = #output.triangles,
-    }
-end
-
-return Weld
-)
+        if issue.code == 'NON_MANIFOLD_EDGE' or issue.code == 'INCONSISTENT_WINDING' then
+            local first, second = string.match(tostring(issue.index), '^(%d+):(%d+)$')
             local a, b = tonumber(first), tonumber(second)
             if a and b then
                 issueDetails[#issueDetails + 1] = string.format('%s %s: %s -> %s',
@@ -186,15 +167,14 @@ return Weld
             end
         end
     end
-    local issueCounts = {}
-    for _, issue in result.issues do
-        issueCounts[issue.code] = (issueCounts[issue.code] or 0) + 1
-    end
+
     return output, {
         valid = result.ok and junctions == 0 and converged,
         issues = result.issues,
         issueCounts = issueCounts,
+        issueDetails = issueDetails,
         tJunctions = junctions,
+        junctionDetails = junctionDetails,
         collapsedFaces = collapsed,
         repairedJunctions = resolved,
         converged = converged and junctions == 0,
