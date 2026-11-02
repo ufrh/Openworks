@@ -4,7 +4,8 @@ local Weld = {}
 
 local MAX_FACES = 8000
 local MAX_VERTICES = 15000
-local MAX_SCANS = 1000000
+local MAX_SCANS = 500000
+local MAX_CPU_SECONDS = 2.5
 local MAX_REPAIRS = 5000
 
 local function key(x, y, z)
@@ -160,6 +161,7 @@ local function invalid(reason, input, output, removed, repaired, scans)
 end
 
 function Weld.build(surface, tolerance)
+    local started = os.clock()
     tolerance = tolerance or 1e-4
     assert(type(tolerance) == 'number' and tolerance > 0, 'Invalid weld tolerance')
     assert(type(surface) == 'table' and type(surface.vertices) == 'table'
@@ -252,6 +254,9 @@ function Weld.build(surface, tolerance)
     local repaired = 0
 
     for _, edge in edges do
+        if os.clock() - started > MAX_CPU_SECONDS then
+            return invalid('TIME_BUDGET_EXCEEDED', surface, output, removed, repaired, scanned)
+        end
         local a, b = output.vertices[edge.a], output.vertices[edge.b]
         local axis = edgeCoordinate(a, b)
         local lo = math.min(coordinate(a, axis), coordinate(b, axis)) - tolerance
@@ -275,6 +280,9 @@ function Weld.build(surface, tolerance)
             end
             index += 1
             scanned += 1
+            if scanned % 10000 == 0 and os.clock() - started > MAX_CPU_SECONDS then
+                return invalid('TIME_BUDGET_EXCEEDED', surface, output, removed, repaired, scanned)
+            end
             if scanned > MAX_SCANS then
                 return invalid('SCAN_BUDGET_EXCEEDED', surface, output, removed, repaired, scanned)
             end
