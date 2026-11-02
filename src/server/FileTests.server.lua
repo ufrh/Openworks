@@ -46,9 +46,15 @@ local sheet = Stock.create(2, 'Sheet', 'Aluminum', {x = 70, y = 4, z = 40})
 local thin = checkRound(sheet, Vector3.new(34.9, 1.9, 0) * Stock.SCALE, 1)
 assert(thin and FORM.validate(thin).ok, 'Small radius filing failed on thin sheet')
 
-local bad, explanation = FileShape.preview(sheet,
+local snapped, explanation = FileShape.preview(sheet,
     Vector3.new(0, 2, 0) * Stock.SCALE, 1)
-assert(not bad and explanation, 'Attempt to file center of face should be rejected')
+assert(snapped and snapped.axisA ~= snapped.axisB,
+    'Face hover should snap to a nearby outer edge: ' .. tostring(explanation))
+
+local alreadyRounded, roundedReason = FileShape.preview(continued,
+    Vector3.new(29.8, 9.9, 0) * Stock.SCALE, 3)
+assert(not alreadyRounded and roundedReason,
+    'Already-rounded corner must reject another filing pass')
 
 local tube = Stock.create(3, 'Tube', 'Steel', {radius = 8, innerRadius = 5, length = 80})
 local refused, reason = FileShape.preview(tube, Vector3.zero, 3)
