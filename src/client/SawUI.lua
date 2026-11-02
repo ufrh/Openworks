@@ -364,8 +364,12 @@ function SawUI.start(workpieces)
     connections[#connections + 1] = RunService.RenderStepped:Connect(function(dt)
         panel.Visible = not (player.Character and player.Character:FindFirstChild('Metal File'))
         if equipped() then
+            local hovered = mouse.Target
+            local looseTarget = not cutting and hovered and workpieces.get(hovered)
+                and not hovered.Anchored
             local active = if cutting then cutting.part else workpieces.selected()
-            if active and active.Parent and active.Anchored and cameraEnabled then
+            if not looseTarget and active and active.Parent and active.Anchored
+                and cameraEnabled then
                 focusSecured(active)
             else
                 stopOrbit()
