@@ -245,7 +245,6 @@ function UI.start()
         local id = part:GetAttribute('StockId')
         local source = id and current[id]
         if not source or bindings[id].part ~= part then return nil, 'Workpiece no longer exists' end
-        if not part.Anchored then return nil, 'Secure the metal before cutting' end
         if countPieces() >= Stock.MAX_ITEMS then return nil, 'Stock limit reached' end
         if #solids ~= 2 then return nil, 'Saw must produce two pieces' end
         local profiles = stats and stats.tubeProfiles
@@ -263,12 +262,21 @@ function UI.start()
             return nil, 'Could not render both cut pieces: ' .. tostring(err)
         end
         local original = bindings[id]
+        local secured = part.Anchored
+        local inheritedVelocity = part.AssemblyLinearVelocity
+        local inheritedSpin = part.AssemblyAngularVelocity
         local holdFirst = first.volume >= second.volume
         destroyDisplay(original)
         bindings[id] = nil
         current[id] = nil
-        install(first, prepared[1], holdFirst)
-        install(second, prepared[2], not holdFirst)
+        install(first, prepared[1], secured and holdFirst)
+        install(second, prepared[2], secured and not holdFirst)
+        if not secured then
+            for _, binding in prepared do
+                binding.part.AssemblyLinearVelocity = inheritedVelocity
+                binding.part.AssemblyAngularVelocity = inheritedSpin
+            end
+        end
         selected = if holdFirst then first.id else second.id
         refreshSelection()
         return true
@@ -443,6 +451,14 @@ function UI.start()
         end,
         selected = function()
             return selected and bindings[selected] and bindings[selected].part or nil
+        end,
+        frame = function(part)
+            local id = part and part:GetAttribute('StockId')
+            local binding = id and bindings[id]
+            if not binding or binding.part ~= part then return nil end
+            local frame = part.CFrame * binding.visualOffset:Inverse()
+            Stock.move(current[id], frame)
+            return frame
         end,
         select = function(part)
             local id = part and part:GetAttribute('StockId')
