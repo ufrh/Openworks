@@ -162,7 +162,7 @@ function UI.start()
         elseif item.shape == 'Rod' then
             part = Instance.new('Part')
             part.Shape = Enum.PartType.Cylinder
-            part.Size = Vector3.new(dims.radius * 2, dims.length, dims.radius * 2) * Stock.SCALE
+            part.Size = Vector3.new(dims.length, dims.radius * 2, dims.radius * 2) * Stock.SCALE
         else
             local low, high = FORM.bounds(item.solid)
             local bounds = high - low
@@ -179,13 +179,15 @@ function UI.start()
         part.Anchored = true
         part.CanCollide = true
         part.CanTouch = true
-        part.CFrame = item.frame
+        local visualOffset = if item.shape == 'Rod' then CFrame.Angles(0, 0, math.rad(90))
+            else CFrame.identity
+        part.CFrame = item.frame * visualOffset
         part.CustomPhysicalProperties = PhysicalProperties.new(
             if item.material == 'Steel' then 7.85 else 2.7, 0.65, 0.15, 100, 100)
         part.Material = Enum.Material.SmoothPlastic
         part.Color = Stock.MATERIALS[item.material].color
         part:SetAttribute('StockId', item.id)
-        return {part = part, editable = editable}
+        return {part = part, editable = editable, visualOffset = visualOffset}
     end
 
     local function destroyDisplay(binding)
@@ -244,8 +246,8 @@ function UI.start()
         if not part.Anchored then return nil, 'Secure the metal before cutting' end
         if countPieces() >= Stock.MAX_ITEMS then return nil, 'Stock limit reached' end
         if #solids ~= 2 then return nil, 'Saw must produce two pieces' end
-        local first = fragmentRecord(nextId + 1, source, solids[1], part.CFrame)
-        local second = fragmentRecord(nextId + 2, source, solids[2], part.CFrame)
+        local first = fragmentRecord(nextId + 1, source, solids[1], source.frame)
+        local second = fragmentRecord(nextId + 2, source, solids[2], source.frame)
         local prepared = {}
         local ok, err = pcall(function()
             prepared[1] = createDisplay(first)
@@ -329,7 +331,7 @@ function UI.start()
         selectedAction(function(item)
             if item.shape ~= 'Fabricated' then
                 spawn(item.shape, item.material, item.dimensions,
-                    bindings[item.id].part.CFrame + Vector3.new(1.5, 1, 0))
+                    item.frame + Vector3.new(1.5, 1, 0))
             else
                 assert(countPieces() < Stock.MAX_ITEMS, 'Stock limit reached')
                 local copy = fragmentRecord(nextId + 1, item, item.solid,
@@ -376,7 +378,7 @@ function UI.start()
         for id, binding in bindings do
             local item = current[id]
             if item and binding.part.Parent then
-                Stock.move(item, binding.part.CFrame)
+                Stock.move(item, binding.part.CFrame * binding.visualOffset:Inverse())
             end
         end
     end)
