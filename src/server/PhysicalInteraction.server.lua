@@ -4,9 +4,8 @@ local RunService = game:GetService('RunService')
 
 local Openworks = ReplicatedStorage:WaitForChild('Openworks')
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
-local FORM = require(Openworks:WaitForChild('FORM'))
-local Stock = require(Openworks:WaitForChild('Stock'))
-local SawCut = require(Openworks:WaitForChild('SawCut'))
+
+-- Physics interaction must boot independently from machining geometry modules.
 
 local remote = Instance.new('RemoteEvent')
 remote.Name = 'PhysicalInteraction'
@@ -271,6 +270,10 @@ local function cutSheet(state)
         return work, 'Filed a thin surface layer'
     end
 
+    local FORM = require(Openworks:WaitForChild('FORM'))
+    local Stock = require(Openworks:WaitForChild('Stock'))
+    local SawCut = require(Openworks:WaitForChild('SawCut'))
+
     local oldCF = work.CFrame
     local oldSize = work.Size
     local dimensions = oldSize / Stock.SCALE
@@ -413,3 +416,5 @@ end
 Players.PlayerAdded:Connect(watch)
 for _, player in Players:GetPlayers() do watch(player) end
 Players.PlayerRemoving:Connect(function() finish(player) end)
+
+print('[OPENWORKS:Interaction] Server ready')

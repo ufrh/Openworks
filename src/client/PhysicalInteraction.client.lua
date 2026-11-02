@@ -127,7 +127,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 
     local part = mouse.Target
-    local item, kind = if part then identify(part) else nil, nil
+    local item, kind
+    if part then
+        item, kind = identify(part)
+    end
     if not item then return end
 
     held = {
