@@ -771,28 +771,41 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     local maximum = math.max(0, span * 0.5 - 0.17)
     state.axis = axis
     state.offset = math.clamp(offset, -maximum, maximum)
-    stroke = math.clamp(stroke, -1, 1)
+    stroke = math.clamp(stroke, -12, 12)
 
     state.fileSide = fileSide
 
-    local travelLength = if axis == 'X' then size.Z else size.X
-    local travelRange = math.max(0.12, travelLength * 0.5 - 0.04)
-    local travel = if axis == 'X' then Vector3.new(0, 0, stroke * travelRange)
-        else Vector3.new(stroke * travelRange, 0, 0)
-
+    local face, faceSign, sideAxis, along = exposedEdge(work, axis)
+    local travel
     local cross
+    local upward
     if state.kind == 'File' then
-        cross = if axis == 'X'
-            then Vector3.new(fileSide * (size.X * 0.5 + 0.012), 0, 0)
-            else Vector3.new(0, 0, fileSide * (size.Z * 0.5 + 0.012))
+        local halfTravel = measure(size, along) * 0.5
+        stroke = math.clamp(stroke, -halfTravel, halfTravel)
+        travel = basis(along) * stroke
+        cross = basis(sideAxis) * (fileSide * (measure(size, sideAxis) * 0.5 + 0.012))
+        upward = work.CFrame:VectorToWorldSpace(basis(face) * faceSign)
     else
+        stroke = math.clamp(stroke, -1.5, 1.5)
+        travel = if axis == 'X' then Vector3.new(0, 0, stroke)
+            else Vector3.new(stroke, 0, 0)
         cross = if axis == 'X' then Vector3.new(state.offset, 0, 0)
             else Vector3.new(0, 0, state.offset)
+        upward = Vector3.yAxis
     end
 
-    local height = if state.kind == 'File' then 0.015 else 0.035
-    local pos = work.CFrame:PointToWorldSpace(cross + travel
-        + Vector3.new(0, size.Y * 0.5 + height, 0))
+    local pos
+    if state.kind == 'File' then
+        pos = work.CFrame:PointToWorldSpace(cross + travel
+            + basis(face) * faceSign * (measure(size, face) * 0.5 + 0.015))
+    else
+        local localPos = cross + travel
+        local height = math.abs(work.CFrame.RightVector.Y) * size.X * 0.5
+            + math.abs(work.CFrame.UpVector.Y) * size.Y * 0.5
+            + math.abs(work.CFrame.LookVector.Y) * size.Z * 0.5
+        pos = work.CFrame:PointToWorldSpace(localPos)
+        pos = Vector3.new(pos.X, work.Position.Y + height + 0.035, pos.Z)
+    end
 
     if (pos - root.Position).Magnitude > 30 then
         remote:FireClient(player, 'Feedback', 'Workpiece is out of reach')
@@ -800,9 +813,10 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         return
     end
 
-    local forward = if axis == 'X' then work.CFrame.LookVector
+    local forward = if state.kind == 'File' then
+        work.CFrame:VectorToWorldSpace(basis(along))
+        elseif axis == 'X' then work.CFrame.LookVector
         else work.CFrame.RightVector
-    local upward = work.CFrame.UpVector
     local sawFlip = if state.kind == 'Saw' and state.sawFlip then 180 else 0
     local contactFrame = CFrame.fromMatrix(pos, forward,
         upward, forward:Cross(upward))
@@ -901,6 +915,37 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     if active[player] == state then
         remote:FireClient(player, 'MachiningCompleted', selected, message, aimWorld)
     end
+end
+
+local function flipFabricationMaterial(player, state, axis)
+    if state.processing or (axis ~= 'X' and axis ~= 'Z') then return end
+    local work = state.work
+    if not work or not work:IsA('BasePart') then return end
+
+    local former = work.CFrame
+    local delta = if axis == 'X' then CFrame.Angles(math.pi, 0, 0)
+        else CFrame.Angles(0, 0, math.pi)
+    work.CFrame = former * delta
+
+    local size = work.Size * 0.5
+    local bottom = work.Position.Y
+        - math.abs(work.CFrame.RightVector.Y) * size.X
+        - math.abs(work.CFrame.UpVector.Y) * size.Y
+        - math.abs(work.CFrame.LookVector.Y) * size.Z
+    local oldBottom = former.Position.Y
+        - math.abs(former.RightVector.Y) * size.X
+        - math.abs(former.UpVector.Y) * size.Y
+        - math.abs(former.LookVector.Y) * size.Z
+    work.CFrame += Vector3.new(0, oldBottom - bottom, 0)
+
+    state.stroke = 0
+    state.lastStroke = 0
+    state.lastTurn = 0
+    state.direction = 0
+    state.reversals = 0
+    state.awaitRelease = true
+    state.offset = 0
+    remote:FireClient(player, 'MaterialFlipped', work)
 end
 
 local function switchFabricationMaterial(player, state, material)
@@ -1007,6 +1052,8 @@ onRequest = function(player, action, ...)
         moveFabrication(player, state, ...)
     elseif action == 'FabricationTarget' and state.mode == 'Fabrication' then
         switchFabricationMaterial(player, state, ...)
+    elseif action == 'FabricationMaterialFlip' and state.mode == 'Fabrication' then
+        flipFabricationMaterial(player, state, ...)
     elseif action == 'FabricationSettings' and state.mode == 'Fabrication' then
         local profile, radius = ...
         if state.kind == 'File' and (profile == 'Round' or profile == 'Chamfer')
