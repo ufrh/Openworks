@@ -91,8 +91,8 @@ local function run()
 
     local failures = {}
 
-    local function verifyUnified(label, piecesToUnify, expected)
-        local success, mesh, reason, stats = pcall(Union.reconstruct, piecesToUnify, expected)
+    local function verifyUnified(label, stockSolid, cutterSolid, expected)
+        local success, mesh, reason, stats = pcall(Union.subtractBoundary, stockSolid, cutterSolid, expected)
         if not success then
             failures[#failures + 1] = label .. ': ' .. tostring(mesh)
             warn('[FORM] ' .. label .. ' reconstruction error: ' .. tostring(mesh))
@@ -127,7 +127,7 @@ local function run()
             weld.eulerCharacteristic, FORM.signedVolume(mesh)))
     end
 
-    verifyUnified('Rectangular', leftovers, remaining)
+    verifyUnified('Rectangular', box, tool, remaining)
 
     local joinedA = FORM.box(Vector3.new(30, 20, 10))
     local joinedB = FORM.box(Vector3.new(30, 20, 10))
@@ -162,13 +162,13 @@ local function run()
         'Incorrect drilling removal volume')
     assert(math.abs(drillRemaining + drillRemoved - FORM.signedVolume(box)) < 0.01,
         'Drilling failed volume conservation')
-    verifyUnified('Drilled', drilled, drillRemaining)
+    verifyUnified('Drilled', box, cylinder, drillRemaining)
 
     print(string.format('[FORM] Drilled %d-sided opening: removed %.4f mm^3 across %d solids',
         12, drillRemoved, #drilled))
 
     assert(#failures == 0, '[FORM] Topology reconstruction failures: ' .. table.concat(failures, ' | '))
-    print('[FORM] Foundation, cuts, subtraction, and unified through-hole reconstruction passed')
+    print('[FORM] Foundation, cuts, subtraction, and direct stock/cutter boundary tests passed')
 end
 
 run()
