@@ -244,9 +244,9 @@ function SawUI.start(workpieces)
                 item = preview.item,
                 point = preview.data.point,
                 normal = preview.data.normal,
-                baseFrame = workpieces.frame(preview.part),
-                localPoint = preview.item.frame:PointToObjectSpace(preview.data.point),
-                localNormal = preview.item.frame:VectorToObjectSpace(preview.data.normal),
+                baseFrame = preview.baseFrame,
+                localPoint = preview.localPoint,
+                localNormal = preview.localNormal,
                 plan = plan,
                 advanced = 0,
                 travel = depth,
@@ -485,7 +485,12 @@ function SawUI.start(workpieces)
             hint.Text = tostring(planReason)
             return
         end
-        preview = {part = part, item = item, data = candidate, motion = plan}
+        preview = {
+            part = part, item = item, data = candidate, motion = plan,
+            baseFrame = item.frame,
+            localPoint = item.frame:PointToObjectSpace(candidate.point),
+            localNormal = item.frame:VectorToObjectSpace(candidate.normal),
+        }
         drawRing(candidate.rings or {candidate.ring})
         if showModel() then
             FabricationTool.hideEquipped(currentTool)
