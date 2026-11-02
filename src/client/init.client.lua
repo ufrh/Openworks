@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local UserInputService = game:GetService('UserInputService')
 
 local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'))
 local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Cut'))
@@ -18,6 +19,16 @@ local colors = {
 }
 local pieces = {remainder, second, third}
 
+local rendered = {}
+local separation = 1.5
+local basePosition = Vector3.new(0, 7, -12)
+
+local function arrange()
+    for index, part in rendered do
+        part.CFrame = CFrame.new(basePosition + Vector3.new((index - 2) * separation, 0, 0))
+    end
+end
+
 for index, solid in pieces do
     local success, result = pcall(function()
         local part = Renderer.create(solid, 0.04, 30)
@@ -26,7 +37,7 @@ for index, solid in pieces do
         part.CanCollide = false
         part.Material = Enum.Material.Metal
         part.Color = colors[index]
-        part.CFrame = CFrame.new((index - 2) * 5, 7, -12)
+        rendered[index] = part
         part.Parent = workspace
     end)
 
@@ -40,3 +51,24 @@ for _, solid in pieces do
     total += FORM.signedVolume(solid)
 end
 print('[FORM] Three-piece preview volume:', total, 'mm^3')
+
+arrange()
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+
+    if input.KeyCode == Enum.KeyCode.LeftBracket then
+        separation = math.max(0, separation - 0.5)
+    elseif input.KeyCode == Enum.KeyCode.RightBracket then
+        separation = math.min(20, separation + 0.5)
+    elseif input.KeyCode == Enum.KeyCode.Zero then
+        separation = 0
+    else
+        return
+    end
+
+    arrange()
+    print(string.format('[FORM] Exploded view separation: %.1f studs', separation))
+end)
+
+print('[FORM] Preview controls: [ less separation | ] more separation | 0 fitted')
