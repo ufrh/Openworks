@@ -9,23 +9,33 @@ local function edgeKey(a, b)
 end
 
 local function convex(solid)
+    local lower, upper = FORM.bounds(solid)
+    local extent = (upper - lower).Magnitude
+    local threshold = math.max(EPSILON, extent * 2e-6)
+    local worst = 0
+
     for _, face in solid.triangles do
         local a, b, c = solid.vertices[face[1]], solid.vertices[face[2]], solid.vertices[face[3]]
         local normal = (b - a):Cross(c - a)
+        local length = normal.Magnitude
+        if length <= 0 then return false, math.huge, threshold end
+
         for _, vertex in solid.vertices do
-            if (vertex - a):Dot(normal) > EPSILON * normal.Magnitude then
-                return false
-            end
+            worst = math.max(worst, (vertex - a):Dot(normal) / length)
         end
     end
-    return true
+
+    return worst <= threshold, worst, threshold
 end
 
 function Cut.split(solid, planePoint, planeNormal)
     assert(typeof(planePoint) == 'Vector3' and typeof(planeNormal) == 'Vector3', 'Expected plane vectors')
     assert(planeNormal.Magnitude > 0, 'Plane normal cannot be zero')
     if not FORM.validate(solid).ok then return nil, 'INVALID_INPUT' end
-    if not convex(solid) then return nil, 'NON_CONVEX_INPUT' end
+    local isConvex, violation, threshold = convex(solid)
+    if not isConvex then
+        return nil, string.format('NON_CONVEX_INPUT max=%.9f mm tolerance=%.9f mm', violation, threshold)
+    end
 
     local normal = planeNormal.Unit
     local distances = {}
