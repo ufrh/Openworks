@@ -85,10 +85,11 @@ function SawUI.start(workpieces)
         table.clear(lines)
     end
 
-    local function drawRing(ring)
+    local function drawRing(rings)
         local used = 0
-        for i, a in ring do
-            local b = ring[i % #ring + 1]
+        for _, ring in rings do
+            for i, a in ring do
+                local b = ring[i % #ring + 1]
             local delta = b - a
             if delta.Magnitude < 0.008 then continue end
             used += 1
@@ -108,6 +109,7 @@ function SawUI.start(workpieces)
             line.Transparency = 0.1
             line.Size = Vector3.new(0.035, 0.035, delta.Magnitude)
             line.CFrame = CFrame.lookAt((a + b) / 2, b)
+            end
         end
         for i = used + 1, #lines do lines[i].Transparency = 1 end
     end
@@ -316,7 +318,7 @@ function SawUI.start(workpieces)
                     hint.Text = 'Cut failed: ' .. tostring(if success then stats else solids)
                     return
                 end
-                local ok, committed, reason = pcall(workpieces.separate, operation.part, solids)
+                local ok, committed, reason = pcall(workpieces.separate, operation.part, solids, stats)
                 if ok and committed then
                     hint.Text = string.format('Cut complete - kerf %.2f mm, %.1f mm³ removed',
                         SawCut.KERF_MM, stats.removed)
@@ -342,19 +344,23 @@ function SawUI.start(workpieces)
             return
         end
 
-        local up = item.frame:VectorToWorldSpace(Vector3.yAxis)
+        local tube = item.shape == 'Tube' or item.tubeProfile ~= nil
+        local up = item.frame:VectorToWorldSpace(
+            if tube then Vector3.xAxis else Vector3.yAxis)
         local attachment = currentTool:FindFirstChild('CutNormal', true)
         local baseAxis = if attachment and attachment:IsA('Attachment')
-            then attachment.WorldAxis else item.frame:VectorToWorldSpace(Vector3.xAxis)
+            then attachment.WorldAxis else item.frame:VectorToWorldSpace(
+                if tube then Vector3.yAxis else Vector3.xAxis)
         local axis = CFrame.fromAxisAngle(up, math.rad(turn)):VectorToWorldSpace(baseAxis).Unit
 
-        local candidate = SawCut.preview(item, mouse.Hit.Position, axis)
+        local candidate, reason = SawCut.preview(item, mouse.Hit.Position, axis)
         if not candidate then
             if preview then clearLines() preview = nil end
+            hint.Text = tostring(reason or 'No valid cut at this position')
             return
         end
         preview = {part = part, item = item, data = candidate}
-        drawRing(candidate.ring)
+        drawRing(candidate.rings or {candidate.ring})
         hint.Text = 'Cut ready - hold LMB to saw (' .. item.material .. ')'
     end)
 
