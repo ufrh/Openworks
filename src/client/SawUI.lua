@@ -86,25 +86,30 @@ function SawUI.start(workpieces)
     end
 
     local function drawRing(ring)
-        clearLines()
+        local used = 0
         for i, a in ring do
             local b = ring[i % #ring + 1]
             local delta = b - a
             if delta.Magnitude < 0.008 then continue end
-            local line = Instance.new('Part')
-            line.Name = 'Saw Cutting Preview'
+            used += 1
+            local line = lines[used]
+            if not line then
+                line = Instance.new('Part')
+                line.Name = 'Saw Cutting Preview'
+                line.Material = Enum.Material.Neon
+                line.Color = Color3.fromRGB(240, 179, 73)
+                line.Anchored = true
+                line.CanCollide = false
+                line.CanTouch = false
+                line.CanQuery = false
+                line.Parent = workspace
+                lines[used] = line
+            end
+            line.Transparency = 0.1
             line.Size = Vector3.new(0.035, 0.035, delta.Magnitude)
             line.CFrame = CFrame.lookAt((a + b) / 2, b)
-            line.Material = Enum.Material.Neon
-            line.Color = Color3.fromRGB(240, 179, 73)
-            line.Transparency = 0.1
-            line.Anchored = true
-            line.CanCollide = false
-            line.CanTouch = false
-            line.CanQuery = false
-            line.Parent = workspace
-            lines[#lines + 1] = line
         end
+        for i = used + 1, #lines do lines[i].Transparency = 1 end
     end
 
     local function stopCut()
@@ -302,21 +307,21 @@ function SawUI.start(workpieces)
             operation.tool.Grip = operation.grip * CFrame.new(0, 0,
                 math.sin(operation.elapsed * 25) * 0.18)
             if progress >= 1 then
-                local solids, stats = SawCut.split(operation.item, operation.point,
-                    operation.normal)
+                local success, solids, stats = pcall(SawCut.split, operation.item,
+                    operation.point, operation.normal)
                 stopCut()
                 clearLines()
                 preview = nil
-                if not solids then
-                    hint.Text = 'Cut failed: ' .. tostring(stats)
+                if not success or not solids then
+                    hint.Text = 'Cut failed: ' .. tostring(if success then stats else solids)
                     return
                 end
-                local ok, reason = workpieces.separate(operation.part, solids)
-                if ok then
+                local ok, committed, reason = pcall(workpieces.separate, operation.part, solids)
+                if ok and committed then
                     hint.Text = string.format('Cut complete - kerf %.2f mm, %.1f mm³ removed',
                         SawCut.KERF_MM, stats.removed)
                 else
-                    hint.Text = 'Cut failed: ' .. tostring(reason)
+                    hint.Text = 'Cut failed: ' .. tostring(if ok then reason else committed)
                 end
             end
             return
@@ -346,7 +351,8 @@ function SawUI.start(workpieces)
 
         local attachment = currentTool:FindFirstChild('CutNormal', true)
         if attachment and attachment:IsA('Attachment') then
-            axis = attachment.WorldAxis
+            axis = CFrame.fromAxisAngle(Vector3.yAxis, math.rad(turn))
+                :VectorToWorldSpace(attachment.WorldAxis)
         end
 
         local candidate = SawCut.preview(item, mouse.Hit.Position, axis)
