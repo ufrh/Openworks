@@ -1067,12 +1067,26 @@ local function extendScore(state, point)
     scorePosition(state, point)
 end
 
-endScore = function(player, state)
+endScore = function(player, state, finalPoint)
     local score = state.score
+    if score and typeof(finalPoint) == 'Vector3'
+        and ScorePath.valid(state.work, finalPoint, score.face, score.sign)
+        and #score.points < ScorePath.MAX_POINTS then
+        local last = score.points[#score.points]
+        if (last - finalPoint).Magnitude >= 0.016
+            and (last - finalPoint).Magnitude <= 0.35 then
+            score.points[#score.points + 1] = finalPoint
+        end
+    end
     state.score = nil
     if not score or #score.points < 2 then return end
     local simplified = ScorePath.reduce(score.points, 0.014)
-    if #simplified < 2 or (simplified[1] - simplified[#simplified]).Magnitude < 0.08 then return end
+    if #simplified < 2 then return end
+    local length = 0
+    for i = 2, #simplified do
+        length += (simplified[i] - simplified[i - 1]).Magnitude
+    end
+    if length < 0.08 then return end
     score.points = simplified
     local paths = ScorePath.read(state.work)
     paths[#paths + 1] = score
@@ -1275,7 +1289,7 @@ onRequest = function(player, action, ...)
         extendScore(state, ...)
     elseif action == 'FabricationScoreEnd' and state.mode == 'Fabrication'
         and state.kind == 'Scorer' then
-        endScore(player, state)
+        endScore(player, state, ...)
     elseif action == 'FabricationMove' and state.mode == 'Fabrication'
         and state.kind ~= 'Scorer' then
         moveFabrication(player, state, ...)
