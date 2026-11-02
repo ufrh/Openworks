@@ -395,7 +395,8 @@ function UI.start()
     UserInputService.InputBegan:Connect(function(input, processed)
         if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
         if UserInputService:GetFocusedTextBox() then return end
-        if player.Character and player.Character:FindFirstChild('Hacksaw') then return end
+        if player.Character and (player.Character:FindFirstChild('Hacksaw')
+            or player.Character:FindFirstChild('Metal File')) then return end
         local target = mouse.Target
         if not target then return end
         local id = target:GetAttribute('StockId')
