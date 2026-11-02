@@ -87,7 +87,7 @@ function Weld.build(surface, tolerance)
                     if lengthSquared > tolerance * tolerance then
                         local margin = tolerance / math.sqrt(lengthSquared)
                         for index, vertex in output.vertices do
-                            if index == a or index == b or index == face[edgeIndex % 3 + 2] then continue end
+                            if index == a or index == b or index == face[(edgeIndex + 1) % 3 + 1] then continue end
                             local t = (vertex - start):Dot(delta) / lengthSquared
 
                             if t > margin and t < 1 - margin
@@ -103,7 +103,7 @@ function Weld.build(surface, tolerance)
                 if bestEdge then
                     local a = face[bestEdge]
                     local b = face[bestEdge % 3 + 1]
-                    local third = face[bestEdge % 3 + 2]
+                    local third = face[(bestEdge + 1) % 3 + 1]
                     nextTriangles[#nextTriangles + 1] = {a, bestVertex, third}
                     nextTriangles[#nextTriangles + 1] = {bestVertex, b, third}
                     resolved += 1
