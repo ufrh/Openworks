@@ -271,9 +271,17 @@ local function startFabrication(player, material, tool)
     state.work = work
 
     local marker = contactMarker(tool, if kind == 'Saw' then 'BladeEdge' else 'FileFace')
-    state.grab.CFrame = if marker then part.CFrame:ToObjectSpace(marker.WorldCFrame)
-        else CFrame.new(0, -part.Size.Y * 0.5, 0)
-    state.target.CFrame = part.CFrame * state.grab.CFrame
+    local contact
+    if marker then
+        contact = marker.WorldCFrame
+    elseif tool:IsA('Model') then
+        local boxFrame, boxSize = tool:GetBoundingBox()
+        contact = boxFrame * CFrame.new(0, -boxSize.Y * 0.5, 0)
+    else
+        contact = part.CFrame * CFrame.new(0, -part.Size.Y * 0.5, 0)
+    end
+    state.grab.CFrame = part.CFrame:ToObjectSpace(contact)
+    state.target.CFrame = contact
 
     setToolCollision(tool, state)
     state.offset = 0
