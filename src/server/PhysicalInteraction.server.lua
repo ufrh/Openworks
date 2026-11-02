@@ -473,73 +473,103 @@ end
 
 local function cutSheet(state)
     local work = state.work
-    if not work or not work.Parent or not work:IsA('Part') or work.Shape ~= Enum.PartType.Block
-        or work:GetAttribute('FORMNativeStock') ~= true then
-        return nil, 'Machining this material needs a FORM render adapter'
+    if not work or not work.Parent or not work:IsA('Part')
+        or work.Shape ~= Enum.PartType.Block or work:GetAttribute('FORMNativeStock') ~= true then
+        return nil, 'This material needs a FORM render adapter before machining'
     end
 
-    local kind = state.kind
-    if kind == 'File' then
+    if state.kind == 'File' then
         local shave = math.min(0.025, work.Size.Y * 0.12)
-        if work.Size.Y - shave < 0.06 then return nil, 'Sheet is too thin to file further' end
+        if work.Size.Y - shave < 0.06 then
+            return nil, 'Sheet is too thin to file further'
+        end
         work.Size -= Vector3.new(0, shave, 0)
         work.CFrame *= CFrame.new(0, -shave * 0.5, 0)
         work:SetAttribute('FilePasses', (work:GetAttribute('FilePasses') or 0) + 1)
-        return work, 'Filed a thin surface layer'
+        return work, 'Filed the surface; continue working or press Esc'
     end
 
     local FORM = require(Openworks:WaitForChild('FORM'))
     local Stock = require(Openworks:WaitForChild('Stock'))
     local SawCut = require(Openworks:WaitForChild('SawCut'))
 
-    local oldCF = work.CFrame
-    local oldSize = work.Size
-    local dimensions = oldSize / Stock.SCALE
-    local item = Stock.create(1, 'Block', 'Steel',
-        {x = dimensions.X, y = dimensions.Y, z = dimensions.Z}, oldCF)
-    local normal = if state.axis == 'X' then oldCF.RightVector else oldCF.LookVector
-    local point = oldCF:PointToWorldSpace(if state.axis == 'X'
-        then Vector3.new(state.offset, 0, 0) else Vector3.new(0, 0, state.offset))
+    local originalFrame = work.CFrame
+    local dimensions = work.Size / Stock.SCALE
+    local item = Stock.create(1, 'Block', 'Steel', {
+        x = dimensions.X,
+        y = dimensions.Y,
+        z = dimensions.Z,
+    }, originalFrame)
 
-    local ok, fragments, summary = pcall(SawCut.split, item, point, normal)
-    if not ok or not fragments then return nil, tostring(if ok then summary else fragments) end
+    local normal = if state.axis == 'X' then originalFrame.RightVector
+        else originalFrame.LookVector
+    local point = originalFrame:PointToWorldSpace(
+        if state.axis == 'X' then Vector3.new(state.offset, 0, 0)
+        else Vector3.new(0, 0, state.offset))
 
-    local output = {}
+    local fragments, failure = SawCut.split(item, point, normal)
+    if not fragments then return nil, failure end
+
+    local candidates = {}
     for _, solid in fragments do
         local low, high = FORM.bounds(solid)
         local size = (high - low) * Stock.SCALE
-        if size.X <= 0 or size.Y <= 0 or size.Z <= 0 then return nil, 'Invalid fragment bounds' end
-        local part = Instance.new('Part')
-        part.Name = work.Name .. ' - Offcut'
-        part.Size = size
-        part.CFrame = oldCF * CFrame.new((low + high) * 0.5 * Stock.SCALE)
-        part.Material = work.Material
-        part.Color = work.Color
-        part.CustomPhysicalProperties = work.CustomPhysicalProperties
-        part.CanCollide = true
-        part.CanQuery = true
-        part.Anchored = false
-        part:SetAttribute('FORMNativeStock', true)
-        FORMMaterial.mark(part)
-        table.insert(output, part)
+        if size.X < 0.05 or size.Y < 0.05 or size.Z < 0.05 then
+            return nil, 'Cut would create an unsupported thin fragment'
+        end
+        table.insert(candidates, {
+            size = size,
+            frame = originalFrame * CFrame.new((low + high) * 0.5 * Stock.SCALE),
+            volume = FORM.signedVolume(solid),
+        })
     end
 
-    local velocity = work.AssemblyLinearVelocity
-    local angular = work.AssemblyAngularVelocity
-    for _, part in output do
-        part.Parent = work.Parent
-        part.AssemblyAngularVelocity = angular
-        part.AssemblyLinearVelocity = velocity + angular:Cross(part.Position - work.Position)
-    end
-    work:Destroy()
-    return output[1], 'FORM saw cut completed'
+    table.sort(candidates, function(a, b)
+        return a.volume > b.volume
+    end)
+
+    if #candidates ~= 2 then return nil, 'Expected two physical fragments' end
+
+    local main = candidates[1]
+    local offcut = candidates[2]
+
+    local fragment = Instance.new('Part')
+    fragment.Name = work.Name .. ' - Offcut'
+    fragment.Size = offcut.size
+    fragment.CFrame = offcut.frame
+    fragment.Material = work.Material
+    fragment.MaterialVariant = work.MaterialVariant
+    fragment.Color = work.Color
+    fragment.Transparency = work.Transparency
+    fragment.Reflectance = work.Reflectance
+    fragment.CustomPhysicalProperties = work.CustomPhysicalProperties
+    fragment.CollisionGroup = work.CollisionGroup
+    fragment.Anchored = false
+    fragment.CanCollide = true
+    fragment.CanTouch = true
+    fragment.CanQuery = true
+    fragment:SetAttribute('FORMNativeStock', true)
+    FORMMaterial.mark(fragment)
+
+    work.Size = main.size
+    work.CFrame = main.frame
+
+    fragment.Parent = work.Parent
+    fragment.AssemblyLinearVelocity = Vector3.zero
+    fragment.AssemblyAngularVelocity = Vector3.zero
+
+    return work, 'Cut complete. Move the guide for another cut or press Esc'
 end
 
-local function moveFabrication(player, state, stroke, offset, axis)
-    if not finite(stroke) or not finite(offset) or (axis ~= 'X' and axis ~= 'Z') then return end
+local function moveFabrication(player, state, stroke, offset, axis, isDown)
+    if not finite(stroke) or not finite(offset)
+        or (axis ~= 'X' and axis ~= 'Z') or type(isDown) ~= 'boolean' then
+        return
+    end
+
     local work = state.work
     local root = rootOf(player)
-    if not root or not work or not work.Parent or not movable(state.item) then
+    if not root or not work or not work.Parent or not state.item.Parent then
         finish(player)
         return
     end
@@ -547,7 +577,6 @@ local function moveFabrication(player, state, stroke, offset, axis)
     local now = os.clock()
     if now - state.lastMove < 1 / 40 then return end
     state.lastMove = now
-    state.lastInput = now
 
     local size = work.Size
     local span = if axis == 'X' then size.X else size.Z
@@ -562,18 +591,36 @@ local function moveFabrication(player, state, stroke, offset, axis)
         else Vector3.new(0, 0, state.offset)
     local pos = work.CFrame:PointToWorldSpace(cross + travel
         + Vector3.new(0, size.Y * 0.5 + 0.12, 0))
-    if (pos - root.Position).Magnitude > 30 then finish(player) return end
 
-    local strokeDirection = if axis == 'X' then work.CFrame.LookVector
+    if (pos - root.Position).Magnitude > 30 then
+        remote:FireClient(player, 'Feedback', 'Workpiece is out of reach')
+        finish(player)
+        return
+    end
+
+    local forward = if axis == 'X' then work.CFrame.LookVector
         else work.CFrame.RightVector
     local upward = work.CFrame.UpVector
-    state.target.CFrame = CFrame.fromMatrix(pos, strokeDirection,
-        upward, strokeDirection:Cross(upward))
+    local contactFrame = CFrame.fromMatrix(pos, forward,
+        upward, forward:Cross(upward))
         * CFrame.Angles(math.rad(state.roll), 0, 0)
 
-    local difference = stroke - state.lastStroke
-    local direction = if difference > 0.035 then 1 elseif difference < -0.035 then -1 else 0
-    if direction ~= 0 and state.direction ~= 0 and state.direction ~= direction
+    state.goalFrame = contactFrame * state.contactOffset
+
+    if not isDown then
+        state.awaitRelease = false
+        state.direction = 0
+        state.lastStroke = 0
+        state.lastTurn = 0
+        return
+    end
+
+    if state.awaitRelease then return end
+
+    local delta = stroke - state.lastStroke
+    local direction = if delta > 0.035 then 1 elseif delta < -0.035 then -1 else 0
+
+    if direction ~= 0 and state.direction ~= 0 and direction ~= state.direction
         and math.abs(stroke - state.lastTurn) > 0.2 then
         state.reversals += 1
         state.lastTurn = stroke
@@ -581,19 +628,27 @@ local function moveFabrication(player, state, stroke, offset, axis)
     elseif state.direction == 0 and direction ~= 0 then
         state.lastTurn = stroke
     end
+
     if direction ~= 0 then state.direction = direction end
     state.lastStroke = stroke
 
-    if state.reversals >= 5 then
-        local ok, replacement, message = pcall(cutSheet, state)
-        if not ok then
-            warn('[OPENWORKS:Fabrication]', replacement)
-            message = 'Fabrication failed: ' .. tostring(replacement)
-            replacement = nil
-        end
-        finish(player)
-        remote:FireClient(player, 'MachiningCompleted', replacement, message)
+    if state.reversals < 5 then return end
+
+    local ok, selected, message = pcall(cutSheet, state)
+    if not ok then
+        message = 'Fabrication failed: ' .. tostring(selected)
+        warn('[OPENWORKS:Fabrication]', selected)
+        selected = nil
     end
+
+    state.stroke = 0
+    state.lastStroke = 0
+    state.lastTurn = 0
+    state.direction = 0
+    state.reversals = 0
+    state.awaitRelease = true
+
+    remote:FireClient(player, 'MachiningCompleted', selected, message)
 end
 
 remote.OnServerEvent:Connect(function(player, action, ...)
@@ -633,22 +688,34 @@ remote.OnServerEvent:Connect(function(player, action, ...)
     end
 end)
 
-RunService.Heartbeat:Connect(function()
+RunService.Heartbeat:Connect(function(dt)
     for player, state in active do
-        if state.mode == 'Fabrication' and state.collisions then
+        local root = rootOf(player)
+        if not root or not state.part.Parent
+            or (state.part.Position - root.Position).Magnitude > 38 then
+            finish(player)
+            continue
+        end
+
+        if state.mode == 'Fabrication' then
+            if not state.item.Parent or not state.work.Parent then
+                finish(player)
+                continue
+            end
+
             for part in state.collisions do
                 if part.Parent then
                     part.CanCollide = false
                     part.CanTouch = false
                     part.CanQuery = false
+                    part.Anchored = true
                 end
             end
-        end
 
-        local root = rootOf(player)
-        if not root or not state.part.Parent
-            or (state.part.Position - root.Position).Magnitude > 38
-            or os.clock() - state.lastInput > 3 then
+            local alpha = 1 - math.exp(-17 * math.min(dt, 0.1))
+            state.currentFrame = state.currentFrame:Lerp(state.goalFrame, alpha)
+            state.item:PivotTo(state.currentFrame)
+        elseif os.clock() - state.lastInput > 3 then
             finish(player)
         end
     end
