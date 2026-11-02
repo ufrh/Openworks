@@ -274,6 +274,31 @@ function UI.start()
         return true
     end
 
+    local function refine(part, solid)
+        local id = part and part:GetAttribute('StockId')
+        local source = id and current[id]
+        if not source or not bindings[id] or bindings[id].part ~= part then
+            return nil, 'Workpiece no longer exists'
+        end
+        if not part.Anchored then return nil, 'Secure the metal before filing' end
+        local ok, record = pcall(fragmentRecord, id, source, solid, source.frame)
+        if not ok then return nil, 'Invalid filed geometry: ' .. tostring(record) end
+        local created, binding = pcall(createDisplay, record)
+        if not created then
+            return nil, 'Could not render filed geometry: ' .. tostring(binding)
+        end
+
+        local original = bindings[id]
+        destroyDisplay(original)
+        current[id] = record
+        bindings[id] = binding
+        binding.part.Parent = world
+        binding.part.Anchored = true
+        selected = id
+        refreshSelection()
+        return true
+    end
+
     local function selectedAction(action)
         if not selected or not current[selected] then
             displayStatus('Select a workpiece first')
@@ -419,6 +444,7 @@ function UI.start()
             return selected and bindings[selected] and bindings[selected].part or nil
         end,
         separate = separate,
+        refine = refine,
         status = displayStatus,
     }
 end
