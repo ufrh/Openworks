@@ -265,6 +265,7 @@ function UI.start()
         local secured = part.Anchored
         local inheritedVelocity = part.AssemblyLinearVelocity
         local inheritedSpin = part.AssemblyAngularVelocity
+        local originalCenter = part.AssemblyCenterOfMass
         local holdFirst = first.volume >= second.volume
         destroyDisplay(original)
         bindings[id] = nil
@@ -274,6 +275,7 @@ function UI.start()
         if not secured then
             for _, binding in prepared do
                 binding.part.AssemblyLinearVelocity = inheritedVelocity
+                    + inheritedSpin:Cross(binding.part.AssemblyCenterOfMass - originalCenter)
                 binding.part.AssemblyAngularVelocity = inheritedSpin
             end
         end
