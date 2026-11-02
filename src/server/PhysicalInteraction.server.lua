@@ -27,7 +27,7 @@ end)
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
 local active = {}
 local locked = {}
-local modifiedSolids = {}
+local modifiedSolids = setmetatable({}, {__mode = 'k'})
 
 local function finite(n)
     return type(n) == 'number' and n == n and math.abs(n) < 1e6
