@@ -5,6 +5,7 @@ local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FO
 local Boolean = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Boolean'))
 local Surface = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Surface'))
 local Union = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Union'))
+local Weld = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Weld'))
 
 local function close(a, b)
     return FORM.volumeClose(a, b)
@@ -95,6 +96,19 @@ local function run()
     assert(rectangularStats.outputTriangles > 0, 'Missing union output statistics')
     print(string.format('[FORM] Rectangular surface clipping: %d input / %d output triangles',
         rectangularStats.inputTriangles, rectangularStats.outputTriangles))
+
+    local welded, weldStats = Weld.build(rectangularSurface)
+    print(string.format('[FORM] Rectangular weld: %d -> %d vertices, %d triangles, %d T-junctions, %d collapsed, manifold=%s',
+        weldStats.verticesBefore, weldStats.verticesAfter, weldStats.trianglesAfter,
+        weldStats.tJunctions, weldStats.collapsedFaces, tostring(weldStats.valid)))
+    if weldStats.valid then
+        local delta = FORM.signedVolume(welded) - remaining
+        print(string.format('[FORM] Welded volume delta: %+.6f mm^3', delta))
+        assert(FORM.volumeClose(FORM.signedVolume(welded), remaining),
+            'Welded surface volume does not match convex component volume')
+    else
+        print('[FORM] Unified surface not yet manifold; active preview remains unchanged')
+    end
 
     print(string.format('[FORM] Boolean subtract: %d pieces, removed %.4f mm^3', #leftovers, removed))
     local cylinder = FORM.cylinder(10, 70, 12)
