@@ -398,7 +398,14 @@ function Union.fromStockAndCutters(stock, cutters, expectedVolume, tolerance)
                     if #visible == 0 then break end
                 end
                 for _, polygon in visible do
-                    if not emit(polygon, -face.normal) then return nil, 'RECONSTRUCTION_BUDGET_EXCEEDED' end
+                    local center = Vector3.zero
+                    for _, vertex in polygon do center += vertex end
+                    center /= #polygon
+                    if occupied(center + face.normal * SAMPLE_OFFSET, {stockFaces}) then
+                        if not emit(polygon, -face.normal) then
+                            return nil, 'RECONSTRUCTION_BUDGET_EXCEEDED'
+                        end
+                    end
                 end
             end
         end
