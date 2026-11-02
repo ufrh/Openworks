@@ -341,7 +341,7 @@ function Inspector:refreshTools()
         if child:IsA('TextButton') or child:IsA('TextLabel') then child:Destroy() end
     end
     if #available == 0 then
-        makeText(self.choices, 'Place a saw or file on the workbench', 54, 12)
+        makeText(self.choices, 'Place a saw, file, or scorer on the workbench', 54, 12)
     else
         for _, tool in available do
             makeButton(self.choices, tool.Name:upper(), function()
@@ -480,7 +480,7 @@ function Inspector:setTool(kind)
     self.gui.Enabled = self.material ~= nil
     local panel = self.title.Parent
     panel.Size = UDim2.fromOffset(260, if kind == 'File' then 540
-        elseif kind == 'Saw' then 440 else 350)
+        elseif kind == 'Saw' or kind == 'Scorer' then 440 else 350)
 
     if kind == 'File' and self.material then
         local thickness = if self.material:IsA('BasePart') then self.material.Size.Y
@@ -498,6 +498,8 @@ function Inspector:setTool(kind)
         'LMB: saw | Q: cut axis | P: move material\nX/Z: flip sheet | Tab: next workpiece\nF: flip saw | R: roll | Esc: exit'
         elseif kind == 'File' then
         'LMB: file | P: drag material | X/Z: flip\nTab: next workpiece | RMB: orbit\nR: roll file | Esc: exit'
+        elseif kind == 'Scorer' then
+        'LMB + drag: score exposed surface\nRelease: save permanent score path\nP: move metal | X/Z: flip | Esc: exit'
         else 'RMB: orbit | MMB: pan | wheel: zoom\nChoose a physical tool resting on the table.'
     self.choices.Visible = true
     if kind then
