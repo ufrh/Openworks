@@ -322,58 +322,107 @@ local function subtractFace(polygon, cutter)
     return exposed
 end
 
-function Union.subtractBoundary(stock, cutter, expectedVolume, tolerance)
-    if not FORM.validate(stock).ok or not FORM.validate(cutter).ok then
-        return nil, 'INVALID_INPUT'
-    end
+function Union.fromStockAndCutters(stock, cutters, expectedVolume, tolerance)
+    if not FORM.validate(stock).ok then return nil, 'INVALID_STOCK' end
+    if type(cutters) ~= 'table' or #cutters == 0 then return nil, 'NO_CUTTERS' end
+    if #cutters > 48 then return nil, 'CUTTER_BUDGET_EXCEEDED' end
 
     local stockFaces = faceGroups(stock)
-    local cutterFaces = faceGroups(cutter)
-    local surface = {vertices = {}, triangles = {}}
-    local exposedCount = 0
+    local cutterGroups = {}
+    local sourceTriangles = #stock.triangles
+    for i, cutter in cutters do
+        if not FORM.validate(cutter).ok then return nil, 'INVALID_CUTTER_' .. i end
+        cutterGroups[i] = faceGroups(cutter)
+        sourceTriangles += #cutter.triangles
+    end
+
+    local output = {vertices = {}, triangles = {}}
+    local fragments = 0
+    local started = os.clock()
+
+    local function emit(polygon, normal)
+        fragments += 1
+        if fragments > MAX_CELLS or os.clock() - started > MAX_CPU_SECONDS then return false end
+        return addPolygon(output, polygon, normal)
+    end
 
     for _, face in stockFaces do
-        local exposed = subtractFace(face.polygon, cutterFaces)
-        for _, polygon in exposed do
-            if not addPolygon(surface, polygon, face.normal) then
-                return nil, 'TRIANGLE_BUDGET_EXCEEDED'
+        local visible = {face.polygon}
+        for _, cutter in cutterGroups do
+            local nextVisible = {}
+            for _, polygon in visible do
+                for _, section in subtractFace(polygon, cutter) do
+                    nextVisible[#nextVisible + 1] = section
+                end
             end
-            exposedCount += 1
+            visible = nextVisible
+            if #visible > MAX_CELLS then return nil, 'CELL_BUDGET_EXCEEDED' end
+            if #visible == 0 then break end
+        end
+        for _, polygon in visible do
+            if not emit(polygon, face.normal) then return nil, 'RECONSTRUCTION_BUDGET_EXCEEDED' end
         end
     end
 
-    for _, face in cutterFaces do
-        local polygon = face.polygon
-        for _, plane in stockFaces do
-            polygon = cut(polygon, plane, false)
-            if #polygon < 3 then break end
-        end
-        if #polygon >= 3 then
-            if not addPolygon(surface, polygon, -face.normal) then
-                return nil, 'TRIANGLE_BUDGET_EXCEEDED'
+    for index, cutter in cutterGroups do
+        for _, face in cutter do
+            local patch = face.polygon
+            for _, stockPlane in stockFaces do
+                patch = cut(patch, stockPlane, false)
+                if #patch == 0 then break end
             end
-            exposedCount += 1
+
+            if #patch >= 3 then
+                local visible = {patch}
+                for otherIndex, other in cutterGroups do
+                    if index == otherIndex then continue end
+                    local coplanarSame = false
+                    for _, plane in other do
+                        if samePlane(face, plane) and face.normal:Dot(plane.normal) > 0 then
+                            coplanarSame = true
+                            break
+                        end
+                    end
+                    if coplanarSame and index < otherIndex then continue end
+
+                    local nextVisible = {}
+                    for _, polygon in visible do
+                        for _, section in subtractFace(polygon, other) do
+                            nextVisible[#nextVisible + 1] = section
+                        end
+                    end
+                    visible = nextVisible
+                    if #visible > MAX_CELLS then return nil, 'CELL_BUDGET_EXCEEDED' end
+                    if #visible == 0 then break end
+                end
+                for _, polygon in visible do
+                    if not emit(polygon, -face.normal) then return nil, 'RECONSTRUCTION_BUDGET_EXCEEDED' end
+                end
+            end
         end
     end
 
-    if #surface.triangles == 0 then return nil, 'EMPTY_RESULT' end
-    local welded, stats = Weld.build(surface, tolerance)
-    local details = {
-        surface = {inputTriangles = #stock.triangles + #cutter.triangles,
-            outputTriangles = #surface.triangles, outputFaces = exposedCount},
-        weld = stats,
-    }
-    if not stats.valid then return nil, 'NON_MANIFOLD_SURFACE', details end
-    if stats.connectedComponents ~= 1 then return nil, 'DISCONNECTED_SURFACE', details end
+    if #output.triangles == 0 then return nil, 'EMPTY_RESULT' end
+    local welded, weldStats = Weld.build(output, tolerance)
+    local stats = {surface = {
+        inputTriangles = sourceTriangles, outputTriangles = #output.triangles,
+        outputFaces = fragments, cutterCount = #cutters,
+    }, weld = weldStats}
 
-    local expected = expectedVolume
-    if expected ~= nil and not FORM.volumeClose(FORM.signedVolume(welded), expected) then
-        details.volume = FORM.signedVolume(welded)
-        details.expectedVolume = expected
-        return nil, 'VOLUME_MISMATCH', details
+    if not weldStats.valid then return nil, 'NON_MANIFOLD_SURFACE', stats end
+    if weldStats.connectedComponents ~= 1 then return nil, 'DISCONNECTED_SURFACE', stats end
+    if expectedVolume ~= nil then
+        local actual = FORM.signedVolume(welded)
+        stats.volume, stats.expectedVolume = actual, expectedVolume
+        if not FORM.volumeClose(actual, expectedVolume) then
+            return nil, 'VOLUME_MISMATCH', stats
+        end
     end
+    return welded, nil, stats
+end
 
-    return welded, nil, details
+function Union.subtractBoundary(stock, cutter, expectedVolume, tolerance)
+    return Union.fromStockAndCutters(stock, {cutter}, expectedVolume, tolerance)
 end
 
 function Union.reconstruct(pieces, expectedVolume, tolerance)
