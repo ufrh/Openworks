@@ -154,4 +154,41 @@ function FileShape.apply(item, spec)
     return remaining, {removed = removed, retained = finalVolume, segments = FileShape.SEGMENTS}
 end
 
+function FileShape.chamfer(item, spec)
+    if not spec or not spec.axisA or spec.axisA == spec.axisB then
+        return nil, 'Invalid chamfer specification'
+    end
+
+    local radius = spec.radius
+    validateRadius(radius)
+    local lower, upper = FORM.bounds(item.solid)
+    if lower ~= spec.boundsLow or upper ~= spec.boundsHigh then
+        return nil, 'Workpiece geometry changed since chamfer preview'
+    end
+
+    local a = axisVector(spec.axisA) * spec.signA
+    local b = axisVector(spec.axisB) * spec.signB
+    local corner = axisVector(spec.axisA) * component(
+        if spec.signA == 1 then upper else lower, spec.axisA)
+        + axisVector(spec.axisB) * component(
+            if spec.signB == 1 then upper else lower, spec.axisB)
+
+    local outward = (a + b).Unit
+    local plane = corner - (a + b) * (radius * 0.5)
+    local removed, remaining = Cut.split(item.solid, plane, outward)
+    if not removed then return nil, 'Chamfer operation failed: ' .. tostring(remaining) end
+
+    local validation = FORM.validate(remaining)
+    if not validation.ok then return nil, 'Chamfer geometry is not watertight' end
+
+    local removedVolume = FORM.signedVolume(item.solid) - FORM.signedVolume(remaining)
+    if removedVolume <= 0.001 then return nil, 'Chamfer did not remove measurable material' end
+
+    return remaining, {
+        removed = removedVolume,
+        retained = FORM.signedVolume(remaining),
+        segments = 1,
+    }
+end
+
 return FileShape
