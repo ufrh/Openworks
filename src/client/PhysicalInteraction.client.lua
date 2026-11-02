@@ -246,6 +246,11 @@ UserInputService.InputBegan:Connect(function(input, processed)
         return
     end
 
+    if input.KeyCode == Enum.KeyCode.P and fabrication and not processed then
+        send('MaterialPositioning', not fabrication.positioning)
+        return
+    end
+
     if input.KeyCode == Enum.KeyCode.F and fabrication
         and fabrication.kind == 'Saw' and not processed then
         flipSaw()
@@ -269,6 +274,17 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
     if input.UserInputType ~= Enum.UserInputType.MouseButton1 or processed then return end
     if fabrication then
+        if fabrication.positioning then
+            local work = fabrication.material
+            if work and work:IsA('BasePart') then
+                local hit = mouse.Hit.Position
+                fabrication.materialDrag = {
+                    elevation = work.Position.Y,
+                    offset = work.Position - hit,
+                }
+            end
+            return
+        end
         local target = mouse.Target
         if target then
             local selected, kind = identify(target)
@@ -354,6 +370,7 @@ UserInputService.InputEnded:Connect(function(input)
     end
 
     if fabrication then
+        fabrication.materialDrag = nil
         fabrication.down = false
         fabrication.stroke = 0
         if fabrication.previousMouseBehavior then
@@ -400,7 +417,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
         fabrication = {
             kind = a, material = b, tool = c,
             down = false, stroke = 0, offset = 0, axis = 'X',
-            fileSide = 1, pointerMoved = false,
+            fileSide = 1, pointerMoved = false, positioning = false,
         }
         inspector:setTool(a)
         if a == 'File' then
@@ -411,6 +428,16 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             inspector:status('Hover the sheet to set a cut, then hold LMB to saw')
         else
             inspector:status('Hover an edge, hold LMB and stroke to file it')
+        end
+    elseif action == 'MaterialPositioning' then
+        if fabrication then
+            fabrication.positioning = a == true
+            fabrication.materialDrag = nil
+            fabrication.down = false
+            guide.Parent = if fabrication.positioning then nil else workspace
+            inspector:status(if fabrication.positioning
+                then 'POSITION MATERIAL: drag sheet, X/Z flip, P to finish'
+                else 'Workpiece positioned. Resume machining.')
         end
     elseif action == 'MaterialFlipped' then
         if fabrication then
@@ -561,6 +588,27 @@ RunService.RenderStepped:Connect(function(dt)
             dragging.rotation = CFrame.Angles(0, yaw * math.rad(95) * dt, 0)
                 * dragging.rotation * CFrame.Angles(pitch * math.rad(95) * dt, 0, 0)
         end
+    end
+
+    if fabrication and fabrication.positioning then
+        guide.Parent = nil
+        if fabrication.materialDrag then
+            local drag = fabrication.materialDrag
+            local pointer = UserInputService:GetMouseLocation()
+            local ray = workspace.CurrentCamera:ViewportPointToRay(pointer.X, pointer.Y)
+            if math.abs(ray.Direction.Y) > 0.01 then
+                local t = (drag.elevation - ray.Origin.Y) / ray.Direction.Y
+                if t > 0 then
+                    local point = ray.Origin + ray.Direction * t + drag.offset
+                    elapsed += dt
+                    if elapsed >= 1 / 30 then
+                        elapsed = 0
+                        send('MaterialMove', point)
+                    end
+                end
+            end
+        end
+        return
     end
 
     if fabrication then
