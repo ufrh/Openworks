@@ -770,17 +770,17 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.goalFrame = contactFrame * state.contactOffset
 
     if state.kind == 'Saw' and state.sawBladeLocal and not state.manualSawRoll then
-        local opposite = CFrame.fromMatrix(pos, forward, upward, forward:Cross(upward))
-            * CFrame.Angles(math.rad(state.roll + 180), 0, 0)
-            * state.contactOffset
-
-        local function bladeHeight(frame)
-            return (frame:PointToWorldSpace(state.sawBladeLocal)
-                - frame:PointToWorldSpace(state.sawBodyLocal)).Y
-        end
-
-        if bladeHeight(opposite) < bladeHeight(state.goalFrame) - 0.015 then
-            state.goalFrame = opposite
+        local baseFrame = CFrame.fromMatrix(pos, forward, upward, forward:Cross(upward))
+        local bestHeight = math.huge
+        for quarter = 0, 3 do
+            local candidate = baseFrame * CFrame.Angles(
+                math.rad(state.roll + quarter * 90), 0, 0) * state.contactOffset
+            local height = (candidate:PointToWorldSpace(state.sawBladeLocal)
+                - candidate:PointToWorldSpace(state.sawBodyLocal)).Y
+            if height < bestHeight then
+                state.goalFrame = candidate
+                bestHeight = height
+            end
         end
     end
 
