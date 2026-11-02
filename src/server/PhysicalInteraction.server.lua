@@ -194,11 +194,24 @@ local function startFabrication(player, material, tool)
     local work = findPart(material)
     local part = findPart(tool)
     local root = rootOf(player)
-    if not kind or not work or not part or not root or not movable(tool) or locked[material] then return end
-    if (root.Position - work.Position).Magnitude > 24 or (root.Position - part.Position).Magnitude > 24 then return end
+    if not kind then
+        remote:FireClient(player, 'Feedback', 'Set FabricationKind to Saw or File on this tool')
+        return
+    end
+    if not work or not part or not root or not movable(tool) or locked[material] then
+        remote:FireClient(player, 'Feedback', 'Material or tool is not available')
+        return
+    end
+    if (root.Position - work.Position).Magnitude > 24 or (root.Position - part.Position).Magnitude > 24 then
+        remote:FireClient(player, 'Feedback', 'Move closer to the workbench')
+        return
+    end
 
     local state = acquire(player, tool, part, part.Position)
-    if not state then return end
+    if not state then
+        remote:FireClient(player, 'Feedback', 'Tool is busy or cannot be moved')
+        return
+    end
 
     state.mode = 'Fabrication'
     state.kind = kind
