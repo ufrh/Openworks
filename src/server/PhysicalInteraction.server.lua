@@ -846,12 +846,16 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         selected = nil
     end
 
-    state.stroke = 0
-    state.lastStroke = 0
-    state.lastTurn = 0
+    state.stroke = stroke
+    state.lastStroke = stroke
+    state.lastTurn = stroke
     state.direction = 0
     state.reversals = 0
     state.processing = false
+
+    if state.kind == 'Saw' and selected and active[player] == state then
+        state.awaitRelease = false
+    end
 
     if active[player] == state then
         remote:FireClient(player, 'MachiningCompleted', selected, message, aimWorld)
