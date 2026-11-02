@@ -39,9 +39,17 @@ function Renderer.create(solid, source, appearance)
         })
     end
 
-    local mesh = AssetService:CreateMeshPartAsync(Content.fromObject(editable), {
+    local bakedResult, bakedContent = AssetService:CreateDataModelContentAsync(
+        Content.fromObject(editable))
+    editable:Destroy()
+
+    assert(bakedResult == Enum.CreateContentResult.Success,
+        'Could not replicate filed geometry: ' .. tostring(bakedResult))
+
+    local mesh = AssetService:CreateMeshPartAsync(bakedContent, {
         CollisionFidelity = Enum.CollisionFidelity.Hull,
     })
+    mesh.TextureContent = Content.none
 
     mesh.Name = 'FORMFiledVisual'
     mesh.Size = (high - low) * Stock.SCALE
