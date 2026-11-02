@@ -4,7 +4,9 @@ local RunService = game:GetService('RunService')
 local UserInputService = game:GetService('UserInputService')
 
 local SawCut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('SawCut'))
-local ToolVisual = require(script.Parent.ToolVisual)
+local FabricationVisual = require(script.Parent.FabricationVisual)
+local FabricationTool = require(script.Parent.FabricationTool)
+local Motion = require(script.Parent.FabricationMotion)
 
 local SawUI = {}
 
@@ -74,6 +76,8 @@ function SawUI.start(workpieces)
     local currentTool
     local preview
     local cutting
+    local working
+    local groove
     local turn = 0
     local orbit
     local lines = {}
@@ -114,12 +118,18 @@ function SawUI.start(workpieces)
         for i = used + 1, #lines do lines[i].Transparency = 1 end
     end
 
+    local function clearGroove()
+        if groove then groove:Destroy() groove = nil end
+    end
+
     local function stopCut()
-        if cutting and cutting.tool and cutting.tool.Parent then
-            cutting.tool.Grip = cutting.grip
-        end
         cutting = nil
+        clearGroove()
         fill.Size = UDim2.fromScale(0, 1)
+    end
+
+    local function closeWorking()
+        if working then working:destroy() working = nil end
     end
 
     local function stopOrbit()
@@ -134,36 +144,32 @@ function SawUI.start(workpieces)
     end
 
     local function findTool()
-        local backpack = player:FindFirstChildOfClass('Backpack')
-        local character = player.Character
-        local equippedTool = character and character:FindFirstChild('Hacksaw')
-        if equippedTool and equippedTool:IsA('Tool') then return equippedTool end
-        local owned = backpack and backpack:FindFirstChild('Hacksaw')
-        if owned and owned:IsA('Tool') then return owned end
+        return FabricationTool.find(player, 'Hacksaw')
+    end
 
-        if backpack then
-            for _, source in ReplicatedStorage:GetDescendants() do
-                if source:IsA('Tool') and source.Name == 'Hacksaw' then
-                    local clone = source:Clone()
-                    clone.Parent = backpack
-                    return clone
-                end
-            end
+    local function showModel()
+        if working then return true end
+        local object, reason = FabricationVisual.new('Hacksaw', 'BladeEdge')
+        if not object then
+            hint.Text = tostring(reason)
+            return false
         end
-        return nil
+        working = object
+        return true
     end
 
     local function connectTool(tool)
         if currentTool == tool then return end
         for _, connection in activeToolConnection do connection:Disconnect() end
         table.clear(activeToolConnection)
+        if currentTool then FabricationTool.restore(currentTool) end
         stopCut()
         stopOrbit()
+        closeWorking()
         clearLines()
         preview = nil
         currentTool = tool
         if not tool then return end
-        ToolVisual.attach(tool)
 
         activeToolConnection[#activeToolConnection + 1] = tool.Activated:Connect(function()
             if not equipped() or cutting then return end
@@ -175,17 +181,35 @@ function SawUI.start(workpieces)
                 hint.Text = 'Secure the workpiece first'
                 return
             end
+            if not preview.motion or not showModel() then
+                hint.Text = 'No valid saw movement for this cut'
+                return
+            end
+            local plan = preview.motion
+            local depth = plan.span + plan.clearance
             cutting = {
                 part = preview.part,
                 item = preview.item,
                 point = preview.data.point,
                 normal = preview.data.normal,
-                tool = tool,
-                grip = tool.Grip,
-                elapsed = 0,
-                required = if preview.item.material == 'Steel' then 3.8 else 2.6,
+                plan = plan,
+                advanced = 0,
+                travel = depth,
+                rate = depth / (if preview.item.material == 'Steel' then 3.8 else 2.6),
+                phase = 0,
             }
-            hint.Text = 'Sawing... keep holding'
+            groove = Instance.new('Part')
+            groove.Name = 'Saw Kerf Progress'
+            groove.Anchored = true
+            groove.CanCollide = false
+            groove.CanTouch = false
+            groove.CanQuery = false
+            groove.CastShadow = false
+            groove.Material = Enum.Material.SmoothPlastic
+            groove.Color = Color3.fromRGB(30, 33, 35)
+            groove.Transparency = 0.25
+            groove.Parent = workspace
+            hint.Text = 'Blade engaged - hold to saw through the metal'
         end)
         activeToolConnection[#activeToolConnection + 1] = tool.Deactivated:Connect(function()
             if cutting then
@@ -195,30 +219,37 @@ function SawUI.start(workpieces)
         end)
         activeToolConnection[#activeToolConnection + 1] = tool.Unequipped:Connect(function()
             if mouse.TargetFilter == player.Character then mouse.TargetFilter = nil end
+            FabricationTool.restore(tool)
             stopCut()
             stopOrbit()
+            closeWorking()
             clearLines()
             preview = nil
             hint.Text = 'Equip hacksaw to begin'
         end)
         activeToolConnection[#activeToolConnection + 1] = tool.Equipped:Connect(function()
             mouse.TargetFilter = player.Character
-            hint.Text = 'Aim at secured metal. Hold click to saw.'
+            FabricationTool.hideEquipped(tool)
+            showModel()
+            hint.Text = 'Aim at secured metal. Hold click to move the actual saw.'
         end)
+        if equipped() then
+            FabricationTool.hideEquipped(tool)
+            showModel()
+        end
     end
 
     makeButton(panel, 'EQUIP HACKSAW', function()
-        local tool = findTool()
+        local tool, reason = findTool()
         if not tool then
-            hint.Text = 'Need a Roblox Tool named Hacksaw in StarterPack or ReplicatedStorage'
+            hint.Text = tostring(reason)
             return
         end
         connectTool(tool)
         local humanoid = player.Character and player.Character:FindFirstChildOfClass('Humanoid')
         if not humanoid then hint.Text = 'Character is not ready' return end
         if not tool:FindFirstChild('Handle') and tool.RequiresHandle then
-            hint.Text = 'Hacksaw Tool needs a direct Handle part (or RequiresHandle=false)'
-            return
+            tool.RequiresHandle = false
         end
         humanoid:EquipTool(tool)
     end)
@@ -299,30 +330,47 @@ function SawUI.start(workpieces)
 
         if cutting then
             local operation = cutting
-            if not equipped() or not operation.part.Parent or not operation.part.Anchored then
+            if not equipped() or not operation.part.Parent or not operation.part.Anchored
+                or workpieces.get(operation.part) ~= operation.item then
                 stopCut()
                 clearLines()
+                if working then working:hide() end
                 return
             end
-            operation.elapsed += dt
-            local progress = math.min(1, operation.elapsed / operation.required)
+
+            operation.advanced = math.min(operation.travel, operation.advanced + dt * operation.rate)
+            operation.phase += dt * 23
+            local progress = operation.advanced / operation.travel
             fill.Size = UDim2.fromScale(progress, 1)
-            operation.tool.Grip = operation.grip * CFrame.new(0, 0,
-                math.sin(operation.elapsed * 25) * 0.18)
+            if working then
+                working:pose(Motion.sawPose(operation.plan, progress, operation.phase))
+            end
+            if groove then
+                local plan = operation.plan
+                local visibleDepth = math.max(0.006, operation.advanced)
+                groove.Size = Vector3.new(math.max(0.08, plan.across), visibleDepth,
+                    SawCut.KERF_MM * 0.04 + 0.014)
+                local surface = plan.center + plan.outward
+                    * (plan.start + plan.clearance - visibleDepth / 2)
+                groove.CFrame = FabricationVisual.contactFrame(
+                    surface, plan.forward, plan.outward)
+            end
+
             if progress >= 1 then
                 local success, solids, stats = pcall(SawCut.split, operation.item,
                     operation.point, operation.normal)
                 stopCut()
                 clearLines()
                 preview = nil
+                if working then working:hide() end
                 if not success or not solids then
                     hint.Text = 'Cut failed: ' .. tostring(if success then stats else solids)
                     return
                 end
-                local ok, committed, reason = pcall(workpieces.separate, operation.part, solids, stats)
+                local ok, committed, reason = pcall(workpieces.separate,
+                    operation.part, solids, stats)
                 if ok and committed then
-                    hint.Text = string.format('Cut complete - kerf %.2f mm, %.1f mm³ removed',
-                        SawCut.KERF_MM, stats.removed)
+                    hint.Text = string.format('Metal separated - %.1f mm³ kerf removed', stats.removed)
                 else
                     hint.Text = 'Cut failed: ' .. tostring(if ok then reason else committed)
                 end
@@ -335,6 +383,7 @@ function SawUI.start(workpieces)
         clock = 0
         if not equipped() then
             if preview then clearLines() preview = nil end
+            if working then working:hide() end
             return
         end
 
@@ -342,6 +391,7 @@ function SawUI.start(workpieces)
         local item = workpieces.get(part)
         if not item or not part.Anchored then
             if preview then clearLines() preview = nil end
+            if working then working:hide() end
             return
         end
 
@@ -357,12 +407,25 @@ function SawUI.start(workpieces)
         local candidate, reason = SawCut.preview(item, mouse.Hit.Position, axis)
         if not candidate then
             if preview then clearLines() preview = nil end
+            if working then working:hide() end
             hint.Text = tostring(reason or 'No valid cut at this position')
             return
         end
-        preview = {part = part, item = item, data = candidate}
+        local camera = workspace.CurrentCamera
+        local ray = camera and camera:ViewportPointToRay(mouse.X, mouse.Y)
+        local surfaceNormal = if ray then Motion.surfaceNormal(part, ray) else nil
+        local plan, planReason = Motion.sawPlan(candidate, mouse.Hit.Position,
+            surfaceNormal or item.frame.UpVector)
+        if not plan then
+            if working then working:hide() end
+            if preview then clearLines() preview = nil end
+            hint.Text = tostring(planReason)
+            return
+        end
+        preview = {part = part, item = item, data = candidate, motion = plan}
         drawRing(candidate.rings or {candidate.ring})
-        hint.Text = 'Cut ready - hold LMB to saw (' .. item.material .. ')'
+        if showModel() then working:pose(Motion.sawPose(plan, 0, 0)) end
+        hint.Text = 'Saw aligned - hold LMB to drive the blade (' .. item.material .. ')'
     end)
 
     return gui
