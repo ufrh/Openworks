@@ -276,7 +276,7 @@ function SawUI.start(workpieces)
             end
         end)
     end
-    makeLabel(panel, 'Auto orbit: metal | V: toggle | T: top down | Q/E: cut | R: rotate saw | RMB: orbit', 56)
+    makeLabel(panel, 'Metal orbit | F: focus hovered | V: toggle | T: top | Q/E: cut | R: rotate blade | RMB: orbit', 56)
 
     startOrbit = function(focusPart)
         local target = focusPart or workpieces.selected()
@@ -322,6 +322,14 @@ function SawUI.start(workpieces)
         elseif input.KeyCode == Enum.KeyCode.R and not cutting then
             sawRotation = (sawRotation + 90) % 360
             hint.Text = 'Working blade alignment: ' .. sawRotation .. ' degrees'
+        elseif input.KeyCode == Enum.KeyCode.F and not cutting then
+            local hovered = mouse.Target
+            if hovered and workpieces.select(hovered) then
+                startOrbit(hovered)
+                hint.Text = 'Camera centered on selected metal'
+            else
+                startOrbit()
+            end
         end
     end)
     connections[#connections + 1] = UserInputService.InputChanged:Connect(function(input, processed)
