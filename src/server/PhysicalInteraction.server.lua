@@ -105,73 +105,37 @@ local function toolContact(tool, part, kind)
     local marker = contactMarker(tool, if kind == 'Saw' then 'BladeEdge' else 'FileFace')
     if marker then return marker.WorldCFrame end
 
-    local bounds, size
+    local blade
     if kind == 'Saw' then
-        local blade, handle
-        local candidates = if tool:IsA('Model') then tool:GetDescendants() else {tool}
-        for _, node in candidates do
-            if node:IsA('BasePart') then
-                local name = node.Name:lower()
-                if not blade and name:find('blade', 1, true) then blade = node end
-                if not handle and (name:find('handle', 1, true)
-                    or name:find('grip', 1, true)) then
-                    handle = node
-                end
+        for _, node in tool:GetDescendants() do
+            if node:IsA('BasePart') and (node.Name == 'Blade'
+                or node.Name == 'SawBlade' or node.Name == 'BladePart') then
+                blade = node
+                break
             end
         end
-
-        if blade then
-            bounds, size = blade.CFrame, blade.Size
-        elseif tool:IsA('Model') then
-            bounds, size = tool:GetBoundingBox()
-        else
-            bounds, size = part.CFrame, part.Size
-        end
-
-        local direction = bounds.RightVector
-        if size.Z >= size.X and size.Z >= size.Y then
-            direction = bounds.LookVector
-        elseif size.Y >= size.X and size.Y >= size.Z then
-            direction = bounds.UpVector
-        end
-
-        local up
-        if blade and handle then
-            up = handle.Position - blade.Position
-            up -= direction * up:Dot(direction)
-        end
-        if not up or up.Magnitude < 0.05 then
-            up = Vector3.yAxis - direction * direction.Y
-        end
-        if up.Magnitude < 0.05 then
-            up = bounds.UpVector - direction * bounds.UpVector:Dot(direction)
-        end
-        up = up.Unit
-
-        local across = direction:Cross(up).Unit
-        up = across:Cross(direction).Unit
-        local verticalRadius =
-            math.abs(bounds.RightVector:Dot(up)) * size.X * 0.5
-            + math.abs(bounds.UpVector:Dot(up)) * size.Y * 0.5
-            + math.abs(bounds.LookVector:Dot(up)) * size.Z * 0.5
-
-        local contactPoint
-        if blade then
-            contactPoint = bounds.Position - up * math.min(verticalRadius, 0.14)
-        else
-            contactPoint = bounds.Position - up * verticalRadius
-        end
-        return CFrame.fromMatrix(contactPoint, direction, up, across)
+        if not blade and tool:IsA('BasePart') then blade = tool end
     end
 
-    if tool:IsA('Model') then
+    local bounds, size
+    if blade then
+        bounds, size = blade.CFrame, blade.Size
+    elseif tool:IsA('Model') then
         bounds, size = tool:GetBoundingBox()
     else
         bounds, size = part.CFrame, part.Size
     end
 
-    return bounds * CFrame.new(0, -size.Y * 0.5, 0)
+    local rotation = CFrame.identity
+    if size.Z > math.max(size.X, size.Y) * 1.12 then
+        rotation = CFrame.Angles(0, math.rad(-90), 0)
+    elseif size.Y > math.max(size.X, size.Z) * 1.12 then
+        rotation = CFrame.Angles(0, 0, math.rad(90))
+    end
+
+    return bounds * CFrame.new(0, -size.Y * 0.5, 0) * rotation
 end
+
 local function setToolCollision(item, state)
     state.collisions = {}
 
@@ -491,7 +455,7 @@ local function startFabrication(player, material, tool)
         direction = 0,
         reversals = 0,
         axis = 'X',
-        roll = 0,
+        roll = if kind == 'Saw' and not contactMarker(tool, 'BladeEdge') then 180 else 0,
         awaitRelease = false,
         fileSide = 1,
         fileShape = 'Round',
@@ -528,74 +492,6 @@ local function startFabrication(player, material, tool)
     end
 
     remote:FireClient(player, 'FabricationStarted', kind, material, tool, collisionData)
-end
-
-local function switchFabricationTarget(player, state, material)
-    if state.processing then
-        remote:FireClient(player, 'Feedback', 'Finish the current operation first')
-        return
-    end
-
-    if typeof(material) ~= 'Instance'
-        or not (material:IsA('BasePart') or material:IsA('Model'))
-        or not material:IsDescendantOf(workspace)
-        or not FORMMaterial.isMarked(material) then
-        remote:FireClient(player, 'Feedback', 'Select a physical FORM material')
-        return
-    end
-
-    if material == state.material then return end
-    if material:GetAttribute('OnWorkbench') ~= true then
-        remote:FireClient(player, 'Feedback', 'Material must be resting on the workbench')
-        return
-    end
-    if locked[material] then
-        remote:FireClient(player, 'Feedback', 'That material is already in use')
-        return
-    end
-
-    local part = findPart(material)
-    local root = rootOf(player)
-    if not part or not root or (part.Position - root.Position).Magnitude > 24 then
-        remote:FireClient(player, 'Feedback', 'Move closer to the selected material')
-        return
-    end
-
-    local old = state.material
-    if old and old.Parent then supportOnWorkbench(old) end
-
-    for oldPart, anchored in state.materialAnchors do
-        if oldPart.Parent then
-            oldPart.AssemblyLinearVelocity = Vector3.zero
-            oldPart.AssemblyAngularVelocity = Vector3.zero
-            oldPart.Anchored = anchored
-        end
-    end
-    locked[old] = nil
-
-    local anchors = {}
-    for _, nextPart in allParts(material) do
-        anchors[nextPart] = nextPart.Anchored
-        nextPart.AssemblyLinearVelocity = Vector3.zero
-        nextPart.AssemblyAngularVelocity = Vector3.zero
-        nextPart.Anchored = true
-    end
-    supportOnWorkbench(material)
-
-    state.material = material
-    state.work = part
-    state.materialAnchors = anchors
-    state.offset = 0
-    state.stroke = 0
-    state.lastStroke = 0
-    state.lastTurn = 0
-    state.direction = 0
-    state.reversals = 0
-    state.awaitRelease = true
-    state.lastMove = 0
-    locked[material] = player
-
-    remote:FireClient(player, 'FabricationTargetChanged', material)
 end
 
 local function cutSheet(state)
@@ -878,8 +774,6 @@ onRequest = function(player, action, ...)
         state.target.CFrame = CFrame.new(point) * rotation
     elseif action == 'FabricationMove' and state.mode == 'Fabrication' then
         moveFabrication(player, state, ...)
-    elseif action == 'FabricationTarget' and state.mode == 'Fabrication' then
-        switchFabricationTarget(player, state, ...)
     elseif action == 'FabricationSettings' and state.mode == 'Fabrication' then
         local profile, radius = ...
         if state.kind == 'File' and (profile == 'Round' or profile == 'Chamfer')

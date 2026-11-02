@@ -43,13 +43,11 @@ local function makeButton(parent, text, callback)
     return button
 end
 
-function Inspector.new(onTool, onExit, onFileSettings, onMaterial)
+function Inspector.new(onTool, onExit, onFileSettings)
     local self = setmetatable({}, Inspector)
     self.onTool = onTool
     self.onExit = onExit
     self.onFileSettings = onFileSettings
-    self.onMaterial = onMaterial
-    self.materials = {}
     self.fileShape = 'Round'
     self.fileRadius = 1.25
     self.fileMaxRadius = 12
@@ -321,84 +319,6 @@ function Inspector:refreshTools()
     end
 end
 
-function Inspector:refreshMaterials(force)
-    if not self.material or not self.kind then return end
-
-    local materials = {}
-    for _, node in workspace:GetDescendants() do
-        if (node:IsA('BasePart') or node:IsA('Model'))
-            and node:GetAttribute('isMaterial') == true
-            and node:GetAttribute('OnWorkbench') == true then
-            table.insert(materials, node)
-        end
-    end
-    table.sort(materials, function(a, b)
-        if a.Name == b.Name then return a:GetFullName() < b:GetFullName() end
-        return a.Name < b.Name
-    end)
-
-    local changed = force == true or #materials ~= #self.materials
-    if not changed then
-        for index, material in materials do
-            if self.materials[index] ~= material then
-                changed = true
-                break
-            end
-        end
-    end
-    self.materials = materials
-    if not changed then return end
-
-    for _, child in self.choices:GetChildren() do
-        if child:IsA('TextButton') or child:IsA('TextLabel') then child:Destroy() end
-    end
-
-    local heading = makeText(self.choices, 'WORKPIECES  /  TAB TO SWITCH', 22, 11)
-    heading.LayoutOrder = -1
-
-    if #materials == 0 then
-        makeText(self.choices, 'No other materials on bench', 35, 12)
-        return
-    end
-
-    for index, material in materials do
-        local isCurrent = material == self.material
-        local title = string.format('%d  %s%s', index, material.Name,
-            if isCurrent then '  [ACTIVE]' else '')
-        local button = makeButton(self.choices, title, function()
-            if self.onMaterial then self.onMaterial(material) end
-        end)
-        button.LayoutOrder = index
-        if isCurrent then
-            button.BackgroundColor3 = Color3.fromRGB(96, 116, 81)
-        end
-    end
-end
-
-function Inspector:focusMaterial(material)
-    if not material or not material.Parent or not self.material then return end
-    self.material = material
-    self.name.Text = material.Name
-    self.focusOffset = Vector3.zero
-
-    local size = if material:IsA('BasePart') then material.Size
-        else material:GetExtentsSize()
-    self.distance = math.clamp(math.max(size.X, size.Y, size.Z) * 3.5, 4, 15)
-
-    if self.kind == 'File' then
-        local maxSize = math.floor(size.Y / 0.04 * 0.42 * 100) / 100
-        self.fileMaxRadius = math.max(0.5, math.min(12, maxSize))
-        self.fileRadius = math.clamp(self.fileRadius, 0.5, self.fileMaxRadius)
-        self.sizeEntry.Text = string.format('%.2f', self.fileRadius)
-        self.fileSizeHelp.Text = string.format('Profile size 0.50–%.2f mm', self.fileMaxRadius)
-        if self.onFileSettings then
-            self.onFileSettings(self.fileShape, self.fileRadius)
-        end
-    end
-
-    self:refreshMaterials(true)
-end
-
 function Inspector:open(material)
     if not material or not material.Parent then return end
 
@@ -466,14 +386,8 @@ function Inspector:setTool(kind)
         elseif kind == 'File' then
         'Hover an edge: select filing side\nHold LMB + mouse: file strokes\nR: roll tool | RMB: orbit | ESC: exit'
         else 'RMB: orbit | MMB: pan | wheel: zoom\nChoose a physical tool resting on the table.'
-    self.choices.Visible = true
-    if kind then
-        self:refreshMaterials(true)
-    else
-        self.tools = {}
-        self.materials = {}
-        self:refreshTools()
-    end
+    self.choices.Visible = kind == nil
+    if not kind then self.tools = {} self:refreshTools() end
 end
 
 function Inspector:status(message)

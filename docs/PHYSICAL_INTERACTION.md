@@ -1,5 +1,7 @@
 # OPENWORKS — Physical interaction and precision workbench
 
+> Stability rollback: the experimental on-the-fly material switching and recent saw orientation rewrite were temporarily disabled after a regression. Exit and re-enter precision mode to change workpieces. The existing `BladeEdge` attachment and `R` tool-roll controls remain available.
+
 All interactions use actual Workspace objects. No Roblox Tool, Backpack, hotbar, or old fabrication UI.
 
 ## Required workshop objects
@@ -20,7 +22,7 @@ In precision mode, **R** rolls the physical tool 90 degrees around the stroke ax
 
 The physical tool is never cloned into a separate cosmetic. **Precision fabrication does not use AlignPosition or AlignOrientation.** Instead, the server temporarily anchors the entire rigid tool assembly and interpolates its pivot toward the blade-aligned target each Heartbeat (smooth kinematic CFrame motion). Every working tool part stays non-collidable, non-touchable, and non-queryable during the session. On exit, it returns to its resting pose above the tabletop, then its original anchor and collision states are restored. **Normal free dragging continues to use physics constraints**, unchanged.
 
-Saw orientation no longer uses a blind 180° correction. Without `BladeEdge`, OPENWORKS finds a physical blade part (name containing `blade`) and uses its longest axis as the stroke direction. A part named `Handle` or `Grip` defines which side of the blade should face upward. If no identifiable parts exist, the whole tool's longest dimension determines stroke direction while the shorter working side is aligned over the stock. `R` / `Shift+R` still fine-tune roll; a correctly oriented `BladeEdge` takes precedence over automatic inference.
+For saws without an authored `BladeEdge`, the initial tool roll now starts inverted 180° relative to the old fallback. This corrects the upside-down default for the test saw; `R` / `Shift+R` remain available to adjust custom tool geometry. A properly oriented `BladeEdge` Attachment continues to override the fallback without the automatic flip.
 
 ## Free-mode interaction
 
@@ -33,8 +35,7 @@ Saw orientation no longer uses a blind 180° correction. Without `BladeEdge`, OP
 - Short-click a material, or short-click a tool when exactly one workpiece is on the bench.
 - **RMB drag** orbits; **MMB drag** pans; **wheel** zooms around the physical workpiece. Entering inspection and refocusing on another material ease toward the target instead of snapping. Exiting blends the inspection camera back to the gameplay camera over roughly 0.65 seconds.
 - In the right-side panel, select a saw/file that is physically present on the bench.
-- **While sawing or filing, switch workpieces without exiting:** Click another physical material directly on the table, choose it in the precision panel's **WORKPIECES** list, or press **Tab** / **Shift+Tab** to cycle. The same physical tool stays active, the selected object outline updates, and the camera smoothly follows the new target. The server verifies the new material is on the bench, frees the previous material, and holds the new workpiece. Switching resets stroke progress but keeps the selected tool and its profile settings.
-- **Escape** exits, restores normal camera, and releases the temporary kinematic fabrication control. Finishing a cut, filing pass, or material switch does **not** exit inspection.
+- **Escape** exits, restores normal camera, and releases the temporary kinematic fabrication control. Finishing a cut or filing pass does **not** exit inspection.
 - The inspection camera no longer requires the default Roblox `PlayerModule`, which may not exist in customized player scripts.
 
 ## Saw positioning and cutting
