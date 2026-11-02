@@ -76,7 +76,29 @@ local function toolKind(item)
     if explicit == 'Saw' or explicit == 'File' then return explicit end
     local name = item.Name:lower()
     if name:find('saw', 1, true) then return 'Saw' end
-    if name:find('file', 1, true) or name:find('filer', 1, true) then return 'File' end
+    if name:find('file', 1, true) then return 'File' end
+end
+
+local function contactMarker(item, name)
+    local marker = item:FindFirstChild(name, true)
+    if marker and marker:IsA('Attachment') then
+        return marker
+    end
+end
+
+local function setToolCollision(item, state)
+    state.collisions = {}
+    if item:IsA('BasePart') then
+        state.collisions[item] = item.CanCollide
+        item.CanCollide = false
+        return
+    end
+    for _, node in item:GetDescendants() do
+        if node:IsA('BasePart') then
+            state.collisions[node] = node.CanCollide
+            node.CanCollide = false
+        end
+    end
 end
 
 local function makeMotor(part, hit)
@@ -146,6 +168,11 @@ local function finish(player)
     active[player] = nil
     locked[state.item] = nil
     if state.material then locked[state.material] = nil end
+    if state.collisions then
+        for part, wasCollidable in state.collisions do
+            if part.Parent then part.CanCollide = wasCollidable end
+        end
+    end
     destroyMotor(state)
     if player.Parent then remote:FireClient(player, 'Ended') end
 end
@@ -242,7 +269,13 @@ local function startFabrication(player, material, tool)
     state.kind = kind
     state.material = material
     state.work = work
-    state.initialRotation = part.CFrame.Rotation
+
+    local marker = contactMarker(tool, if kind == 'Saw' then 'BladeEdge' else 'FileFace')
+    state.grab.CFrame = if marker then part.CFrame:ToObjectSpace(marker.WorldCFrame)
+        else CFrame.new(0, -part.Size.Y * 0.5, 0)
+    state.target.CFrame = part.CFrame * state.grab.CFrame
+
+    setToolCollision(tool, state)
     state.offset = 0
     state.stroke = 0
     state.lastStroke = 0
@@ -342,11 +375,15 @@ local function moveFabrication(player, state, stroke, offset, axis)
         else Vector3.new(stroke * 0.9, 0, 0)
     local cross = if axis == 'X' then Vector3.new(state.offset, 0, 0)
         else Vector3.new(0, 0, state.offset)
-    local toolHeight = math.min(2, state.part.Size.Y * 0.5 + 0.1)
     local pos = work.CFrame:PointToWorldSpace(cross + travel
-        + Vector3.new(0, size.Y * 0.5 + toolHeight, 0))
+        + Vector3.new(0, size.Y * 0.5 + 0.12, 0))
     if (pos - root.Position).Magnitude > 30 then finish(player) return end
-    state.target.CFrame = CFrame.new(pos) * state.initialRotation
+
+    local strokeDirection = if axis == 'X' then work.CFrame.LookVector
+        else work.CFrame.RightVector
+    local upward = work.CFrame.UpVector
+    state.target.CFrame = CFrame.fromMatrix(pos, strokeDirection,
+        upward, strokeDirection:Cross(upward))
 
     local difference = stroke - state.lastStroke
     local direction = if difference > 0.05 then 1 elseif difference < -0.05 then -1 else 0
@@ -362,7 +399,12 @@ local function moveFabrication(player, state, stroke, offset, axis)
     state.lastStroke = stroke
 
     if state.reversals >= 12 then
-        local replacement, message = cutSheet(state)
+        local ok, replacement, message = pcall(cutSheet, state)
+        if not ok then
+            warn('[OPENWORKS:Fabrication]', replacement)
+            message = 'Fabrication failed: ' .. tostring(replacement)
+            replacement = nil
+        end
         finish(player)
         remote:FireClient(player, 'MachiningCompleted', replacement, message)
     end
