@@ -3,9 +3,7 @@ local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('F
 
 local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Cut'))
 local Boolean = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Boolean'))
-local Surface = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Surface'))
 local Union = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Union'))
-local Weld = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Weld'))
 
 local function close(a, b)
     return FORM.volumeClose(a, b)
@@ -91,40 +89,51 @@ local function run()
     end
     assert(close(remaining, 84000), 'Subtraction did not conserve stock material')
 
-    local rectangularSurface, rectangularStats = Union.surface(leftovers)
-    assert(#rectangularSurface.triangles > 0, 'Rectangular union produced no exposed triangles')
-    assert(rectangularStats.outputTriangles > 0, 'Missing union output statistics')
-    print(string.format('[FORM] Rectangular surface clipping: %d input / %d output triangles',
-        rectangularStats.inputTriangles, rectangularStats.outputTriangles))
+    local failures = {}
 
-    local welded, weldStats = Weld.build(rectangularSurface)
-    print(string.format('[FORM] Rectangular weld: %d -> %d vertices, %d triangles, %d T-junctions, %d collapsed, manifold=%s',
-        weldStats.verticesBefore, weldStats.verticesAfter, weldStats.trianglesAfter,
-        weldStats.tJunctions, weldStats.collapsedFaces, tostring(weldStats.valid)))
-    print(string.format('[FORM] Weld repair: %d edge splits, converged=%s', weldStats.repairedJunctions, tostring(weldStats.converged)))
-    for code, count in weldStats.issueCounts do
-        print(string.format('[FORM] Weld topology issue: %s x%d', code, count))
+    local function verifyUnified(label, piecesToUnify, expected)
+        local success, mesh, reason, stats = pcall(Union.reconstruct, piecesToUnify, expected)
+        if not success then
+            failures[#failures + 1] = label .. ': ' .. tostring(mesh)
+            warn('[FORM] ' .. label .. ' reconstruction error: ' .. tostring(mesh))
+            return
+        end
+
+        if not mesh then
+            failures[#failures + 1] = label .. ': ' .. tostring(reason)
+            warn('[FORM] ' .. label .. ' reconstruction rejected: ' .. tostring(reason))
+            if stats and stats.weld then
+                local weld = stats.weld
+                print(string.format('[FORM] %s weld: %d triangles, %d edge splits, %d T-junctions, Euler=%d, components=%d',
+                    label, weld.trianglesAfter, weld.repairedJunctions, weld.tJunctions,
+                    weld.eulerCharacteristic, weld.connectedComponents))
+                for code, count in weld.issueCounts do
+                    print(string.format('[FORM] %s topology: %s x%d', label, code, count))
+                end
+                for _, detail in weld.issueDetails do print('[FORM] Fault edge: ' .. detail) end
+                for _, detail in weld.junctionDetails do print('[FORM] Residual T-junction: ' .. detail) end
+            end
+            return
+        end
+
+        local weld = stats.weld
+        if weld.connectedComponents ~= 1 or weld.eulerCharacteristic ~= 0 then
+            failures[#failures + 1] = label .. ': unexpected topology / hole genus'
+        end
+        assert(FORM.validate(mesh).ok, label .. ' reconstructed mesh failed validation')
+        assert(close(FORM.signedVolume(mesh), expected), label .. ' reconstructed volume mismatch')
+        print(string.format('[FORM] %s unified: %d vertices, %d triangles, components=%d, Euler=%d, volume=%.4f mm^3',
+            label, weld.verticesAfter, weld.trianglesAfter, weld.connectedComponents,
+            weld.eulerCharacteristic, FORM.signedVolume(mesh)))
     end
-    for _, detail in weldStats.issueDetails do
-        print('[FORM] Fault edge: ' .. detail)
-    end
-    for _, detail in weldStats.junctionDetails do
-        print('[FORM] Residual T-junction: ' .. detail)
-    end
-    if weldStats.valid then
-        local delta = FORM.signedVolume(welded) - remaining
-        print(string.format('[FORM] Welded volume delta: %+.6f mm^3', delta))
-        assert(FORM.volumeClose(FORM.signedVolume(welded), remaining),
-            'Welded surface volume does not match convex component volume')
-    else
-        print('[FORM] Unified surface not yet manifold; active preview remains unchanged')
-    end
+
+    verifyUnified('Rectangular', leftovers, remaining)
 
     print(string.format('[FORM] Boolean subtract: %d pieces, removed %.4f mm^3', #leftovers, removed))
-    local cylinder = FORM.cylinder(10, 70, 12)
+    local cylinder = FORM.cylinder(7, 70, 12)
     assert(FORM.validate(cylinder).ok, 'Cylindrical cutter is not watertight')
 
-    local expectedCylinder = 12 * 10 * 10 * math.sin(2 * math.pi / 12) * 70 / 2
+    local expectedCylinder = 12 * 7 * 7 * math.sin(2 * math.pi / 12) * 70 / 2
     assert(math.abs(FORM.signedVolume(cylinder) - expectedCylinder) < 0.05,
         'Cylinder mesh has incorrect volume')
 
@@ -141,20 +150,13 @@ local function run()
         'Incorrect drilling removal volume')
     assert(math.abs(drillRemaining + drillRemoved - FORM.signedVolume(box)) < 0.01,
         'Drilling failed volume conservation')
-    local exposed, stats = Surface.extract(drilled)
-    local originalFaces = 0
-    for _, piece in drilled do originalFaces += #piece.triangles end
-    assert(#exposed.triangles > 0 and #exposed.triangles <= originalFaces,
-        'Surface pass produced invalid triangle count')
-    assert(stats.discarded + #exposed.triangles == originalFaces,
-        'Surface pass failed triangle accounting')
-    print(string.format('[FORM] Surface pass: %d of %d triangles retained; %d partial-overlap warnings',
-        #exposed.triangles, originalFaces, stats.uncertain))
+    verifyUnified('Drilled', drilled, drillRemaining)
 
     print(string.format('[FORM] Drilled %d-sided opening: removed %.4f mm^3 across %d solids',
         12, drillRemoved, #drilled))
 
-    print('[FORM] Foundation, coincident cuts, chained cuts and convex subtraction passed')
+    assert(#failures == 0, '[FORM] Topology reconstruction failures: ' .. table.concat(failures, ' | '))
+    print('[FORM] Foundation, cuts, subtraction, and unified through-hole reconstruction passed')
 end
 
 run()
