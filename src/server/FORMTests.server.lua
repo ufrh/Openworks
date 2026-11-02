@@ -63,7 +63,17 @@ local function run()
     print(string.format('[FORM] Chained cuts: %d solids, total volume %.6f mm^3', #pieces, total))
     assert(close(total, FORM.signedVolume(box)), 'Chained cuts changed total material volume')
 
-    print('[FORM] Foundation, planar split and chained-cut tests passed')
+    local beforeVertices, beforeTriangles = #box.vertices, #box.triangles
+    local touching, touchReason = Cut.split(box, Vector3.new(50, 0, 0), Vector3.xAxis)
+    assert(not touching and touchReason == 'PLANE_TOUCHES_VERTEX', 'Vertex-touching cut was not rejected')
+
+    local diagonal, diagonalReason = Cut.split(box, Vector3.zero, Vector3.new(1, 1, 0))
+    assert(not diagonal and diagonalReason == 'PLANE_TOUCHES_VERTEX', 'Edge-touching cut was not rejected')
+
+    assert(#box.vertices == beforeVertices and #box.triangles == beforeTriangles, 'Failed cut mutated input')
+    assert(FORM.validate(box).ok, 'Failed cut damaged original geometry')
+
+    print('[FORM] Foundation, planar split, chained-cut and rejection tests passed')
 end
 
 run()
