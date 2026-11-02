@@ -35,11 +35,7 @@ For saws without an authored `BladeEdge`, the initial tool roll now starts inver
 - Short-click a material, or short-click a tool when exactly one workpiece is on the bench.
 - **RMB drag** orbits; **MMB drag** pans; **wheel** zooms around the physical workpiece. Entering inspection and refocusing on another material ease toward the target instead of snapping. Exiting blends the inspection camera back to the gameplay camera over roughly 0.65 seconds.
 - In the right-side panel, select a saw/file that is physically present on the bench.
-- **P — Position Material:** Pause machining while keeping the same real sheet selected and secured. Drag it with LMB along the workbench on a **0.04-stud (1 mm) grid**. The server clamps its footprint to an authored `surface` and raises it above the tabletop after each move or rotation.
-- **Flip / rotate:** Use `X` / `Z` for 90° local-axis tilts (Shift reverses), `F` / `G` for 180° flips around local X/Z, and `Y` for 15° turns (Shift reverses). The positioning panel also contains physical buttons for these operations. Press `P` again to resume fabrication; `Esc` still exits inspection altogether. RMB camera orbit remains available.
-- **Accessible filing edges:** The teal filing guide and file toolpath adapt to whichever local face points upward after repositioning. Flipping makes the underside edges accessible; tilting a plate onto its side exposes other edge pairs. The real file travels end-to-end along the selected exposed edge.
-- **Saw clearance and direction:** During each saw stroke, the tool's rotated bounding box is checked against the top of the current workpiece; it is elevated rather than allowed to dip beneath the cutting surface. Both saw and file travel directions have been reversed relative to earlier builds.
-- **Escape** exits, restores normal camera, and releases the temporary kinematic fabrication control. Finishing a cut, filing pass, or repositioning does **not** exit inspection.
+- **Escape** exits, restores normal camera, and releases the temporary kinematic fabrication control. Finishing a cut or filing pass does **not** exit inspection.
 - The inspection camera no longer requires the default Roblox `PlayerModule`, which may not exist in customized player scripts.
 
 ## Saw positioning and cutting
@@ -58,7 +54,7 @@ For saws without an authored `BladeEdge`, the initial tool roll now starts inver
 1. Place a rigid unanchored file Model on the workbench, tag it `isTool = true`, and name it with `File` or set `FabricationKind = File`. Optional `FileFace` Attachment defines the physical working contact and orientation.
 2. Inspect a test sheet and select the file from the same workbench tool list. The actual file moves kinematically toward the sheet—no force-driven alignment constraints or collision.
 3. Hover the sheet near any edge. A **teal line** previews which of the four top-side X/Z edges is selected.
-4. The **File Settings** section of the inspection panel lets you switch between **Round** and **Chamfer** and change **Size (mm)** with +/- buttons or an editable value. Sizes are clamped based on the selected plate thickness and validated again on the server. Rotate or flip the workpiece with P to work on a different face before filing; its original FORM geometry stays attached to the same physical Part.
+4. The **File Settings** section of the inspection panel lets you switch between **Round** and **Chamfer** and change **Size (mm)** with +/- buttons or an editable value. Sizes are clamped based on the selected plate thickness and validated again on the server.
 5. Hold LMB and move the mouse back and forth. The physical file now sweeps almost the full edge length, from one endpoint to the other. Five qualified direction reversals apply a real FORM geometry modification to the chosen top edge.
 6. On completion, FORM generates a rounded multi-segment edge or flat chamfer. The server bakes an EditableMesh using `AssetService:CreateDataModelContentAsync` into static, replicating mesh content, and builds a welded MeshPart with convex-hull collision. The mesh is explicitly untextured, while the original Part remains invisible and non-colliding as the workpiece's identity backing.
 7. Release LMB, hover another edge, and continue as often as needed. **Esc** is the only regular exit.

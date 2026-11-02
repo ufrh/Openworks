@@ -8,7 +8,6 @@ local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 local Openworks = ReplicatedStorage:WaitForChild('Openworks')
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
-local WorkSurface = require(Openworks:WaitForChild('FORMWorkSurface'))
 local Inspector = require(script.Parent:WaitForChild('InspectionCamera'))
 local remote = Openworks:WaitForChild('PhysicalInteraction')
 local receiverWarned = false
@@ -159,22 +158,7 @@ local function setFileSettings(profile, radius)
     end
 end
 
-local function setPositionMode(enabled)
-    if fabrication and not fabrication.down then
-        if not send('MaterialPositionMode', enabled) then
-            inspector:status('Interaction receiver unavailable')
-        end
-    end
-end
-
-local function rotateMaterial(axis, degrees)
-    if fabrication and fabrication.positioning then
-        send('MaterialRotate', axis, degrees)
-    end
-end
-
-inspector = Inspector.new(chooseTool, exitInspect,
-    setFileSettings, setPositionMode, rotateMaterial)
+inspector = Inspector.new(chooseTool, exitInspect, setFileSettings)
 
 local function inspect(material)
     if not material or not material.Parent then return end
@@ -209,27 +193,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
         return
     end
 
-    if fabrication and not processed then
-        if input.KeyCode == Enum.KeyCode.P then
-            setPositionMode(not fabrication.positioning)
-            return
-        end
-
-        if fabrication.positioning then
-            local backwards = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-                or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-            local sign = if backwards then -1 else 1
-
-            if input.KeyCode == Enum.KeyCode.X then rotateMaterial('X', 90 * sign)
-            elseif input.KeyCode == Enum.KeyCode.Z then rotateMaterial('Z', 90 * sign)
-            elseif input.KeyCode == Enum.KeyCode.F then rotateMaterial('X', 180)
-            elseif input.KeyCode == Enum.KeyCode.G then rotateMaterial('Z', 180)
-            elseif input.KeyCode == Enum.KeyCode.Y then rotateMaterial('Y', 15 * sign)
-            end
-            return
-        end
-    end
-
     if input.KeyCode == Enum.KeyCode.Q and fabrication and not processed then
         fabrication.axis = if fabrication.axis == 'X' then 'Z' else 'X'
         fabrication.stroke = 0
@@ -247,24 +210,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
     if input.UserInputType ~= Enum.UserInputType.MouseButton1 or processed then return end
     if fabrication then
-        if fabrication.positioning then
-            local target = mouse.Target
-            local material = fabrication.material
-            if target and material and
-                (target == material or target:IsDescendantOf(material)) then
-                local work = if material:IsA('BasePart') then material
-                    else material.PrimaryPart
-                if work then
-                    local hit = mouse.Hit.Position
-                    fabrication.materialDrag = {
-                        planeY = hit.Y,
-                        offset = work.Position - hit,
-                    }
-                end
-            end
-            return
-        end
-
         fabrication.down = true
         if not inspector.rightHeld and not inspector.middleHeld then
             fabrication.previousMouseBehavior = UserInputService.MouseBehavior
@@ -340,7 +285,6 @@ UserInputService.InputEnded:Connect(function(input)
     end
 
     if fabrication then
-        fabrication.materialDrag = nil
         fabrication.down = false
         fabrication.stroke = 0
         if fabrication.previousMouseBehavior then
@@ -352,9 +296,6 @@ end)
 
 UserInputService.WindowFocusReleased:Connect(function()
     dropHeld(false)
-    if fabrication then
-        fabrication.materialDrag = nil
-    end
     if fabrication and fabrication.down then
         fabrication.down = false
         fabrication.stroke = 0
@@ -391,7 +332,6 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             kind = a, material = b, tool = c,
             down = false, stroke = 0, offset = 0, axis = 'X',
             fileSide = 1, pointerMoved = false,
-            positioning = false, materialDrag = nil,
         }
         inspector:setTool(a)
         if a == 'File' then
@@ -402,33 +342,6 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             inspector:status('Hover the sheet to set a cut, then hold LMB to saw')
         else
             inspector:status('Hover an edge, hold LMB and stroke to file it')
-        end
-    elseif action == 'MaterialPositionMode' then
-        if fabrication then
-            fabrication.positioning = a == true
-            fabrication.down = false
-            fabrication.stroke = 0
-            fabrication.materialDrag = nil
-            fabrication.pointerMoved = true
-            guide.Parent = if fabrication.positioning then nil else workspace
-            if fabrication.previousMouseBehavior then
-                UserInputService.MouseBehavior = fabrication.previousMouseBehavior
-                fabrication.previousMouseBehavior = nil
-            end
-            inspector:setPositionMode(fabrication.positioning)
-            inspector:status(if fabrication.positioning
-                then 'Drag or rotate the secured sheet. Press P when finished.'
-                else 'Material secured. Continue filing or sawing.')
-        end
-    elseif action == 'MaterialPositionChanged' then
-        if fabrication then
-            fabrication.pointerMoved = true
-            if fabrication.kind == 'File' and fabrication.material:IsA('BasePart') then
-                local face = WorkSurface.face(fabrication.material)
-                if fabrication.axis == face then
-                    fabrication.axis = if face == 'X' then 'Z' else 'X'
-                end
-            end
         end
     elseif action == 'Progress' then
         if fabrication then
@@ -538,27 +451,6 @@ RunService.RenderStepped:Connect(function(dt)
         end
     end
 
-    if fabrication and fabrication.positioning then
-        guide.Parent = nil
-        if fabrication.materialDrag then
-            local drag = fabrication.materialDrag
-            local pointer = UserInputService:GetMouseLocation()
-            local ray = workspace.CurrentCamera:ViewportPointToRay(pointer.X, pointer.Y)
-            if math.abs(ray.Direction.Y) > 0.015 then
-                local t = (drag.planeY - ray.Origin.Y) / ray.Direction.Y
-                if t > 0 and t < 200 then
-                    local destination = ray.Origin + ray.Direction * t + drag.offset
-                    elapsed += dt
-                    if elapsed >= 1 / 30 then
-                        elapsed = 0
-                        send('MaterialPlace', destination)
-                    end
-                end
-            end
-        end
-        return
-    end
-
     if fabrication then
         local item = fabrication.material
         local work = if item and item:IsA('BasePart') then item
@@ -583,8 +475,15 @@ RunService.RenderStepped:Connect(function(dt)
                 if hit and (hit.Instance == work or hit.Instance:IsDescendantOf(work)) then
                     local point = work.CFrame:PointToObjectSpace(hit.Position)
                     if fabrication.kind == 'File' then
-                        fabrication.axis, fabrication.fileSide =
-                            WorkSurface.pick(work, hit.Position)
+                        local distanceX = size.X * 0.5 - math.abs(point.X)
+                        local distanceZ = size.Z * 0.5 - math.abs(point.Z)
+                        if distanceX <= distanceZ then
+                            fabrication.axis = 'X'
+                            fabrication.fileSide = if point.X >= 0 then 1 else -1
+                        else
+                            fabrication.axis = 'Z'
+                            fabrication.fileSide = if point.Z >= 0 then 1 else -1
+                        end
                     else
                         fabrication.offset = if fabrication.axis == 'X' then point.X else point.Z
                     end
@@ -600,11 +499,16 @@ RunService.RenderStepped:Connect(function(dt)
                 then Color3.fromRGB(125, 215, 184)
                 else Color3.fromRGB(239, 182, 81)
             if fabrication.kind == 'File' then
-                local guideFrame, guideSize = WorkSurface.guide(work,
-                    fabrication.axis, fabrication.fileSide)
-                if guideFrame then
-                    guide.CFrame = guideFrame
-                    guide.Size = guideSize
+                if fabrication.axis == 'X' then
+                    guide.Size = Vector3.new(0.06, 0.02, size.Z)
+                    guide.CFrame = work.CFrame
+                        * CFrame.new(fabrication.fileSide * size.X * 0.5,
+                            guideHeight, 0)
+                else
+                    guide.Size = Vector3.new(size.X, 0.02, 0.06)
+                    guide.CFrame = work.CFrame
+                        * CFrame.new(0, guideHeight,
+                            fabrication.fileSide * size.Z * 0.5)
                 end
             elseif fabrication.axis == 'X' then
                 guide.Size = Vector3.new(0.055, 0.02, size.Z)
