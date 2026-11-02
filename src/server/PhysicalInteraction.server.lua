@@ -513,6 +513,7 @@ local function cutSheet(state)
                 x = dimensions.X, y = dimensions.Y, z = dimensions.Z,
             }, work.CFrame)
         end
+        item.frame = work.CFrame
 
         local axis, side = state.axis, state.fileSide
         local half = work.Size * 0.5
@@ -530,16 +531,18 @@ local function cutSheet(state)
         end
         if not solid then return nil, stats end
 
-        local visual = MeshRenderer.create(solid, work)
+        local previous = work:FindFirstChild('FORMFiledVisual')
+        local visual = MeshRenderer.create(solid, work, previous or work)
         local weld = Instance.new('WeldConstraint')
         weld.Part0 = work
         weld.Part1 = visual
         weld.Parent = visual
 
-        local previous = work:FindFirstChild('FORMFiledVisual')
         visual.Parent = work
         if previous then previous:Destroy() end
         work.Transparency = 1
+        work.CanCollide = false
+        work.CanQuery = true
 
         item.solid = solid
         modifiedSolids[work] = item
@@ -550,6 +553,10 @@ local function cutSheet(state)
 
         return work, string.format('%s edge %.2f mm — select another edge or Esc',
             state.fileShape, state.fileRadius)
+    end
+
+    if modifiedSolids[work] then
+        return nil, 'This filed shape needs the mesh-aware saw adapter; use unfiled stock for cutting'
     end
 
     local FORM = require(Openworks:WaitForChild('FORM'))
@@ -714,6 +721,10 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
 
     if state.reversals < 5 or state.processing then return end
 
+    local aimWorld = work.CFrame:PointToWorldSpace(
+        if axis == 'X' then Vector3.new(state.offset, size.Y * 0.5, 0)
+        else Vector3.new(0, size.Y * 0.5, state.offset))
+
     state.processing = true
     state.awaitRelease = true
     local ok, selected, message = pcall(cutSheet, state)
@@ -731,7 +742,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.processing = false
 
     if active[player] == state then
-        remote:FireClient(player, 'MachiningCompleted', selected, message)
+        remote:FireClient(player, 'MachiningCompleted', selected, message, aimWorld)
     end
 end
 
