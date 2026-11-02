@@ -152,7 +152,13 @@ local function chooseTool(tool)
     end
 end
 
-inspector = Inspector.new(chooseTool, exitInspect)
+local function setFileSettings(profile, radius)
+    if fabrication and fabrication.kind == 'File' then
+        send('FabricationSettings', profile, radius)
+    end
+end
+
+inspector = Inspector.new(chooseTool, exitInspect, setFileSettings)
 
 local function inspect(material)
     if not material or not material.Parent then return end
@@ -328,6 +334,9 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             fileSide = 1, pointerMoved = false,
         }
         inspector:setTool(a)
+        if a == 'File' then
+            setFileSettings(inspector.fileShape, inspector.fileRadius)
+        end
         guide.Parent = workspace
         if a == 'Saw' then
             inspector:status('Hover the sheet to set a cut, then hold LMB to saw')
