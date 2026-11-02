@@ -1,6 +1,6 @@
 # OPENWORKS — Physical Work Models (Prototype)
 
-The equipped Roblox Tool retains its **visible cosmetic model in the player's hand**. During an active fabrication pass, the hand cosmetic is temporarily hidden and the matching **ReplicatedStorage working model** is cloned into Workspace and independently moved through the secured workpiece. At release or completion, the hand cosmetic returns. The working model remains local to the player in the current prototype.
+The equipped Roblox Tool retains its **visible cosmetic model in the player's hand**. When aiming at a cuttable workpiece, the hand cosmetic hides and the matching **ReplicatedStorage working model** becomes visible for positioning, before any cut begins. As soon as targeting ends or the pass is interrupted/completed, the hand cosmetic is restored. The working model is moved through secured **or loose** workpieces. All effects remain local in this prototype. The working model remains local to the player in the current prototype.
 
 ## Required assets
 
@@ -16,7 +16,7 @@ StarterPack (optional for local prototype)
 
 You can use your existing Tools in StarterPack and equip from the Roblox hotbar. The prototype's Equip buttons also look for Tools in Backpack, Character, or ReplicatedStorage. **If there is only a visual Model in ReplicatedStorage, the Equip button makes a local handleless activation Tool** so a missing Tool doesn't block testing.
 
-The original asset is never moved out of ReplicatedStorage. A clone can be attached cosmetically to an otherwise empty hand Tool, while a **separate clone** drives actual working motion in Workspace. The two do not appear simultaneously: the hand cosmetic hides for the active pass and is restored afterward. All moving working-model pieces are anchored, noncolliding, nonqueryable, and locally controlled. They cannot push stock by contact yet; stock separation and mass remain determined by FORM.
+The original asset is never moved out of ReplicatedStorage. A clone can be attached cosmetically to an otherwise empty hand Tool, while a **separate clone** drives actual working motion in Workspace. The two do not appear simultaneously: the hand cosmetic hides during **preview positioning and active sawing**, and is restored afterward. All moving working-model pieces are anchored, noncolliding, nonqueryable, and locally controlled. They cannot push stock by contact yet; stock separation and mass remain determined by FORM.
 
 ## Alignment markers (recommended)
 
@@ -29,12 +29,12 @@ The controller aligns these markers with the chosen cutting/filing frame. For Ha
 
 ## Saw interaction
 
-1. Equip `Hacksaw`, secure stock, aim at the surface.
-2. On equip, the hand-held cosmetic remains visible and the camera automatically **sets CameraSubject to the selected metal workpiece**, then uses a Scriptable orbit centered on its changing position (V toggle; T top-down; hold RMB to orbit; wheel zoom). **F** changes selection and camera focus to the stock under the cursor. After a cut, the camera transfers to the surviving selected fragment. On unequip, it restores the previous camera type and subject. Gold guide shows FORM's cutting plane.
-3. Holding LMB hides the hand cosmetic, shows the actual Workspace saw and reciprocates the blade **along its length**, while its contact point feeds **from one side of the intended cut to the other** and progressively penetrates the metal. The combined cut travel drives the progress bar.
-4. A thin, dark **visual kerf proxy** grows **along the cut** as the saw advances. This is intentionally a cheap overlay rather than an EditableMesh change every frame.
-5. When the saw completes its full travel, FORM performs the true cut exactly once and the offcut falls. Releasing early cancels without changing the stock. The original equipped cosmetic is restored at either outcome.
-6. Q/E rotate the plane; **R rotates the working model** by 90 degrees, **Shift+R flips the tooth-facing direction** (neither changes the FORM cut plane); F selects/focuses hovered metal, V toggles workpiece orbit, T sets top-down, RMB drag orbits, and the wheel zooms.
+1. Equip `Hacksaw` and aim at any raw-stock piece, secured **or unanchored**. Securing is optional for sawing (but still required for the present filing operation).
+2. When the **selected** stock is secured, the camera uses Roblox's built-in `CameraType.Custom` and `CameraSubject = selectedPart` with an initial close-up of about 4.5 studs, allowing **normal RMB orbit** and **native mouse-wheel zoom** (0.7–22 studs). No scriptable camera rotation is used. **Loose stock never triggers the workpiece camera**: your usual camera stays intact. **F** selects and focuses stock under the cursor; **V** enables/disables automatic secured-stock focus. Camera subject and previous zoom limits are restored when unsecuring or unequipping. Gold preview shows FORM's cutting plane.
+3. The working Workspace saw appears **while positioning** along the gold guide, before LMB. Holding LMB starts the reciprocal blade strokes and advances the blade **along the cut** as well as **through the metal**. The combined cut travel drives the progress bar. With loose stock, the planned cut plane and saw pose follow the piece's moving/rotating local frame.
+4. **Q/E** yaw the cut plane and **Z/X** tilt it, both in 15-degree steps. Oblique cuts can therefore cross the workpiece in 3D, subject to FORM geometry validity. A thin, dark visual kerf proxy grows along the cut without modifying an EditableMesh every frame.
+5. At full travel, FORM performs the cut exactly once. A secured piece retains workholding for the larger fragment and drops the offcut. A **loose piece splits into two loose fragments**, inheriting the previous linear and angular velocities. Releasing early cancels without changing the stock. The hand cosmetic is restored at either outcome.
+6. Q/E yaw the cutting plane, Z/X tilt it, R rotates the working model 90 degrees, and Shift+R flips the blade teeth. **F** selects hovered metal, **V** toggles secured-stock camera focus. RMB and mouse wheel use the normal Roblox camera controls. The former scriptable-orbit and T top-down overrides are removed.
 
 ## File interaction
 
@@ -45,6 +45,6 @@ The controller aligns these markers with the chosen cutting/filing frame. For Ha
 
 ## Known scope
 
-This is **kinematic, visible world-model contact**, not a physical-force solver and not per-frame mesh subtraction. Before completion, the underlying uncut mesh remains, so in some camera angles the blade may intersect visible stock; the progressive groove is only a presentation cue. Future work can provide true transient cutaway geometry and load-sensitive strokes.
+This is **kinematic, visible world-model contact**, not a physical-force solver and not per-frame mesh subtraction. Free workpieces remain physically simulated, but sawing does not apply a simulated reaction force or frictional restraint. Before completion, the underlying uncut mesh remains, so in some camera angles the blade may intersect visible stock; the progressive groove is only a presentation cue. Future work can provide true transient cutaway geometry and load-sensitive strokes.
 
 The current M1/M2 workpiece registry is client-local; no server-authoritative tool physics or cross-player replication is claimed. All edits still inherit the existing FORM convexity, tubing, and EditableMesh-memory constraints. These changes have been committed but require a live Studio test for model alignment and control feel.
