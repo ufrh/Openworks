@@ -1,6 +1,7 @@
 local FORM = require(script.Parent.FORM)
 local Cut = require(script.Parent.FORM.Cut)
 local Stock = require(script.Parent.Stock)
+local SawTube = require(script.Parent.SawTube)
 
 local SawCut = {}
 SawCut.KERF_MM = 0.8
@@ -69,6 +70,19 @@ function SawCut.preview(item, worldPoint, worldNormal, kerf)
     kerf = kerf or SawCut.KERF_MM
     assert(type(kerf) == 'number' and kerf >= 0 and kerf <= 3, 'Invalid saw kerf')
     local point, normal = parameters(item, worldPoint, worldNormal)
+    if SawTube.isTube(item) then
+        local tube, failure = SawTube.preview(item, point, normal, kerf)
+        if not tube then return nil, failure end
+        local rings = {}
+        for k, loop in tube.rings do
+            rings[k] = {}
+            for i, vertex in loop do
+                rings[k][i] = item.frame:PointToWorldSpace(vertex * Stock.SCALE)
+            end
+        end
+        return {point = worldPoint, normal = worldNormal.Unit, ring = rings[1],
+            rings = rings, kerf = kerf}
+    end
     local low, high = extent(item.solid, point, normal)
     if low >= -kerf / 2 - 0.25 or high <= kerf / 2 + 0.25 then
         return nil, 'Move the cut farther inside the material'
@@ -88,6 +102,9 @@ function SawCut.split(item, worldPoint, worldNormal, kerf)
     if not valid then return nil, reason end
 
     local point, normal = parameters(item, worldPoint, worldNormal)
+    if SawTube.isTube(item) then
+        return SawTube.split(item, point, normal, kerf)
+    end
     local upper, remainder = Cut.split(item.solid, point + normal * (kerf / 2), normal)
     if not upper then return nil, 'First saw boundary: ' .. tostring(remainder) end
 
