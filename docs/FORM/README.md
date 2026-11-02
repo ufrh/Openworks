@@ -23,3 +23,11 @@ Both operands must currently be convex. The subtraction method produces a collec
 The new coincident-cut and subtraction tests have **not yet been confirmed passing in Roblox Studio**. Never infer correctness from visual appearance alone.
 
 See SPEC.md, OPERATIONS.md and TEST_PLAN.md for the full target design.
+
+## FORM 0.7 — surface extraction prototype
+
+`Surface.extract(pieces)` filters triangles whose outward side appears to be inside another convex piece. It returns a renderable triangle soup and statistics for discarded faces and suspected partial overlaps. This reduces hidden internal surfaces in the single-EditableMesh preview.
+
+This is **not a topology union**. It does not split partially overlapped faces, merge/weld common vertices, solve T-junctions, or validate one watertight manifold. A triangle-centroid visibility test can wrongly discard a partly exposed face; the result is diagnostic and visual only, not suitable for canonical manufacturing geometry or authoritative volume calculations. Volume is still determined from the original retained convex pieces.
+
+Full unification requires intersection-aware face subdivision, surface classification, vertex welding, and manifold verification. The server tests report surface counts but do not assert manifold closure.
