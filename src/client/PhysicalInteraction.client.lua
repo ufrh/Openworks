@@ -34,6 +34,7 @@ local held
 local dragging
 local fabrication
 local pendingTool
+local pendingMaterial
 local fabricationCollision
 local elapsed = 0
 
@@ -122,6 +123,7 @@ local function cancel()
     dragging = nil
     fabrication = nil
     pendingTool = nil
+    pendingMaterial = nil
     guide.Parent = nil
     send('End')
 end
@@ -158,7 +160,17 @@ local function setFileSettings(profile, radius)
     end
 end
 
-inspector = Inspector.new(chooseTool, exitInspect, setFileSettings)
+local function chooseMaterial(material)
+    if not fabrication or not material or not material.Parent
+        or material == fabrication.material or pendingMaterial then return end
+    pendingMaterial = material
+    if not send('FabricationTarget', material) then
+        pendingMaterial = nil
+        inspector:status('Interaction server offline; cannot switch material')
+    end
+end
+
+inspector = Inspector.new(chooseTool, exitInspect, setFileSettings, chooseMaterial)
 
 local function inspect(material)
     if not material or not material.Parent then return end
@@ -193,6 +205,25 @@ UserInputService.InputBegan:Connect(function(input, processed)
         return
     end
 
+    if input.KeyCode == Enum.KeyCode.Tab and fabrication and not processed then
+        inspector:refreshMaterials()
+        local materials = inspector.materials
+        if #materials > 1 then
+            local index = 0
+            for n, material in materials do
+                if material == fabrication.material then
+                    index = n
+                    break
+                end
+            end
+            local reverse = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+                or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+            local nextIndex = ((index - 1 + (if reverse then -1 else 1)) % #materials) + 1
+            chooseMaterial(materials[nextIndex])
+        end
+        return
+    end
+
     if input.KeyCode == Enum.KeyCode.Q and fabrication and not processed then
         fabrication.axis = if fabrication.axis == 'X' then 'Z' else 'X'
         fabrication.stroke = 0
@@ -210,6 +241,15 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
     if input.UserInputType ~= Enum.UserInputType.MouseButton1 or processed then return end
     if fabrication then
+        local clicked = mouse.Target
+        if clicked then
+            local selected, kind = identify(clicked)
+            if selected and kind == 'Material' and selected ~= fabrication.material then
+                chooseMaterial(selected)
+                return
+            end
+        end
+
         fabrication.down = true
         if not inspector.rightHeld and not inspector.middleHeld then
             fabrication.previousMouseBehavior = UserInputService.MouseBehavior
@@ -343,6 +383,22 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
         else
             inspector:status('Hover an edge, hold LMB and stroke to file it')
         end
+    elseif action == 'FabricationTargetChanged' then
+        pendingMaterial = nil
+        if fabrication and a and a.Parent then
+            fabrication.material = a
+            fabrication.down = false
+            fabrication.stroke = 0
+            fabrication.offset = 0
+            fabrication.pointerMoved = true
+            if fabrication.previousMouseBehavior then
+                UserInputService.MouseBehavior = fabrication.previousMouseBehavior
+                fabrication.previousMouseBehavior = nil
+            end
+            inspector:focusMaterial(a)
+            highlight.Adornee = a
+            inspector:status('Selected ' .. a.Name .. ' — position the next operation')
+        end
     elseif action == 'Progress' then
         if fabrication then
             inspector:status('Manual passes: ' .. math.floor(a * 100) .. '%')
@@ -390,9 +446,11 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             inspector:status(b or 'Finished. Aim at the next cut and continue.')
         end
     elseif action == 'Feedback' then
+        pendingMaterial = nil
         pendingTool = nil
         if inspector.material then inspector:status(a) end
     elseif action == 'Ended' then
+        pendingMaterial = nil
         restoreFabricationCollision()
         dragging = nil
         if fabrication then
@@ -435,9 +493,13 @@ RunService.RenderStepped:Connect(function(dt)
         end
     end
 
-    if inspector.material and not fabrication and os.clock() - inspector.lastRefresh > 0.65 then
+    if inspector.material and os.clock() - inspector.lastRefresh > 0.65 then
         inspector.lastRefresh = os.clock()
-        inspector:refreshTools()
+        if fabrication then
+            inspector:refreshMaterials()
+        else
+            inspector:refreshTools()
+        end
     end
 
     if dragging and held and shifting() then
