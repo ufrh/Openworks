@@ -86,17 +86,60 @@ local function contactMarker(item, name)
     end
 end
 
+local function toolContact(tool, part, kind)
+    local marker = contactMarker(tool, if kind == 'Saw' then 'BladeEdge' else 'FileFace')
+    if marker then return marker.WorldCFrame end
+
+    local blade
+    if kind == 'Saw' then
+        for _, node in tool:GetDescendants() do
+            if node:IsA('BasePart') and (node.Name == 'Blade'
+                or node.Name == 'SawBlade' or node.Name == 'BladePart') then
+                blade = node
+                break
+            end
+        end
+        if not blade and tool:IsA('BasePart') then blade = tool end
+    end
+
+    local bounds, size
+    if blade then
+        bounds, size = blade.CFrame, blade.Size
+    elseif tool:IsA('Model') then
+        bounds, size = tool:GetBoundingBox()
+    else
+        bounds, size = part.CFrame, part.Size
+    end
+
+    local rotation = CFrame.identity
+    if size.Z > math.max(size.X, size.Y) * 1.12 then
+        rotation = CFrame.Angles(0, math.rad(-90), 0)
+    elseif size.Y > math.max(size.X, size.Z) * 1.12 then
+        rotation = CFrame.Angles(0, 0, math.rad(90))
+    end
+
+    return bounds * CFrame.new(0, -size.Y * 0.5, 0) * rotation
+end
+
 local function setToolCollision(item, state)
     state.collisions = {}
-    if item:IsA('BasePart') then
-        state.collisions[item] = item.CanCollide
-        item.CanCollide = false
-        return
+
+    local function disable(part)
+        state.collisions[part] = {
+            collide = part.CanCollide,
+            touch = part.CanTouch,
+            query = part.CanQuery,
+        }
+        part.CanCollide = false
+        part.CanTouch = false
+        part.CanQuery = false
     end
-    for _, node in item:GetDescendants() do
-        if node:IsA('BasePart') then
-            state.collisions[node] = node.CanCollide
-            node.CanCollide = false
+
+    if item:IsA('BasePart') then
+        disable(item)
+    else
+        for _, node in item:GetDescendants() do
+            if node:IsA('BasePart') then disable(node) end
         end
     end
 end
