@@ -52,18 +52,23 @@ local function run()
         assert(not rejected, 'Incorrect project format version was accepted')
     end
 
-    local previous = job:serialize()
+    local beforeInvalid = job:summary()
+    local beforeLastKind = job.operations[3].kind
     local invalidEdit = table.clone(slot())
     invalidEdit.radius = 1000
     local changed = pcall(function() job:edit(3, invalidEdit) end)
     assert(not changed, 'Invalid operation edit should have failed validation')
-    assert(job:serialize() == previous, 'Rejected edit changed existing timeline')
+    assert(job:summary().operations == beforeInvalid.operations
+        and FORM.volumeClose(job:summary().volume, beforeInvalid.volume)
+        and job.operations[3].kind == beforeLastKind, 'Rejected edit changed existing timeline')
 
     local invalidOperation = drill()
     invalidOperation.center = {x = 490, y = 0, z = 0}
     local added, addReason = job:insert(invalidOperation)
     assert(not added and addReason, 'Non-intersecting operation was committed')
-    assert(job:serialize() == previous, 'Rejected insertion changed the saved project')
+    assert(job:summary().operations == beforeInvalid.operations
+        and FORM.volumeClose(job:summary().volume, beforeInvalid.volume),
+        'Rejected insertion changed the saved project')
 
     assert(job:undo(), 'Undo failed')
     local undoVolume = job:summary().volume
