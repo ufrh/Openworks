@@ -542,7 +542,7 @@ local function cutSheet(state)
         if previous then previous:Destroy() end
         work.Transparency = 1
         work.CanCollide = false
-        work.CanQuery = true
+        work.CanQuery = false
 
         item.solid = solid
         modifiedSolids[work] = item
