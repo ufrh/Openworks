@@ -90,25 +90,25 @@ function SawUI.start(workpieces)
         for _, ring in rings do
             for i, a in ring do
                 local b = ring[i % #ring + 1]
-            local delta = b - a
-            if delta.Magnitude < 0.008 then continue end
-            used += 1
-            local line = lines[used]
-            if not line then
-                line = Instance.new('Part')
-                line.Name = 'Saw Cutting Preview'
-                line.Material = Enum.Material.Neon
-                line.Color = Color3.fromRGB(240, 179, 73)
-                line.Anchored = true
-                line.CanCollide = false
-                line.CanTouch = false
-                line.CanQuery = false
-                line.Parent = workspace
-                lines[used] = line
-            end
-            line.Transparency = 0.1
-            line.Size = Vector3.new(0.035, 0.035, delta.Magnitude)
-            line.CFrame = CFrame.lookAt((a + b) / 2, b)
+                local delta = b - a
+                if delta.Magnitude < 0.008 then continue end
+                used += 1
+                local line = lines[used]
+                if not line then
+                    line = Instance.new('Part')
+                    line.Name = 'Saw Cutting Preview'
+                    line.Material = Enum.Material.Neon
+                    line.Color = Color3.fromRGB(240, 179, 73)
+                    line.Anchored = true
+                    line.CanCollide = false
+                    line.CanTouch = false
+                    line.CanQuery = false
+                    line.Parent = workspace
+                    lines[used] = line
+                end
+                line.Transparency = 0.1
+                line.Size = Vector3.new(0.035, 0.035, delta.Magnitude)
+                line.CFrame = CFrame.lookAt((a + b) / 2, b)
             end
         end
         for i = used + 1, #lines do lines[i].Transparency = 1 end
