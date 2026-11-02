@@ -37,6 +37,41 @@ function FORM.box(size)
     return {vertices = vertices, triangles = triangles}
 end
 
+function FORM.cylinder(radius, height, segments)
+    segments = segments or 12
+    assert(finite(radius) and radius > 0 and finite(height) and height > 0, 'Invalid cylinder dimensions')
+    assert(type(segments) == 'number' and segments % 1 == 0 and segments >= 3 and segments <= 64,
+        'Cylinder segments must be between 3 and 64')
+
+    local vertices = {}
+    local triangles = {}
+    local half = height / 2
+
+    for i = 0, segments - 1 do
+        local angle = i * 2 * math.pi / segments
+        local x, z = radius * math.cos(angle), radius * math.sin(angle)
+        vertices[#vertices + 1] = Vector3.new(x, -half, z)
+        vertices[#vertices + 1] = Vector3.new(x, half, z)
+    end
+
+    local bottom = #vertices + 1
+    vertices[bottom] = Vector3.new(0, -half, 0)
+    local top = #vertices + 1
+    vertices[top] = Vector3.new(0, half, 0)
+
+    for i = 0, segments - 1 do
+        local nextIndex = (i + 1) % segments
+        local a, b = 2 * i + 1, 2 * i + 2
+        local c, d = 2 * nextIndex + 1, 2 * nextIndex + 2
+        triangles[#triangles + 1] = {a, b, c}
+        triangles[#triangles + 1] = {c, b, d}
+        triangles[#triangles + 1] = {bottom, a, c}
+        triangles[#triangles + 1] = {top, d, b}
+    end
+
+    return {vertices = vertices, triangles = triangles}
+end
+
 function FORM.bounds(solid)
     assert(type(solid) == 'table' and #solid.vertices > 0, 'Expected a solid with vertices')
     local lo, hi = solid.vertices[1], solid.vertices[1]
