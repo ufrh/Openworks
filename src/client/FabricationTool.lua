@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local FabricationVisual = require(script.Parent.FabricationVisual)
+local ToolVisual = require(script.Parent.ToolVisual)
 
 local FabricationTool = {}
 local appearances = setmetatable({}, {__mode = 'k'})
@@ -31,10 +32,26 @@ function FabricationTool.find(player, name)
         tool.RequiresHandle = false
         tool.CanBeDropped = false
         tool.ToolTip = 'OPENWORKS fabrication: ' .. name
+        tool:SetAttribute('OpenworksGeneratedTool', true)
         tool.Parent = backpack
         return tool
     end
     return nil, 'Missing ' .. name .. ' Tool or ReplicatedStorage model'
+end
+
+function FabricationTool.ensureCosmetic(tool)
+    if not tool or not tool:IsA('Tool') then return false end
+    if tool:GetAttribute('OpenworksVisualAttached') then return true end
+
+    local parts = 0
+    for _, child in tool:GetDescendants() do
+        if child:IsA('BasePart') then parts += 1 end
+    end
+    local handle = tool:FindFirstChild('Handle')
+    if parts > 1 or (handle and handle:IsA('MeshPart') and handle.Transparency < 1) then
+        return true
+    end
+    return ToolVisual.attach(tool)
 end
 
 function FabricationTool.hideEquipped(tool)
