@@ -18,7 +18,7 @@ Add `FileFace` to a file if desired. Without `BladeEdge`, OPENWORKS first looks 
 
 In precision mode, **R** rolls the physical tool 90 degrees around the stroke axis; **Shift+R** rolls it back 90 degrees. This does not change the cut plane and lets you correct models whose grip/blade faces are oriented differently.
 
-The physical tool is never cloned into a separate cosmetic. An invisible target with server-controlled AlignPosition / AlignOrientation moves the same rigid assembly. **Every BasePart in the tool is forced to CanCollide=false, CanTouch=false, and CanQuery=false throughout fabrication**, and its previous values are restored on exit or completion. Dragging outside fabrication retains normal physics and collisions.
+The physical tool is never cloned into a separate cosmetic. An invisible target with AlignPosition / AlignOrientation moves the same rigid assembly. **Every BasePart in the tool is forced to CanCollide=false, CanTouch=false, and CanQuery=false on both the server and physics-owning client throughout fabrication.** The saw is returned to its pre-fabrication resting pose *before* its original collision properties are restored. Dragging outside fabrication retains normal physics and collisions.
 
 ## Free-mode interaction
 
@@ -39,8 +39,8 @@ The physical tool is never cloned into a separate cosmetic. An invisible target 
 1. Select the steel sheet, then the saw. The real saw is aligned to the workpiece using `BladeEdge` (or the tool-bounds fallback).
 2. A narrow **gold cutting guide** appears on the sheet. Move the mouse over the metal to position it. **Shift + horizontal mouse movement** also adjusts the cut offset.
 3. Press **Q** to switch between cuts normal to local X and local Z on native rectangular stock.
-4. **Hold LMB and manually move the mouse back and forth**. The actual physical saw follows each stroke. Repeated full reversals advance progress; releasing the mouse pauses.
-5. When the twelve qualifying stroke reversals complete, the server calls `SawCut.split` using FORM. For a test sheet, the result is two independent unanchored physical Parts, both marked as FORM material and preserving the material appearance.
+4. **Hold LMB and manually move the mouse back and forth**. The actual physical saw follows each stroke; input is deliberately more sensitive for comfortable short wrist movements. Repeated direction reversals advance progress; releasing the mouse pauses.
+5. When five qualifying stroke reversals complete, the server calls `SawCut.split` using FORM. For a test sheet, the result is two independent unanchored physical Parts, both marked as FORM material and preserving the material appearance.
 6. **RMB orbit** and **wheel zoom** remain available throughout; the camera remains focused on the current physical piece.
 
 For a file, the same manual-stroke controls are available, but native test sheets currently support only a simple planar shave, **not** the older curved edge-filing preview.
