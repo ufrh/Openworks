@@ -435,11 +435,21 @@ local function startFabrication(player, material, tool)
     local restingFrame = tool:GetPivot()
     local contact = toolContact(tool, part, kind)
     local toolBounds, toolSize
+    local sawLengthFrame, sawLengthSize
     if kind == 'Saw' then
         if tool:IsA('Model') then
             toolBounds, toolSize = tool:GetBoundingBox()
         else
             toolBounds, toolSize = tool.CFrame, tool.Size
+        end
+
+        sawLengthFrame, sawLengthSize = toolBounds, toolSize
+        for _, toolPart in toolParts do
+            local name = toolPart.Name:lower()
+            if name:find('blade', 1, true) or name:find('teeth', 1, true) then
+                sawLengthFrame, sawLengthSize = toolPart.CFrame, toolPart.Size
+                break
+            end
         end
     end
 
@@ -455,6 +465,8 @@ local function startFabrication(player, material, tool)
         sawFlip = tool:GetAttribute('SawFlip180') ~= false,
         toolBoundsOffset = if toolBounds then restingFrame:ToObjectSpace(toolBounds) else nil,
         toolBoundsSize = toolSize,
+        sawLengthOffset = if sawLengthFrame then restingFrame:ToObjectSpace(sawLengthFrame) else nil,
+        sawLengthSize = sawLengthSize,
         currentFrame = restingFrame,
         goalFrame = restingFrame,
         anchoredParts = {},
@@ -686,7 +698,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
             else Vector3.new(0, 0, state.offset)
     end
 
-    local height = if state.kind == 'File' then 0.015 else 0.12
+    local height = if state.kind == 'File' then 0.015 else 0.035
     local pos = work.CFrame:PointToWorldSpace(cross + travel
         + Vector3.new(0, size.Y * 0.5 + height, 0))
 
@@ -707,6 +719,25 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.goalFrame = contactFrame * state.contactOffset
 
     if state.kind == 'Saw' then
+        local lengthFrame = state.goalFrame * state.sawLengthOffset
+        local dimensions = state.sawLengthSize
+        local lengthAxis = lengthFrame.RightVector
+        if dimensions.Y > dimensions.X and dimensions.Y >= dimensions.Z then
+            lengthAxis = lengthFrame.UpVector
+        elseif dimensions.Z > dimensions.X and dimensions.Z > dimensions.Y then
+            lengthAxis = lengthFrame.LookVector
+        end
+
+        local lineAxis = forward.Unit
+        if lengthAxis:Dot(lineAxis) < 0 then lengthAxis = -lengthAxis end
+        local axis = lengthAxis:Cross(lineAxis)
+        if axis.Magnitude > 0.0001 then
+            local angle = math.atan2(axis.Magnitude, math.clamp(lengthAxis:Dot(lineAxis), -1, 1))
+            local pivotRotation = CFrame.new(pos)
+                * CFrame.fromAxisAngle(axis.Unit, angle) * CFrame.new(-pos)
+            state.goalFrame = pivotRotation * state.goalFrame
+        end
+
         local bounds = state.goalFrame * state.toolBoundsOffset
         local half = state.toolBoundsSize * 0.5
         local lowest = bounds.Position.Y
@@ -719,8 +750,8 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
             + math.abs(work.CFrame.UpVector.Y) * size.Y * 0.5
             + math.abs(work.CFrame.LookVector.Y) * size.Z * 0.5
 
-        if lowest < top + 0.03 then
-            state.goalFrame += Vector3.new(0, top + 0.03 - lowest, 0)
+        if lowest < top + 0.01 then
+            state.goalFrame += Vector3.new(0, top + 0.01 - lowest, 0)
         end
     end
 
