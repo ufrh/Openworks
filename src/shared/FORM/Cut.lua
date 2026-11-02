@@ -171,7 +171,7 @@ function Cut.split(solid, planePoint, planeNormal)
 
     local before = FORM.signedVolume(solid)
     local after = FORM.signedVolume(sides[1]) + FORM.signedVolume(sides[2])
-    if math.abs(before - after) > math.max(1e-5, before * 1e-8) then
+    if not FORM.volumeClose(after, before) then
         return nil, string.format('VOLUME_MISMATCH before=%.9f after=%.9f delta=%+.9f', before, after, after - before)
     end
 
