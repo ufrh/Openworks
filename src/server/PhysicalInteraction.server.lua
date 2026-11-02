@@ -205,53 +205,109 @@ local function destroyMotor(state, returnOwnership)
     end
 end
 
+local function allParts(item)
+    if item:IsA('BasePart') then return {item} end
+    local parts = {}
+    for _, node in item:GetDescendants() do
+        if node:IsA('BasePart') then table.insert(parts, node) end
+    end
+    return parts
+end
+
+local function supportOnWorkbench(item)
+    local bench = workspace:FindFirstChild('Workbench')
+    if not bench then return end
+
+    local bounds, size
+    if item:IsA('BasePart') then
+        bounds, size = item.CFrame, item.Size
+    else
+        bounds, size = item:GetBoundingBox()
+    end
+
+    local bestSurface
+    local bestDelta = math.huge
+    for _, surface in bench:GetDescendants() do
+        if not (surface:IsA('BasePart') and surface.Name:lower() == 'surface') then
+            continue
+        end
+        local localPosition = surface.CFrame:PointToObjectSpace(bounds.Position)
+        if math.abs(localPosition.X) > surface.Size.X * 0.5
+            or math.abs(localPosition.Z) > surface.Size.Z * 0.5 then
+            continue
+        end
+
+        local upward = surface.CFrame.UpVector
+        local half = size * 0.5
+        local verticalRadius = math.abs(bounds.RightVector:Dot(upward)) * half.X
+            + math.abs(bounds.UpVector:Dot(upward)) * half.Y
+            + math.abs(bounds.LookVector:Dot(upward)) * half.Z
+        local bottom = (bounds.Position - surface.Position):Dot(upward) - verticalRadius
+        local top = surface.Size.Y * 0.5 + 0.04
+        local delta = top - bottom
+
+        if math.abs(delta) < math.abs(bestDelta) then
+            bestSurface = surface
+            bestDelta = delta
+        end
+    end
+
+    if bestSurface and bestDelta > 0 and bestDelta < 3 then
+        item:PivotTo(item:GetPivot() + bestSurface.CFrame.UpVector * bestDelta)
+    end
+end
+
 local function finish(player)
     local state = active[player]
     if not state then return end
+
     active[player] = nil
     locked[state.item] = nil
     if state.material then locked[state.material] = nil end
 
-    destroyMotor(state, state.mode ~= 'Fabrication')
+    if state.mode == 'Fabrication' then
+        if state.item and state.item.Parent then
+            state.item:PivotTo(state.restingFrame)
+            supportOnWorkbench(state.item)
 
-    if state.mode == 'Fabrication' and state.item and state.item.Parent and state.restingFrame then
-        pcall(function() state.part:SetNetworkOwner(nil) end)
-        state.item:PivotTo(state.restingFrame)
-
-        local function settle(part)
-            part.AssemblyLinearVelocity = Vector3.zero
-            part.AssemblyAngularVelocity = Vector3.zero
-        end
-        if state.item:IsA('BasePart') then
-            settle(state.item)
-        else
-            for _, part in state.item:GetDescendants() do
-                if part:IsA('BasePart') then settle(part) end
+            for part in state.anchoredParts do
+                if part.Parent then
+                    part.AssemblyLinearVelocity = Vector3.zero
+                    part.AssemblyAngularVelocity = Vector3.zero
+                end
             end
-        end
-    end
 
-    if state.collisions then
-        for part, original in state.collisions do
-            if part.Parent then
-                part.CanQuery = true
-                part.CanCollide = original.collide
-                part.CanTouch = original.touch
-                part.CanQuery = original.query
+            for part, wasAnchored in state.anchoredParts do
+                if part.Parent then part.Anchored = wasAnchored end
             end
         end
 
-        if state.part and state.part.Parent then
-            local ok, allowed = pcall(function() return state.part:CanSetNetworkOwnership() end)
-            if ok and allowed then
-                pcall(function() state.part:SetNetworkOwnershipAuto() end)
+        if state.collisions then
+            for part, original in state.collisions do
+                if part.Parent then
+                    part.CanQuery = true
+                    part.CanCollide = original.collide
+                    part.CanTouch = original.touch
+                    part.CanQuery = original.query
+                end
             end
+        end
+
+        for materialPart, wasAnchored in state.materialAnchors do
+            if materialPart.Parent then
+                supportOnWorkbench(materialPart)
+                materialPart.AssemblyLinearVelocity = Vector3.zero
+                materialPart.AssemblyAngularVelocity = Vector3.zero
+                materialPart.Anchored = wasAnchored
+            end
+        end
+    else
+        destroyMotor(state)
+        if state.mode == 'Drag' then
+            print('[OPENWORKS:Drag] Released:', state.item.Name)
         end
     end
 
-    if state.mode == 'Drag' then
-        print('[OPENWORKS:Drag] Released:', state.item.Name)
-    end
     if player.Parent then remote:FireClient(player, 'Ended') end
 end
 
@@ -312,65 +368,107 @@ end
 
 local function startFabrication(player, material, tool)
     finish(player)
+
     if typeof(material) ~= 'Instance' or typeof(tool) ~= 'Instance' then return end
     if not (material:IsA('Model') or material:IsA('BasePart')) then return end
     if not (tool:IsA('Model') or tool:IsA('BasePart')) then return end
     if not FORMMaterial.isMarked(material) or tool:GetAttribute('isTool') ~= true then return end
-    if material:GetAttribute('OnWorkbench') ~= true or tool:GetAttribute('OnWorkbench') ~= true then
-        remote:FireClient(player, 'Feedback', 'Both material and tool must rest on the workbench')
+
+    local function reject(message)
+        remote:FireClient(player, 'Feedback', message)
+    end
+
+    if not material:IsDescendantOf(workspace) or not tool:IsDescendantOf(workspace) then
+        reject('Tool and material must be in Workspace')
         return
     end
+
+    if material:GetAttribute('OnWorkbench') ~= true or tool:GetAttribute('OnWorkbench') ~= true then
+        reject('Both tool and material must rest on the workbench')
+        return
+    end
+
     local kind = toolKind(tool)
     local work = findPart(material)
     local part = findPart(tool)
     local root = rootOf(player)
+
     if not kind then
-        remote:FireClient(player, 'Feedback', 'Set FabricationKind to Saw or File on this tool')
+        reject('Set FabricationKind to Saw or File')
         return
     end
-    if not work or not part or not root or not movable(tool) or locked[material] then
-        remote:FireClient(player, 'Feedback', 'Material or tool is not available')
+    if not work or not part or not root or not movable(tool)
+        or locked[material] or locked[tool] then
+        reject('Material or tool is not available')
         return
     end
-    if (root.Position - work.Position).Magnitude > 24 or (root.Position - part.Position).Magnitude > 24 then
-        remote:FireClient(player, 'Feedback', 'Move closer to the workbench')
-        return
-    end
-
-    local state = acquire(player, tool, part, part.Position)
-    if not state then
-        remote:FireClient(player, 'Feedback', 'Tool is busy or cannot be moved')
+    if (root.Position - work.Position).Magnitude > 24
+        or (root.Position - part.Position).Magnitude > 24 then
+        reject('Move closer to the workbench')
         return
     end
 
-    state.mode = 'Fabrication'
-    state.kind = kind
-    state.material = material
-    state.work = work
-    state.restingFrame = tool:GetPivot()
+    local toolParts = allParts(tool)
+    if #toolParts == 0 then
+        reject('No physical tool parts found')
+        return
+    end
 
+    local restingFrame = tool:GetPivot()
     local contact = toolContact(tool, part, kind)
-    state.grab.CFrame = part.CFrame:ToObjectSpace(contact)
-    state.target.CFrame = contact
+
+    local state = {
+        mode = 'Fabrication',
+        item = tool,
+        part = part,
+        kind = kind,
+        material = material,
+        work = work,
+        restingFrame = restingFrame,
+        contactOffset = contact:ToObjectSpace(restingFrame),
+        currentFrame = restingFrame,
+        goalFrame = restingFrame,
+        anchoredParts = {},
+        materialAnchors = {},
+        offset = 0,
+        stroke = 0,
+        lastStroke = 0,
+        lastTurn = 0,
+        direction = 0,
+        reversals = 0,
+        axis = 'X',
+        roll = 0,
+        awaitRelease = false,
+        lastMove = 0,
+    }
 
     setToolCollision(tool, state)
-    state.roll = 0
-    state.offset = 0
-    state.stroke = 0
-    state.lastStroke = 0
-    state.direction = 0
-    state.reversals = 0
-    state.axis = 'X'
+    for _, toolPart in toolParts do
+        state.anchoredParts[toolPart] = toolPart.Anchored
+        toolPart.AssemblyLinearVelocity = Vector3.zero
+        toolPart.AssemblyAngularVelocity = Vector3.zero
+        toolPart.Anchored = true
+    end
+
+    for _, materialPart in allParts(material) do
+        state.materialAnchors[materialPart] = materialPart.Anchored
+        materialPart.AssemblyLinearVelocity = Vector3.zero
+        materialPart.AssemblyAngularVelocity = Vector3.zero
+        materialPart.Anchored = true
+    end
+
+    active[player] = state
+    locked[tool] = player
     locked[material] = player
 
-    local initialCollisions = {}
+    local collisionData = {}
     for toolPart, original in state.collisions do
-        table.insert(initialCollisions, {
+        table.insert(collisionData, {
             toolPart, original.collide, original.touch, original.query,
         })
     end
 
-    remote:FireClient(player, 'FabricationStarted', kind, material, tool, initialCollisions)
+    remote:FireClient(player, 'FabricationStarted', kind, material, tool, collisionData)
 end
 
 local function cutSheet(state)
