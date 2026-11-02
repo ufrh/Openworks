@@ -65,3 +65,55 @@ The client attempts the unified drilled mesh and renders the original complete c
 **Verification status:** implementation and regression tests committed; not yet executed in Roblox Studio. Independent reference geometry checks of analogous rectangular and 12-sided through-holes passed closed-edge and volume checks; these do not establish runtime correctness of the Luau code.
 
 **Scope:** this joins the exterior boundary of an assembly of valid convex components. The Boolean cutter remains convex; this is not yet an unrestricted CAD B-rep or a proof against all geometric self-intersections, coplanar overlap degeneracies, pathological tiny features, or arbitrary repeated machining history. No claim is made of exact double-precision canonical geometry; FORM still uses Vector3.
+
+## OPENWORKS machinist sandbox — end-to-end prototype
+
+The working machining API is `FORM/Machine.lua`, backed by the convex-component Boolean kernel and `Union.reconstruct` for watertight boundary rendering.
+
+```lua
+local Machine = require(ReplicatedStorage.Openworks.FORM.Machine)
+local FORM = require(ReplicatedStorage.Openworks.FORM)
+
+local workpiece = Machine.new(FORM.box(Vector3.new(100, 50, 40)))
+
+local ok, removed = workpiece:apply({
+    kind = 'drill',
+    center = Vector3.zero,
+    radius = 7,
+    height = 70,
+    segments = 12,
+})
+
+if ok then
+    local mesh, reason, stats = workpiece:mesh()
+    if mesh then
+        print('Watertight result:', #mesh.triangles, FORM.signedVolume(mesh))
+    else
+        warn('Unified surface not valid:', reason)
+    end
+end
+```
+
+### Operations
+
+- `drill`: center, radius, cutter height, polygon segment count (3–64), optional CFrame. The drill axis is local Y; center denotes the tool center. To make a blind hole, choose a center and height that only partially intersect the workpiece.
+- `pocket`: center, size (Vector3), optional CFrame for a rectangular cutter.
+- `slot`: from and to (Vector3, constant Y), radius, height, and segment count; a straight cutter sweep assembled from one box and two polygonal cylinders.
+- `profile`: points (2–9 Vector3 coordinates at constant Y), radius, height and segment count; chains straight slot sweeps, up to 24 component cutters.
+- `saw`: point and outward normal; keeps the negative side of the plane.
+- `chamfer`: axisA/axisB (`X`, `Y`, `Z`), signA/signB (+1 or -1), distance; removes a 45-degree corner wedge along an exterior box-aligned edge.
+- `fillet`: axisA/axisB, signA/signB, radius and segments (2–24); approximates an outer convex edge roundover by successive tangent-plane cuts. This is **faceted rounding**, not mathematically exact toroidal/analytic filleting.
+
+Operations are **atomic** at the workpiece level. On rejection, neither the current geometry nor the operation history changes. `machine:undo()`, `machine:redo()`, `machine:reset()` and `machine:status()` are available. The immutable sequence of convex-piece states is the editable source of truth. The reconstructed surface is only an output representation, not the canonical editable topology.
+
+### Interactive Studio demo
+
+The client starts with a drilled plate and opens a machining controls panel. Use **1** for a second drill, **2** for a blind pocket, **3** for a rounded slot, **4** for a chamfer, **5** for a faceted fillet, **6** for a saw cut, **Z** undo, **Y** redo and **R** reset. Equivalent buttons are displayed. Only one EditableMesh/MeshPart preview is retained at a time; the previous pair is destroyed before rerendering. If manifold reconstruction fails, the preview renders the full convex-component geometry instead of dropping exterior triangles.
+
+Server regression tests include `FORMTests.server.lua` and `MachineTests.server.lua`. The former verifies foundational cuts, adjacent-box union, rectangular slot and 14-mm drilled hole; the latter verifies machining, history, failure atomicity, genus checks and volume.
+
+### Honest operating envelope
+
+This is a reusable **engineering and fabrication prototype**, not a production universal CAD solver. It supports subtraction by **convex** cutter components, planar half-space removal and polygonal cylindrical tools, with bounded fragment counts (192), cutter count per operation (24) and history length (64). Curved geometry is tessellated. Fillets and chamfers in this phase target **axis-aligned convex exterior edges**, not arbitrary B-rep edge loops. Complex operations can still fail numerical or manifold validation; this is an explicit error, never a license to silently ignore invalid geometry. Roblox Vector3 values remain the current canonical vertex coordinates. Operations run locally in the Studio/client demonstration; server authority, persistence, physics-driven cutter motion, arbitrary non-convex cutter support, true analytic NURBS and arbitrary edge fillets are **not** implemented.
+
+**Verification:** changes pushed to dev; Roblox Studio test outcome remains pending and must be checked from actual Output logs.
