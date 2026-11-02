@@ -117,3 +117,21 @@ Server regression tests include `FORMTests.server.lua` and `MachineTests.server.
 This is a reusable **engineering and fabrication prototype**, not a production universal CAD solver. It supports subtraction by **convex** cutter components, planar half-space removal and polygonal cylindrical tools, with bounded fragment counts (192), cutter count per operation (24) and history length (64). Curved geometry is tessellated. Fillets and chamfers in this phase target **axis-aligned convex exterior edges**, not arbitrary B-rep edge loops. Complex operations can still fail numerical or manifold validation; this is an explicit error, never a license to silently ignore invalid geometry. Roblox Vector3 values remain the current canonical vertex coordinates. Operations run locally in the Studio/client demonstration; server authority, persistence, physics-driven cutter motion, arbitrary non-convex cutter support, true analytic NURBS and arbitrary edge fillets are **not** implemented.
 
 **Verification:** changes pushed to dev; Roblox Studio test outcome remains pending and must be checked from actual Output logs.
+
+## Reconstruction stabilization — November 2026
+
+The first integrated 0.8 Studio run failed: the rectangular cut produced 18 non-manifold edges and 7 residual T-junctions; the drilled cut caused 21,024 iterative edge splits, 1,338 residual junctions, and server/client script timeouts.
+
+The follow-up repair replaces the unstable piece-by-piece polygon subtraction with a **global supporting-plane arrangement**. Every source face is divided using the same unique planes before testing whether an outward probe falls inside another retained convex component. That preserves the actual exposed boundary and produces matching surface segments at shared intersections.
+
+`Weld.build` now spatially welds vertices and performs **one** conforming edge subdivision pass. It no longer recursively splits triangles up to 64 times. A CPU budget and explicit limits on candidate vertex scans, faces, repairs, planes, and cells prevent pathological examples from monopolizing Studio. Exceeding a limit is reported as a failed unification; the client continues displaying the convex-component fallback.
+
+Independent Python reference geometry checks of the arrangement algorithm (with Vector3-like float32 quantization) produced the following outcomes:
+
+| Input | Triangle count | Edge incidence | Winding defects | Euler | Reconstructed volume |
+|---|---:|---|---:|---:|---:|
+| Two adjacent boxes | 20 | all edges twice | 0 | 2 | 12,000 mm^3 |
+| Rectangular through-slot | 64 | all edges twice | 0 | 0 | 84,000 mm^3 |
+| 12-sided 14-mm drilled hole, 100x50x20 stock | 296 | all edges twice | 0 | 0 | approximately 92,650 mm^3 |
+
+**Important:** the reference validation is not the Roblox Studio runtime. The new Luau modules must still pass the actual `FORMTests.server.lua` and `MachineTests.server.lua` suites. Their failures are authoritative and should be investigated rather than bypassed.
