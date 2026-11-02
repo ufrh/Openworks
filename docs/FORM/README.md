@@ -39,3 +39,11 @@ Full unification requires intersection-aware face subdivision, surface classific
 The algorithm is deliberately not used in the active preview yet. It must be verified for numerical stability, matching seams, T-junctions, coincident exterior faces, and watertightness before replacing the complete-piece rendering.
 
 The current test runs it against the rectangular subtraction and reports triangle counts. It **does not** claim validated unified topology. Next milestone: stitch and weld subdivisions consistently, prove edge incidence and volume, then enable the preview. The code has not yet been playtested in Studio.
+
+## FORM 0.8 — weld and topology diagnostics
+
+`Weld.build(surface, tolerance)` deduplicates near-coincident vertex positions using neighboring spatial buckets, remaps faces, detects collapsed/duplicate triangles and checks for vertices lying along unsplit mesh edges (T-junctions). It runs `FORM.validate` on the resulting indexed mesh.
+
+The rectangular subtraction test now prints weld statistics. Only when these checks pass does it assert reconstructed signed volume against the convex piece total. The drilled preview remains unchanged.
+
+**This is not complete topology unification**: welding cannot substitute for conforming face subdivision, and the current validation does not prove absence of self-intersections or all non-manifold vertex configurations. A failed manifold report is a diagnostic, not a successful union. The updated tests have not been run in Studio yet.
