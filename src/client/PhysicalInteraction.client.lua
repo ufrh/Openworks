@@ -178,7 +178,7 @@ end
 local function cancel()
     held = nil
     dragging = nil
-    if fabrication and fabrication.kind == 'Scorer' then send('FabricationScoreEnd') end
+    if fabrication and fabrication.kind == 'Scorer' then send('FabricationScoreEnd', fabrication.score and fabrication.score.tip or nil) end
     fabrication = nil
     pendingTool = nil
     pendingMaterial = nil
@@ -449,7 +449,7 @@ UserInputService.InputEnded:Connect(function(input)
 
     if fabrication then
         if fabrication.kind == 'Scorer' and fabrication.score then
-            send('FabricationScoreEnd')
+            send('FabricationScoreEnd', fabrication.score and fabrication.score.tip or nil)
             fabrication.score = nil
             clearPreview()
         end
@@ -467,7 +467,7 @@ UserInputService.WindowFocusReleased:Connect(function()
     dropHeld(false)
     if fabrication and fabrication.down then
         if fabrication.kind == 'Scorer' then
-            send('FabricationScoreEnd')
+            send('FabricationScoreEnd', fabrication.score and fabrication.score.tip or nil)
             fabrication.score = nil
             clearPreview()
         end
