@@ -43,11 +43,14 @@ local function makeButton(parent, text, callback)
     return button
 end
 
-function Inspector.new(onTool, onExit, onFileSettings)
+function Inspector.new(onTool, onExit, onFileSettings, onPosition, onRotate)
     local self = setmetatable({}, Inspector)
     self.onTool = onTool
     self.onExit = onExit
     self.onFileSettings = onFileSettings
+    self.onPosition = onPosition
+    self.onRotate = onRotate
+    self.positioning = false
     self.fileShape = 'Round'
     self.fileRadius = 1.25
     self.fileMaxRadius = 12
@@ -198,10 +201,62 @@ function Inspector.new(onTool, onExit, onFileSettings)
     choiceStack.Padding = UDim.new(0, 5)
     choiceStack.Parent = choices
 
+    local positionButton = makeButton(panel, 'POSITION MATERIAL  [P]', function()
+        if self.kind and self.onPosition then
+            self.onPosition(not self.positioning)
+        end
+    end)
+    positionButton.LayoutOrder = 6
+    positionButton.Visible = false
+    self.positionButton = positionButton
+
     local close = makeButton(panel, 'EXIT  [ESC]', function()
         self.onExit()
     end)
-    close.LayoutOrder = 6
+    close.LayoutOrder = 7
+
+    local posePanel = Instance.new('Frame')
+    posePanel.Name = 'MaterialPositionControls'
+    posePanel.AnchorPoint = Vector2.new(0, 1)
+    posePanel.Position = UDim2.new(0, 20, 1, -24)
+    posePanel.Size = UDim2.fromOffset(280, 316)
+    posePanel.BackgroundColor3 = Color3.fromRGB(24, 30, 31)
+    posePanel.BorderSizePixel = 0
+    posePanel.Visible = false
+    posePanel.Parent = gui
+    self.posePanel = posePanel
+
+    local poseCorner = Instance.new('UICorner')
+    poseCorner.CornerRadius = UDim.new(0, 8)
+    poseCorner.Parent = posePanel
+
+    local poseLayout = Instance.new('UIListLayout')
+    poseLayout.Padding = UDim.new(0, 5)
+    poseLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    poseLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    poseLayout.Parent = posePanel
+
+    local poseHeading = makeText(posePanel, 'POSITION MATERIAL  /  1 MM GRID', 30, 13)
+    poseHeading.LayoutOrder = 0
+
+    local poseHelp = makeText(posePanel,
+        'LMB drag to move  |  X/Z tilt  |  F/G flip\nY turn 15°  |  Shift reverses rotation', 42, 11)
+    poseHelp.LayoutOrder = 1
+
+    local buttons = {
+        {'FLIP X  180°  [F]', 'X', 180},
+        {'FLIP Z  180°  [G]', 'Z', 180},
+        {'TILT X  +90°  [X]', 'X', 90},
+        {'TILT Z  +90°  [Z]', 'Z', 90},
+        {'TURN Y  +15°  [Y]', 'Y', 15},
+        {'TURN Y  -15°', 'Y', -15},
+    }
+    for index, entry in buttons do
+        local button = makeButton(posePanel, entry[1], function()
+            if self.onRotate then self.onRotate(entry[2], entry[3]) end
+        end)
+        button.LayoutOrder = index + 1
+    end
 
     table.insert(self.connections, UserInputService.InputBegan:Connect(function(input)
         if not self.material then return end
@@ -364,10 +419,15 @@ end
 
 function Inspector:setTool(kind)
     self.kind = kind
+    self.positionButton.Visible = kind ~= nil
+    self.positioning = false
+    self.posePanel.Visible = false
+    self.positionButton.Text = 'POSITION MATERIAL  [P]'
     self.fileSettings.Visible = kind == 'File'
     self.gui.Enabled = self.material ~= nil
     local panel = self.title.Parent
-    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 485 else 330)
+    panel.Size = UDim2.fromOffset(260, if kind == 'File' then 525
+        elseif kind then 375 else 330)
 
     if kind == 'File' and self.material then
         local thickness = if self.material:IsA('BasePart') then self.material.Size.Y
@@ -390,6 +450,21 @@ function Inspector:setTool(kind)
     if not kind then self.tools = {} self:refreshTools() end
 end
 
+function Inspector:setPositionMode(active)
+    self.positioning = active
+    self.posePanel.Visible = active and self.material ~= nil
+    self.positionButton.Text = if active then 'FINISH POSITIONING  [P]'
+        else 'POSITION MATERIAL  [P]'
+
+    if active then
+        self.instructions.Text = 'LMB drag: precision move  |  X/Z: tilt 90°\nF/G: flip 180°  |  Y: turn 15°\nShift reverses  |  P: return to fabrication'
+    else
+        self.instructions.Text = if self.kind == 'File' then
+            'Hover an edge: select filing side\nHold LMB + mouse: file strokes\nR: roll tool | RMB: orbit | ESC: exit'
+            else 'Hover metal: position cut | Q: switch axis\nHold LMB + mouse: saw strokes\nR: roll tool | RMB: orbit | ESC: exit'
+    end
+end
+
 function Inspector:status(message)
     self.progress.Text = message
 end
@@ -405,6 +480,8 @@ function Inspector:close()
 
     self.material = nil
     self.kind = nil
+    self.positioning = false
+    self.posePanel.Visible = false
     self.gui.Enabled = false
     self.exiting = true
 
