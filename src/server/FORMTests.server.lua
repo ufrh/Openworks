@@ -67,7 +67,7 @@ local function run()
     local touching, touchReason = Cut.split(box, Vector3.new(50, 0, 0), Vector3.xAxis)
     assert(not touching and touchReason == 'PLANE_TOUCHES_VERTEX', 'Vertex-touching cut was not rejected')
 
-    local diagonal, diagonalReason = Cut.split(box, Vector3.zero, Vector3.new(1, 1, 0))
+    local diagonal, diagonalReason = Cut.split(box, Vector3.zero, Vector3.new(1, 2, 0))
     assert(not diagonal and diagonalReason == 'PLANE_TOUCHES_VERTEX', 'Edge-touching cut was not rejected')
 
     assert(#box.vertices == beforeVertices and #box.triangles == beforeTriangles, 'Failed cut mutated input')
