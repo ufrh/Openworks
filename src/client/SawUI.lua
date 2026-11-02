@@ -342,18 +342,11 @@ function SawUI.start(workpieces)
             return
         end
 
-        local camera = workspace.CurrentCamera
-        if not camera then return end
-        local axis = camera.CFrame.RightVector
-        axis = Vector3.new(axis.X, 0, axis.Z)
-        if axis.Magnitude < 0.001 then axis = Vector3.xAxis end
-        axis = CFrame.fromAxisAngle(Vector3.yAxis, math.rad(turn)):VectorToWorldSpace(axis.Unit)
-
+        local up = item.frame:VectorToWorldSpace(Vector3.yAxis)
         local attachment = currentTool:FindFirstChild('CutNormal', true)
-        if attachment and attachment:IsA('Attachment') then
-            axis = CFrame.fromAxisAngle(Vector3.yAxis, math.rad(turn))
-                :VectorToWorldSpace(attachment.WorldAxis)
-        end
+        local baseAxis = if attachment and attachment:IsA('Attachment')
+            then attachment.WorldAxis else item.frame:VectorToWorldSpace(Vector3.xAxis)
+        local axis = CFrame.fromAxisAngle(up, math.rad(turn)):VectorToWorldSpace(baseAxis).Unit
 
         local candidate = SawCut.preview(item, mouse.Hit.Position, axis)
         if not candidate then
