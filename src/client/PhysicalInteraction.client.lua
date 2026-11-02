@@ -10,6 +10,21 @@ local Openworks = ReplicatedStorage:WaitForChild('Openworks')
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
 local Inspector = require(script.Parent:WaitForChild('InspectionCamera'))
 local remote = Openworks:WaitForChild('PhysicalInteraction')
+local receiverWarned = false
+
+local function send(action, ...)
+    if remote:GetAttribute('Ready') ~= true then
+        if not receiverWarned then
+            warn('[OPENWORKS:Interaction] Server receiver is not ready; suppressing input')
+            receiverWarned = true
+        end
+        return false
+    end
+
+    receiverWarned = false
+    remote:FireServer(action, ...)
+    return true
+end
 
 local held
 local dragging
@@ -104,7 +119,7 @@ local function cancel()
     fabrication = nil
     pendingTool = nil
     guide.Parent = nil
-    remote:FireServer('End')
+    send('End')
 end
 
 local function exitInspect()
@@ -127,14 +142,14 @@ local function chooseTool(tool)
     end
     pendingTool = tool
     inspector:status('Preparing physical tool...')
-    remote:FireServer('FabricationStart', material, tool)
+    send('FabricationStart', material, tool)
 end
 
 inspector = Inspector.new(chooseTool, exitInspect)
 
 local function inspect(material)
     if not material or not material.Parent then return end
-    if fabrication or dragging then remote:FireServer('End') end
+    if fabrication or dragging then send('End') end
     fabrication = nil
     dragging = nil
     inspector:open(material)
@@ -175,7 +190,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.R and fabrication and not processed then
         local backwards = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-        remote:FireServer('FabricationRotate', if backwards then -1 else 1)
+        send('FabricationRotate', if backwards then -1 else 1)
         inspector:status('Saw roll adjusted 90 degrees')
         return
     end
@@ -208,7 +223,9 @@ UserInputService.InputBegan:Connect(function(input, processed)
     }
 
     -- Begin real physics immediately. A brief click ends the grab and selects the item.
-    remote:FireServer('DragStart', part, held.hit)
+    if not send('DragStart', part, held.hit) then
+        held = nil
+    end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
@@ -237,7 +254,7 @@ local function dropHeld(allowSelect)
     dragging = nil
 
     if previous or wasDragging then
-        remote:FireServer('End')
+        send('End')
     end
 
     if allowSelect and previous and not previous.moved
@@ -279,7 +296,7 @@ end)
 remote.OnClientEvent:Connect(function(action, a, b, c, d)
     if action == 'DragStarted' then
         if not held or held.part ~= a then
-            remote:FireServer('End')
+            send('End')
             return
         end
 
@@ -440,10 +457,10 @@ RunService.RenderStepped:Connect(function(dt)
 
     if dragging and held then
         local ray = mouse.UnitRay
-        remote:FireServer('DragMove',
+        send('DragMove',
             ray.Origin + ray.Direction.Unit * dragging.distance, dragging.rotation)
     elseif fabrication then
-        remote:FireServer('FabricationMove',
+        send('FabricationMove',
             fabrication.stroke, fabrication.offset, fabrication.axis, fabrication.down)
     end
 end)
