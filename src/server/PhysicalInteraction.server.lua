@@ -462,7 +462,7 @@ local function startFabrication(player, material, tool)
         work = work,
         restingFrame = restingFrame,
         contactOffset = contact:ToObjectSpace(restingFrame),
-        sawFlip = tool:GetAttribute('SawFlip180') ~= false,
+        sawFlip = tool:GetAttribute('SawFlip180') == true,
         toolBoundsOffset = if toolBounds then restingFrame:ToObjectSpace(toolBounds) else nil,
         toolBoundsSize = toolSize,
         sawLengthOffset = if sawLengthFrame then restingFrame:ToObjectSpace(sawLengthFrame) else nil,
