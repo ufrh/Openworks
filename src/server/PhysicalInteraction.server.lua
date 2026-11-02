@@ -776,5 +776,18 @@ Players.PlayerAdded:Connect(watch)
 for _, player in Players:GetPlayers() do watch(player) end
 Players.PlayerRemoving:Connect(function() finish(player) end)
 
+remote:SetAttribute('HeartbeatAt', workspace:GetServerTimeNow())
 remote:SetAttribute('Ready', true)
+
+local heartbeatElapsed = 0
+RunService.Heartbeat:Connect(function(dt)
+    heartbeatElapsed += dt
+    if heartbeatElapsed >= 0.4 then
+        heartbeatElapsed = 0
+        if remote.Parent then
+            remote:SetAttribute('HeartbeatAt', workspace:GetServerTimeNow())
+        end
+    end
+end)
+
 print('[OPENWORKS:Interaction] Server ready on', remote:GetFullName())
