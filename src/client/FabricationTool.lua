@@ -44,11 +44,16 @@ function FabricationTool.ensureCosmetic(tool)
     if tool:GetAttribute('OpenworksVisualAttached') then return true end
 
     local parts = 0
+    local visible = false
     for _, child in tool:GetDescendants() do
-        if child:IsA('BasePart') then parts += 1 end
+        if child:IsA('BasePart') then
+            parts += 1
+            if child.Transparency < 0.95 then visible = true end
+        end
     end
     local handle = tool:FindFirstChild('Handle')
-    if parts > 1 or (handle and handle:IsA('MeshPart') and handle.Transparency < 1) then
+    if (parts > 1 and visible)
+        or (handle and handle:IsA('MeshPart') and handle.Transparency < 0.95) then
         return true
     end
     return ToolVisual.attach(tool)
