@@ -740,7 +740,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
 
     local travelLength = if axis == 'X' then size.Z else size.X
     local travelRange = math.max(0.12, travelLength * 0.5 - 0.04)
-    local travelDirection = if state.kind == 'Saw' then -1 else 1
+    local travelDirection = 1
     local travel = if axis == 'X' then Vector3.new(0, 0, stroke * travelRange * travelDirection)
         else Vector3.new(stroke * travelRange * travelDirection, 0, 0)
 
@@ -794,7 +794,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         end
 
         state.goalFrame = baseFrame * CFrame.Angles(
-            math.rad(state.roll + state.sawAutoQuarter + 180), 0, 0)
+            math.rad(state.roll + state.sawAutoQuarter), 0, 0)
             * state.contactOffset
     end
 
