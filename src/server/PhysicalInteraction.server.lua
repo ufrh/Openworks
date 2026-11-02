@@ -530,6 +530,74 @@ local function startFabrication(player, material, tool)
     remote:FireClient(player, 'FabricationStarted', kind, material, tool, collisionData)
 end
 
+local function switchFabricationTarget(player, state, material)
+    if state.processing then
+        remote:FireClient(player, 'Feedback', 'Finish the current operation first')
+        return
+    end
+
+    if typeof(material) ~= 'Instance'
+        or not (material:IsA('BasePart') or material:IsA('Model'))
+        or not material:IsDescendantOf(workspace)
+        or not FORMMaterial.isMarked(material) then
+        remote:FireClient(player, 'Feedback', 'Select a physical FORM material')
+        return
+    end
+
+    if material == state.material then return end
+    if material:GetAttribute('OnWorkbench') ~= true then
+        remote:FireClient(player, 'Feedback', 'Material must be resting on the workbench')
+        return
+    end
+    if locked[material] then
+        remote:FireClient(player, 'Feedback', 'That material is already in use')
+        return
+    end
+
+    local part = findPart(material)
+    local root = rootOf(player)
+    if not part or not root or (part.Position - root.Position).Magnitude > 24 then
+        remote:FireClient(player, 'Feedback', 'Move closer to the selected material')
+        return
+    end
+
+    local old = state.material
+    if old and old.Parent then supportOnWorkbench(old) end
+
+    for oldPart, anchored in state.materialAnchors do
+        if oldPart.Parent then
+            oldPart.AssemblyLinearVelocity = Vector3.zero
+            oldPart.AssemblyAngularVelocity = Vector3.zero
+            oldPart.Anchored = anchored
+        end
+    end
+    locked[old] = nil
+
+    local anchors = {}
+    for _, nextPart in allParts(material) do
+        anchors[nextPart] = nextPart.Anchored
+        nextPart.AssemblyLinearVelocity = Vector3.zero
+        nextPart.AssemblyAngularVelocity = Vector3.zero
+        nextPart.Anchored = true
+    end
+    supportOnWorkbench(material)
+
+    state.material = material
+    state.work = part
+    state.materialAnchors = anchors
+    state.offset = 0
+    state.stroke = 0
+    state.lastStroke = 0
+    state.lastTurn = 0
+    state.direction = 0
+    state.reversals = 0
+    state.awaitRelease = true
+    state.lastMove = 0
+    locked[material] = player
+
+    remote:FireClient(player, 'FabricationTargetChanged', material)
+end
+
 local function cutSheet(state)
     local work = state.work
     if not work or not work.Parent or not work:IsA('Part')
@@ -810,6 +878,8 @@ onRequest = function(player, action, ...)
         state.target.CFrame = CFrame.new(point) * rotation
     elseif action == 'FabricationMove' and state.mode == 'Fabrication' then
         moveFabrication(player, state, ...)
+    elseif action == 'FabricationTarget' and state.mode == 'Fabrication' then
+        switchFabricationTarget(player, state, ...)
     elseif action == 'FabricationSettings' and state.mode == 'Fabrication' then
         local profile, radius = ...
         if state.kind == 'File' and (profile == 'Round' or profile == 'Chamfer')
