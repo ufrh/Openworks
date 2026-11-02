@@ -286,9 +286,6 @@ function Inspector.new(onTool, onExit, onFileSettings)
     return self
 end
 
-    return self
-end
-
 function Inspector:refreshTools()
     if not self.material or self.kind then return end
     local available = {}
