@@ -19,7 +19,7 @@ function FileUI.start(workpieces)
 
     local panel = Instance.new('Frame')
     panel.Name = 'FilingPanel'
-    panel.Size = UDim2.fromOffset(235, 194)
+    panel.Size = UDim2.fromOffset(235, 160)
     panel.AnchorPoint = Vector2.new(1, 0.5)
     panel.Position = UDim2.new(1, -14, 0.5, 0)
     panel.BackgroundColor3 = Color3.fromRGB(25, 31, 32)
@@ -171,10 +171,16 @@ function FileUI.start(workpieces)
                 status.Text = 'Secure a workpiece and aim near an outer edge'
                 return
             end
+            local valid, solid, stats = pcall(FileShape.apply, preview.item, preview.spec)
+            if not valid or not solid then
+                status.Text = 'Cannot file this edge: ' .. tostring(if valid then stats else solid)
+                warn('[FILE] Filing geometry rejected: ' .. status.Text)
+                return
+            end
             filing = {
                 part = preview.part, item = preview.item,
                 spec = preview.spec, tool = tool, grip = tool.Grip,
-                elapsed = 0,
+                result = solid, stats = stats, elapsed = 0,
                 duration = if preview.item.material == 'Steel' then 3.2 else 2.1,
             }
             status.Text = 'Filing edge... hold mouse'
@@ -220,28 +226,34 @@ function FileUI.start(workpieces)
 
     local equipButton = Instance.new('TextButton')
     equipButton.Name = 'EquipMetalFile'
-    equipButton.Size = UDim2.new(1, -16, 0, 30)
+    equipButton.AnchorPoint = Vector2.new(1, 0)
+    equipButton.Position = UDim2.new(1, -14, 0, 14)
+    equipButton.Size = UDim2.fromOffset(194, 30)
     equipButton.Font = Enum.Font.Code
     equipButton.TextSize = 13
     equipButton.TextColor3 = Color3.fromRGB(240, 236, 218)
     equipButton.BackgroundColor3 = Color3.fromRGB(55, 64, 62)
     equipButton.BorderSizePixel = 0
     equipButton.Text = 'EQUIP METAL FILE'
-    equipButton.Parent = panel
+    equipButton.Parent = gui
     equipButton.MouseButton1Click:Connect(function()
         local tool = findTool()
         if not tool then
             status.Text = 'No Metal File Tool in StarterPack, Backpack or ReplicatedStorage'
+            equipButton.Text = 'MISSING METAL FILE TOOL'
+            warn('[FILE] No Metal File Tool found in StarterPack, Backpack or ReplicatedStorage')
             return
         end
         connect(tool)
         local humanoid = player.Character and player.Character:FindFirstChildOfClass('Humanoid')
         if not humanoid then
             status.Text = 'Character is not ready'
+            equipButton.Text = 'CHARACTER NOT READY'
             return
         end
         if tool.RequiresHandle and not tool:FindFirstChild('Handle') then
             status.Text = 'Tool needs a direct Handle or RequiresHandle=false'
+            equipButton.Text = 'MISSING TOOL HANDLE'
             return
         end
         humanoid:EquipTool(tool)
@@ -267,6 +279,7 @@ function FileUI.start(workpieces)
     player.CharacterAdded:Connect(watchCharacter)
 
     RunService.RenderStepped:Connect(function(dt)
+        equipButton.Visible = not equipped()
         if not equipped() then
             panel.Visible = false
             if preview then preview = nil clearLines() end
@@ -287,17 +300,12 @@ function FileUI.start(workpieces)
             fill.Size = UDim2.fromScale(fraction, 1)
             task.tool.Grip = task.grip * CFrame.new(0, 0, math.sin(task.elapsed * 32) * 0.13)
             if fraction >= 1 then
-                local success, solid, stats = pcall(FileShape.apply, task.item, task.spec)
                 stop()
                 preview = nil
                 clearLines()
-                if not success or not solid then
-                    status.Text = 'Filing failed: ' .. tostring(if success then stats else solid)
-                    return
-                end
-                local ok, committed, reason = pcall(workpieces.refine, task.part, solid)
+                local ok, committed, reason = pcall(workpieces.refine, task.part, task.result)
                 if ok and committed then
-                    status.Text = string.format('Rounded edge: %.1f mm³ removed', stats.removed)
+                    status.Text = string.format('Rounded edge: %.1f mm³ removed', task.stats.removed)
                 else
                     status.Text = 'Filing failed: ' .. tostring(if ok then reason else committed)
                 end
