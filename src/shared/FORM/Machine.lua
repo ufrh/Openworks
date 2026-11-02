@@ -190,7 +190,7 @@ local function planeCutter(point, normal, stock)
     return transform(FORM.box(Vector3.new(size * 2, size * 2, size)), frame)
 end
 
-local function execute(pieces, spec)
+local function execute(pieces, spec, stock)
     assert(type(spec) == 'table' and type(spec.kind) == 'string', 'Invalid machining operation')
 
     if spec.kind == 'drill' or spec.kind == 'pocket' or spec.kind == 'slot' or spec.kind == 'profile' then
@@ -210,7 +210,7 @@ local function execute(pieces, spec)
     if spec.kind == 'saw' then
         local output, removed = keepNegative(pieces, spec.point, spec.normal)
         if not output then return nil, removed end
-        return output, removed, {planeCutter(spec.point, spec.normal, pieces[1])}
+        return output, removed, {planeCutter(spec.point, spec.normal, stock)}
     end
 
     if spec.kind == 'chamfer' or spec.kind == 'fillet' then
@@ -250,7 +250,7 @@ local function execute(pieces, spec)
             if not nextPieces then return nil, amount end
             current = nextPieces
             removed += amount
-            cutters[#cutters + 1] = planeCutter(plane.point, plane.normal, pieces[1])
+            cutters[#cutters + 1] = planeCutter(plane.point, plane.normal, stock)
         end
         return current, removed, cutters
     end
@@ -283,7 +283,7 @@ function Machine:apply(spec)
     local old = self.states[self.cursor + 1]
     if #old.pieces == 0 then return nil, 'WORKPIECE_EMPTY' end
 
-    local ok, pieces, removed, cutters = pcall(execute, old.pieces, spec)
+    local ok, pieces, removed, cutters = pcall(execute, old.pieces, spec, self.stock)
     if not ok then return nil, tostring(pieces) end
     if not pieces then return nil, removed end
     if #pieces == 0 then return nil, 'OPERATION_REMOVES_ENTIRE_WORKPIECE' end
