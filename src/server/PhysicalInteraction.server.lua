@@ -495,6 +495,10 @@ local function startFabrication(player, material, tool)
     local sawBladeLocal, sawBodyLocal
     if kind == 'Saw' then
         sawBladeLocal, sawBodyLocal = sawBladeReference(tool, toolParts, restingFrame)
+        if not sawBladeLocal then
+            warn('[OPENWORKS:Fabrication] Cannot identify the blade and handle on '
+                .. tool.Name .. '; add a BladeEdge attachment or name the blade part')
+        end
     end
     local toolBounds, toolSize
     if kind == 'Saw' then
