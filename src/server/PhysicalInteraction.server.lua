@@ -465,7 +465,7 @@ local function startFabrication(player, material, tool)
         direction = 0,
         reversals = 0,
         axis = 'X',
-        roll = if kind == 'Saw' then 180 else 0,
+        roll = 0,
         awaitRelease = false,
         fileSide = 1,
         fileShape = 'Round',
