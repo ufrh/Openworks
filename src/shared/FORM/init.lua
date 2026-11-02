@@ -8,6 +8,14 @@ local function validVector(v)
     return typeof(v) == 'Vector3' and finite(v.X) and finite(v.Y) and finite(v.Z)
 end
 
+function FORM.volumeTolerance(volume)
+    return math.max(1e-5, math.abs(volume) * 5e-8)
+end
+
+function FORM.volumeClose(actual, expected)
+    return math.abs(actual - expected) <= FORM.volumeTolerance(expected)
+end
+
 function FORM.box(size)
     assert(validVector(size) and size.X > 0 and size.Y > 0 and size.Z > 0, 'Invalid box dimensions')
 
