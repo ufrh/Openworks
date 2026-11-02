@@ -2,11 +2,23 @@ local FORM = require(script.Parent)
 local Weld = require(script.Parent.Weld)
 
 local Union = {}
+
 local EPSILON = 1e-5
 local PLANE_TOLERANCE = 1e-4
+local SAMPLE_OFFSET = 0.001
+local MAX_PLANES = 100
+local MAX_FACES = 500
+local MAX_CELLS = 3500
+local MAX_TRIANGLES = 8000
 
 local function edgeKey(a, b)
     return tostring(math.min(a, b)) .. ':' .. tostring(math.max(a, b))
+end
+
+local function samePlane(a, b)
+    local dot = a.normal:Dot(b.normal)
+    return math.abs(dot) >= 1 - 1e-6
+        and math.abs(a.distance - b.distance * dot) <= PLANE_TOLERANCE
 end
 
 local function faceGroups(solid)
@@ -36,45 +48,43 @@ local function faceGroups(solid)
     end
 
     for _, group in groups do
-        local edges = {}
-
+        local boundary = {}
         for _, face in group.faces do
             for i = 1, 3 do
                 local a, b = face[i], face[i % 3 + 1]
-                local key = edgeKey(a, b)
-                if not edges[key] then
-                    edges[key] = {a = a, b = b, count = 1}
+                local signature = edgeKey(a, b)
+                if boundary[signature] then
+                    boundary[signature].count += 1
                 else
-                    edges[key].count += 1
+                    boundary[signature] = {a = a, b = b, count = 1}
                 end
             end
         end
 
-        local nextVertex = {}
-        local start, boundaryCount
+        local successor = {}
+        local start
+        local count = 0
 
-        for _, edge in edges do
+        for _, edge in boundary do
             if edge.count == 1 then
-                assert(not nextVertex[edge.a], 'Branching planar face boundary')
-                nextVertex[edge.a] = edge.b
+                assert(not successor[edge.a], 'Branched convex face boundary')
+                successor[edge.a] = edge.b
                 start = edge.a
-                boundaryCount = (boundaryCount or 0) + 1
+                count += 1
             else
-                assert(edge.count == 2, 'Non-manifold planar face')
+                assert(edge.count == 2, 'Non-manifold convex face boundary')
             end
         end
 
-        assert(start and boundaryCount >= 3, 'Missing planar face boundary')
+        assert(start and count >= 3, 'Invalid convex face boundary')
         local polygon = {}
-        local current = start
-
-        for _ = 1, boundaryCount do
-            polygon[#polygon + 1] = solid.vertices[current]
-            current = nextVertex[current]
-            assert(current, 'Open planar face boundary')
+        local vertex = start
+        for _ = 1, count do
+            assert(vertex and solid.vertices[vertex], 'Open convex face boundary')
+            polygon[#polygon + 1] = solid.vertices[vertex]
+            vertex = successor[vertex]
         end
-
-        assert(current == start, 'Multiple planar boundary loops')
+        assert(vertex == start, 'Disjoint convex face boundary')
         group.polygon = polygon
         group.faces = nil
     end
@@ -82,169 +92,200 @@ local function faceGroups(solid)
     return groups
 end
 
-local function clean(polygon)
-    if #polygon < 3 then return {} end
-
-    local result = {}
-    for _, vertex in polygon do
-        if #result == 0 or (result[#result] - vertex).Magnitude > EPSILON then
-            result[#result + 1] = vertex
-        end
+local function polygonArea(polygon)
+    if #polygon < 3 then return 0 end
+    local origin = polygon[1]
+    local area = Vector3.zero
+    for i = 2, #polygon - 1 do
+        area += (polygon[i] - origin):Cross(polygon[i + 1] - origin)
     end
-
-    if #result > 1 and (result[1] - result[#result]).Magnitude <= EPSILON then
-        table.remove(result)
-    end
-    return if #result >= 3 then result else {}
+    return area.Magnitude / 2
 end
 
-local function clip(polygon, plane, inside)
+local function clean(polygon)
+    if #polygon < 3 then return {} end
     local output = {}
-    if #polygon < 3 then return output end
+    for _, vertex in polygon do
+        if #output == 0 or (vertex - output[#output]).Magnitude > EPSILON then
+            output[#output + 1] = vertex
+        end
+    end
+    if #output > 1 and (output[1] - output[#output]).Magnitude <= EPSILON then
+        table.remove(output)
+    end
+    if #output < 3 or polygonArea(output) <= EPSILON * EPSILON then return {} end
+    return output
+end
 
+local function cut(polygon, plane, keepPositive)
+    local result = {}
     for i = 1, #polygon do
         local a, b = polygon[i], polygon[i % #polygon + 1]
         local da = a:Dot(plane.normal) - plane.distance
         local db = b:Dot(plane.normal) - plane.distance
-        if math.abs(da) <= EPSILON then da = 0 end
-        if math.abs(db) <= EPSILON then db = 0 end
-
-        local acceptA = if inside then da <= 0 else da >= 0
-        local acceptB = if inside then db <= 0 else db >= 0
-
-        if acceptA then output[#output + 1] = a end
-        if acceptA ~= acceptB and da ~= db then
-            local t = math.clamp(da / (da - db), 0, 1)
-            output[#output + 1] = a:Lerp(b, t)
+        local accepted = if keepPositive then da >= -EPSILON else da <= EPSILON
+        local nextAccepted = if keepPositive then db >= -EPSILON else db <= EPSILON
+        if accepted then result[#result + 1] = a end
+        if accepted ~= nextAccepted and math.abs(da - db) > EPSILON * 0.01 then
+            local ratio = math.clamp(da / (da - db), 0, 1)
+            result[#result + 1] = a:Lerp(b, ratio)
         end
     end
-
-    return clean(output)
+    return clean(result)
 end
 
-local function classify(polygon, plane)
-    local minimum, maximum = math.huge, -math.huge
-    for _, vertex in polygon do
-        local d = vertex:Dot(plane.normal) - plane.distance
-        minimum = math.min(minimum, d)
-        maximum = math.max(maximum, d)
-    end
-    if maximum <= EPSILON then return 'inside' end
-    if minimum >= -EPSILON then return 'outside' end
-    return 'crossing'
-end
-
-local function subtractPolygon(polygon, neighbor, sourceNormal)
-    local fragments = {}
-    local pending = {polygon}
-
-    for _, plane in neighbor do
-        local nextPending = {}
-
-        for _, candidate in pending do
-            local kind = classify(candidate, plane)
-            if kind == 'inside' then
-                nextPending[#nextPending + 1] = candidate
-            elseif kind == 'outside' then
-                fragments[#fragments + 1] = candidate
-            else
-                local outside = clip(candidate, plane, false)
-                local inside = clip(candidate, plane, true)
-                if #outside >= 3 then fragments[#fragments + 1] = outside end
-                if #inside >= 3 then nextPending[#nextPending + 1] = inside end
+local function occupied(point, shapes)
+    for _, shape in shapes do
+        local inside = true
+        for _, plane in shape do
+            if point:Dot(plane.normal) > plane.distance + PLANE_TOLERANCE then
+                inside = false
+                break
             end
         end
-
-        pending = nextPending
-        if #pending == 0 then break end
+        if inside then return true end
     end
-
-    return fragments
+    return false
 end
 
-local function append(output, polygon, normal)
-    local count = 0
-    local first = polygon[1]
+local function polygonKey(polygon, planeId)
+    local center = Vector3.zero
+    for _, point in polygon do center += point end
+    center /= #polygon
+    local scale = 10000
+    return string.format('%d:%d:%d:%d:%d',
+        planeId, math.round(center.X * scale), math.round(center.Y * scale),
+        math.round(center.Z * scale), #polygon)
+end
 
+local function addPolygon(output, polygon, normal)
+    local anchor = polygon[1]
     for i = 2, #polygon - 1 do
         local b, c = polygon[i], polygon[i + 1]
-        local cross = (b - first):Cross(c - first)
+        local cross = (b - anchor):Cross(c - anchor)
         if cross.Magnitude > EPSILON * EPSILON then
-            local offset = #output.vertices
-            output.vertices[offset + 1] = first
-            output.vertices[offset + 2] = b
-            output.vertices[offset + 3] = c
+            local n = #output.vertices
+            output.vertices[n + 1] = anchor
+            output.vertices[n + 2] = b
+            output.vertices[n + 3] = c
             output.triangles[#output.triangles + 1] = if cross:Dot(normal) > 0
-                then {offset + 1, offset + 2, offset + 3}
-                else {offset + 1, offset + 3, offset + 2}
-            count += 1
+                then {n + 1, n + 2, n + 3}
+                else {n + 1, n + 3, n + 2}
+            if #output.triangles > MAX_TRIANGLES then return false end
         end
     end
-
-    return count
+    return true
 end
 
 function Union.surface(pieces)
     assert(type(pieces) == 'table' and #pieces > 0, 'Expected convex pieces')
+    local shapes = {}
+    local planes = {}
     local groups = {}
-    local stats = {inputTriangles = 0, inputFaces = 0, outputFaces = 0, outputTriangles = 0}
+    local inputTriangles = 0
+    local inputFaces = 0
 
-    for index, piece in pieces do
-        assert(FORM.validate(piece).ok, 'Invalid convex piece ' .. index)
-        stats.inputTriangles += #piece.triangles
-        groups[index] = faceGroups(piece)
-        stats.inputFaces += #groups[index]
-    end
+    for i, solid in pieces do
+        assert(FORM.validate(solid).ok, 'Invalid piece ' .. i)
+        groups[i] = faceGroups(solid)
+        shapes[i] = groups[i]
+        inputTriangles += #solid.triangles
+        inputFaces += #groups[i]
 
-    local output = {vertices = {}, triangles = {}}
-
-    for i, source in groups do
-        for _, face in source do
-            local visible = {face.polygon}
-
-            for j, neighbor in groups do
-                if i == j then continue end
-
-                local sharedExterior = false
-                for _, plane in neighbor do
-                    if face.normal:Dot(plane.normal) >= 1 - 1e-6
-                        and math.abs(face.distance - plane.distance) <= PLANE_TOLERANCE then
-                        sharedExterior = true
-                        break
-                    end
+        for _, plane in groups[i] do
+            local found = false
+            for _, existing in planes do
+                if samePlane(plane, existing) then
+                    found = true
+                    break
                 end
-
-                if not sharedExterior then
-                    local nextVisible = {}
-                    for _, polygon in visible do
-                        local fragments = subtractPolygon(polygon, neighbor, face.normal)
-                        for _, fragment in fragments do nextVisible[#nextVisible + 1] = fragment end
-                    end
-                    visible = nextVisible
-                end
-
-                if #visible == 0 then break end
             end
-
-            for _, polygon in visible do
-                local n = append(output, polygon, face.normal)
-                if n > 0 then stats.outputFaces += 1 end
+            if not found then
+                planes[#planes + 1] = {normal = plane.normal, distance = plane.distance}
+                if #planes > MAX_PLANES then return nil, 'PLANE_BUDGET_EXCEEDED' end
             end
         end
     end
 
-    stats.outputTriangles = #output.triangles
-    return output, stats
+    if inputFaces > MAX_FACES then return nil, 'FACE_BUDGET_EXCEEDED' end
+    local output = {vertices = {}, triangles = {}}
+    local seen = {}
+    local cells = 0
+    local kept = 0
+
+    for _, shape in groups do
+        for _, face in shape do
+            local supportingPlane = {normal = face.normal, distance = face.distance}
+            local planeId
+            for i, plane in planes do
+                if samePlane(plane, supportingPlane) then planeId = i break end
+            end
+
+            local fragments = {face.polygon}
+
+            for _, plane in planes do
+                if samePlane(plane, supportingPlane) then continue end
+                local nextFragments = {}
+
+                for _, polygon in fragments do
+                    local minimum, maximum = math.huge, -math.huge
+                    for _, vertex in polygon do
+                        local d = vertex:Dot(plane.normal) - plane.distance
+                        minimum = math.min(minimum, d)
+                        maximum = math.max(maximum, d)
+                    end
+
+                    if minimum < -PLANE_TOLERANCE and maximum > PLANE_TOLERANCE then
+                        local negative = cut(polygon, plane, false)
+                        local positive = cut(polygon, plane, true)
+                        if #negative >= 3 then nextFragments[#nextFragments + 1] = negative end
+                        if #positive >= 3 then nextFragments[#nextFragments + 1] = positive end
+                    else
+                        nextFragments[#nextFragments + 1] = polygon
+                    end
+                end
+
+                fragments = nextFragments
+                cells += #fragments
+                if cells > MAX_CELLS then return nil, 'CELL_BUDGET_EXCEEDED' end
+            end
+
+            for _, polygon in fragments do
+                local center = Vector3.zero
+                for _, vertex in polygon do center += vertex end
+                center /= #polygon
+                local probe = center + face.normal * SAMPLE_OFFSET
+                if not occupied(probe, shapes) then
+                    local signature = polygonKey(polygon, planeId)
+                    if not seen[signature] then
+                        seen[signature] = true
+                        if not addPolygon(output, polygon, face.normal) then
+                            return nil, 'TRIANGLE_BUDGET_EXCEEDED'
+                        end
+                        kept += 1
+                    end
+                end
+            end
+        end
+    end
+
+    return output, {
+        inputTriangles = inputTriangles,
+        inputFaces = inputFaces,
+        outputTriangles = #output.triangles,
+        outputFaces = kept,
+        planeCount = #planes,
+        cellCount = cells,
+    }
 end
 
 function Union.reconstruct(pieces, expectedVolume, tolerance)
     local surface, surfaceStats = Union.surface(pieces)
+    if not surface then return nil, surfaceStats, {stage = 'arrangement'} end
     local welded, weldStats = Weld.build(surface, tolerance)
     local stats = {surface = surfaceStats, weld = weldStats}
 
-    if not weldStats.valid then
-        return nil, 'NON_MANIFOLD_SURFACE', stats
-    end
+    if not weldStats.valid then return nil, 'NON_MANIFOLD_SURFACE', stats end
 
     local expected = expectedVolume
     if expected == nil then
@@ -258,7 +299,6 @@ function Union.reconstruct(pieces, expectedVolume, tolerance)
     if not FORM.volumeClose(actual, expected) then
         return nil, 'VOLUME_MISMATCH', stats
     end
-
     return welded, nil, stats
 end
 
