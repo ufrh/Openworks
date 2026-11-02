@@ -329,12 +329,43 @@ function Machine:reset()
     while #self.states > 1 do table.remove(self.states) end
 end
 
-function Machine:mesh()
-    if self.cursor == 0 then
-        local solid = cloneSolid(self.stock)
-        return solid, nil, {weld = {connectedComponents = 1, eulerCharacteristic = 2,
-            trianglesAfter = #solid.triangles}, surface = {outputTriangles = #solid.triangles}}
+local function directConvexMesh(pieces, expected)
+    if #pieces ~= 1 then return nil end
+
+    local piece = pieces[1]
+    local checked = FORM.validate(piece)
+    if not checked.ok then return nil end
+    if not FORM.volumeClose(FORM.signedVolume(piece), expected) then return nil end
+
+    local used = {}
+    local edgeCount = 0
+    for _, face in piece.triangles do
+        for _, index in face do used[index] = true end
     end
+    for _ in checked.edges do edgeCount += 1 end
+    local vertexCount = 0
+    for _ in used do vertexCount += 1 end
+    local euler = vertexCount - edgeCount + #piece.triangles
+    if euler ~= 2 then return nil end
+
+    return cloneSolid(piece), nil, {
+        source = 'direct_convex_piece',
+        weld = {
+            valid = true,
+            connectedComponents = 1,
+            eulerCharacteristic = euler,
+            trianglesAfter = #piece.triangles,
+            tJunctions = 0,
+        },
+        surface = {
+            outputTriangles = #piece.triangles,
+        },
+    }
+end
+
+function Machine:mesh()
+    local direct, reason, directStats = directConvexMesh(self:pieces(), self:volume())
+    if direct then return direct, reason, directStats end
 
     local cutters = {}
     for i = 1, self.cursor do
