@@ -280,6 +280,7 @@ function SawUI.start(workpieces)
 
     local clock = 0
     connections[#connections + 1] = RunService.RenderStepped:Connect(function(dt)
+        panel.Visible = not (player.Character and player.Character:FindFirstChild('Metal File'))
         if orbit then
             if not orbit.part.Parent then
                 stopOrbit()
