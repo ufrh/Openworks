@@ -133,6 +133,8 @@ function FileUI.start(workpieces)
 
     local function stop()
         filing = nil
+        if currentTool then FabricationTool.restore(currentTool) end
+        if working then working:hide() end
         fill.Size = UDim2.fromScale(0, 1)
     end
 
@@ -166,6 +168,7 @@ function FileUI.start(workpieces)
         preview = nil
         currentTool = tool
         if not tool then return end
+        FabricationTool.ensureCosmetic(tool)
 
         toolConnections[#toolConnections + 1] = tool.Activated:Connect(function()
             if not equipped() or filing then return end
@@ -183,6 +186,7 @@ function FileUI.start(workpieces)
                 feedback('File model or filing movement is unavailable')
                 return
             end
+            FabricationTool.hideEquipped(tool)
             filing = {
                 part = preview.part, item = preview.item,
                 spec = preview.spec,
@@ -201,7 +205,6 @@ function FileUI.start(workpieces)
         toolConnections[#toolConnections + 1] = tool.Unequipped:Connect(function()
             stop()
             closeWorking()
-            FabricationTool.restore(tool)
             clearLines()
             preview = nil
             panel.Visible = false
@@ -209,15 +212,10 @@ function FileUI.start(workpieces)
         end)
         toolConnections[#toolConnections + 1] = tool.Equipped:Connect(function()
             mouse.TargetFilter = player.Character
-            FabricationTool.hideEquipped(tool)
-            showModel()
             panel.Visible = true
             status.Text = 'Aim at the edge; the working file follows the surface'
         end)
-        if equipped() then
-            FabricationTool.hideEquipped(tool)
-            showModel()
-        end
+        if equipped() then panel.Visible = true end
     end
 
     for _, value in {1, 3, 6} do
@@ -361,7 +359,7 @@ function FileUI.start(workpieces)
         local plan = Motion.filePlan(item, result)
         preview = {part = part, item = item, spec = result, motion = plan}
         draw(result)
-        if showModel() then working:pose(Motion.filePose(plan, 0, 0)) end
+        if working then working:hide() end
         if os.clock() >= feedbackUntil then
             status.Text = 'Edge ready - hold LMB (' .. tostring(radius) .. ' mm)'
         end
