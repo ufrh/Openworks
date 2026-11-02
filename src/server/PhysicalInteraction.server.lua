@@ -476,6 +476,22 @@ local function startFabrication(player, material, tool)
     local restingFrame = tool:GetPivot()
     local contact = toolContact(tool, part, kind)
     local toolBounds, toolSize
+    local fileLengthLocal
+    if kind == 'File' then
+        local bounds, dimensions
+        if tool:IsA('Model') then
+            bounds, dimensions = tool:GetBoundingBox()
+        else
+            bounds, dimensions = part.CFrame, part.Size
+        end
+        local long = bounds.RightVector
+        if dimensions.Y > dimensions.X and dimensions.Y >= dimensions.Z then
+            long = bounds.UpVector
+        elseif dimensions.Z > dimensions.X and dimensions.Z > dimensions.Y then
+            long = bounds.LookVector
+        end
+        fileLengthLocal = restingFrame:VectorToObjectSpace(long)
+    end
     local sawLengthFrame, sawLengthSize
     if kind == 'Saw' then
         if tool:IsA('Model') then
@@ -506,6 +522,7 @@ local function startFabrication(player, material, tool)
         sawFlip = tool:GetAttribute('SawFlip180') == true,
         toolBoundsOffset = if toolBounds then restingFrame:ToObjectSpace(toolBounds) else nil,
         toolBoundsSize = toolSize,
+        fileLengthLocal = fileLengthLocal,
         sawLengthOffset = if sawLengthFrame then restingFrame:ToObjectSpace(sawLengthFrame) else nil,
         sawLengthSize = sawLengthSize,
         positioning = false,
@@ -829,18 +846,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.goalFrame = contactFrame * state.contactOffset
 
     if state.kind == 'File' then
-        local fileBounds = state.item:IsA('Model') and state.item:GetBoundingBox()
-            or state.part.CFrame
-        local fileSize = state.item:IsA('Model') and state.item:GetExtentsSize()
-            or state.part.Size
-        local long = fileBounds.RightVector
-        if fileSize.Y > fileSize.X and fileSize.Y >= fileSize.Z then
-            long = fileBounds.UpVector
-        elseif fileSize.Z > fileSize.X and fileSize.Z > fileSize.Y then
-            long = fileBounds.LookVector
-        end
-        local localLong = state.restingFrame:VectorToObjectSpace(long)
-        local worldLong = state.goalFrame:VectorToWorldSpace(localLong)
+        local worldLong = state.goalFrame:VectorToWorldSpace(state.fileLengthLocal)
         local desired = forward.Unit
         if worldLong:Dot(desired) < 0 then desired = -desired end
         local correctionAxis = worldLong:Cross(desired)
