@@ -56,10 +56,6 @@ function FileShape.preview(item, hitWorld, radius)
         }
     end
     table.sort(candidates, function(a, b) return a.distance < b.distance end)
-    if candidates[2].distance > math.max(radius * 2, 5) then
-        return nil, 'Aim closer to an outer edge'
-    end
-
     local first, second = candidates[1], candidates[2]
     local spanA = component(high - low, first.axis)
     local spanB = component(high - low, second.axis)
@@ -72,6 +68,20 @@ function FileShape.preview(item, hitWorld, radius)
             edgeAxis = axis.name
             break
         end
+    end
+
+    local edgeHasMaterial = false
+    local limitA = component(if first.sign == 1 then high else low, first.axis)
+    local limitB = component(if second.sign == 1 then high else low, second.axis)
+    for _, vertex in item.solid.vertices do
+        if math.abs(component(vertex, first.axis) - limitA) < 0.001
+            and math.abs(component(vertex, second.axis) - limitB) < 0.001 then
+            edgeHasMaterial = true
+            break
+        end
+    end
+    if not edgeHasMaterial then
+        return nil, 'This edge has already been rounded; choose another'
     end
 
     local a = axisVector(first.axis) * first.sign
