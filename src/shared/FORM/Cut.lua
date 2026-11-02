@@ -46,11 +46,17 @@ function Cut.split(solid, planePoint, planeNormal)
     end
 
     local normal = planeNormal.Unit
+    local px, py, pz = planePoint.X, planePoint.Y, planePoint.Z
+    local nx, ny, nz = normal.X, normal.Y, normal.Z
+    local function signedDistance(vertex)
+        return (vertex.X - px) * nx + (vertex.Y - py) * ny + (vertex.Z - pz) * nz
+    end
+
     local distances = {}
     local minimum, maximum = math.huge, -math.huge
 
     for i, vertex in solid.vertices do
-        local distance = (vertex - planePoint):Dot(normal)
+        local distance = signedDistance(vertex)
         distances[i] = distance
         minimum = math.min(minimum, distance)
         maximum = math.max(maximum, distance)
@@ -74,7 +80,12 @@ function Cut.split(solid, planePoint, planeNormal)
         local ratio = distances[a] / (distances[a] - distances[b])
         nextVertex += 1
         local index = nextVertex
-        local result = solid.vertices[a]:Lerp(solid.vertices[b], ratio)
+        local va, vb = solid.vertices[a], solid.vertices[b]
+        local result = Vector3.new(
+            va.X + (vb.X - va.X) * ratio,
+            va.Y + (vb.Y - va.Y) * ratio,
+            va.Z + (vb.Z - va.Z) * ratio
+        )
         intersections[key] = index
         intersections[index] = result
         return index
@@ -106,8 +117,8 @@ function Cut.split(solid, planePoint, planeNormal)
 
             for _, edge in {{a, b}, {b, c}, {c, a}} do
                 local p, q = output.vertices[edge[1]], output.vertices[edge[2]]
-                if math.abs((p - planePoint):Dot(normal)) <= EPSILON
-                    and math.abs((q - planePoint):Dot(normal)) <= EPSILON then
+                if math.abs(signedDistance(p)) <= EPSILON
+                    and math.abs(signedDistance(q)) <= EPSILON then
                     local key = edgeKey(edge[1], edge[2])
                     local record = planeEdges[key] or {a = edge[1], b = edge[2], count = 0}
                     record.count += 1
@@ -172,9 +183,14 @@ function Cut.split(solid, planePoint, planeNormal)
             if not visited[vertex] then return nil, 'MULTIPLE_CUT_LOOPS' end
         end
 
-        local center = Vector3.zero
-        for _, index in ring do center += output.vertices[index] end
-        center /= #ring
+        local sx, sy, sz = 0, 0, 0
+        for _, index in ring do
+            local v = output.vertices[index]
+            sx += v.X
+            sy += v.Y
+            sz += v.Z
+        end
+        local center = Vector3.new(sx / #ring, sy / #ring, sz / #ring)
 
         local centerId = #output.vertices + 1
         output.vertices[centerId] = center
