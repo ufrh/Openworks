@@ -520,7 +520,6 @@ local function startFabrication(player, material, tool)
         contactOffset = contact:ToObjectSpace(restingFrame),
         sawBladeLocal = sawBladeLocal,
         sawBodyLocal = sawBodyLocal,
-        manualSawRoll = false,
         toolBoundsOffset = if toolBounds then restingFrame:ToObjectSpace(toolBounds) else nil,
         toolBoundsSize = toolSize,
         currentFrame = restingFrame,
@@ -741,8 +740,9 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
 
     local travelLength = if axis == 'X' then size.Z else size.X
     local travelRange = math.max(0.12, travelLength * 0.5 - 0.04)
-    local travel = if axis == 'X' then Vector3.new(0, 0, stroke * travelRange)
-        else Vector3.new(stroke * travelRange, 0, 0)
+    local travelDirection = if state.kind == 'Saw' then -1 else 1
+    local travel = if axis == 'X' then Vector3.new(0, 0, stroke * travelRange * travelDirection)
+        else Vector3.new(stroke * travelRange * travelDirection, 0, 0)
 
     local cross
     if state.kind == 'File' then
@@ -773,19 +773,29 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
 
     state.goalFrame = contactFrame * state.contactOffset
 
-    if state.kind == 'Saw' and state.sawBladeLocal and not state.manualSawRoll then
+    if state.kind == 'Saw' then
         local baseFrame = CFrame.fromMatrix(pos, forward, upward, forward:Cross(upward))
-        local bestHeight = math.huge
-        for quarter = 0, 3 do
-            local candidate = baseFrame * CFrame.Angles(
-                math.rad(state.roll + quarter * 90), 0, 0) * state.contactOffset
-            local height = (candidate:PointToWorldSpace(state.sawBladeLocal)
-                - candidate:PointToWorldSpace(state.sawBodyLocal)).Y
-            if height < bestHeight then
-                state.goalFrame = candidate
-                bestHeight = height
+        if state.sawAutoQuarter == nil then
+            local bestQuarter = 0
+            if state.sawBladeLocal and state.sawBodyLocal then
+                local bestHeight = math.huge
+                for quarter = 0, 3 do
+                    local candidate = baseFrame * CFrame.Angles(
+                        math.rad(quarter * 90), 0, 0) * state.contactOffset
+                    local height = (candidate:PointToWorldSpace(state.sawBladeLocal)
+                        - candidate:PointToWorldSpace(state.sawBodyLocal)).Y
+                    if height < bestHeight then
+                        bestQuarter = quarter * 90
+                        bestHeight = height
+                    end
+                end
             end
+            state.sawAutoQuarter = bestQuarter
         end
+
+        state.goalFrame = baseFrame * CFrame.Angles(
+            math.rad(state.roll + state.sawAutoQuarter + 180), 0, 0)
+            * state.contactOffset
     end
 
     if state.kind == 'Saw' then
@@ -903,7 +913,6 @@ onRequest = function(player, action, ...)
         local step = ...
         if step == 1 or step == -1 then
             state.roll = (state.roll + step * 90) % 360
-            if state.kind == 'Saw' then state.manualSawRoll = true end
             state.lastInput = os.clock()
         end
     end
