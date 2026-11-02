@@ -89,10 +89,10 @@ local function run()
     assert(close(remaining, 84000), 'Subtraction did not conserve stock material')
 
     print(string.format('[FORM] Boolean subtract: %d pieces, removed %.4f mm^3', #leftovers, removed))
-    local cylinder = FORM.cylinder(10, 30, 12)
+    local cylinder = FORM.cylinder(10, 70, 12)
     assert(FORM.validate(cylinder).ok, 'Cylindrical cutter is not watertight')
 
-    local expectedCylinder = 12 * 10 * 10 * math.sin(2 * math.pi / 12) * 30 / 2
+    local expectedCylinder = 12 * 10 * 10 * math.sin(2 * math.pi / 12) * 70 / 2
     assert(math.abs(FORM.signedVolume(cylinder) - expectedCylinder) < 0.05,
         'Cylinder mesh has incorrect volume')
 
@@ -105,7 +105,7 @@ local function run()
         drillRemaining += FORM.signedVolume(piece)
     end
 
-    assert(math.abs(drillRemoved - expectedCylinder * 20 / 30) < 0.1,
+    assert(math.abs(drillRemoved - expectedCylinder * 50 / 70) < 0.1,
         'Incorrect drilling removal volume')
     assert(math.abs(drillRemaining + drillRemoved - FORM.signedVolume(box)) < 0.01,
         'Drilling failed volume conservation')
