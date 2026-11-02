@@ -5,24 +5,38 @@ local Cut = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FO
 local Renderer = require(script:WaitForChild('FORMRenderer'))
 
 local stock = FORM.box(Vector3.new(100, 50, 20))
-local positive, negative = Cut.split(stock, Vector3.zero, Vector3.new(1, 0.4, 0.7))
-assert(positive and negative, '[FORM] Preview cut failed: ' .. tostring(negative))
+local first, remainder = Cut.split(stock, Vector3.zero, Vector3.xAxis)
+assert(first and remainder, '[FORM] First preview cut failed: ' .. tostring(remainder))
 
-for index, solid in {positive, negative} do
+local second, third = Cut.split(first, Vector3.new(0, 7, 0), Vector3.yAxis)
+assert(second and third, '[FORM] Second preview cut failed: ' .. tostring(third))
+
+local colors = {
+    Color3.fromRGB(78, 156, 120),
+    Color3.fromRGB(183, 155, 95),
+    Color3.fromRGB(126, 145, 193),
+}
+local pieces = {remainder, second, third}
+
+for index, solid in pieces do
     local success, result = pcall(function()
-        local part = Renderer.create(solid, 0.04)
-        part.Name = 'FORM Cut ' .. index
+        local part = Renderer.create(solid, 0.04, 30)
+        part.Name = 'FORM Sequential Cut ' .. index
         part.Anchored = true
         part.CanCollide = false
         part.Material = Enum.Material.Metal
-        part.Color = if index == 1 then Color3.fromRGB(78, 156, 120) else Color3.fromRGB(183, 155, 95)
-        part.CFrame = CFrame.new(0, 7, -12) * CFrame.new((if index == 1 then 1 else -1) * 1.5, 0, 0)
+        part.Color = colors[index]
+        part.CFrame = CFrame.new((index - 2) * 5, 7, -12)
         part.Parent = workspace
     end)
 
     if not success then
-        warn('[FORM] Cut preview failed: ' .. tostring(result))
+        warn('[FORM] Piece ' .. index .. ' preview failed: ' .. tostring(result))
     end
 end
 
-print('[FORM] Split volumes:', FORM.signedVolume(positive), FORM.signedVolume(negative), 'mm^3')
+local total = 0
+for _, solid in pieces do
+    total += FORM.signedVolume(solid)
+end
+print('[FORM] Three-piece preview volume:', total, 'mm^3')
