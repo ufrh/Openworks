@@ -17,12 +17,14 @@ The saw is a player-operated interaction on top of FORM and the M1 physical work
 3. Hover the mouse over the secured piece. A gold intersection outline previews the actual cutting plane. No EditableMesh is allocated for the preview.
 4. Press **Q/E** to rotate the cutting plane by 15 degrees; **V** toggles workpiece-centered orbit camera; **T** selects top-down; hold RMB and move the mouse to orbit, mouse wheel to zoom.
 5. **Hold LMB** to operate the equipped Tool. The grip reciprocates while progress fills (3.8 seconds for steel, 2.6 for aluminum). Releasing early cancels without any changes.
-6. At completion, `SawCut.split` applies a **0.8 mm kerf** as two FORM convex-plane splits. Both fragments are independently watertight. The larger fragment inherits the temporary anchored workholding state; the other is released into physics.
+6. At completion, `SawCut.split` applies a **0.8 mm kerf**. Convex solids use the existing FORM splitter; hollow tubes use a tube profile splitter that preserves both inner and outer walls and caps the cut with annular end faces. Both fragments remain watertight. The larger fragment inherits the temporary anchored workholding state; the other is released into physics.
 7. New geometry is rendered once per completed cut. Rectangular fragments become inexpensive native Parts; oblique cuts can require fresh EditableMeshes.
 
 ## Internals
 
-- `src/shared/SawCut.lua`: plane intersection guide, world-to-FORM coordinate mapping, twin planar splits and kerf volume verification.
+- `src/shared/SawCut.lua`: plane intersection guide, world-to-FORM coordinate mapping, convex and tube cutting dispatch, and kerf volume verification.
+- `src/shared/SawTube.lua`: non-convex hollow-tube cross-cuts, two-loop cut guides, annular caps, and profile metadata for repeat cuts.
+- `src/server/SawTubeTests.server.lua`: analytical kerf checks, watertight genus-1 topology, angled cuts, repeat cuts, and invalid cut rejection.
 - `src/client/StockUI.lua`: atomic two-piece workpiece replacement, density and physical state retention, fragment recentring, and stock palette docking.
 - `src/client/SawUI.lua`: Tool detection, fabricating controls, preview part pool, procedural Tool.Grip animation, and optional orbit camera.
 - `src/client/ToolVisual.lua`: match the visual model in ReplicatedStorage to a Roblox Tool by name, with handle welding.
@@ -30,7 +32,7 @@ The saw is a player-operated interaction on top of FORM and the M1 physical work
 
 ## Known scope
 
-This builds on the existing **client-local** M1 stock prototype. Cutting and workpiece replacement are not yet server-authoritative or multiplayer replicated. `FORM.Cut.split` currently requires convex solids: tubes and nonconvex manufactured geometry can fail. Collisions for EditableMesh fragments use the current hull creation mode and won't reproduce concave voids. Mesh memory remains limited; oblique splits may exhaust client EditableMesh capacity, but axis-aligned rectangular stock cuts stay as native Parts.
+This builds on the existing **client-local** M1 stock prototype. Cutting and workpiece replacement are not yet server-authoritative or multiplayer replicated. `FORM.Cut.split` still requires convex solids, but hollow cylindrical tubes have a dedicated profile-based path for straight or angled **complete cross-cuts**. Longitudinal slots, end-clipping cuts, and arbitrary nonconvex fabricated geometry remain unsupported. Tubular fragments retain their profile data so subsequent transverse cuts work. Collisions for EditableMesh fragments use the current hull creation mode and **won't reproduce the hollow bore for physics**. Mesh memory remains limited; tubes and oblique splits may exhaust client EditableMesh capacity, but rectangular stock cuts stay as native Parts.
 
 No bespoke saw machine is encoded in FORM: the tool interaction chooses the plane and timing, while FORM computes the resulting physical workpieces.
 
