@@ -204,7 +204,7 @@ function UI.start()
         local a, b, c = tonumber(sizeA.Text), tonumber(sizeB.Text), tonumber(sizeC.Text)
         local dimensions = if shape == 'Rod' then {radius = a / 2, length = b}
             elseif shape == 'Tube' then {radius = a / 2, innerRadius = c / 2, length = b}
-            else {x = a, y = b, z = c} end
+            else {x = a, y = b, z = c}
         local ok, err = pcall(function()
             local count = 0
             for _ in current do count += 1 end
