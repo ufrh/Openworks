@@ -197,8 +197,29 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
+local function dropHeld(allowSelect)
+    local previous = held
+    local wasDragging = dragging ~= nil
+    held = nil
+    dragging = nil
+
+    if previous or wasDragging then
+        remote:FireServer('End')
+    end
+
+    if allowSelect and previous and not previous.moved
+        and os.clock() - previous.started < 0.24 then
+        select(previous.item, previous.kind)
+    end
+end
+
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+
+    if held or dragging then
+        dropHeld(true)
+        return
+    end
 
     if fabrication then
         fabrication.down = false
@@ -206,18 +227,17 @@ UserInputService.InputEnded:Connect(function(input)
             UserInputService.MouseBehavior = fabrication.previousMouseBehavior
             fabrication.previousMouseBehavior = nil
         end
-        return
     end
+end)
 
-    local previous = held
-    held = nil
-    dragging = nil
-    if not previous then return end
-
-    remote:FireServer('End')
-
-    if not previous.moved and os.clock() - previous.started < 0.24 then
-        select(previous.item, previous.kind)
+UserInputService.WindowFocusReleased:Connect(function()
+    dropHeld(false)
+    if fabrication and fabrication.down then
+        fabrication.down = false
+        if fabrication.previousMouseBehavior then
+            UserInputService.MouseBehavior = fabrication.previousMouseBehavior
+            fabrication.previousMouseBehavior = nil
+        end
     end
 end)
 
