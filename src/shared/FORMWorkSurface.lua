@@ -73,7 +73,15 @@ function Surface.path(part, sideAxis, sideSign, stroke, above)
 end
 
 function Surface.guide(part, sideAxis, sideSign)
-    local face, faceSign = Surface.face(part)
+    local face = Surface.face(part)
+    if sideAxis == face then
+        for _, axis in AXES do
+            if axis ~= face then
+                sideAxis = axis
+                break
+            end
+        end
+    end
     local point, forward, up = Surface.path(part, sideAxis, sideSign, 0, 0.04)
     local side = forward:Cross(up).Unit
     local along
