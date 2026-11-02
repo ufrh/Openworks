@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local FORM = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'))
 local Union = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Union'))
 local Shading = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Shading'))
+local Planarize = require(ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('FORM'):WaitForChild('Planarize'))
 
 local function checkSurface(mesh, expectedPlane, expectedNormal, label)
     local normals, stats = Shading.normals(mesh, 30)
@@ -31,6 +32,25 @@ local function checkSurface(mesh, expectedPlane, expectedNormal, label)
     print(string.format('[FORM:Shading] %s: %d stable top triangles; %d plane groups, %d protected, %d smoothed edges',
         label, selected, stats.planarGroups, stats.protectedGroups, stats.smoothedEdges))
 end
+
+
+local warped = FORM.box(Vector3.new(100, 50, 40))
+warped.vertices[3] = warped.vertices[3] + Vector3.new(0, 0.008, 0)
+local original = warped.vertices[3]
+local display, planarStats = Planarize.display(warped)
+
+assert(warped.vertices[3] == original, 'Display planarization mutated canonical geometry')
+assert(planarStats.snappedVertices > 0, 'Warpage fixture did not trigger planarization')
+assert(planarStats.maxAxisShift > 0 and planarStats.maxAxisShift <= 0.03,
+    'Unexpected CAD display geometry correction')
+
+local topY = display.vertices[3].Y
+for _, index in {3, 4, 7, 8} do
+    assert(math.abs(display.vertices[index].Y - topY) < 1e-5,
+        string.format('Display top not planar after correction at vertex %d', index))
+end
+print(string.format('[FORM:Shading] Warped-plate planarization: %d vertices corrected; max %.6f mm',
+    planarStats.snappedVertices, planarStats.maxAxisShift))
 
 local box = FORM.box(Vector3.new(100, 50, 40))
 checkSurface(box, 25, Vector3.yAxis, 'Stock')
