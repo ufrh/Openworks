@@ -149,3 +149,13 @@ The single-tool `Union.subtractBoundary(stock, cutter, expectedVolume)` API is u
 **Independent geometry reference results (not Roblox runtime):** A corresponding float32-quantized stock-minus-cutters implementation passes edge closure, correct winding/positive volume, and Euler checks for the 100×50×40 mm workpiece with (1) a through-hole, (2) that hole plus a blind pocket, and (3) both plus a rounded through-slot. Reconstructed meshes contain 156, 270, and 826 triangles, respectively, with expected volume 192650, 190090, and 184240 mm³ and Euler 0, 0, −2. Those reference tests support the design; Studio's Luau results are still unverified.
 
 The older `Union.reconstruct(pieces)` remains a bounded experimental convex-fragment union used for adjacent-block diagnostics. The machining workbench no longer depends on it. This is a geometry prototype with explicit budgets, not an unrestricted analytic CAD solver.
+
+## Repeated-machining convexity lineage guard
+
+The 22:10 Studio run passed rectangular and drilled unified boundary tests. MachineTests also passed drilling and blind-pocket removal but failed on the next slot cutter: a convex fragment produced by FORM's earlier clipping reported a 0.002752123 mm triangle-plane deviation despite its construction by successive convex half-space intersections.
+
+`Cut.split` now retains a module-private, weak-keyed provenance registry for pieces that came from *successful, topology-checked, volume-conserving* planar splits. For these generated pieces only, an additional maximum propagated convexity drift of 0.01 mm is allowed. Arbitrary user-supplied/non-convex solids still have to pass the original strict geometric convexity check. A lineage piece with excessive distortion fails with `CONVEX_LINEAGE_DRIFT` rather than silently continuing. The regression suite explicitly checks that a drilled non-convex manifold is not accepted as input to convex splitting, in addition to the drill → pocket → slot sequence.
+
+This is a **bounded float32 geometry workaround**, not exact convex arithmetic. If accumulated drift routinely approaches 0.01 mm, the correct next architectural change is a high-precision canonical geometry representation rather than further widening tolerances.
+
+**Runtime verification:** the lineage patch has been committed but has not yet been tested in Roblox Studio.
