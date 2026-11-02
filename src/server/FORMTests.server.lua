@@ -102,6 +102,9 @@ local function run()
         weldStats.verticesBefore, weldStats.verticesAfter, weldStats.trianglesAfter,
         weldStats.tJunctions, weldStats.collapsedFaces, tostring(weldStats.valid)))
     print(string.format('[FORM] Weld repair: %d edge splits, converged=%s', weldStats.repairedJunctions, tostring(weldStats.converged)))
+    for code, count in weldStats.issueCounts do
+        print(string.format('[FORM] Weld topology issue: %s x%d', code, count))
+    end
     if weldStats.valid then
         local delta = FORM.signedVolume(welded) - remaining
         print(string.format('[FORM] Welded volume delta: %+.6f mm^3', delta))
