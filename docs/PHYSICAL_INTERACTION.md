@@ -14,9 +14,11 @@ All interactions use actual Workspace objects. No Roblox Tool, Backpack, hotbar,
 
 Add an **Attachment** named `BladeEdge` anywhere inside the welded saw model to precisely define the working blade contact. Its local **+X** is the stroke direction, **+Y** points out of the stock, and **+Z** is the cutting-plane normal.
 
-Add `FileFace` to a file if desired. Without markers, OPENWORKS derives a provisional contact point from the underside of the full tool Model's bounding box. A hand-authored marker gives a much more accurate fit for custom Blender geometry.
+Add `FileFace` to a file if desired. Without `BladeEdge`, OPENWORKS first looks for a BasePart named `Blade`, `SawBlade`, or `BladePart` and aligns the longest axis of that blade. If no blade is found, it uses the full tool's bounds, following the earlier saw visual alignment convention. A hand-authored attachment is still the accurate option for custom Blender geometry.
 
-The physical tool is never cloned into a separate cosmetic. An invisible target with server-controlled AlignPosition / AlignOrientation moves the same rigid assembly while machining. Collisions on the working tool are temporarily disabled during positioning to avoid throwing loose stock; prior collision settings are restored on exit.
+In precision mode, **R** rolls the physical tool 90 degrees around the stroke axis; **Shift+R** rolls it back 90 degrees. This does not change the cut plane and lets you correct models whose grip/blade faces are oriented differently.
+
+The physical tool is never cloned into a separate cosmetic. An invisible target with server-controlled AlignPosition / AlignOrientation moves the same rigid assembly. **Every BasePart in the tool is forced to CanCollide=false, CanTouch=false, and CanQuery=false throughout fabrication**, and its previous values are restored on exit or completion. Dragging outside fabrication retains normal physics and collisions.
 
 ## Free-mode interaction
 
