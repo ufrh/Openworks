@@ -256,6 +256,7 @@ UserInputService.InputEnded:Connect(function(input)
 
     if fabrication then
         fabrication.down = false
+        fabrication.stroke = 0
         if fabrication.previousMouseBehavior then
             UserInputService.MouseBehavior = fabrication.previousMouseBehavior
             fabrication.previousMouseBehavior = nil
@@ -267,6 +268,7 @@ UserInputService.WindowFocusReleased:Connect(function()
     dropHeld(false)
     if fabrication and fabrication.down then
         fabrication.down = false
+        fabrication.stroke = 0
         if fabrication.previousMouseBehavior then
             UserInputService.MouseBehavior = fabrication.previousMouseBehavior
             fabrication.previousMouseBehavior = nil
@@ -314,16 +316,16 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             inspector:status('Manual passes: ' .. math.floor(a * 100) .. '%')
         end
     elseif action == 'MachiningCompleted' then
-        restoreFabricationCollision()
-        guide.Parent = nil
-        fabrication = nil
-        pendingTool = nil
-        if a and a.Parent then
-            inspect(a)
-            inspector:status(b or 'Material updated')
-        elseif inspector.material then
-            inspector:setTool(nil)
-            inspector:status(b or 'Operation ended')
+        if fabrication then
+            if fabrication.previousMouseBehavior then
+                UserInputService.MouseBehavior = fabrication.previousMouseBehavior
+                fabrication.previousMouseBehavior = nil
+            end
+            fabrication.down = false
+            fabrication.stroke = 0
+            fabrication.pointerMoved = false
+            fabrication.offset = 0
+            inspector:status(b or 'Cut complete. Move the guide and continue.')
         end
     elseif action == 'Feedback' then
         pendingTool = nil
@@ -442,7 +444,7 @@ RunService.RenderStepped:Connect(function(dt)
             ray.Origin + ray.Direction.Unit * dragging.distance, dragging.rotation)
     elseif fabrication then
         remote:FireServer('FabricationMove',
-            fabrication.stroke, fabrication.offset, fabrication.axis)
+            fabrication.stroke, fabrication.offset, fabrication.axis, fabrication.down)
     end
 end)
 
