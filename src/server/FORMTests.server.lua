@@ -129,6 +129,18 @@ local function run()
 
     verifyUnified('Rectangular', leftovers, remaining)
 
+    local joinedA = FORM.box(Vector3.new(30, 20, 10))
+    local joinedB = FORM.box(Vector3.new(30, 20, 10))
+    for i, vertex in joinedA.vertices do joinedA.vertices[i] = vertex - Vector3.new(15, 0, 0) end
+    for i, vertex in joinedB.vertices do joinedB.vertices[i] = vertex + Vector3.new(15, 0, 0) end
+    local adjacentMesh, adjacentReason, adjacentStats = Union.reconstruct({joinedA, joinedB}, 12000)
+    assert(adjacentMesh, 'Adjacent block union failed: ' .. tostring(adjacentReason))
+    assert(adjacentStats.weld.connectedComponents == 1, 'Adjacent union disconnected')
+    assert(adjacentStats.weld.eulerCharacteristic == 2, 'Adjacent union has incorrect Euler characteristic')
+    assert(close(FORM.signedVolume(adjacentMesh), 12000), 'Adjacent union changed volume')
+    print(string.format('[FORM] Adjacent box union: %d triangles, Euler=%d, volume=%.4f mm^3',
+        #adjacentMesh.triangles, adjacentStats.weld.eulerCharacteristic, FORM.signedVolume(adjacentMesh)))
+
     print(string.format('[FORM] Boolean subtract: %d pieces, removed %.4f mm^3', #leftovers, removed))
     local cylinder = FORM.cylinder(7, 70, 12)
     assert(FORM.validate(cylinder).ok, 'Cylindrical cutter is not watertight')
