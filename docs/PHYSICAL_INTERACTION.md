@@ -42,7 +42,7 @@ The physical tool is never cloned into a separate cosmetic. **Precision fabricat
 4. **Hold LMB and manually move the mouse back and forth**. The actual physical saw follows each stroke; input is deliberately more sensitive for comfortable short wrist movements. Repeated direction reversals advance progress; releasing the mouse pauses.
 5. When five qualifying stroke reversals complete, the server calls `SawCut.split` using FORM. The larger retained piece **remains the same Part and remains selected** (only its dimensions and CFrame change). An offcut appears as a separate unanchored, tagged physical Part. Both are positioned above tabletop collision support.
 6. The retained material is temporarily stabilized on the workbench during fabrication, preventing physics tunneling and enabling successive cuts. Its original anchored state is restored after leaving the session.
-7. **Move the cutting guide and saw again without exiting**. Progress resets for the next cut. Release LMB before starting another stroke sequence. RMB orbit, pan, wheel zoom and R/Shift+R tool roll continue to work.
+7. **Move the cutting guide and saw again without exiting**. Progress resets for the next cut, but the cut position no longer snaps to the center: the new aim is projected near the cursor over the retained piece, falling back to the previous cut point. Release LMB before starting another stroke sequence. RMB orbit, pan, wheel zoom and R/Shift+R tool roll continue to work.
 8. **Only Esc (or Exit)** ends precision mode, restores the camera, and returns the saw to its physical resting position.
 
 ## Filing a physical metal edge
@@ -50,10 +50,12 @@ The physical tool is never cloned into a separate cosmetic. **Precision fabricat
 1. Place a rigid unanchored file Model on the workbench, tag it `isTool = true`, and name it with `File` or set `FabricationKind = File`. Optional `FileFace` Attachment defines the physical working contact and orientation.
 2. Inspect a test sheet and select the file from the same workbench tool list. The actual file moves kinematically toward the sheet—no force-driven alignment constraints or collision.
 3. Hover the sheet near any edge. A **teal line** previews which of the four top-side X/Z edges is selected.
-4. Hold LMB and move the mouse back and forth. Five qualified direction reversals shave approximately **0.024 studs** off the selected side, translating the same Part to keep the opposite edge fixed. This is a measurable physical edge-sizing operation, not a fabricated hit counter.
-5. Release LMB, hover another edge, and continue as often as needed. **Esc** is the only regular exit.
+4. The **File Settings** section of the inspection panel lets you switch between **Round** and **Chamfer** and change **Size (mm)** with +/- buttons or an editable value. Sizes are clamped based on the selected plate thickness and validated again on the server.
+5. Hold LMB and move the mouse back and forth. The physical file now sweeps almost the full edge length, from one endpoint to the other. Five qualified direction reversals apply a real FORM geometry modification to the chosen top edge.
+6. On completion, FORM generates a rounded multi-segment edge or flat chamfer. A server-side EditableMesh becomes a welded MeshPart with convex-hull collision, while the original Part remains as an invisible, queryable selection/identity backing (its box collision is disabled).
+7. Release LMB, hover another edge, and continue as often as needed. **Esc** is the only regular exit.
 
-**Current representation limit:** Rectangular native Parts can be resized to file their sides, but they cannot visibly round/chamfer an edge. The existing `FileShape` geometry kernel supports edge-rounding solids, but rendering those true shapes requires a FORM-to-EditableMesh replacement path. No fake curved filing is claimed in this phase.
+**Limitations:** The current physical renderer supports convex edge geometry and hull collision rather than perfect microscopic contact fidelity. Re-filing the exact same previously rounded edge may be refused by the FORM edge detector; select a different unworked edge. Sawing an already filed mesh is blocked until the mesh-aware saw split adapter is installed. EditableMesh requires appropriate Creator Hub Mesh / Image API permissions and sufficient mesh memory; failures are reported rather than silently resizing the stock.
 
 ## Receiver health
 
@@ -61,6 +63,6 @@ The shared `PhysicalInteraction` RemoteEvent is reused on server restart instead
 
 ## Scope and safety
 
-- Saw geometry edits currently work only on rectangular native `Part` material with `FORMNativeStock = true`; arbitrary imported/EditableMesh FORM pieces need a mesh replacement adapter. The UI reports unsupported machining instead of deleting geometry.
+- Saw geometry edits currently work only on unfiled rectangular native `Part` stock marked `FORMNativeStock = true`. Already-filed shapes are preserved and rejected with an explicit message until mesh-aware sawing is added.
 - No fake tilted/oblique saw-cut mode is presented: the native-Part fragment renderer supports only the X/Z straight cut directions. More complex FORM split results require physical EditableMesh output.
 - This code has been reviewed/committed on GitHub but **has not been tested inside Roblox Studio**. In Studio, verify: detection, grabbing, click selection, camera orbit, tool positioning, gold guide, manual stroke progress, two physical offcuts, and ESC restoration.
