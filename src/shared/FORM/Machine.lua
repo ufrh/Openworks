@@ -177,6 +177,19 @@ local function operationCutters(spec)
     error('Unknown cutting operation: ' .. tostring(spec.kind))
 end
 
+local function planeCutter(point, normal, stock)
+    assertVector(point, 'Plane point')
+    assertVector(normal, 'Plane normal')
+    assert(normal.Magnitude > 0, 'Invalid machining plane')
+
+    local lower, upper = FORM.bounds(stock)
+    local size = (upper - lower).Magnitude * 8 + 100
+    local unit = normal.Unit
+    local center = point + unit * (size / 2)
+    local frame = CFrame.lookAt(center, center + unit)
+    return transform(FORM.box(Vector3.new(size * 2, size * 2, size)), frame)
+end
+
 local function execute(pieces, spec)
     assert(type(spec) == 'table' and type(spec.kind) == 'string', 'Invalid machining operation')
 
@@ -191,11 +204,13 @@ local function execute(pieces, spec)
             current = nextPieces
             removed += amount
         end
-        return current, removed
+        return current, removed, cutters
     end
 
     if spec.kind == 'saw' then
-        return keepNegative(pieces, spec.point, spec.normal)
+        local output, removed = keepNegative(pieces, spec.point, spec.normal)
+        if not output then return nil, removed end
+        return output, removed, {planeCutter(spec.point, spec.normal, pieces[1])}
     end
 
     if spec.kind == 'chamfer' or spec.kind == 'fillet' then
@@ -229,13 +244,15 @@ local function execute(pieces, spec)
 
         local current = pieces
         local removed = 0
+        local cutters = {}
         for _, plane in planes do
             local nextPieces, amount = keepNegative(current, plane.point, plane.normal)
             if not nextPieces then return nil, amount end
             current = nextPieces
             removed += amount
+            cutters[#cutters + 1] = planeCutter(plane.point, plane.normal, pieces[1])
         end
-        return current, removed
+        return current, removed, cutters
     end
 
     return nil, 'UNKNOWN_OPERATION_' .. spec.kind
@@ -266,10 +283,11 @@ function Machine:apply(spec)
     local old = self.states[self.cursor + 1]
     if #old.pieces == 0 then return nil, 'WORKPIECE_EMPTY' end
 
-    local ok, pieces, removed = pcall(execute, old.pieces, spec)
+    local ok, pieces, removed, cutters = pcall(execute, old.pieces, spec)
     if not ok then return nil, tostring(pieces) end
     if not pieces then return nil, removed end
     if #pieces == 0 then return nil, 'OPERATION_REMOVES_ENTIRE_WORKPIECE' end
+    if removed <= 1e-5 then return nil, 'NO_MATERIAL_REMOVED' end
 
     local currentVolume = volume(pieces)
     if not FORM.volumeClose(currentVolume + removed, old.volume) then
@@ -283,7 +301,7 @@ function Machine:apply(spec)
     while #self.states > self.cursor + 1 do table.remove(self.states) end
 
     self.cursor += 1
-    self.history[self.cursor] = {spec = table.clone(spec), removed = removed}
+    self.history[self.cursor] = {spec = table.clone(spec), removed = removed, cutters = cutters}
     self.states[self.cursor + 1] = {
         pieces = pieces,
         volume = currentVolume,
@@ -312,8 +330,21 @@ function Machine:reset()
 end
 
 function Machine:mesh()
-    local solid, reason, stats = Union.reconstruct(self:pieces(), self:volume())
-    return solid, reason, stats
+    if self.cursor == 0 then
+        local solid = cloneSolid(self.stock)
+        return solid, nil, {weld = {connectedComponents = 1, eulerCharacteristic = 2,
+            trianglesAfter = #solid.triangles}, surface = {outputTriangles = #solid.triangles}}
+    end
+
+    local cutters = {}
+    for i = 1, self.cursor do
+        for _, cutter in self.history[i].cutters or {} do
+            cutters[#cutters + 1] = cutter
+        end
+    end
+
+    if #cutters > 48 then return nil, 'CUTTER_HISTORY_BUDGET_EXCEEDED' end
+    return Union.fromStockAndCutters(self.stock, cutters, self:volume())
 end
 
 function Machine:status()
