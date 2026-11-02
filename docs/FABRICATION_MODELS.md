@@ -30,11 +30,11 @@ The controller aligns these markers with the chosen cutting/filing frame. For Ha
 ## Saw interaction
 
 1. Equip `Hacksaw`, secure stock, aim at the surface.
-2. On equip, the hand-held cosmetic remains visible and the camera automatically orbits the selected metal workpiece (V toggle; T top-down; hold RMB to orbit; wheel zoom). Gold guide shows FORM's cutting plane.
+2. On equip, the hand-held cosmetic remains visible and the camera automatically **sets CameraSubject to the selected metal workpiece**, then uses a Scriptable orbit centered on its changing position (V toggle; T top-down; hold RMB to orbit; wheel zoom). **F** changes selection and camera focus to the stock under the cursor. After a cut, the camera transfers to the surviving selected fragment. On unequip, it restores the previous camera type and subject. Gold guide shows FORM's cutting plane.
 3. Holding LMB hides the hand cosmetic, shows the actual Workspace saw and reciprocates the blade **along its length**, while its contact point feeds **from one side of the intended cut to the other** and progressively penetrates the metal. The combined cut travel drives the progress bar.
 4. A thin, dark **visual kerf proxy** grows **along the cut** as the saw advances. This is intentionally a cheap overlay rather than an EditableMesh change every frame.
 5. When the saw completes its full travel, FORM performs the true cut exactly once and the offcut falls. Releasing early cancels without changing the stock. The original equipped cosmetic is restored at either outcome.
-6. Q/E rotate the plane; **R rotates the working model** by 90 degrees for alignment (not the cut plane); V toggles workpiece orbit, T sets top-down, RMB drag orbits, and the wheel zooms.
+6. Q/E rotate the plane; **R rotates the working model** by 90 degrees for alignment (not the cut plane); F selects/focuses the hovered metal, V toggles workpiece orbit, T sets top-down, RMB drag orbits, and the wheel zooms.
 
 ## File interaction
 
