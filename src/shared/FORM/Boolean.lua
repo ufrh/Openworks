@@ -35,7 +35,7 @@ function Boolean.subtract(stock, cutter)
     local retained = {}
     local removed = 0
 
-    for _, plane in planes(cutter) do
+    for planeIndex, plane in planes(cutter) do
         local nextPending = {}
         for _, piece in pending do
             local minimum, maximum = math.huge, -math.huge
@@ -51,7 +51,7 @@ function Boolean.subtract(stock, cutter)
                 nextPending[#nextPending + 1] = piece
             else
                 local outside, inside = Cut.split(piece, plane.point, plane.normal)
-                if not outside then return nil, 'CUT_FAILED_' .. tostring(inside) end
+                if not outside then return nil, 'CUT_FAILED_PLANE_' .. planeIndex .. '_' .. tostring(inside) end
                 retained[#retained + 1] = outside
                 nextPending[#nextPending + 1] = inside
             end
