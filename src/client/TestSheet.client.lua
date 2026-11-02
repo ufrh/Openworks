@@ -12,6 +12,7 @@ local remote = ReplicatedStorage:WaitForChild('Openworks'):WaitForChild('SpawnTe
 local gui = Instance.new('ScreenGui')
 gui.Name = 'OpenworksMaterialTest'
 gui.ResetOnSpawn = false
+gui.DisplayOrder = 10
 gui.Parent = player:WaitForChild('PlayerGui')
 
 local panel = Instance.new('Frame')
@@ -78,6 +79,8 @@ else
 end
 
 button.MouseButton1Click:Connect(function()
+    status.Text = 'Requesting sheet from server...'
+    status.TextColor3 = Color3.fromRGB(204, 212, 214)
     remote:FireServer()
 end)
 
