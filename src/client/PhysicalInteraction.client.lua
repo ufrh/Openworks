@@ -177,7 +177,14 @@ local function flipSaw()
     end
 end
 
-inspector = Inspector.new(chooseTool, exitInspect, setFileSettings, chooseMaterial, flipSaw)
+local function flipMaterial(axis)
+    if fabrication and not fabrication.down and not pendingMaterial then
+        send('FabricationMaterialFlip', axis)
+    end
+end
+
+inspector = Inspector.new(chooseTool, exitInspect,
+    setFileSettings, chooseMaterial, flipSaw, flipMaterial)
 
 local function inspect(material)
     if not material or not material.Parent then return end
