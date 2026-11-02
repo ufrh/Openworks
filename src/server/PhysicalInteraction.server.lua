@@ -136,6 +136,63 @@ local function toolContact(tool, part, kind)
     return bounds * CFrame.new(0, -size.Y * 0.5, 0) * rotation
 end
 
+local function sawBladeAndFrame(tool, parts, pivot)
+    local marker = contactMarker(tool, 'BladeEdge')
+    local blade, handle
+    local score = -math.huge
+
+    for _, part in parts do
+        if part.Transparency >= 0.95 then continue end
+
+        local name = part.Name:lower()
+        if name:find('handle', 1, true) or name:find('grip', 1, true) then
+            handle = part
+        end
+
+        local dimensions = {part.Size.X, part.Size.Y, part.Size.Z}
+        table.sort(dimensions)
+        local slenderness = dimensions[3] / math.max(dimensions[2], 0.015)
+        local darkness = 1 - (part.Color.R + part.Color.G + part.Color.B) / 3
+        local metal = if part.Material == Enum.Material.Metal
+            or part.Material == Enum.Material.DiamondPlate then 1 else 0
+
+        local candidate = slenderness * (0.5 + darkness * 2 + metal * 0.4)
+        if name:find('blade', 1, true) or name:find('teeth', 1, true) then
+            candidate += 100
+        end
+        if name:find('handle', 1, true) or name:find('grip', 1, true) then
+            candidate = -1
+        end
+
+        if candidate > score then
+            score = candidate
+            blade = part
+        end
+    end
+
+    if not marker and (not blade or (score < 2.8 and #parts > 1)) then
+        return nil, nil
+    end
+
+    local bladePoint = if marker then marker.WorldPosition else blade.Position
+    local framePoint
+    if handle and handle ~= blade then
+        framePoint = handle.Position
+    else
+        local total, count = Vector3.zero, 0
+        for _, part in parts do
+            if part ~= blade and part.Transparency < 0.95 then
+                total += part.Position
+                count += 1
+            end
+        end
+        framePoint = if count > 0 then total / count else tool:GetPivot().Position
+    end
+
+    if (bladePoint - framePoint).Magnitude < 0.035 then return nil, nil end
+    return pivot:PointToObjectSpace(bladePoint), pivot:PointToObjectSpace(framePoint)
+end
+
 local function setToolCollision(item, state)
     state.collisions = {}
 
@@ -434,6 +491,14 @@ local function startFabrication(player, material, tool)
 
     local restingFrame = tool:GetPivot()
     local contact = toolContact(tool, part, kind)
+    local sawBlade, sawFrame
+    if kind == 'Saw' then
+        sawBlade, sawFrame = sawBladeAndFrame(tool, toolParts, restingFrame)
+        if not sawBlade then
+            warn('[OPENWORKS:Saw] Blade/frame not distinguishable on ' .. tool.Name
+                .. '; add BladeEdge on the cutting teeth for deterministic orientation')
+        end
+    end
     local toolBounds, toolSize
     if kind == 'Saw' then
         if tool:IsA('Model') then
@@ -452,6 +517,9 @@ local function startFabrication(player, material, tool)
         work = work,
         restingFrame = restingFrame,
         contactOffset = contact:ToObjectSpace(restingFrame),
+        sawBlade = sawBlade,
+        sawFrame = sawFrame,
+        sawCorrection = nil,
         toolBoundsOffset = if toolBounds then restingFrame:ToObjectSpace(toolBounds) else nil,
         toolBoundsSize = toolSize,
         currentFrame = restingFrame,
@@ -465,7 +533,7 @@ local function startFabrication(player, material, tool)
         direction = 0,
         reversals = 0,
         axis = 'X',
-        roll = if kind == 'Saw' then 180 else 0,
+        roll = 0,
         awaitRelease = false,
         fileSide = 1,
         fileShape = 'Round',
@@ -705,6 +773,27 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.goalFrame = contactFrame * state.contactOffset
 
     if state.kind == 'Saw' then
+        if state.sawCorrection == nil then
+            state.sawCorrection = 0
+            if state.sawBlade and state.sawFrame then
+                local flipped = contactFrame * CFrame.Angles(0, 0, 0)
+                local rotated = contactFrame * CFrame.Angles(math.pi, 0, 0)
+                local function bladeSeparation(frame)
+                    local pivot = frame * state.contactOffset
+                    return (pivot:PointToWorldSpace(state.sawBlade)
+                        - pivot:PointToWorldSpace(state.sawFrame)).Y
+                end
+                if bladeSeparation(rotated) < bladeSeparation(flipped) - 0.015 then
+                    state.sawCorrection = 180
+                end
+            end
+        end
+
+        state.goalFrame = CFrame.fromMatrix(pos, forward,
+            upward, forward:Cross(upward))
+            * CFrame.Angles(math.rad(state.roll + state.sawCorrection), 0, 0)
+            * state.contactOffset
+
         local bounds = state.goalFrame * state.toolBoundsOffset
         local half = state.toolBoundsSize * 0.5
         local lowest = bounds.Position.Y
@@ -778,6 +867,80 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     end
 end
 
+local function switchFabricationMaterial(player, state, material)
+    if state.processing then
+        remote:FireClient(player, 'Feedback', 'Finish the current operation before switching')
+        return
+    end
+
+    if typeof(material) ~= 'Instance'
+        or not (material:IsA('BasePart') or material:IsA('Model'))
+        or not material:IsDescendantOf(workspace)
+        or not FORMMaterial.isMarked(material) then
+        remote:FireClient(player, 'Feedback', 'Select a FORM material on the workbench')
+        return
+    end
+    if material == state.material then return end
+    if material:GetAttribute('OnWorkbench') ~= true then
+        remote:FireClient(player, 'Feedback', 'That material is not resting on the workbench')
+        return
+    end
+    if locked[material] then
+        remote:FireClient(player, 'Feedback', 'That material is already in use')
+        return
+    end
+
+    local part = findPart(material)
+    local root = rootOf(player)
+    if not part or not part:IsA('BasePart') or not root
+        or (part.Position - root.Position).Magnitude > 24 then
+        remote:FireClient(player, 'Feedback', 'The selected material is out of reach')
+        return
+    end
+
+    local candidateParts = allParts(material)
+    if #candidateParts == 0 then return end
+    local oldMaterial = state.material
+    state.processing = true
+
+    if oldMaterial and oldMaterial.Parent then
+        supportOnWorkbench(oldMaterial)
+    end
+    for oldPart, wasAnchored in state.materialAnchors do
+        if oldPart.Parent then
+            oldPart.AssemblyLinearVelocity = Vector3.zero
+            oldPart.AssemblyAngularVelocity = Vector3.zero
+            oldPart.Anchored = wasAnchored
+        end
+    end
+    locked[oldMaterial] = nil
+
+    local anchors = {}
+    for _, nextPart in candidateParts do
+        anchors[nextPart] = nextPart.Anchored
+        nextPart.AssemblyLinearVelocity = Vector3.zero
+        nextPart.AssemblyAngularVelocity = Vector3.zero
+        nextPart.Anchored = true
+    end
+    supportOnWorkbench(material)
+
+    state.material = material
+    state.work = part
+    state.materialAnchors = anchors
+    state.offset = 0
+    state.stroke = 0
+    state.lastStroke = 0
+    state.lastTurn = 0
+    state.direction = 0
+    state.reversals = 0
+    state.awaitRelease = true
+    state.lastMove = 0
+    state.processing = false
+    locked[material] = player
+
+    remote:FireClient(player, 'FabricationTargetChanged', material)
+end
+
 onRequest = function(player, action, ...)
     if action == 'DragStart' then
         startDrag(player, ...)
@@ -806,6 +969,8 @@ onRequest = function(player, action, ...)
         state.target.CFrame = CFrame.new(point) * rotation
     elseif action == 'FabricationMove' and state.mode == 'Fabrication' then
         moveFabrication(player, state, ...)
+    elseif action == 'FabricationTarget' and state.mode == 'Fabrication' then
+        switchFabricationMaterial(player, state, ...)
     elseif action == 'FabricationSettings' and state.mode == 'Fabrication' then
         local profile, radius = ...
         if state.kind == 'File' and (profile == 'Round' or profile == 'Chamfer')
