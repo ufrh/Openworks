@@ -195,6 +195,18 @@ end)
 
 if RunService:IsStudio() then
     task.defer(function()
+        local ok, passed, message = pcall(function()
+            return require(Openworks:WaitForChild('BlueprintRegression')).run()
+        end)
+        if ok and passed then
+            print('[OPENWORKS:Blueprint]', message)
+        else
+            warn('[OPENWORKS:Blueprint] Geometry regression failed:',
+                if ok then message else passed)
+        end
+    end)
+
+    task.defer(function()
         local bench = workspace:WaitForChild('Workbench', 20)
         if not bench then return end
         local surface
