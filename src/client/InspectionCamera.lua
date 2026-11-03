@@ -494,7 +494,7 @@ function Inspector:setTool(kind)
     self.instructions.Text = if kind == 'Saw' then
         'Click a score: automatically follow and cut\nUnmarked metal: hold LMB and stroke manually\nQ: freehand axis | Esc: cancel / exit'
         elseif kind == 'File' then
-        'LMB: file | P: drag material | X/Z: flip\nTab: next workpiece | RMB: orbit\nR: roll file | Esc: exit'
+        'Hover edge: green guide snaps onto contour\nHold LMB: lock edge and file along it\nP: move | R: roll file | Esc: exit'
         elseif kind == 'Scorer' then
         'LMB + drag: score exposed surface\nRelease: save permanent score path\nP: move metal | X/Z: flip | Esc: exit'
         else 'RMB: orbit | MMB: pan | wheel: zoom\nChoose a physical tool resting on the table.'
