@@ -55,7 +55,7 @@ function Inspector.new(onTool, onExit, onFileSettings, onMaterial, onMaterialFli
     self.materials = {}
     self.fileShape = 'Round'
     self.fileRadius = 1.25
-    self.fileMaxRadius = 12
+    self.fileMaxRadius = 100
     self.material = nil
     self.kind = nil
     self.focusOffset = Vector3.zero
@@ -407,8 +407,10 @@ function Inspector:focusMaterial(material)
     self.distance = math.clamp(math.max(size.X, size.Y, size.Z) * 3.5, 4, 15)
 
     if self.kind == 'File' then
-        local limit = math.floor(size.Y / 0.04 * 0.42 * 100) / 100
-        self.fileMaxRadius = math.max(0.5, math.min(12, limit))
+        local dimension = if material:GetAttribute('FORMContourMode') == true
+            then math.min(size.X, size.Z) else size.Y
+        local limit = math.floor(dimension / 0.04 * 0.42 * 100) / 100
+        self.fileMaxRadius = math.max(0.5, math.min(100, limit))
         self.fileRadius = math.clamp(self.fileRadius, 0.5, self.fileMaxRadius)
         self.sizeEntry.Text = string.format('%.2f', self.fileRadius)
         self.fileSizeHelp.Text = string.format('Profile size 0.50–%.2f mm', self.fileMaxRadius)
@@ -475,8 +477,13 @@ function Inspector:setTool(kind)
     if kind == 'File' and self.material then
         local thickness = if self.material:IsA('BasePart') then self.material.Size.Y
             else self.material:GetExtentsSize().Y
-        self.fileMaxRadius = math.max(0.5, math.min(12,
-            math.floor(thickness / 0.04 * 0.42 * 100) / 100))
+        local dimension = if self.material:GetAttribute('FORMContourMode') == true
+            then (if self.material:IsA('BasePart')
+                then math.min(self.material.Size.X, self.material.Size.Z)
+                else math.min(self.material:GetExtentsSize().X, self.material:GetExtentsSize().Z))
+            else thickness
+        self.fileMaxRadius = math.max(0.5, math.min(100,
+            math.floor(dimension / 0.04 * 0.42 * 100) / 100))
         self.fileRadius = math.clamp(self.fileRadius, 0.5, self.fileMaxRadius)
         self.sizeEntry.Text = string.format('%.2f', self.fileRadius)
         self.fileSizeHelp.Text = string.format('Profile size 0.50–%.2f mm', self.fileMaxRadius)
