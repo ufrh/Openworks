@@ -31,7 +31,7 @@ local function finite(value)
 end
 
 local function validateRadius(radius)
-    assert(finite(radius) and radius >= 0.5 and radius <= 12, 'File radius must be 0.5-12 mm')
+    assert(finite(radius) and radius >= 0.5 and radius <= 100, 'File radius must be 0.5-100 mm')
 end
 
 function FileShape.preview(item, hitWorld, radius)
