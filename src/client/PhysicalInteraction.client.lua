@@ -336,6 +336,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.Q and fabrication and not processed then
         fabrication.axis = if fabrication.axis == 'X' then 'Z' else 'X'
         fabrication.scoreGuide = nil
+        fabrication.scoreLine = nil
+        fabrication.scoreReference = nil
         fabrication.pointerMoved = true
         fabrication.stroke = 0
         inspector:status('Cut axis: ' .. fabrication.axis)
@@ -503,7 +505,7 @@ UserInputService.WindowFocusReleased:Connect(function()
     end
 end)
 
-remote.OnClientEvent:Connect(function(action, a, b, c, d)
+remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
     if action == 'DragStarted' then
         if not held or held.part ~= a then
             send('End')
@@ -529,7 +531,8 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             kind = a, material = b, tool = c,
             down = false, stroke = 0, offset = 0, axis = 'X',
             fileSide = 1, pointerMoved = true, positioning = false,
-            scoreGuide = nil,
+            scoreGuide = nil, scoreLine = nil, scoreReference = nil,
+            scoreContactOffset = if typeof(e) == 'CFrame' then e else nil,
         }
         inspector:setTool(a)
         if a == 'File' then
@@ -564,6 +567,8 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             fabrication.offset = 0
             fabrication.pointerMoved = true
             fabrication.scoreGuide = nil
+            fabrication.scoreLine = nil
+            fabrication.scoreReference = nil
             if fabrication.previousMouseBehavior then
                 UserInputService.MouseBehavior = fabrication.previousMouseBehavior
                 fabrication.previousMouseBehavior = nil
@@ -585,6 +590,8 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             fabrication.offset = 0
             fabrication.pointerMoved = true
             fabrication.scoreGuide = nil
+            fabrication.scoreLine = nil
+            fabrication.scoreReference = nil
             if fabrication.previousMouseBehavior then
                 UserInputService.MouseBehavior = fabrication.previousMouseBehavior
                 fabrication.previousMouseBehavior = nil
@@ -758,11 +765,11 @@ RunService.RenderStepped:Connect(function(dt)
                         move = parallel + (move - parallel) * 0.48
                     end
                 end
-                if move.Magnitude > 0.006 then
+                if move.Magnitude > 0.004 then
                     local nextTip = score.tip + move
                     score.previous = score.tip
                     score.tip = nextTip
-                    if (nextTip - score.lastDrawn).Magnitude > 0.02 then
+                    if (nextTip - score.lastDrawn).Magnitude > 0.015 then
                         drawPreview(work, score.lastDrawn, nextTip)
                         score.lastDrawn = nextTip
                     end
@@ -772,6 +779,25 @@ RunService.RenderStepped:Connect(function(dt)
                         send('FabricationScoreMove', nextTip)
                     end
                 end
+            else
+                fabrication.scoreHoverAt = fabrication.scoreHoverAt or 0
+                if os.clock() - fabrication.scoreHoverAt >= 1 / 20 then
+                    fabrication.scoreHoverAt = os.clock()
+                    send('FabricationScoreHover', point)
+                end
+            end
+
+            local tracked = if fabrication.score then fabrication.score.tip else point
+            guide.CFrame = CFrame.new(work.CFrame:PointToWorldSpace(tracked)
+                + normal * 0.018)
+            if fabrication.scoreContactOffset and fabrication.tool
+                and fabrication.tool.Parent then
+                local score = fabrication.score
+                local tangent = score and score.previous
+                    and (score.tip - score.previous) or nil
+                fabrication.tool:PivotTo(
+                    ScorePath.contactFrame(work, tracked, tangent)
+                    * fabrication.scoreContactOffset)
             end
         else
             guide.Parent = nil
@@ -834,10 +860,15 @@ RunService.RenderStepped:Connect(function(dt)
                     local matched = hovered and ScorePath.guide(work, hovered, 0.22)
                     local previousGuide = fabrication.scoreGuide
                     fabrication.scoreGuide = matched and matched.kind or nil
+                    fabrication.scoreLine = if matched and matched.kind == 'Straight'
+                        then matched else nil
+                    fabrication.scoreReference = if matched then hovered else nil
 
                     if matched and matched.kind == 'Straight' then
-                        fabrication.axis = matched.axis
-                        fabrication.offset = matched.offset
+                        if matched.axis then
+                            fabrication.axis = matched.axis
+                            fabrication.offset = matched.offset
+                        end
                         if previousGuide ~= 'Straight' then
                             inspector:status('STRAIGHT SCORE ENGAGED — saw blade follows the marked line')
                         end
@@ -872,7 +903,15 @@ RunService.RenderStepped:Connect(function(dt)
                 elseif fabrication.kind == 'Saw' and fabrication.scoreGuide == 'Straight'
                 then Color3.fromRGB(82, 225, 176)
                 else Color3.fromRGB(239, 182, 81)
-            if fabrication.kind == 'File' then
+            if fabrication.kind == 'Saw' and fabrication.scoreLine then
+                local line = fabrication.scoreLine
+                local direction = work.CFrame:VectorToWorldSpace(line.tangent)
+                local worldPoint = work.CFrame:PointToWorldSpace(
+                    line.point + Vector3.new(0, guideHeight - line.point.Y, 0))
+                guide.Size = Vector3.new(0.027, 0.018, line.length)
+                guide.CFrame = CFrame.lookAt(worldPoint,
+                    worldPoint + direction, work.CFrame.UpVector)
+            elseif fabrication.kind == 'File' then
                 local up = work.CFrame:VectorToObjectSpace(Vector3.yAxis)
                 local face = if math.abs(up.X) >= math.abs(up.Y)
                     and math.abs(up.X) >= math.abs(up.Z) then 'X'
@@ -922,7 +961,7 @@ RunService.RenderStepped:Connect(function(dt)
     elseif fabrication then
         send('FabricationMove',
             fabrication.stroke, fabrication.offset, fabrication.axis,
-            fabrication.down, fabrication.fileSide)
+            fabrication.down, fabrication.fileSide, fabrication.scoreReference)
     end
 end)
 
