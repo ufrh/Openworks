@@ -243,6 +243,14 @@ local function extrude(polygon, thickness)
     return solid
 end
 
+function PathCut.extrudePolygon(outline, thicknessStuds)
+    if type(outline) ~= 'table' or #outline < 3 or #outline > 768
+        or type(thicknessStuds) ~= 'number' or thicknessStuds <= 0 then
+        return nil, 'Invalid extruded contour'
+    end
+    return extrude(outline, thicknessStuds)
+end
+
 function PathCut.split(work, points, kerfMM, existingSolid)
     if not work:IsA('Part') or work.Shape ~= Enum.PartType.Block
         or work:GetAttribute('FORMNativeStock') ~= true then
