@@ -170,12 +170,22 @@ local function scorePoint(work)
     return ScorePath.project(work, ray.Origin + ray.Direction * t)
 end
 
+local rulerCache, rulerCacheAt = {}, 0
 local function rulerGuide(work, point)
     if not work or not point then return nil end
+    if os.clock() - rulerCacheAt > 0.65 then
+        table.clear(rulerCache)
+        for _, node in workspace:GetDescendants() do
+            if node:IsA('BasePart')
+                and node:GetAttribute('DraftingKind') == 'Ruler' then
+                rulerCache[#rulerCache + 1] = node
+            end
+        end
+        rulerCacheAt = os.clock()
+    end
     local selected, nearest, bestGuide
-    for _, node in workspace:GetDescendants() do
-        if not node:IsA('BasePart')
-            or node:GetAttribute('DraftingKind') ~= 'Ruler' then continue end
+    for _, node in rulerCache do
+        if not node.Parent then continue end
         local guide, distance = MaterialLayout.rulerGuide(work, node, point)
         if guide and (not nearest or distance < nearest) then
             selected, nearest, bestGuide = node, distance, guide
