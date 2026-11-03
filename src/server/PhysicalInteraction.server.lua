@@ -783,14 +783,15 @@ local function cutSheet(state)
             if scoredCut and scoredCut.points then
                 points = scoredCut.points
             else
-                local span = if state.axis == 'X' then work.Size.Z else work.Size.X
+                local halfLength = (if state.axis == 'X'
+                    then work.Size.Z else work.Size.X) * 0.5
                 local y = work.Size.Y * 0.5
                 points = if state.axis == 'X' then {
-                    Vector3.new(state.offset, y, -span),
-                    Vector3.new(state.offset, y, span),
+                    Vector3.new(state.offset, y, -halfLength),
+                    Vector3.new(state.offset, y, halfLength),
                 } else {
-                    Vector3.new(-span, y, state.offset),
-                    Vector3.new(span, y, state.offset),
+                    Vector3.new(-halfLength, y, state.offset),
+                    Vector3.new(halfLength, y, state.offset),
                 }
             end
             fragments, failure = cutter.split(work, points, nil,
