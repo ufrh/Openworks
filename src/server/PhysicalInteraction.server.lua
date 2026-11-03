@@ -814,8 +814,8 @@ local function cutSheet(state)
 
         local appearance = previous or work
         local ok, result, other = pcall(function()
-            return Renderer.create(main.solid, mainSource, appearance),
-                Renderer.create(offcut.solid, offcutSource, appearance)
+            return Renderer.create(main.solid, mainSource, appearance, isCurve),
+                Renderer.create(offcut.solid, offcutSource, appearance, isCurve)
         end)
         mainSource:Destroy()
         offcutSource:Destroy()
