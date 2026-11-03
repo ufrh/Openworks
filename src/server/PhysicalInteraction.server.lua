@@ -1335,7 +1335,7 @@ local function drawScore(work, paths)
     for _, path in paths do
         local localNormal = ScorePath.normal(path.face, path.sign)
         local worldNormal = work.CFrame:VectorToWorldSpace(localNormal)
-        local points = path.points
+        local points = ScorePath.reduce(path.points, 0.006)
         for i = 2, #points do
             local a = work.CFrame:PointToWorldSpace(points[i - 1]) + worldNormal * 0.011
             local b = work.CFrame:PointToWorldSpace(points[i]) + worldNormal * 0.011
