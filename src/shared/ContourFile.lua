@@ -82,7 +82,12 @@ function ContourFile.apply(work, item, localPoint, radiusMM, style)
     for i, vertex in outline do
         local previous = outline[(i - 2) % #outline + 1]
         local following = outline[i % #outline + 1]
-        if turn(previous, vertex, following) < 0.55 then continue end
+        local incoming = (vertex - previous).Magnitude
+        local outgoing = (following - vertex).Magnitude
+        if turn(previous, vertex, following) < 0.88
+            or math.min(incoming, outgoing) < math.max(1.2, radiusMM * 1.2) then
+            continue
+        end
         local delta = (vertex - target).Magnitude
         if delta < math.max(radiusMM * 0.4, 1) and (not nearest or delta < nearest) then
             nearest, selected = delta, i
@@ -91,16 +96,14 @@ function ContourFile.apply(work, item, localPoint, radiusMM, style)
 
     local modified, replacements = {}, 0
     if selected then
-        local center = outline[selected]
-        local influence = math.max(radiusMM * 2.5, 4)
         for i, vertex in outline do
             local previous = outline[(i - 2) % #outline + 1]
             local following = outline[i % #outline + 1]
             local incoming = vertex - previous
             local outgoing = following - vertex
             local firstLength, secondLength = incoming.Magnitude, outgoing.Magnitude
-            local near = (vertex - center).Magnitude <= influence
-            local convex = turn(previous, vertex, following) > 0.007
+            local near = i == selected
+            local convex = turn(previous, vertex, following) > 0.88
 
             if not near or not convex or firstLength < 0.05 or secondLength < 0.05 then
                 modified[#modified + 1] = vertex
