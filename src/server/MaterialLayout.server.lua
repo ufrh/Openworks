@@ -3,7 +3,8 @@ local RunService = game:GetService('RunService')
 if not RunService:IsStudio() then return end
 
 task.defer(function()
-    if workspace:GetAttribute('EnableBlueprintKit') == true then return end
+    if workspace:GetAttribute('EnableLayoutRuler') ~= true
+        or workspace:GetAttribute('EnableBlueprintKit') == true then return end
 
     local bench = workspace:WaitForChild('Workbench', 20)
     if not bench then return end
