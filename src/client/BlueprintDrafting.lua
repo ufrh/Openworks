@@ -115,7 +115,12 @@ function Drafting.new()
     end)
 
     UserInputService.InputBegan:Connect(function(input, processed)
-        if not self.sheet then return end
+        if not self.sheet then
+            if self.pending and input.KeyCode == Enum.KeyCode.Escape then
+                self:close(true)
+            end
+            return
+        end
         if input.KeyCode == Enum.KeyCode.Escape then
             self:close(true)
             return
@@ -305,6 +310,12 @@ function Drafting:open(sheet)
         or sheet:GetAttribute('OnWorkbench') ~= true then return end
     self.pending = true
     remote:FireServer('Open', sheet)
+    task.delay(4, function()
+        if self.pending then
+            self.pending = false
+            warn('[OPENWORKS:Blueprint] Sheet selection timed out; check server Output')
+        end
+    end)
 end
 
 function Drafting:isActive()
