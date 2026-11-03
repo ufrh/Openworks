@@ -15,6 +15,7 @@ end
 local sessions = {}
 local sheetLocks = {}
 local toolLocks = {}
+local rulerLocks = {}
 
 local function near(player, part, limit)
     local character = player.Character
@@ -39,11 +40,26 @@ local function restoreTool(session)
     session.toolOriginal = nil
 end
 
+local function releaseRuler(session)
+    local ruler = session.ruler
+    if not ruler then return end
+    rulerLocks[ruler] = nil
+    if ruler.Parent then
+        ruler.CanCollide = session.rulerOriginal.collide
+        ruler.CanTouch = session.rulerOriginal.touch
+        ruler.CanQuery = session.rulerOriginal.query
+        ruler.Anchored = session.rulerOriginal.anchored
+    end
+    session.ruler = nil
+    session.rulerOriginal = nil
+end
+
 local function close(player)
     local session = sessions[player]
     if not session then return end
     sessions[player] = nil
     sheetLocks[session.sheet] = nil
+    releaseRuler(session)
     restoreTool(session)
     if session.sheet.Parent then
         session.sheet.Anchored = session.wasAnchored
@@ -126,6 +142,48 @@ remote.OnServerEvent:Connect(function(player, action, ...)
         tool.CanTouch = false
         tool.CanQuery = false
         remote:FireClient(player, 'ToolSelected', tool, kind)
+        return
+    end
+
+    if action == 'RulerStart' then
+        local ruler = ...
+        if typeof(ruler) ~= 'Instance' or not ruler:IsA('BasePart')
+            or ruler:GetAttribute('DraftingKind') ~= 'Ruler'
+            or ruler:GetAttribute('OnWorkbench') ~= true
+            or not near(player, ruler)
+            or (rulerLocks[ruler] and rulerLocks[ruler] ~= player) then
+            report(player, 'Place a physical ruler on the workbench')
+            return
+        end
+        releaseRuler(session)
+        session.ruler = ruler
+        session.rulerOriginal = {
+            anchored = ruler.Anchored, collide = ruler.CanCollide,
+            touch = ruler.CanTouch, query = ruler.CanQuery,
+        }
+        rulerLocks[ruler] = player
+        ruler.Anchored = true
+        ruler.CanCollide = false
+        ruler.CanTouch = false
+        ruler.CanQuery = false
+        session.lastRulerMove = 0
+        return
+    elseif action == 'RulerMove' then
+        local point, rotation = ...
+        local ruler = session.ruler
+        if not ruler or typeof(point) ~= 'Vector2'
+            or not Geometry.inside(sheet, point)
+            or type(rotation) ~= 'number' or rotation ~= rotation
+            or math.abs(rotation) > math.pi * 2 then return end
+        local now = os.clock()
+        if now - session.lastRulerMove < 1 / 30 then return end
+        session.lastRulerMove = now
+        ruler.CFrame = sheet.CFrame * CFrame.new(
+            point.X * Geometry.SCALE, sheet.Size.Y * 0.5 + ruler.Size.Y * 0.5 + 0.01,
+            point.Y * Geometry.SCALE) * CFrame.Angles(0, rotation, 0)
+        return
+    elseif action == 'RulerEnd' then
+        releaseRuler(session)
         return
     end
 
