@@ -17,7 +17,7 @@ These are simple procedural placeholder models; replace them with custom rigid M
 
 1. Leave the tools and blueprint sheet on a workbench; the existing detector sets `OnWorkbench` after they settle.
 2. **Short-click the paper**. The free-grab system releases it, the sheet is temporarily secured, and a separate overhead drafting camera opens. No CAD panel appears.
-3. **Hold LMB on the ruler and drag** to reposition it across the paper. While holding it, **scroll** to rotate it in 5-degree steps. Release to set it down. The ruler is the real Workspace Part, not a ghost preview.
+3. **Hold LMB on the ruler body and drag** to reposition it across the paper. While holding it, **scroll** to rotate it in 5-degree steps. Release to set it down. When the pencil or eraser is selected, clicks directly along the ruler's edge perform the drawing operation rather than moving the ruler. The ruler is the real Workspace Part, not a ghost preview.
 4. **Click the pencil** to select the physical tool. Move the pointer to within roughly 7 mm of one of the ruler's long edges on the paper.
 5. **Hold LMB and drag along the edge**; the pencil follows the projected contact and a dark ink preview tracks the ruler. Release to create a mathematically straight measured line. A tiny stroke is rejected.
 6. **Click the eraser**, then click near a saved line to remove that complete line.
