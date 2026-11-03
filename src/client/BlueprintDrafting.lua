@@ -139,16 +139,20 @@ function Drafting.new()
         local hit = mouse.Target
         if hit and hit:IsA('BasePart')
             and hit:GetAttribute('DraftingKind') == 'Ruler' then
-            local localDirection = self.sheet.CFrame:VectorToObjectSpace(
-                hit.CFrame.RightVector)
-            self.rulerDrag = {
-                ruler = hit,
-                angle = math.atan2(-localDirection.Z, localDirection.X),
-            }
-            self.lastRulerMove = 0
-            self.selection.Adornee = hit
-            remote:FireServer('RulerStart', hit)
-            return
+            local contact = self:pointUnderCursor()
+            local edge = contact and Geometry.rulerGuide(self.sheet, hit, contact)
+            if not edge or not self.tool or self.toolKind == nil then
+                local localDirection = self.sheet.CFrame:VectorToObjectSpace(
+                    hit.CFrame.RightVector)
+                self.rulerDrag = {
+                    ruler = hit,
+                    angle = math.atan2(-localDirection.Z, localDirection.X),
+                }
+                self.lastRulerMove = 0
+                self.selection.Adornee = hit
+                remote:FireServer('RulerStart', hit)
+                return
+            end
         end
         if hit and hit:IsA('BasePart')
             and (hit:GetAttribute('DraftingKind') == 'Pencil'
