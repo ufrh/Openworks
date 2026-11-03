@@ -13,7 +13,7 @@ function Renderer.create(solid, source, appearance, preciseCollision)
     local low, high = FORM.bounds(solid)
     local center = (low + high) * 0.5
     local display = solid
-    local shading = Shading.normals(display, if preciseCollision then 65 else 40)
+    local shading = Shading.normals(display, if preciseCollision then 38 else 35)
 
     local editable = AssetService:CreateEditableMesh()
     assert(editable, 'EditableMesh unavailable; enable Mesh / Image APIs and check memory budget')
