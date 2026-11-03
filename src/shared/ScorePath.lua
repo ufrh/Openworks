@@ -140,36 +140,80 @@ function ScorePath.reduce(points, tolerance)
     return reduced
 end
 
-function ScorePath.straight(work, axis, currentOffset, radius)
+local function straightLine(work, path)
     local face, sign = ScorePath.face(work)
-    local span = if axis == 'X' then work.Size.Z else work.Size.X
-    local extent = if axis == 'X' then work.Size.X else work.Size.Z
+    if face ~= 'Y' or path.face ~= face or path.sign ~= sign then return nil end
+
+    local points = path.points
+    local first, last = points[1], points[#points]
+    local delta = last - first
+    local axis = if math.abs(delta.Z) >= math.abs(delta.X) then 'X' else 'Z'
     local along = if axis == 'X' then 'Z' else 'X'
-    local best, distance
-    for _, path in ScorePath.read(work) do
-        if path.face ~= face or path.sign ~= sign then continue end
-        if face ~= 'Y' then continue end
-        local low, high = math.huge, -math.huge
-        local sum = 0
-        for _, point in path.points do
-            local value = coordinate(point, along)
-            low, high = math.min(low, value), math.max(high, value)
-            sum += coordinate(point, axis)
-        end
-        if high - low < span * 0.8 then continue end
-        local offset = sum / #path.points
-        if math.abs(offset) > extent * 0.5 - 0.05 then continue end
-        local deviation = 0
-        for _, point in path.points do
-            deviation = math.max(deviation, math.abs(coordinate(point, axis) - offset))
-        end
-        if deviation > 0.055 then continue end
-        local error = math.abs(offset - currentOffset)
-        if error <= radius and (not distance or error < distance) then
-            best, distance = offset, error
+    local length = math.abs(coordinate(delta, along))
+    local span = coordinate(work.Size, along)
+    if length < math.min(span * 0.18, 0.22) then return nil end
+
+    local total = 0
+    for _, point in points do total += coordinate(point, axis) end
+    local offset = total / #points
+    local extent = coordinate(work.Size, axis)
+    if math.abs(offset) > extent * 0.5 - 0.05 then return nil end
+
+    local deviation = 0
+    for _, point in points do
+        deviation = math.max(deviation, math.abs(coordinate(point, axis) - offset))
+    end
+    if deviation > 0.055 then return nil end
+
+    return {axis = axis, offset = offset, length = length}
+end
+
+local function closestOnPath(path, position)
+    local nearest = math.huge
+    for i = 2, #path.points do
+        local a, b = path.points[i - 1], path.points[i]
+        local dx, dz = b.X - a.X, b.Z - a.Z
+        local denominator = dx * dx + dz * dz
+        if denominator > 1e-8 then
+            local t = math.clamp(((position.X - a.X) * dx
+                + (position.Z - a.Z) * dz) / denominator, 0, 1)
+            local px, pz = a.X + dx * t, a.Z + dz * t
+            nearest = math.min(nearest, (Vector2.new(position.X - px, position.Z - pz)).Magnitude)
         end
     end
-    return best
+    return nearest
+end
+
+function ScorePath.guide(work, position, radius)
+    local face, sign = ScorePath.face(work)
+    if face ~= 'Y' or typeof(position) ~= 'Vector3' then return nil end
+    local nearest, distance
+    for _, path in ScorePath.read(work) do
+        if path.face ~= face or path.sign ~= sign then continue end
+        local error = closestOnPath(path, position)
+        if error <= radius and (not distance or error < distance) then
+            local line = straightLine(work, path)
+            nearest = if line then {
+                kind = 'Straight', axis = line.axis, offset = line.offset,
+            } else {kind = 'Curved'}
+            distance = error
+        end
+    end
+    return nearest
+end
+
+function ScorePath.straight(work, axis, currentOffset, radius)
+    if axis ~= 'X' and axis ~= 'Z' then return nil end
+    local nearest, distance
+    for _, path in ScorePath.read(work) do
+        local line = straightLine(work, path)
+        if not line or line.axis ~= axis then continue end
+        local error = math.abs(currentOffset - line.offset)
+        if error <= radius and (not distance or error < distance) then
+            nearest, distance = line.offset, error
+        end
+    end
+    return nearest
 end
 
 return ScorePath
