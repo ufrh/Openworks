@@ -1,5 +1,7 @@
 # OPENWORKS — Direct Material Layout (M1)
 
+> Legacy optional straightedge prototype. The default metal scoring workflow is now the in-world cubic Bézier Pen Tool. See [PEN_TOOL.md](PEN_TOOL.md). To spawn the physical ruler in Studio, set the Workspace Boolean attribute `EnableLayoutRuler = true` before Play.
+
 The active default workflow is physical marking **on the metal**, not applying a virtual CAD profile or transferring a blueprint. A real ruler constrains the existing physical Scorer; the user must still trace by hand. The finished scored line is stored in the workpiece's existing `FORMScorePaths` and can be followed by the saw.
 
 ## Studio setup
