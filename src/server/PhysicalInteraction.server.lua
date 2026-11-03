@@ -717,9 +717,6 @@ local function cutSheet(state)
     local wasFiled = modifiedSolids[work] ~= nil
     local scoredCut = state.scoreCut
     local isCurve = scoredCut and scoredCut.kind == 'Curved'
-    if isCurve and wasFiled then
-        return nil, 'Curved cutting needs an unmodified rectangular FORM sheet'
-    end
     local needsMesh = wasFiled or (scoredCut ~= nil and scoredCut.axis == nil)
 
     local FORM = require(Openworks:WaitForChild('FORM'))
@@ -762,7 +759,8 @@ local function cutSheet(state)
         if state.autoCurveFragments then
             fragments = state.autoCurveFragments
         else
-            fragments, failure = result.split(work, scoredCut.points)
+            fragments, failure = result.split(work, scoredCut.points, nil,
+                modifiedSolids[work] and modifiedSolids[work].solid)
         end
     else
         fragments, failure = SawCut.split(item, point, normal)
@@ -921,11 +919,6 @@ local function beginAutomaticScore(player, state, reference)
 
     local preparedCurve
     if scored.kind == 'Curved' then
-        if modifiedSolids[work] then
-            remote:FireClient(player, 'Feedback',
-                'Curved sawing requires an unmodified FORM workpiece')
-            return
-        end
         local module = Openworks:FindFirstChild('PathCut')
         if not module or not module:IsA('ModuleScript') then
             remote:FireClient(player, 'Feedback', 'PathCut module is not synchronized')
@@ -937,7 +930,8 @@ local function beginAutomaticScore(player, state, reference)
                 'Curved cutter unavailable: ' .. tostring(cutter))
             return
         end
-        local ok, fragments, reason = pcall(cutter.split, work, scored.points)
+        local ok, fragments, reason = pcall(cutter.split, work, scored.points,
+            nil, modifiedSolids[work] and modifiedSolids[work].solid)
         if not ok or not fragments then
             remote:FireClient(player, 'Feedback',
                 'Cannot follow this curve: ' .. tostring(if ok then reason else fragments))
