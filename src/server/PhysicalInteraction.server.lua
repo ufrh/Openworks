@@ -26,6 +26,7 @@ end)
 
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
 local MaterialLayout = require(Openworks:WaitForChild('MaterialLayout'))
+local PenPath = require(Openworks:WaitForChild('PenPath'))
 local ScorePath
 local function loadScorePath()
     if ScorePath then return ScorePath end
@@ -1694,6 +1695,40 @@ endScore = function(player, state, finalPoint)
     remote:FireClient(player, 'ScoreSaved', #smoothed)
 end
 
+local function commitPenPath(player, state, anchors)
+    if state.processing or state.positioning or state.score
+        or state.layoutRulerMoving then
+        remote:FireClient(player, 'Feedback',
+            'Finish the current operation before marking a Pen Tool path')
+        return
+    end
+    local root = rootOf(player)
+    if not root or (root.Position - state.work.Position).Magnitude > 27 then
+        return
+    end
+
+    local points, detail = PenPath.sample(state.work, anchors)
+    if not points then
+        remote:FireClient(player, 'Feedback', tostring(detail))
+        return
+    end
+
+    local paths = ScorePath.read(state.work)
+    paths[#paths + 1] = {
+        face = detail.face,
+        sign = detail.sign,
+        points = points,
+    }
+    while #paths > ScorePath.MAX_PATHS do
+        table.remove(paths, 1)
+    end
+    ScorePath.write(state.work, paths)
+    drawScore(state.work, paths)
+    scorePosition(state, points[#points],
+        points[#points] - points[#points - 1])
+    remote:FireClient(player, 'PenCommitted', #points)
+end
+
 local function setMaterialPositioning(player, state, value)
     if state.processing or type(value) ~= 'boolean' then return end
     state.positioning = value
@@ -1892,6 +1927,9 @@ onRequest = function(player, action, ...)
     elseif action == 'FabricationLayoutRulerEnd'
         and state.mode == 'Fabrication' and state.kind == 'Scorer' then
         state.layoutRulerMoving = false
+    elseif action == 'FabricationPenCommit'
+        and state.mode == 'Fabrication' and state.kind == 'Scorer' then
+        commitPenPath(player, state, ...)
     elseif action == 'FabricationScoreHover' and state.mode == 'Fabrication'
         and state.kind == 'Scorer' then
         hoverScore(player, state, ...)
