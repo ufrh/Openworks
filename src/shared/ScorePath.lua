@@ -214,7 +214,7 @@ function ScorePath.guide(work, position, radius)
             nearest = if line then {
                 kind = 'Straight', axis = line.axis, offset = line.offset,
                 point = line.point, tangent = line.tangent, normal = line.normal,
-                length = line.length,
+                length = line.length, points = path.points,
             } else {kind = 'Curved', points = path.points}
             distance = error
         end
