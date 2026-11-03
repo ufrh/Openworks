@@ -85,21 +85,35 @@ local function loadPen()
 end
 local remote = Openworks:WaitForChild('PhysicalInteraction')
 local receiverWarned = false
+local staleWarned = false
 
 local function send(action, ...)
+    local ready = remote:GetAttribute('Ready')
     local heartbeat = remote:GetAttribute('HeartbeatAt')
-    local alive = type(heartbeat) == 'number'
-        and math.abs(workspace:GetServerTimeNow() - heartbeat) < 1.8
+    local age = if type(heartbeat) == 'number'
+        then workspace:GetServerTimeNow() - heartbeat else nil
 
-    if remote:GetAttribute('Ready') ~= true or not alive then
+    if ready ~= true then
         if not receiverWarned then
-            warn('[OPENWORKS:Interaction] Server receiver is offline or stale; input paused')
+            warn('[OPENWORKS:Interaction] Server receiver not ready. Ready:',
+                tostring(ready), 'BootStage:', tostring(remote:GetAttribute('BootStage')),
+                'HeartbeatAge:', tostring(age))
             receiverWarned = true
         end
         return false
     end
 
     receiverWarned = false
+    if age == nil or math.abs(age) > 8 then
+        if not staleWarned then
+            warn('[OPENWORKS:Interaction] Heartbeat age is unusual:',
+                tostring(age), 'seconds; sending input to the ready receiver')
+            staleWarned = true
+        end
+    else
+        staleWarned = false
+    end
+
     remote:FireServer(action, ...)
     return true
 end
