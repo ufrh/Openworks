@@ -24,7 +24,9 @@ local function loadScorePath()
 end
 local Inspector = require(script.Parent:WaitForChild('InspectionCamera'))
 local Drafting = require(script.Parent:WaitForChild('BlueprintDrafting'))
+local PenEditor = require(script.Parent:WaitForChild('PenPathEditor'))
 local drafting = Drafting.new()
+local pen = PenEditor.new()
 local remote = Openworks:WaitForChild('PhysicalInteraction')
 local receiverWarned = false
 
@@ -296,6 +298,7 @@ local function showCurvedGuide(work, points)
 end
 
 local function cancel()
+    pen:close()
     held = nil
     dragging = nil
     if fabrication and fabrication.kind == 'Scorer' then send('FabricationScoreEnd', fabrication.score and fabrication.score.tip or nil) end
@@ -401,7 +404,51 @@ end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
     if drafting:isActive() then return end
+    if fabrication and fabrication.kind == 'Scorer'
+        and fabrication.penMode and not processed then
+        if input.KeyCode == Enum.KeyCode.Return
+            or input.KeyCode == Enum.KeyCode.KeypadEnter then
+            if not fabrication.penPending then
+                local nodes = pen:payload()
+                if #nodes >= 2 then
+                    fabrication.penPending = true
+                    if send('FabricationPenCommit', nodes) then
+                        inspector:status('Saving Pen Tool contour to the metal...')
+                    else
+                        fabrication.penPending = false
+                    end
+                else
+                    inspector:status('Place at least two Pen Tool anchors first')
+                end
+            end
+            return
+        elseif input.KeyCode == Enum.KeyCode.Backspace then
+            local count = pen:undo()
+            inspector:status('Pen Tool: ' .. count .. ' anchors remaining')
+            return
+        elseif input.KeyCode == Enum.KeyCode.F then
+            if not fabrication.penPending then
+                fabrication.penMode = false
+                pen:clear()
+                inspector:status('FREEHAND SCORING — hold LMB to draw. F: Pen Tool')
+            end
+            return
+        end
+    elseif fabrication and fabrication.kind == 'Scorer'
+        and not fabrication.penMode and not processed
+        and input.KeyCode == Enum.KeyCode.F then
+        fabrication.penMode = true
+        pen:attach(scoreWork())
+        inspector:status('PEN TOOL — click anchors; drag handles; Enter: score; F: freehand')
+        return
+    end
     if input.KeyCode == Enum.KeyCode.Escape and inspector.material then
+        if fabrication and fabrication.kind == 'Scorer'
+            and fabrication.penMode and pen:hasPath() then
+            pen:clear()
+            inspector:status('Pen Tool cleared. Esc again to leave inspection.')
+            return
+        end
         exitInspect()
         return
     end
@@ -485,6 +532,27 @@ UserInputService.InputBegan:Connect(function(input, processed)
         end
 
         if pendingMaterial or fabrication.autoPending or fabrication.autoRunning then return end
+        if fabrication.kind == 'Scorer' and fabrication.penMode then
+            if fabrication.penPending then return end
+            local work = scoreWork()
+            local point = scorePoint(work)
+            if point and work then
+                pen:attach(work)
+                local accepted = pen:press(point, workspace.CurrentCamera,
+                    UserInputService:GetMouseLocation(),
+                    UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+                        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt))
+                if accepted then
+                    inspector:status('Pen anchors: ' .. #pen.nodes
+                        .. ' | drag for curves | Enter: score | Backspace: undo')
+                else
+                    inspector:status('Pen Tool limit: 12 anchors per contour')
+                end
+            else
+                inspector:status('Click directly on the metal surface to place an anchor')
+            end
+            return
+        end
         if fabrication.kind == 'Scorer' and target
             and target:IsA('BasePart')
             and target:GetAttribute('DraftingKind') == 'Ruler'
@@ -636,6 +704,10 @@ UserInputService.InputEnded:Connect(function(input)
     end
 
     if fabrication then
+        if fabrication.kind == 'Scorer' and fabrication.penMode then
+            pen:release()
+            return
+        end
         if fabrication.layoutDrag then
             send('FabricationLayoutRulerEnd')
             fabrication.layoutDrag = nil
@@ -665,6 +737,7 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 UserInputService.WindowFocusReleased:Connect(function()
+    pen:release()
     dropHeld(false)
     if fabrication and fabrication.layoutDrag then
         send('FabricationLayoutRulerEnd')
@@ -723,6 +796,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         applyFabricationCollision(d or {})
         fabrication = {
             kind = a, material = b, tool = c,
+            penMode = a == 'Scorer', penPending = false,
             down = false, stroke = 0, offset = 0, axis = 'X',
             autoPending = false, autoRunning = false,
             fileSide = 1, pointerMoved = true, positioning = false,
@@ -732,6 +806,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         }
         inspector:setTool(a)
         if a == 'Scorer' then
+            pen:attach(scoreWork())
             local function show(part)
                 if part:IsA('BasePart') then part.LocalTransparencyModifier = 0 end
             end
@@ -745,7 +820,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         if a == 'Saw' then
             inspector:status('Click a saved score for automatic cutting. Saw unmarked metal manually.')
         elseif a == 'Scorer' then
-            inspector:status('Move physical ruler onto metal, then trace along its edge. Freehand still works.')
+            inspector:status('PEN TOOL: click anchors, drag tangent handles, Enter to score | F: freehand')
         else
             inspector:status('Hover until an edge glows green, then hold LMB and file along it')
         end
@@ -792,6 +867,13 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             fabrication.pointerMoved = true
             clearCurvedGuide()
             inspector:status(b or (if a then 'Automatic cut complete' else 'Automatic cut failed'))
+        end
+    elseif action == 'PenCommitted' then
+        if fabrication and fabrication.kind == 'Scorer' then
+            fabrication.penPending = false
+            pen:clear()
+            inspector:status('Pen Tool score saved (' .. tostring(a)
+                .. ' points). Saw can follow the marked contour.')
         end
     elseif action == 'ScoreSaved' then
         if fabrication and fabrication.kind == 'Scorer' then
@@ -912,6 +994,9 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             inspector:status(b or 'Finished. Aim at the next cut and continue.')
         end
     elseif action == 'Feedback' then
+        if fabrication and fabrication.kind == 'Scorer' then
+            fabrication.penPending = false
+        end
         pendingMaterial = nil
         pendingTool = nil
         if fabrication and fabrication.kind == 'Saw' then
@@ -919,6 +1004,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         end
         if inspector.material then inspector:status(a) end
     elseif action == 'Ended' then
+        pen:close()
         inspector.pauseWheel = false
         clearPreview()
             clearCurvedGuide()
