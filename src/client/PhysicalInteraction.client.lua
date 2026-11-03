@@ -202,7 +202,19 @@ end
 local function showScorerVisual(tool)
     clearScorerVisual()
     if not tool or not tool.Parent then return end
+    local restored = {}
+    local function allowClone(instance)
+        if not instance.Archivable then
+            restored[#restored + 1] = instance
+            instance.Archivable = true
+        end
+    end
+    allowClone(tool)
+    for _, child in tool:GetDescendants() do allowClone(child) end
     local ok, replica = pcall(function() return tool:Clone() end)
+    for _, item in restored do
+        if item.Parent then item.Archivable = false end
+    end
     if not ok or not replica then
         warn('[OPENWORKS:Scorer] Could not clone physical model:', replica)
         return
