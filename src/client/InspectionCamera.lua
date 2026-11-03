@@ -45,13 +45,12 @@ local function makeButton(parent, text, callback)
     return button
 end
 
-function Inspector.new(onTool, onExit, onFileSettings, onMaterial, onSawFlip, onMaterialFlip)
+function Inspector.new(onTool, onExit, onFileSettings, onMaterial, onMaterialFlip)
     local self = setmetatable({}, Inspector)
     self.onTool = onTool
     self.onExit = onExit
     self.onFileSettings = onFileSettings
     self.onMaterial = onMaterial
-    self.onSawFlip = onSawFlip
     self.onMaterialFlip = onMaterialFlip
     self.materials = {}
     self.fileShape = 'Round'
@@ -203,15 +202,6 @@ function Inspector.new(onTool, onExit, onFileSettings, onMaterial, onSawFlip, on
     local choiceStack = Instance.new('UIListLayout')
     choiceStack.Padding = UDim.new(0, 5)
     choiceStack.Parent = choices
-
-    local sawFlipButton = makeButton(panel, 'FLIP SAW 180°  [F]', function()
-        if self.kind == 'Saw' and self.onSawFlip then
-            self.onSawFlip()
-        end
-    end)
-    sawFlipButton.LayoutOrder = 6
-    sawFlipButton.Visible = false
-    self.sawFlipButton = sawFlipButton
 
     local materialFlip = Instance.new('Frame')
     materialFlip.Name = 'FlipMaterial'
@@ -476,7 +466,6 @@ end
 function Inspector:setTool(kind)
     self.kind = kind
     self.fileSettings.Visible = kind == 'File'
-    self.sawFlipButton.Visible = kind == 'Saw'
     self.materialFlip.Visible = kind ~= nil
     self.gui.Enabled = self.material ~= nil
     local panel = self.title.Parent
@@ -496,7 +485,7 @@ function Inspector:setTool(kind)
     self.progress.Text = ''
     self.title.Text = if kind then 'OPENWORKS / ' .. string.upper(kind) else 'OPENWORKS / INSPECT'
     self.instructions.Text = if kind == 'Saw' then
-        'Hover a scored line: automatic saw guide\nLMB: stroke; curves advance as you saw\nQ: freehand axis | P: move sheet | Esc: exit'
+        'Saw orientation is automatic\nHover a score; hold LMB and stroke to cut\nQ: freehand axis | P: move sheet | Esc: exit'
         elseif kind == 'File' then
         'LMB: file | P: drag material | X/Z: flip\nTab: next workpiece | RMB: orbit\nR: roll file | Esc: exit'
         elseif kind == 'Scorer' then
