@@ -315,14 +315,26 @@ function PathCut.split(work, points, kerfMM, existingSolid)
     local right, rightErr = offsetPath(centerLine, -1, half, outline)
     if not right then return nil, rightErr end
 
-    local middle = math.max(1, math.floor(#centerLine / 2))
-    local tangent = (centerLine[middle + 1] - centerLine[middle]).Unit
-    local side = normal(tangent)
     local witnessDistance = half + math.max(0.025, kerf * 0.7)
-    local leftWitness = centerLine[middle] + side * witnessDistance
-    local rightWitness = centerLine[middle] - side * witnessDistance
-    if not Profile.contains(outline, leftWitness)
-        or not Profile.contains(outline, rightWitness) then
+    local leftWitness, rightWitness
+    for i = 2, #centerLine do
+        local a, b = centerLine[i - 1], centerLine[i]
+        local travel = b - a
+        if travel.Magnitude <= 1e-6 then continue end
+        local side = normal(travel.Unit)
+        for step = 1, 9 do
+            local at = a + travel * (step / 10)
+            local left = at + side * witnessDistance
+            local right = at - side * witnessDistance
+            if Profile.contains(outline, left)
+                and Profile.contains(outline, right) then
+                leftWitness, rightWitness = left, right
+                break
+            end
+        end
+        if leftWitness then break end
+    end
+    if not leftWitness then
         return nil, 'Not enough metal remains on both sides of the scored cut'
     end
     local leftPolygon = makePolygon(left, leftWitness, outline)
