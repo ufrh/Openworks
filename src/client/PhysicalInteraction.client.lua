@@ -8,7 +8,19 @@ local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 local Openworks = ReplicatedStorage:WaitForChild('Openworks')
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
-local ScorePath = require(Openworks:WaitForChild('ScorePath'))
+local ScorePath
+local function loadScorePath()
+    if ScorePath then return ScorePath end
+    local module = Openworks:FindFirstChild('ScorePath')
+    if not module or not module:IsA('ModuleScript') then return nil end
+    local ok, result = pcall(require, module)
+    if not ok then
+        warn('[OPENWORKS:Scorer] ScorePath module failed:', result)
+        return nil
+    end
+    ScorePath = result
+    return ScorePath
+end
 local Inspector = require(script.Parent:WaitForChild('InspectionCamera'))
 local remote = Openworks:WaitForChild('PhysicalInteraction')
 local receiverWarned = false
@@ -201,8 +213,13 @@ end
 local function chooseTool(tool)
     local material = inspector.material
     if not material or not material.Parent or fabrication then return end
-    if tool:GetAttribute('OnWorkbench') ~= true then
+    if tool:GetAttribute('OnWorkbench') ~= true
+        and tool ~= workspace:FindFirstChild('Scorer') then
         inspector:status('Place the tool on the workbench first')
+        return
+    end
+    if tool:GetAttribute('FabricationKind') == 'Scorer' and not loadScorePath() then
+        inspector:status('ScorePath module unavailable; check Rojo sync for src/shared/ScorePath.lua')
         return
     end
     pendingTool = tool
@@ -807,7 +824,7 @@ RunService.RenderStepped:Connect(function(dt)
             local span = if fabrication.axis == 'X' then size.X else size.Z
             local maximum = math.max(0, span * 0.5 - 0.17)
             fabrication.offset = math.clamp(fabrication.offset, -maximum, maximum)
-            if fabrication.kind == 'Saw' then
+            if fabrication.kind == 'Saw' and loadScorePath() then
                 local scored = ScorePath.straight(work,
                     fabrication.axis, fabrication.offset, 0.12)
                 if scored then fabrication.offset = scored end
