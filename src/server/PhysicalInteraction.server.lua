@@ -1564,7 +1564,7 @@ local function beginLayoutRuler(player, state, ruler)
         ruler.Anchored = true
         ruler.CanCollide = false
         ruler.CanTouch = false
-        ruler.CanQuery = false
+        ruler.CanQuery = true
     end
     state.layoutRulerMoving = true
     state.lastRulerMove = 0
