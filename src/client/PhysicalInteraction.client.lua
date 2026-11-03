@@ -582,6 +582,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             autoPending = false, autoRunning = false,
             fileSide = 1, pointerMoved = true, positioning = false,
             scoreGuide = nil, scoreLine = nil, scoreReference = nil,
+            filePoint = nil,
             scoreContactOffset = if typeof(e) == 'CFrame' then e else CFrame.identity,
         }
         inspector:setTool(a)
@@ -648,6 +649,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             fabrication.down = false
             fabrication.stroke = 0
             fabrication.offset = 0
+            fabrication.filePoint = nil
             fabrication.pointerMoved = true
             fabrication.scoreGuide = nil
             fabrication.scoreLine = nil
@@ -666,6 +668,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             fabrication.down = false
             fabrication.stroke = 0
             fabrication.offset = 0
+            fabrication.filePoint = nil
             fabrication.pointerMoved = true
             fabrication.scoreGuide = nil
             fabrication.scoreLine = nil
@@ -919,6 +922,7 @@ RunService.RenderStepped:Connect(function(dt)
                 if hit and (hit.Instance == work or hit.Instance:IsDescendantOf(work)) then
                     local point = work.CFrame:PointToObjectSpace(hit.Position)
                     if fabrication.kind == 'File' then
+                        fabrication.filePoint = point
                         local normal = work.CFrame:VectorToObjectSpace(Vector3.yAxis)
                         local face = if math.abs(normal.X) >= math.abs(normal.Y)
                             and math.abs(normal.X) >= math.abs(normal.Z) then 'X'
@@ -1031,6 +1035,10 @@ RunService.RenderStepped:Connect(function(dt)
                 local extent = {X = size.X, Y = size.Y, Z = size.Z}
                 local center = vectors[face] * sign * (extent[face] * 0.5 + 0.025)
                     + vectors[sideAxis] * fabrication.fileSide * extent[sideAxis] * 0.5
+                if fabrication.filePoint then
+                    center = fabrication.filePoint
+                        + vectors[face] * (sign * 0.025)
+                end
                 local travel = vectors[along]
                 local top = vectors[face] * sign
                 guide.Size = Vector3.new(extent[along], 0.02, 0.055)
@@ -1062,7 +1070,9 @@ RunService.RenderStepped:Connect(function(dt)
     elseif fabrication and not fabrication.autoPending and not fabrication.autoRunning then
         send('FabricationMove',
             fabrication.stroke, fabrication.offset, fabrication.axis,
-            fabrication.down, fabrication.fileSide, fabrication.scoreReference)
+            fabrication.down, fabrication.fileSide,
+            if fabrication.kind == 'File' then fabrication.filePoint
+                else fabrication.scoreReference)
     end
 end)
 
