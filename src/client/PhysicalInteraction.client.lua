@@ -26,7 +26,7 @@ local Inspector = require(script.Parent:WaitForChild('InspectionCamera'))
 local Drafting = require(script.Parent:WaitForChild('BlueprintDrafting'))
 local drafting = Drafting.new()
 local pen
-local penErrorAt = 0
+local penErrorAt = -math.huge
 
 local function loadPen()
     if pen then return true end
@@ -41,7 +41,8 @@ local function loadPen()
     end
 
     local ok, result = pcall(function()
-        return require(module).new()
+        local Editor = require(module)
+        return Editor.new()
     end)
     if not ok then
         warn('[OPENWORKS:PenTool] Could not initialize editor:', result)
@@ -901,7 +902,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
     elseif action == 'PenCommitted' then
         if fabrication and fabrication.kind == 'Scorer' then
             fabrication.penPending = false
-            pen:clear()
+            if pen then pen:clear() end
             inspector:status('Pen Tool score saved (' .. tostring(a)
                 .. ' points). Saw can follow the marked contour.')
         end
