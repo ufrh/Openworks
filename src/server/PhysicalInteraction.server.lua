@@ -1088,6 +1088,93 @@ local function advanceAutomaticScore(player, state, dt)
     end
 end
 
+local function fileContour(state)
+    local work = state.work
+    if not work or not work.Parent
+        or math.abs(work.CFrame.UpVector:Dot(Vector3.yAxis)) < 0.85 then return nil end
+
+    local item = modifiedSolids[work]
+    local source = item and item.solid
+    if state.fileOutlineWork == work and state.fileOutlineSource == source then
+        return state.fileOutline
+    end
+
+    local outline
+    if source then
+        local module = Openworks:FindFirstChild('PrismProfile')
+        if module and module:IsA('ModuleScript') then
+            local Profile = require(module)
+            local perimeter = Profile.extract(source)
+            if perimeter then
+                local Stock = require(Openworks:WaitForChild('Stock'))
+                outline = {}
+                for _, point in perimeter do
+                    outline[#outline + 1] = point * Stock.SCALE
+                end
+            end
+        end
+    else
+        local half = work.Size * 0.5
+        outline = {
+            Vector2.new(-half.X, -half.Z),
+            Vector2.new(half.X, -half.Z),
+            Vector2.new(half.X, half.Z),
+            Vector2.new(-half.X, half.Z),
+        }
+    end
+
+    state.fileOutlineWork = work
+    state.fileOutlineSource = source
+    state.fileOutline = outline
+    return outline
+end
+
+local function fileEdgeAt(state, point)
+    if typeof(point) ~= 'Vector3' or not validVector(point) then return nil end
+    local work = state.work
+    if not work or not work.Parent then return nil end
+    local half = work.Size * 0.5
+    if math.abs(point.X) > half.X + 0.3
+        or math.abs(point.Z) > half.Z + 0.3 then return nil end
+    local outline = fileContour(state)
+    if not outline then return nil end
+    local module = Openworks:FindFirstChild('PrismProfile')
+    if not module or not module:IsA('ModuleScript') then return nil end
+    local Profile = require(module)
+    local match = Profile.closest(outline, Vector2.new(point.X, point.Z))
+    if not match or match.distance > 0.27 then return nil end
+    local faceSign = if work.CFrame.UpVector:Dot(Vector3.yAxis) >= 0 then 1 else -1
+    match.point3 = Vector3.new(match.point.X, faceSign * half.Y, match.point.Y)
+    match.tangent3 = Vector3.new(match.tangent.X, 0, match.tangent.Y)
+    match.outline = outline
+    return match
+end
+
+local function lockFileEdge(player, state, point)
+    if state.positioning or state.processing or state.fileLock then return end
+    local match = fileEdgeAt(state, point)
+    if not match then
+        state.fileSnap = nil
+        remote:FireClient(player, 'FileEdgeLocked', nil)
+        return
+    end
+    local root = rootOf(player)
+    if not root or (state.work.CFrame:PointToWorldSpace(match.point3)
+        - root.Position).Magnitude > 27 then return end
+    state.fileLock = match
+    state.filePoint = match.point3
+    state.fileSnap = match
+    remote:FireClient(player, 'FileEdgeLocked', match.point3, match.tangent3)
+end
+
+local function unlockFileEdge(state)
+    state.fileLock = nil
+    state.fileSnap = nil
+    state.fileOutlineWork = nil
+    state.fileOutlineSource = nil
+    state.fileOutline = nil
+end
+
 local function moveFabrication(player, state, stroke, offset, axis, isDown, fileSide, scoreReference)
     if not finite(stroke) or not finite(offset)
         or (axis ~= 'X' and axis ~= 'Z' and (state.kind ~= 'File' or axis ~= 'Y'))
@@ -1110,13 +1197,19 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.lastMove = now
 
     local size = work.Size
-    if state.kind == 'File' and typeof(scoreReference) == 'Vector3'
-        and validVector(scoreReference) then
-        local h = work.Size * 0.5 + Vector3.new(0.08, 0.08, 0.08)
-        if math.abs(scoreReference.X) <= h.X
-            and math.abs(scoreReference.Y) <= h.Y
-            and math.abs(scoreReference.Z) <= h.Z then
-            state.filePoint = scoreReference
+    if state.kind == 'File' and not state.fileLock then
+        local match = fileEdgeAt(state, scoreReference)
+        local previous = state.fileSnap
+        state.fileSnap = match
+        state.filePoint = if match then match.point3
+            elseif typeof(scoreReference) == 'Vector3' and validVector(scoreReference)
+            then scoreReference else nil
+        if (match == nil) ~= (previous == nil)
+            or (match and previous
+                and (match.point3 - previous.point3).Magnitude > 0.008) then
+            remote:FireClient(player, 'FileEdgeGuide',
+                if match then match.point3 else nil,
+                if match then match.tangent3 else nil)
         end
     end
     local matched
@@ -1168,13 +1261,27 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     local cross
     local upward
     local curveStrokeTangent
+    local fileStrokeTangent
     if state.kind == 'File' then
-        local halfTravel = measure(size, along) * 0.5
-        stroke = math.clamp(stroke, -halfTravel, halfTravel)
-        travel = basis(along) * stroke
-        cross = basis(sideAxis) * (fileSide * (measure(size, sideAxis) * 0.5 + 0.002))
-        if modifiedSolids[work] and state.filePoint then
-            cross = Vector3.new(state.filePoint.X, 0, state.filePoint.Z)
+        local locked = state.fileLock
+        if locked then
+            local Profile = require(Openworks:WaitForChild('PrismProfile'))
+            local point2, tangent2 = Profile.sample(locked.outline,
+                locked.travel + math.clamp(stroke * 0.24, -0.36, 0.36))
+            if point2 and tangent2 then
+                cross = Vector3.new(point2.X, 0, point2.Y)
+                fileStrokeTangent = Vector3.new(tangent2.X, 0, tangent2.Y)
+                travel = Vector3.zero
+            end
+        end
+        if not travel then
+            local halfTravel = measure(size, along) * 0.5
+            stroke = math.clamp(stroke, -halfTravel, halfTravel)
+            travel = basis(along) * stroke
+            cross = basis(sideAxis) * (fileSide * (measure(size, sideAxis) * 0.5 + 0.002))
+            if modifiedSolids[work] and state.filePoint then
+                cross = Vector3.new(state.filePoint.X, 0, state.filePoint.Z)
+            end
         end
         upward = work.CFrame:VectorToWorldSpace(basis(face) * faceSign)
     else
@@ -1221,7 +1328,9 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         return
     end
 
-    local forward = if state.kind == 'File' then
+    local forward = if fileStrokeTangent then
+        work.CFrame:VectorToWorldSpace(fileStrokeTangent)
+        elseif state.kind == 'File' then
         work.CFrame:VectorToWorldSpace(basis(along))
         elseif curveStrokeTangent then
         work.CFrame:VectorToWorldSpace(curveStrokeTangent)
@@ -1542,6 +1651,8 @@ local function flipFabricationMaterial(player, state, axis)
     state.reversals = 0
     state.awaitRelease = true
     state.offset = 0
+    unlockFileEdge(state)
+    state.filePoint = nil
     remote:FireClient(player, 'MaterialFlipped', work)
 end
 
@@ -1607,6 +1718,7 @@ local function switchFabricationMaterial(player, state, material)
     state.materialAnchors = anchors
     state.offset = 0
     state.filePoint = nil
+    unlockFileEdge(state)
     state.stroke = 0
     state.lastStroke = 0
     state.lastTurn = 0
@@ -1661,6 +1773,12 @@ onRequest = function(player, action, ...)
     elseif action == 'FabricationAutoScore' and state.mode == 'Fabrication'
         and state.kind == 'Saw' then
         beginAutomaticScore(player, state, ...)
+    elseif action == 'FabricationFileLock' and state.mode == 'Fabrication'
+        and state.kind == 'File' then
+        lockFileEdge(player, state, ...)
+    elseif action == 'FabricationFileUnlock' and state.mode == 'Fabrication'
+        and state.kind == 'File' then
+        unlockFileEdge(state)
     elseif action == 'FabricationMove' and state.mode == 'Fabrication'
         and state.kind ~= 'Scorer' then
         moveFabrication(player, state, ...)
