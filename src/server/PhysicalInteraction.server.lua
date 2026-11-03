@@ -752,8 +752,15 @@ local function cutSheet(state)
 
     local fragments, failure
     if isCurve then
-        local PathCut = require(Openworks:WaitForChild('PathCut'))
-        fragments, failure = PathCut.split(work, scoredCut.points)
+        local module = Openworks:FindFirstChild('PathCut')
+        if not module or not module:IsA('ModuleScript') then
+            return nil, 'Curved cutter module missing; synchronize src/shared/PathCut.lua'
+        end
+        local loaded, result = pcall(require, module)
+        if not loaded then
+            return nil, 'Curved cutter failed to load: ' .. tostring(result)
+        end
+        fragments, failure = result.split(work, scoredCut.points)
     else
         fragments, failure = SawCut.split(item, point, normal)
     end
