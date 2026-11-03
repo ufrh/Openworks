@@ -1046,6 +1046,14 @@ local function scorePosition(state, point)
     local up = work.CFrame:VectorToWorldSpace(ScorePath.normal(face.face, face.sign))
     local world = work.CFrame:PointToWorldSpace(point) + up * 0.008
     local forward = work.CFrame.RightVector
+    local points = face.points
+    if #points >= 2 then
+        local last = points[#points - 1]
+        local delta = work.CFrame:VectorToWorldSpace(point - last)
+        if delta.Magnitude > 0.008 then
+            forward = delta.Unit
+        end
+    end
     if math.abs(forward:Dot(up)) > 0.9 then forward = work.CFrame.LookVector end
     state.goalFrame = CFrame.fromMatrix(world, forward, up, forward:Cross(up))
         * state.contactOffset
