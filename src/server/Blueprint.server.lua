@@ -313,18 +313,77 @@ if RunService:IsStudio() then
             return node
         end
 
+        local function detail(basePart, name, size, localFrame, color, transparency, material)
+            local piece = Instance.new('Part')
+            piece.Name = name
+            piece.Size = size
+            piece.CFrame = basePart.CFrame * localFrame
+            piece.Color = color
+            piece.Transparency = transparency or 0
+            piece.Material = material or Enum.Material.SmoothPlastic
+            piece.Anchored = false
+            piece.Massless = true
+            piece.CanCollide = false
+            piece.CanTouch = false
+            piece.CanQuery = false
+            piece.CastShadow = false
+            piece.Parent = basePart
+
+            local weld = Instance.new('WeldConstraint')
+            weld.Part0 = basePart
+            weld.Part1 = piece
+            weld.Parent = piece
+        end
+
+        local function rulerDetails(ruler)
+            local dark = Color3.fromRGB(38, 42, 46)
+            local gold = Color3.fromRGB(255, 225, 140)
+            local top = ruler.Size.Y * 0.5 + 0.007
+            for _, side in {-1, 1} do
+                detail(ruler, 'LongEdge_' .. side,
+                    Vector3.new(ruler.Size.X, 0.013, 0.022),
+                    CFrame.new(0, top, side * (ruler.Size.Z * 0.5 - 0.019)),
+                    dark)
+            end
+
+            detail(ruler, 'CenterGoldInset',
+                Vector3.new(ruler.Size.X - 0.14, 0.009, 0.019),
+                CFrame.new(0, top + 0.001, ruler.Size.Z * 0.16),
+                gold, 0.08)
+            local limit = math.floor((ruler.Size.X * 0.5 - 0.06) / 0.2)
+            for step = -limit, limit do
+                local longest = step % 5 == 0
+                local tickLength = if longest then 0.18
+                    elseif step % 2 == 0 then 0.12 else 0.065
+                detail(ruler, 'Tick_' .. step,
+                    Vector3.new(if longest then 0.017 else 0.011,
+                        0.010, tickLength),
+                    CFrame.new(step * 0.2, top + 0.001,
+                        -ruler.Size.Z * 0.24 + tickLength * 0.5),
+                    dark)
+            end
+        end
+
         local sheetX = -surface.Size.X * 0.12
         local sheet = part('Blueprint Sheet',
             Vector3.new(width, 0.055, depth),
             Color3.fromRGB(212, 231, 241), sheetX, 0, 0.03)
         sheet:SetAttribute('isBlueprint', true)
         Geometry.write(sheet, {})
+        Geometry.render(sheet)
+        detail(sheet, 'DraftingClip',
+            Vector3.new(width * 0.42, 0.04, 0.11),
+            CFrame.new(0, sheet.Size.Y * 0.5 + 0.025,
+                -depth * 0.47),
+            Color3.fromRGB(112, 132, 146), 0, Enum.Material.Metal)
 
         local ruler = part('Drafting Ruler',
-            Vector3.new(width * 0.78, 0.075, 0.21),
-            Color3.fromRGB(145, 163, 173), sheetX, 0, 0.14)
+            Vector3.new(width * 0.82, 0.13, 0.36),
+            Color3.fromRGB(245, 180, 62), sheetX, -depth * 0.19, 0.16)
+        ruler.Material = Enum.Material.Metal
         ruler:SetAttribute('isTool', true)
         ruler:SetAttribute('DraftingKind', 'Ruler')
+        rulerDetails(ruler)
 
         local pencil = part('Drafting Pencil',
             Vector3.new(0.12, 0.12, 1.1),
@@ -333,6 +392,17 @@ if RunService:IsStudio() then
             -surface.Size.Z * 0.19, 0.07)
         pencil:SetAttribute('isTool', true)
         pencil:SetAttribute('DraftingKind', 'Pencil')
+        detail(pencil, 'PencilStripe',
+            Vector3.new(0.025, 0.125, pencil.Size.Z * 0.70),
+            CFrame.new(0.05, 0, 0), Color3.fromRGB(153, 101, 32))
+        detail(pencil, 'GraphiteNib',
+            Vector3.new(0.062, 0.062, 0.1),
+            CFrame.new(0, 0, -pencil.Size.Z * 0.5 - 0.025),
+            Color3.fromRGB(47, 47, 47))
+        detail(pencil, 'SilverFerrule',
+            Vector3.new(0.121, 0.121, 0.10),
+            CFrame.new(0, 0, pencil.Size.Z * 0.5 - 0.075),
+            Color3.fromRGB(180, 189, 193), 0, Enum.Material.Metal)
 
         local eraser = part('Drafting Eraser',
             Vector3.new(0.4, 0.14, 0.48),
@@ -341,6 +411,10 @@ if RunService:IsStudio() then
             surface.Size.Z * 0.19, 0.06)
         eraser:SetAttribute('isTool', true)
         eraser:SetAttribute('DraftingKind', 'Eraser')
+        detail(eraser, 'PaperSleeve',
+            Vector3.new(0.41, 0.015, 0.30),
+            CFrame.new(0, eraser.Size.Y * 0.5 + 0.008, 0),
+            Color3.fromRGB(241, 226, 204))
 
         print('[OPENWORKS:Blueprint] Drafting kit placed on the workbench')
     end)
