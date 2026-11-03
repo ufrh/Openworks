@@ -712,7 +712,11 @@ local function cutSheet(state)
         weld.Parent = visual
 
         visual.Parent = work
-        if previous then previous:Destroy() end
+        for _, oldVisual in work:GetChildren() do
+            if oldVisual:IsA('MeshPart') and oldVisual.Name == 'FORMFiledVisual' then
+                oldVisual:Destroy()
+            end
+        end
         work.Transparency = 1
         work.CanCollide = false
         work.CanQuery = false
@@ -869,7 +873,11 @@ local function cutSheet(state)
     work.Size = main.size
     work.CFrame = main.frame
     if needsMesh then
-        if previous then previous:Destroy() end
+        for _, oldVisual in work:GetChildren() do
+            if oldVisual:IsA('MeshPart') and oldVisual.Name == 'FORMFiledVisual' then
+                oldVisual:Destroy()
+            end
+        end
         local weld = Instance.new('WeldConstraint')
         weld.Part0 = work
         weld.Part1 = mainVisual
