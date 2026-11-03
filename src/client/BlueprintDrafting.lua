@@ -36,6 +36,8 @@ function Drafting.new()
     self.toolKind = nil
     self.toolFrame = nil
     self.stroke = nil
+    self.rulerDrag = nil
+    self.lastRulerMove = 0
     self.distance = 7
     self.focus = Vector3.zero
     self.right = false
@@ -105,6 +107,7 @@ function Drafting.new()
         elseif action == 'Recorded' then
             print('[OPENWORKS:Blueprint] Saved lines:', a)
         elseif action == 'Status' then
+            if self.pending then self.pending = false end
             warn('[OPENWORKS:Blueprint] ' .. tostring(a))
         elseif action == 'Closed' then
             self:close(false)
@@ -129,6 +132,19 @@ function Drafting.new()
         if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 
         local hit = mouse.Target
+        if hit and hit:IsA('BasePart')
+            and hit:GetAttribute('DraftingKind') == 'Ruler' then
+            local localDirection = self.sheet.CFrame:VectorToObjectSpace(
+                hit.CFrame.RightVector)
+            self.rulerDrag = {
+                ruler = hit,
+                angle = math.atan2(-localDirection.Z, localDirection.X),
+            }
+            self.lastRulerMove = 0
+            self.selection.Adornee = hit
+            remote:FireServer('RulerStart', hit)
+            return
+        end
         if hit and hit:IsA('BasePart')
             and (hit:GetAttribute('DraftingKind') == 'Pencil'
                 or hit:GetAttribute('DraftingKind') == 'Eraser') then
@@ -176,6 +192,12 @@ function Drafting.new()
         elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
             self.middle = false
         elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if self.rulerDrag then
+                self.rulerDrag = nil
+                remote:FireServer('RulerEnd')
+                self.selection.Adornee = self.tool or self.sheet
+                return
+            end
             local stroke = self.stroke
             self.stroke = nil
             self.preview.Parent = nil
@@ -188,6 +210,11 @@ function Drafting.new()
     UserInputService.InputChanged:Connect(function(input, processed)
         if not self.sheet then return end
         if input.UserInputType == Enum.UserInputType.MouseWheel and not processed then
+            if self.rulerDrag then
+                self.rulerDrag.angle = (self.rulerDrag.angle
+                    + math.rad(5) * input.Position.Z) % (math.pi * 2)
+                return
+            end
             self.distance = math.clamp(self.distance
                 * (if input.Position.Z > 0 then 0.87 else 1.15), 2.2, 23)
         elseif input.UserInputType == Enum.UserInputType.MouseMovement and self.middle then
@@ -217,6 +244,10 @@ function Drafting.new()
             camera.FieldOfView += (59 - camera.FieldOfView) * alpha
 
             local point = self:pointUnderCursor()
+            if self.rulerDrag and point and os.clock() - self.lastRulerMove > 1 / 30 then
+                self.lastRulerMove = os.clock()
+                remote:FireServer('RulerMove', point, self.rulerDrag.angle)
+            end
             if self.stroke and point then self.stroke.current = point end
             local activePoint = point
             if self.stroke then
@@ -241,7 +272,7 @@ function Drafting.new()
                 end
             end
 
-            if self.tool and self.tool.Parent and activePoint then
+            if not self.rulerDrag and self.tool and self.tool.Parent and activePoint then
                 self.tool.CFrame = toolPose(self.tool, sheet, activePoint)
                 if os.clock() - self.lastPose >= 1 / 20 then
                     self.lastPose = os.clock()
@@ -284,6 +315,7 @@ function Drafting:close(notify)
     if notify then remote:FireServer('Close') end
     self.pending = false
     self.stroke = nil
+    self.rulerDrag = nil
     self.preview.Parent = nil
     self.selection.Enabled = false
     self.selection.Adornee = nil
