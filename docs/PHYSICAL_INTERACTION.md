@@ -83,5 +83,5 @@ The shared `PhysicalInteraction` RemoteEvent is reused on server restart instead
 ## Scope and safety
 
 - Saw geometry now accepts previously filed rectangular-backed FORM workpieces. Both split pieces retain their actual altered mesh surfaces. Imported solids without a `FORMNativeStock` Part backing remain unsupported.
-- No fake tilted/oblique saw-cut mode is presented: the native-Part fragment renderer supports only the X/Z straight cut directions. More complex FORM split results require physical EditableMesh output.
+- Axis-aligned saw cuts can retain native block fragments. Diagonal straight and open curved cuts use the actual FORM solids rendered through baked EditableMesh MeshParts; more general curved machining on previously modified or arbitrary solid geometry is not implemented.
 - This code has been reviewed/committed on GitHub but **has not been tested inside Roblox Studio**. In Studio, verify: detection, grabbing, click selection, camera orbit, tool positioning, gold guide, manual stroke progress, two physical offcuts, and ESC restoration.
