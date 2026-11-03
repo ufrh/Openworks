@@ -711,12 +711,12 @@ local function cutSheet(state)
         weld.Part1 = visual
         weld.Parent = visual
 
-        visual.Parent = work
         for _, oldVisual in work:GetChildren() do
             if oldVisual:IsA('MeshPart') and oldVisual.Name == 'FORMFiledVisual' then
                 oldVisual:Destroy()
             end
         end
+        visual.Parent = work
         work.Transparency = 1
         work.CanCollide = false
         work.CanQuery = false
