@@ -717,6 +717,10 @@ local function cutSheet(state)
 
     local wasFiled = modifiedSolids[work] ~= nil
     local scoredCut = state.scoreCut
+    local isCurve = scoredCut and scoredCut.kind == 'Curved'
+    if isCurve and wasFiled then
+        return nil, 'Curved cutting needs an unmodified rectangular FORM sheet'
+    end
     local needsMesh = wasFiled or (scoredCut ~= nil and scoredCut.axis == nil)
 
     local FORM = require(Openworks:WaitForChild('FORM'))
@@ -746,7 +750,13 @@ local function cutSheet(state)
         normal = originalFrame:VectorToWorldSpace(scoredCut.normal)
     end
 
-    local fragments, failure = SawCut.split(item, point, normal)
+    local fragments, failure
+    if isCurve then
+        local PathCut = require(Openworks:WaitForChild('PathCut'))
+        fragments, failure = PathCut.split(work, scoredCut.points)
+    else
+        fragments, failure = SawCut.split(item, point, normal)
+    end
     if not fragments then return nil, failure end
 
     local candidates = {}
@@ -887,20 +897,26 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         end
     end
     if state.kind == 'Saw' and matched and matched.kind == 'Curved' then
-        state.scoreCut = nil
-        state.direction = 0
-        state.reversals = 0
-        state.lastStroke = stroke
-        if isDown and not state.curvedWarned then
-            state.curvedWarned = true
-            remote:FireClient(player, 'Feedback',
-                'This score curves. FORM cannot split along a curved kerf yet.')
+        local length = ScorePath.sample(matched.points)
+        if not length or length <= 0.12 then return end
+        if state.curvePath ~= matched.points then
+            state.curvePath = matched.points
+            state.curveTravel = 0
+            state.reversals = 0
+            state.direction = 0
+            state.lastStroke = 0
+            state.lastTurn = 0
         end
-        return
+        local sample, tangent = ScorePath.sample(matched.points, state.curveTravel)
+        matched.point = sample
+        matched.tangent = tangent
+        state.scoreCut = matched
+    else
+        state.curvePath = nil
+        state.curveTravel = 0
+        state.scoreCut = if state.kind == 'Saw' and matched
+            and matched.kind == 'Straight' then matched else nil
     end
-    state.curvedWarned = false
-    state.scoreCut = if state.kind == 'Saw' and matched
-        and matched.kind == 'Straight' then matched else nil
     if state.scoreCut and state.scoreCut.axis then
         axis = state.scoreCut.axis
         offset = state.scoreCut.offset
@@ -1053,6 +1069,19 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.lastStroke = stroke
 
     if state.reversals < 5 or state.processing then return end
+    if state.kind == 'Saw' and state.scoreCut
+        and state.scoreCut.kind == 'Curved' then
+        local full = ScorePath.sample(state.scoreCut.points)
+        if not full then return end
+        state.curveTravel = math.min(full, (state.curveTravel or 0)
+            + math.max(full / 12, 0.08))
+        state.reversals = 0
+        state.lastStroke = stroke
+        state.lastTurn = stroke
+        state.direction = 0
+        remote:FireClient(player, 'Progress', state.curveTravel / full)
+        if state.curveTravel < full - 0.0001 then return end
+    end
 
     local aimWorld = work.CFrame:PointToWorldSpace(
         if state.scoreCut then state.scoreCut.point
