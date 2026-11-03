@@ -1346,7 +1346,19 @@ local function extendScore(state, point)
     state.lastScoreAt = now
 
     local points = score.points
-    if #points >= ScorePath.MAX_POINTS then return end
+    if #points >= ScorePath.MAX_RAW_POINTS then
+        local reduced = ScorePath.reduce(points, 0.006)
+        if #reduced >= ScorePath.MAX_RAW_POINTS then
+            local decimated = {reduced[1]}
+            for i = 3, #reduced - 1, 2 do
+                decimated[#decimated + 1] = reduced[i]
+            end
+            decimated[#decimated + 1] = reduced[#reduced]
+            reduced = decimated
+        end
+        score.points = reduced
+        points = reduced
+    end
     local previous = points[#points]
     local movement = point - previous
     if movement.Magnitude < 0.018 then return end
@@ -1361,7 +1373,7 @@ endScore = function(player, state, finalPoint)
     local score = state.score
     if score and typeof(finalPoint) == 'Vector3'
         and ScorePath.valid(state.work, finalPoint, score.face, score.sign)
-        and #score.points < ScorePath.MAX_POINTS then
+        and #score.points < ScorePath.MAX_RAW_POINTS then
         local last = score.points[#score.points]
         if (last - finalPoint).Magnitude >= 0.016
             and (last - finalPoint).Magnitude <= 0.35 then
@@ -1370,20 +1382,20 @@ endScore = function(player, state, finalPoint)
     end
     state.score = nil
     if not score or #score.points < 2 then return end
-    local simplified = ScorePath.reduce(score.points, 0.014)
-    if #simplified < 2 then return end
+    local smoothed = ScorePath.smooth(state.work, score.points)
+    if #smoothed < 2 then return end
     local length = 0
-    for i = 2, #simplified do
-        length += (simplified[i] - simplified[i - 1]).Magnitude
+    for i = 2, #smoothed do
+        length += (smoothed[i] - smoothed[i - 1]).Magnitude
     end
     if length < 0.08 then return end
-    score.points = simplified
+    score.points = smoothed
     local paths = ScorePath.read(state.work)
     paths[#paths + 1] = score
     while #paths > ScorePath.MAX_PATHS do table.remove(paths, 1) end
     ScorePath.write(state.work, paths)
     drawScore(state.work, paths)
-    remote:FireClient(player, 'ScoreSaved', #simplified)
+    remote:FireClient(player, 'ScoreSaved', #smoothed)
 end
 
 local function setMaterialPositioning(player, state, value)
