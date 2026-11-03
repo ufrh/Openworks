@@ -465,8 +465,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
             and not fabrication.down then
             local work = scoreWork()
             local localHit = work and scorePoint(work)
-            local edge, distance = if work and localHit
-                then MaterialLayout.rulerGuide(work, target, localHit) else nil, nil
+            local edge, distance
+            if work and localHit then
+                edge, distance = MaterialLayout.rulerGuide(work, target, localHit)
+            end
             if not edge or not distance or distance > 0.06 then
                 if localHit then
                     fabrication.layoutDrag = {
