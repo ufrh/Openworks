@@ -150,26 +150,33 @@ local function straightLine(work, path)
 
     local points = path.points
     local first, last = points[1], points[#points]
-    local delta = last - first
-    local axis = if math.abs(delta.Z) >= math.abs(delta.X) then 'X' else 'Z'
-    local along = if axis == 'X' then 'Z' else 'X'
-    local length = math.abs(coordinate(delta, along))
-    local span = coordinate(work.Size, along)
-    if length < math.min(span * 0.18, 0.22) then return nil end
+    local delta = Vector3.new(last.X - first.X, 0, last.Z - first.Z)
+    local length = delta.Magnitude
+    if length < 0.12 then return nil end
 
-    local total = 0
-    for _, point in points do total += coordinate(point, axis) end
-    local offset = total / #points
-    local extent = coordinate(work.Size, axis)
-    if math.abs(offset) > math.max(0, extent * 0.5 - 0.17) then return nil end
-
+    local direction = delta.Unit
+    local normal = Vector3.new(-direction.Z, 0, direction.X)
+    local midpoint = (first + last) * 0.5
     local deviation = 0
     for _, point in points do
-        deviation = math.max(deviation, math.abs(coordinate(point, axis) - offset))
+        deviation = math.max(deviation, math.abs((point - midpoint):Dot(normal)))
     end
     if deviation > 0.055 then return nil end
 
-    return {axis = axis, offset = offset, length = length}
+    local axis
+    if math.abs(direction.Z) > 0.997 then
+        axis = 'X'
+    elseif math.abs(direction.X) > 0.997 then
+        axis = 'Z'
+    end
+    local offset = axis and coordinate(midpoint, axis) or nil
+    if axis then
+        local extent = coordinate(work.Size, axis)
+        if math.abs(offset) > math.max(0, extent * 0.5 - 0.17) then return nil end
+    end
+
+    return {axis = axis, offset = offset, length = length,
+        point = midpoint, tangent = direction, normal = normal}
 end
 
 local function closestOnPath(path, position)
@@ -199,11 +206,30 @@ function ScorePath.guide(work, position, radius)
             local line = straightLine(work, path)
             nearest = if line then {
                 kind = 'Straight', axis = line.axis, offset = line.offset,
+                point = line.point, tangent = line.tangent, normal = line.normal,
+                length = line.length,
             } else {kind = 'Curved'}
             distance = error
         end
     end
     return nearest
+end
+
+function ScorePath.contactFrame(work, point, tangent)
+    local face, sign = ScorePath.face(work)
+    local localNormal = ScorePath.normal(face, sign)
+    local up = work.CFrame:VectorToWorldSpace(localNormal)
+    local localDirection = tangent or
+        (if face == 'X' then Vector3.zAxis else Vector3.xAxis)
+    local forward = work.CFrame:VectorToWorldSpace(localDirection)
+    forward -= up * forward:Dot(up)
+    if forward.Magnitude < 0.001 then
+        forward = work.CFrame:VectorToWorldSpace(
+            if face == 'X' then Vector3.zAxis else Vector3.xAxis)
+    end
+    forward = forward.Unit
+    local worldPoint = work.CFrame:PointToWorldSpace(point) + up * 0.008
+    return CFrame.fromMatrix(worldPoint, forward, up, forward:Cross(up))
 end
 
 function ScorePath.straight(work, axis, currentOffset, radius)
