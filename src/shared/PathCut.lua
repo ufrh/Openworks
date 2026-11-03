@@ -105,6 +105,59 @@ local function rayExit(point, direction, hx, hz)
     return result
 end
 
+local function clipSegment(a, b, hx, hz)
+    local delta = b - a
+    local entry, exit = 0, 1
+
+    local function clip(p, q)
+        if math.abs(p) < 1e-10 then return q >= -EPSILON end
+        local t = q / p
+        if p < 0 then
+            if t > exit then return false end
+            entry = math.max(entry, t)
+        else
+            if t < entry then return false end
+            exit = math.min(exit, t)
+        end
+        return entry <= exit + 1e-9
+    end
+
+    if not clip(-delta.X, a.X + hx)
+        or not clip(delta.X, hx - a.X)
+        or not clip(-delta.Y, a.Y + hz)
+        or not clip(delta.Y, hz - a.Y) then
+        return nil
+    end
+
+    return a + delta * math.clamp(entry, 0, 1),
+        a + delta * math.clamp(exit, 0, 1)
+end
+
+local function clippedChain(shifted, hx, hz)
+    local clipped = {}
+    for i = 2, #shifted do
+        local entry, exit = clipSegment(shifted[i - 1], shifted[i], hx, hz)
+        if not entry or not exit or (exit - entry).Magnitude < EPSILON then
+            continue
+        end
+
+        if #clipped > 0 and (entry - clipped[#clipped]).Magnitude > 0.0001 then
+            return nil, 'Score exits the metal and enters it again'
+        end
+
+        if #clipped == 0 or (entry - clipped[#clipped]).Magnitude > EPSILON then
+            clipped[#clipped + 1] = entry
+        end
+        clipped[#clipped + 1] = exit
+    end
+
+    clipped = clean(clipped, false)
+    if #clipped < 2 then
+        return nil, 'Score does not cross the interior of the metal'
+    end
+    return clipped
+end
+
 local function offsetPath(points, side, halfKerf, hx, hz)
     local shifted = {}
     for i, point in points do
@@ -118,22 +171,20 @@ local function offsetPath(points, side, halfKerf, hx, hz)
         miter = miter.Unit
         local factor = math.abs(miter:Dot(nextNormal))
         if factor < 0.45 then return nil, 'Score corner is too sharp for saw kerf' end
-        local candidate = point + miter * (side * halfKerf / factor)
-        if math.abs(candidate.X) > hx + EPSILON
-            or math.abs(candidate.Y) > hz + EPSILON then
-            return nil, 'Score runs too close to a stock edge'
-        end
-        shifted[#shifted + 1] = candidate
+        shifted[#shifted + 1] = point + miter * (side * halfKerf / factor)
     end
-    local firstDirection = (points[2] - points[1]).Unit
-    local lastDirection = (points[#points] - points[#points - 1]).Unit
-    local start = rayExit(shifted[1], -firstDirection, hx, hz)
-    local finish = rayExit(shifted[#shifted], lastDirection, hx, hz)
+
+    local clipped, failure = clippedChain(shifted, hx, hz)
+    if not clipped then return nil, failure end
+    local firstDirection = (clipped[2] - clipped[1]).Unit
+    local lastDirection = (clipped[#clipped] - clipped[#clipped - 1]).Unit
+    local start = rayExit(clipped[1], -firstDirection, hx, hz)
+    local finish = rayExit(clipped[#clipped], lastDirection, hx, hz)
     if not start or not finish or (start - finish).Magnitude < 0.05 then
         return nil, 'Score must separate two distinct edges of the metal'
     end
     local chain = {start}
-    for _, point in shifted do chain[#chain + 1] = point end
+    for _, point in clipped do chain[#chain + 1] = point end
     chain[#chain + 1] = finish
     chain = clean(chain, false)
     if #chain < 2 or selfIntersects(chain, false) then
