@@ -611,7 +611,8 @@ local function startFabrication(player, material, tool)
         })
     end
 
-    remote:FireClient(player, 'FabricationStarted', kind, material, tool, collisionData)
+    remote:FireClient(player, 'FabricationStarted', kind, material, tool,
+        collisionData, if kind == 'Scorer' then state.contactOffset else nil)
 end
 
 local function cutSheet(state)
@@ -676,6 +677,8 @@ local function cutSheet(state)
     end
 
     local wasFiled = modifiedSolids[work] ~= nil
+    local scoredCut = state.scoreCut
+    local needsMesh = wasFiled or (scoredCut ~= nil and scoredCut.axis == nil)
 
     local FORM = require(Openworks:WaitForChild('FORM'))
     local Stock = require(Openworks:WaitForChild('Stock'))
@@ -699,6 +702,10 @@ local function cutSheet(state)
     local point = originalFrame:PointToWorldSpace(
         if state.axis == 'X' then Vector3.new(state.offset, 0, 0)
         else Vector3.new(0, 0, state.offset))
+    if scoredCut then
+        point = originalFrame:PointToWorldSpace(scoredCut.point)
+        normal = originalFrame:VectorToWorldSpace(scoredCut.normal)
+    end
 
     local fragments, failure = SawCut.split(item, point, normal)
     if not fragments then return nil, failure end
@@ -714,7 +721,7 @@ local function cutSheet(state)
             size = size,
             frame = originalFrame * CFrame.new((low + high) * 0.5 * Stock.SCALE),
             volume = FORM.signedVolume(solid),
-            solid = if wasFiled then centerSolid(solid, (low + high) * 0.5) else nil,
+            solid = if needsMesh then centerSolid(solid, (low + high) * 0.5) else nil,
         })
     end
 
@@ -747,7 +754,7 @@ local function cutSheet(state)
 
     local mainVisual, offcutVisual
     local previous = work:FindFirstChild('FORMFiledVisual')
-    if wasFiled then
+    if needsMesh then
         local Renderer = require(Openworks:WaitForChild('FORMWorkpieceRender'))
         local mainSource = Instance.new('Part')
         mainSource.CFrame = main.frame
@@ -769,7 +776,7 @@ local function cutSheet(state)
 
     work.Size = main.size
     work.CFrame = main.frame
-    if wasFiled then
+    if needsMesh then
         if previous then previous:Destroy() end
         local weld = Instance.new('WeldConstraint')
         weld.Part0 = work
@@ -810,7 +817,7 @@ local function cutSheet(state)
     return work, 'Cut complete. Move the guide for another cut or press Esc'
 end
 
-local function moveFabrication(player, state, stroke, offset, axis, isDown, fileSide)
+local function moveFabrication(player, state, stroke, offset, axis, isDown, fileSide, scoreReference)
     if not finite(stroke) or not finite(offset)
         or (axis ~= 'X' and axis ~= 'Z' and (state.kind ~= 'File' or axis ~= 'Y'))
         or type(isDown) ~= 'boolean'
@@ -832,7 +839,30 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.lastMove = now
 
     local size = work.Size
-    if state.kind == 'Saw' and loadScorePath() then
+    local matched
+    if state.kind == 'Saw' and loadScorePath()
+        and typeof(scoreReference) == 'Vector3' then
+        local face, sign = ScorePath.face(work)
+        if ScorePath.valid(work, scoreReference, face, sign) then
+            matched = ScorePath.guide(work, scoreReference, 0.22)
+        end
+    end
+    if state.kind == 'Saw' and matched and matched.kind == 'Curved' then
+        state.scoreCut = nil
+        if isDown and not state.curvedWarned then
+            state.curvedWarned = true
+            remote:FireClient(player, 'Feedback',
+                'This score curves. FORM cannot split along a curved kerf yet.')
+        end
+        return
+    end
+    state.curvedWarned = false
+    state.scoreCut = if state.kind == 'Saw' and matched
+        and matched.kind == 'Straight' then matched else nil
+    if state.scoreCut and state.scoreCut.axis then
+        axis = state.scoreCut.axis
+        offset = state.scoreCut.offset
+    elseif state.kind == 'Saw' and loadScorePath() then
         local aligned = ScorePath.straight(work, axis, offset, 0.12)
         if aligned then offset = aligned end
     end
@@ -856,10 +886,15 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         upward = work.CFrame:VectorToWorldSpace(basis(face) * faceSign)
     else
         stroke = math.clamp(stroke, -1.5, 1.5)
-        travel = if axis == 'X' then Vector3.new(0, 0, stroke)
-            else Vector3.new(stroke, 0, 0)
-        cross = if axis == 'X' then Vector3.new(state.offset, 0, 0)
-            else Vector3.new(0, 0, state.offset)
+        if state.scoreCut then
+            travel = state.scoreCut.tangent * stroke
+            cross = state.scoreCut.point
+        else
+            travel = if axis == 'X' then Vector3.new(0, 0, stroke)
+                else Vector3.new(stroke, 0, 0)
+            cross = if axis == 'X' then Vector3.new(state.offset, 0, 0)
+                else Vector3.new(0, 0, state.offset)
+        end
         upward = Vector3.yAxis
     end
 
@@ -884,6 +919,8 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
 
     local forward = if state.kind == 'File' then
         work.CFrame:VectorToWorldSpace(basis(along))
+        elseif state.scoreCut then
+        work.CFrame:VectorToWorldSpace(state.scoreCut.tangent)
         elseif axis == 'X' then work.CFrame.LookVector
         else work.CFrame.RightVector
     local sawFlip = if state.kind == 'Saw' and state.sawFlip then 180 else 0
@@ -1039,24 +1076,23 @@ local function drawScore(work, paths)
     end
 end
 
-local function scorePosition(state, point)
-    local work = state.work
-    local face = state.score
-    if not face then return end
-    local up = work.CFrame:VectorToWorldSpace(ScorePath.normal(face.face, face.sign))
-    local world = work.CFrame:PointToWorldSpace(point) + up * 0.008
-    local forward = work.CFrame.RightVector
-    local points = face.points
-    if #points >= 2 then
-        local last = points[#points - 1]
-        local delta = work.CFrame:VectorToWorldSpace(point - last)
-        if delta.Magnitude > 0.008 then
-            forward = delta.Unit
-        end
-    end
-    if math.abs(forward:Dot(up)) > 0.9 then forward = work.CFrame.LookVector end
-    state.goalFrame = CFrame.fromMatrix(world, forward, up, forward:Cross(up))
+local function scorePosition(state, point, tangent)
+    state.goalFrame = ScorePath.contactFrame(state.work, point, tangent)
         * state.contactOffset
+    state.currentFrame = state.goalFrame
+    state.item:PivotTo(state.currentFrame)
+end
+
+local function hoverScore(player, state, point)
+    if state.positioning or state.processing or state.score then return end
+    local work = state.work
+    local face, sign = ScorePath.face(work)
+    if not ScorePath.valid(work, point, face, sign) then return end
+    local root = rootOf(player)
+    if not root or (work.CFrame:PointToWorldSpace(point) - root.Position).Magnitude > 27 then return end
+    if os.clock() - (state.lastScoreHover or 0) < 1 / 24 then return end
+    state.lastScoreHover = os.clock()
+    scorePosition(state, point)
 end
 
 local function beginScore(player, state, point)
@@ -1091,7 +1127,7 @@ local function extendScore(state, point)
         point = previous + movement.Unit * 0.3
     end
     points[#points + 1] = point
-    scorePosition(state, point)
+    scorePosition(state, point, movement)
 end
 
 endScore = function(player, state, finalPoint)
@@ -1308,6 +1344,9 @@ onRequest = function(player, action, ...)
         local delta = point - root.Position
         if delta.Magnitude > 28 then point = root.Position + delta.Unit * 28 end
         state.target.CFrame = CFrame.new(point) * rotation
+    elseif action == 'FabricationScoreHover' and state.mode == 'Fabrication'
+        and state.kind == 'Scorer' then
+        hoverScore(player, state, ...)
     elseif action == 'FabricationScoreBegin' and state.mode == 'Fabrication'
         and state.kind == 'Scorer' then
         beginScore(player, state, ...)
