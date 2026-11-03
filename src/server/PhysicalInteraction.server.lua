@@ -719,6 +719,7 @@ local function cutSheet(state)
 
         item.solid = solid
         modifiedSolids[work] = item
+        work:SetAttribute('FORMContourMode', contourMode)
         work:SetAttribute('FilePasses', (work:GetAttribute('FilePasses') or 0) + 1)
         work:SetAttribute('FileProfile', state.fileShape)
         work:SetAttribute('FileRadiusMM', state.fileRadius)
@@ -855,8 +856,8 @@ local function cutSheet(state)
 
         local appearance = previous or work
         local ok, result, other = pcall(function()
-            return Renderer.create(main.solid, mainSource, appearance, isCurve),
-                Renderer.create(offcut.solid, offcutSource, appearance, isCurve)
+            return Renderer.create(main.solid, mainSource, appearance, true),
+                Renderer.create(offcut.solid, offcutSource, appearance, true)
         end)
         mainSource:Destroy()
         offcutSource:Destroy()
@@ -890,6 +891,14 @@ local function cutSheet(state)
         modifiedSolids[fragment] = {
             frame = offcut.frame, solid = offcut.solid, shape = 'Block',
         }
+    end
+
+    if needsMesh then
+        local Profile = require(Openworks:WaitForChild('PrismProfile'))
+        local mainOutline = Profile.extract(main.solid)
+        local offcutOutline = Profile.extract(offcut.solid)
+        work:SetAttribute('FORMContourMode', mainOutline ~= nil)
+        fragment:SetAttribute('FORMContourMode', offcutOutline ~= nil)
     end
 
     if work:GetAttribute('FORMScorePaths') then
@@ -1665,7 +1674,7 @@ onRequest = function(player, action, ...)
     elseif action == 'FabricationSettings' and state.mode == 'Fabrication' then
         local profile, radius = ...
         if state.kind == 'File' and (profile == 'Round' or profile == 'Chamfer')
-            and finite(radius) and radius >= 0.5 and radius <= 12 then
+            and finite(radius) and radius >= 0.5 and radius <= 100 then
             state.fileShape = profile
             state.fileRadius = radius
         else
