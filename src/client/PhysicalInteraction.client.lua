@@ -187,71 +187,6 @@ local function drawPreview(work, a, b)
     segment.Parent = scorePreview
 end
 
-local scorerVisual
-local scorerHidden = {}
-
-local function clearScorerVisual()
-    if scorerVisual then scorerVisual:Destroy() end
-    scorerVisual = nil
-    for part, oldValue in scorerHidden do
-        if part.Parent then part.LocalTransparencyModifier = oldValue end
-    end
-    table.clear(scorerHidden)
-end
-
-local function showScorerVisual(tool)
-    clearScorerVisual()
-    if not tool or not tool.Parent then return end
-    local restored = {}
-    local function allowClone(instance)
-        if not instance.Archivable then
-            restored[#restored + 1] = instance
-            instance.Archivable = true
-        end
-    end
-    allowClone(tool)
-    for _, child in tool:GetDescendants() do allowClone(child) end
-    local ok, replica = pcall(function() return tool:Clone() end)
-    for _, item in restored do
-        if item.Parent then item.Archivable = false end
-    end
-    if not ok or not replica then
-        warn('[OPENWORKS:Scorer] Could not clone physical model:', replica)
-        return
-    end
-    replica.Name = 'OpenworksActiveScorerVisual'
-    replica:SetAttribute('isTool', false)
-    replica:SetAttribute('OnWorkbench', false)
-
-    local function configure(item)
-        if item:IsA('BasePart') then
-            item.Anchored = true
-            item.CanCollide = false
-            item.CanTouch = false
-            item.CanQuery = false
-            item.LocalTransparencyModifier = 0
-        elseif item:IsA('Script') or item:IsA('LocalScript') then
-            item:Destroy()
-            return
-        end
-        if item:GetAttribute('isTool') == true then
-            item:SetAttribute('isTool', false)
-        end
-    end
-    configure(replica)
-    for _, child in replica:GetDescendants() do configure(child) end
-    local function hide(item)
-        if item:IsA('BasePart') then
-            scorerHidden[item] = item.LocalTransparencyModifier
-            item.LocalTransparencyModifier = 1
-        end
-    end
-    hide(tool)
-    for _, child in tool:GetDescendants() do hide(child) end
-    replica.Parent = workspace
-    scorerVisual = replica
-end
-
 local curvedPreview = Instance.new('Folder')
 curvedPreview.Name = 'OpenworksCurvedSawGuide'
 curvedPreview.Parent = workspace
@@ -299,7 +234,6 @@ local function cancel()
     pendingMaterial = nil
     guide.Parent = nil
     clearPreview()
-    clearScorerVisual()
     clearCurvedGuide()
     send('End')
 end
@@ -352,12 +286,6 @@ local function chooseMaterial(material)
     end
 end
 
-local function flipSaw()
-    if fabrication and fabrication.kind == 'Saw' and not pendingMaterial then
-        send('FabricationSawFlip')
-    end
-end
-
 local function flipMaterial(axis)
     if fabrication and not fabrication.down and not pendingMaterial then
         send('FabricationMaterialFlip', axis)
@@ -365,7 +293,7 @@ local function flipMaterial(axis)
 end
 
 inspector = Inspector.new(chooseTool, exitInspect,
-    setFileSettings, chooseMaterial, flipSaw, flipMaterial)
+    setFileSettings, chooseMaterial, flipMaterial)
 
 local function inspect(material)
     if not material or not material.Parent then return end
@@ -432,12 +360,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
         return
     end
 
-    if input.KeyCode == Enum.KeyCode.F and fabrication
-        and fabrication.kind == 'Saw' and not processed then
-        flipSaw()
-        return
-    end
-
     if input.KeyCode == Enum.KeyCode.Q and fabrication and not processed then
         fabrication.axis = if fabrication.axis == 'X' then 'Z' else 'X'
         fabrication.scoreGuide = nil
@@ -450,11 +372,12 @@ UserInputService.InputBegan:Connect(function(input, processed)
         return
     end
 
-    if input.KeyCode == Enum.KeyCode.R and fabrication and not processed then
+    if input.KeyCode == Enum.KeyCode.R and fabrication
+        and fabrication.kind == 'File' and not processed then
         local backwards = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
         send('FabricationRotate', if backwards then -1 else 1)
-        inspector:status('Saw roll adjusted 90 degrees')
+        inspector:status('File roll adjusted 90 degrees')
         return
     end
 
@@ -629,8 +552,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         end
     elseif action == 'FabricationStarted' then
         pendingTool = nil
-        clearScorerVisual()
-        clearCurvedGuide()
+            clearCurvedGuide()
         applyFabricationCollision(d or {})
         fabrication = {
             kind = a, material = b, tool = c,
@@ -640,7 +562,6 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             scoreContactOffset = if typeof(e) == 'CFrame' then e else nil,
         }
         inspector:setTool(a)
-        if a == 'Scorer' then showScorerVisual(c) end
         if a == 'File' then
             setFileSettings(inspector.fileShape, inspector.fileRadius)
         end
@@ -681,12 +602,6 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
                 fabrication.previousMouseBehavior = nil
             end
             inspector:status('Workpiece flipped. Top-facing surface is now active.')
-        end
-    elseif action == 'SawFlipChanged' then
-        if fabrication and fabrication.kind == 'Saw' then
-            inspector:status(if a
-                then 'Saw flipped 180° — press F to reverse'
-                else 'Saw unflipped — press F to reverse')
         end
     elseif action == 'FabricationTargetChanged' then
         clearCurvedGuide()
@@ -776,8 +691,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         if inspector.material then inspector:status(a) end
     elseif action == 'Ended' then
         clearPreview()
-        clearScorerVisual()
-        clearCurvedGuide()
+            clearCurvedGuide()
         pendingMaterial = nil
         restoreFabricationCollision()
         dragging = nil
@@ -913,9 +827,9 @@ RunService.RenderStepped:Connect(function(dt)
                 local score = fabrication.score
                 local tangent = score and score.previous
                     and (score.tip - score.previous) or nil
-                local display = scorerVisual or fabrication.tool
-                display:PivotTo(ScorePath.contactFrame(work, tracked, tangent)
-                    * fabrication.scoreContactOffset)
+                fabrication.scorerFrame = ScorePath.contactFrame(work, tracked, tangent)
+                    * fabrication.scoreContactOffset
+                fabrication.tool:PivotTo(fabrication.scorerFrame)
             end
         else
             guide.Parent = nil
@@ -1093,6 +1007,15 @@ RunService.RenderStepped:Connect(function(dt)
             fabrication.down, fabrication.fileSide, fabrication.scoreReference)
     end
 end)
+
+RunService:BindToRenderStep('OpenworksScorerPose',
+    Enum.RenderPriority.Camera.Value + 2, function()
+        local state = fabrication
+        if state and state.kind == 'Scorer' and state.scorerFrame
+            and state.tool and state.tool.Parent then
+            state.tool:PivotTo(state.scorerFrame)
+        end
+    end)
 
 player.CharacterRemoving:Connect(exitInspect)
 print('[OPENWORKS:Interaction] Client ready')
