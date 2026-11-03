@@ -1543,9 +1543,14 @@ local function beginLayoutRuler(player, state, ruler)
         or (root.Position - state.work.Position).Magnitude > 27 then return end
     if ruler ~= state.layoutRuler then
         if ruler:GetAttribute('OnWorkbench') ~= true then
-            remote:FireClient(player, 'Feedback',
-                'Place the ruler on the workbench before using it')
-            return
+            local contact = ScorePath.project(state.work, ruler.Position)
+            local restingOnMetal = contact
+                and MaterialLayout.rulerGuide(state.work, ruler, contact)
+            if not restingOnMetal then
+                remote:FireClient(player, 'Feedback',
+                    'Place the physical ruler on the bench or on the metal first')
+                return
+            end
         end
         releaseLayoutRuler(state)
         state.layoutRulerOriginal = {
