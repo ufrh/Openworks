@@ -56,6 +56,26 @@ function GeometryRegression.run()
     assert(first, 'Initial curved cut: ' .. tostring(firstError))
     requireSolids(first)
 
+    local curvedOutline = PrismProfile.extract(first[1])
+    assert(curvedOutline, 'Curved fragment lost its contour')
+    local curvedContact
+    for i, point in curvedOutline do
+        local nextPoint = curvedOutline[i % #curvedOutline + 1]
+        local direction = nextPoint - point
+        if math.abs(direction.X) > 1 and math.abs(direction.Y) > 0.1 then
+            curvedContact = (point + nextPoint) * 0.5
+            break
+        end
+    end
+    assert(curvedContact, 'No curved-cut wall segment was found to file')
+    local curvedFiled, curvedError = ContourFile.apply(work, {solid = first[1]},
+        Vector3.new(curvedContact.X * Stock.SCALE, 0,
+            curvedContact.Y * Stock.SCALE), 2, 'Round')
+    assert(curvedFiled, 'Filing on a curved-cut wall: ' .. tostring(curvedError))
+    assert(FORM.validate(curvedFiled).ok
+        and FORM.signedVolume(curvedFiled) < FORM.signedVolume(first[1]),
+        'Filing a curved wall must retain a valid, smaller solid')
+
     local one, size, translation = center(first[1])
     work.Size = size
     work.CFrame = CFrame.new(translation)
