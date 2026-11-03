@@ -25,7 +25,21 @@ remote.OnServerEvent:Connect(function(player, action, ...)
 end)
 
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
-local MaterialLayout = require(Openworks:WaitForChild('MaterialLayout'))
+local MaterialLayout = {
+    rulerGuide = function() return nil end,
+    snap = function() return nil end,
+    rulerFrame = function() return nil end,
+}
+task.defer(function()
+    local module = Openworks:FindFirstChild('MaterialLayout')
+    if not module then return end
+    local ok, result = pcall(require, module)
+    if ok then
+        MaterialLayout = result
+    else
+        warn('[OPENWORKS:Layout] Optional ruler module unavailable:', result)
+    end
+end)
 local PenPath
 local function loadPenPath()
     if PenPath then return PenPath end
