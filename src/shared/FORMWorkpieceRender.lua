@@ -7,7 +7,7 @@ local Stock = require(script.Parent.Stock)
 
 local Renderer = {}
 
-function Renderer.create(solid, source, appearance)
+function Renderer.create(solid, source, appearance, preciseCollision)
     assert(FORM.validate(solid).ok, 'Filed geometry is invalid')
     appearance = appearance or source
 
@@ -47,7 +47,9 @@ function Renderer.create(solid, source, appearance)
         'Could not replicate filed geometry: ' .. tostring(bakedResult))
 
     local mesh = AssetService:CreateMeshPartAsync(bakedContent, {
-        CollisionFidelity = Enum.CollisionFidelity.Hull,
+        CollisionFidelity = if preciseCollision
+            then Enum.CollisionFidelity.PreciseConvexDecomposition
+            else Enum.CollisionFidelity.Hull,
     })
     mesh.TextureContent = Content.none
 
