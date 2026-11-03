@@ -631,7 +631,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         elseif a == 'Scorer' then
             inspector:status('Hold LMB on the metal and trace a score. Release to save.')
         else
-            inspector:status('Hover an edge, hold LMB and stroke to file it')
+            inspector:status('Hover until an edge glows green, then hold LMB and file along it')
         end
     elseif action == 'FileEdgeGuide' then
         if fabrication and fabrication.kind == 'File'
@@ -641,7 +641,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
                 then {point = a, tangent = b} else nil
         end
     elseif action == 'FileEdgeLocked' then
-        if fabrication and fabrication.kind == 'File' then
+        if fabrication and fabrication.kind == 'File' and fabrication.down then
             fabrication.fileLocked = typeof(a) == 'Vector3'
             fabrication.fileSnap = if fabrication.fileLocked
                 and typeof(b) == 'Vector3'
@@ -979,7 +979,10 @@ RunService.RenderStepped:Connect(function(dt)
             if fabrication.pointerMoved and not fabrication.down
                 and not fabrication.autoPending and not fabrication.autoRunning then
                 fabrication.pointerMoved = false
-                if fabrication.kind == 'File' then fabrication.filePoint = nil end
+                if fabrication.kind == 'File' then
+                    fabrication.filePoint = nil
+                    fabrication.fileSnap = nil
+                end
 
                 local camera = workspace.CurrentCamera
                 local mousePosition = UserInputService:GetMouseLocation()
