@@ -145,7 +145,116 @@ function Blueprint.erase(sheet, point, threshold)
     return true
 end
 
+
+local function paperMark(sheet, folder, name, size, localPosition, color, transparency)
+    local mark = Instance.new('Part')
+    mark.Name = name
+    mark.Size = size
+    mark.CFrame = sheet.CFrame * CFrame.new(localPosition)
+    mark.Color = color
+    mark.Transparency = transparency or 0
+    mark.Material = Enum.Material.SmoothPlastic
+    mark.Anchored = false
+    mark.Massless = true
+    mark.CanCollide = false
+    mark.CanTouch = false
+    mark.CanQuery = false
+    mark.CastShadow = false
+    mark.Parent = folder
+
+    local weld = Instance.new('WeldConstraint')
+    weld.Part0 = sheet
+    weld.Part1 = mark
+    weld.Parent = mark
+    return mark
+end
+
+function Blueprint.decorate(sheet)
+    if sheet:FindFirstChild('BlueprintPaperDetail') then return end
+
+    local folder = Instance.new('Folder')
+    folder.Name = 'BlueprintPaperDetail'
+    folder.Parent = sheet
+
+    local up = sheet.Size.Y * 0.5
+    local base = up + 0.0035
+    local halfX = sheet.Size.X * 0.5
+    local halfZ = sheet.Size.Z * 0.5
+    local margin = 0.075
+    local pale = Color3.fromRGB(172, 205, 226)
+    local major = Color3.fromRGB(112, 158, 189)
+    local border = Color3.fromRGB(61, 110, 144)
+
+    local pitch = 5 * Blueprint.SCALE
+    local majorEvery = 5
+    local xSteps = math.floor((halfX - margin) / pitch)
+    local zSteps = math.floor((halfZ - margin) / pitch)
+
+    for step = -xSteps, xSteps do
+        local strong = step % majorEvery == 0
+        paperMark(sheet, folder, 'GridX_' .. step,
+            Vector3.new(if strong then 0.010 else 0.005, 0.003,
+                sheet.Size.Z - margin * 2),
+            Vector3.new(step * pitch, base, 0),
+            if strong then major else pale,
+            if strong then 0.08 else 0.24)
+    end
+
+    for step = -zSteps, zSteps do
+        local strong = step % majorEvery == 0
+        paperMark(sheet, folder, 'GridZ_' .. step,
+            Vector3.new(sheet.Size.X - margin * 2, 0.003,
+                if strong then 0.010 else 0.005),
+            Vector3.new(0, base, step * pitch),
+            if strong then major else pale,
+            if strong then 0.08 else 0.24)
+    end
+
+    local frameX = halfX - 0.065
+    local frameZ = halfZ - 0.065
+    paperMark(sheet, folder, 'FrameTop', Vector3.new(frameX * 2, 0.005, 0.017),
+        Vector3.new(0, base + 0.001, -frameZ), border)
+    paperMark(sheet, folder, 'FrameBottom', Vector3.new(frameX * 2, 0.005, 0.017),
+        Vector3.new(0, base + 0.001, frameZ), border)
+    paperMark(sheet, folder, 'FrameLeft', Vector3.new(0.017, 0.005, frameZ * 2),
+        Vector3.new(-frameX, base + 0.001, 0), border)
+    paperMark(sheet, folder, 'FrameRight', Vector3.new(0.017, 0.005, frameZ * 2),
+        Vector3.new(frameX, base + 0.001, 0), border)
+
+    local boxWidth = math.min(1.48, sheet.Size.X * 0.33)
+    local boxHeight = math.min(0.55, sheet.Size.Z * 0.23)
+    local x = frameX - boxWidth * 0.5
+    local z = frameZ - boxHeight * 0.5
+    local titleBackground = paperMark(sheet, folder, 'DrawingTitleBlock',
+        Vector3.new(boxWidth, 0.004, boxHeight),
+        Vector3.new(x, base + 0.003, z), Color3.fromRGB(227, 239, 247), 0.07)
+    titleBackground.CastShadow = false
+    local titleY = base + 0.007
+    for _, sign in {-1, 1} do
+        paperMark(sheet, folder, 'TitleHorizontal_' .. sign,
+            Vector3.new(boxWidth, 0.004, 0.012),
+            Vector3.new(x, titleY, z + sign * boxHeight * 0.5), border)
+        paperMark(sheet, folder, 'TitleVertical_' .. sign,
+            Vector3.new(0.012, 0.004, boxHeight),
+            Vector3.new(x + sign * boxWidth * 0.5, titleY, z), border)
+    end
+    paperMark(sheet, folder, 'TitleDivider',
+        Vector3.new(boxWidth, 0.004, 0.009),
+        Vector3.new(x, titleY, z + boxHeight * 0.14), border)
+    paperMark(sheet, folder, 'TitleColumn',
+        Vector3.new(0.009, 0.004, boxHeight * 0.64),
+        Vector3.new(x + boxWidth * 0.12, titleY, z - boxHeight * 0.18), border)
+
+    paperMark(sheet, folder, 'DatumX',
+        Vector3.new(0.11, 0.007, 0.012),
+        Vector3.new(0, base + 0.005, 0), border)
+    paperMark(sheet, folder, 'DatumZ',
+        Vector3.new(0.012, 0.007, 0.11),
+        Vector3.new(0, base + 0.005, 0), border)
+end
+
 function Blueprint.render(sheet, lines)
+    Blueprint.decorate(sheet)
     local existing = sheet:FindFirstChild('BlueprintInk')
     if existing then existing:Destroy() end
     local folder = Instance.new('Folder')
