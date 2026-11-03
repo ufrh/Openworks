@@ -849,6 +849,9 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     end
     if state.kind == 'Saw' and matched and matched.kind == 'Curved' then
         state.scoreCut = nil
+        state.direction = 0
+        state.reversals = 0
+        state.lastStroke = stroke
         if isDown and not state.curvedWarned then
             state.curvedWarned = true
             remote:FireClient(player, 'Feedback',
@@ -908,7 +911,11 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
             + math.abs(work.CFrame.UpVector.Y) * size.Y * 0.5
             + math.abs(work.CFrame.LookVector.Y) * size.Z * 0.5
         pos = work.CFrame:PointToWorldSpace(localPos)
-        pos = Vector3.new(pos.X, work.Position.Y + height + 0.035, pos.Z)
+        if state.scoreCut then
+            pos += Vector3.yAxis * 0.012
+        else
+            pos = Vector3.new(pos.X, work.Position.Y + height + 0.035, pos.Z)
+        end
     end
 
     if (pos - root.Position).Magnitude > 30 then
@@ -976,7 +983,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
             + math.abs(work.CFrame.UpVector.Y) * size.Y * 0.5
             + math.abs(work.CFrame.LookVector.Y) * size.Z * 0.5
 
-        if lowest < top + 0.01 then
+        if not state.scoreCut and lowest < top + 0.01 then
             state.goalFrame += Vector3.new(0, top + 0.01 - lowest, 0)
         end
     end
@@ -1123,8 +1130,8 @@ local function extendScore(state, point)
     local previous = points[#points]
     local movement = point - previous
     if movement.Magnitude < 0.018 then return end
-    if movement.Magnitude > 0.3 then
-        point = previous + movement.Unit * 0.3
+    if movement.Magnitude > 0.65 then
+        point = previous + movement.Unit * 0.65
     end
     points[#points + 1] = point
     scorePosition(state, point, movement)
