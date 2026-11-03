@@ -161,7 +161,7 @@ local function straightLine(work, path)
     for _, point in points do
         deviation = math.max(deviation, math.abs((point - midpoint):Dot(normal)))
     end
-    if deviation > 0.055 then return nil end
+    if deviation > 0.015 then return nil end
 
     local axis
     if math.abs(direction.Z) > 0.997 then
