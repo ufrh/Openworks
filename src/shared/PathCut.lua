@@ -1,5 +1,6 @@
 local FORM = require(script.Parent.FORM)
 local Stock = require(script.Parent.Stock)
+local Profile = require(script.Parent.PrismProfile)
 
 local PathCut = {}
 PathCut.KERF_MM = 0.8
@@ -80,85 +81,40 @@ local function selfIntersects(points, closed)
     return false
 end
 
-local function rayExit(point, direction, hx, hz)
-    local result, best
-    local function try(t, other, bound, target)
-        if t < -EPSILON or math.abs(other) > bound + EPSILON then return end
-        if best and t >= best then return end
-        best = math.max(0, t)
-        result = target
-    end
-    if math.abs(direction.X) > 1e-7 then
-        for _, x in {-hx, hx} do
-            local t = (x - point.X) / direction.X
-            local z = point.Y + direction.Y * t
-            try(t, z, hz, Vector2.new(x, math.clamp(z, -hz, hz)))
-        end
-    end
-    if math.abs(direction.Y) > 1e-7 then
-        for _, z in {-hz, hz} do
-            local t = (z - point.Y) / direction.Y
-            local x = point.X + direction.X * t
-            try(t, x, hx, Vector2.new(math.clamp(x, -hx, hx), z))
-        end
-    end
-    return result
-end
-
-local function clipSegment(a, b, hx, hz)
-    local delta = b - a
-    local entry, exit = 0, 1
-
-    local function clip(p, q)
-        if math.abs(p) < 1e-10 then return q >= -EPSILON end
-        local t = q / p
-        if p < 0 then
-            if t > exit then return false end
-            entry = math.max(entry, t)
-        else
-            if t < entry then return false end
-            exit = math.min(exit, t)
-        end
-        return entry <= exit + 1e-9
-    end
-
-    if not clip(-delta.X, a.X + hx)
-        or not clip(delta.X, hx - a.X)
-        or not clip(-delta.Y, a.Y + hz)
-        or not clip(delta.Y, hz - a.Y) then
-        return nil
-    end
-
-    return a + delta * math.clamp(entry, 0, 1),
-        a + delta * math.clamp(exit, 0, 1)
-end
-
-local function clippedChain(shifted, hx, hz)
+local function clippedChain(shifted, outline)
     local clipped = {}
     for i = 2, #shifted do
-        local entry, exit = clipSegment(shifted[i - 1], shifted[i], hx, hz)
-        if not entry or not exit or (exit - entry).Magnitude < EPSILON then
-            continue
+        local a, b = shifted[i - 1], shifted[i]
+        local interval = {{t = 0, point = a}, {t = 1, point = b}}
+        for _, hit in Profile.intersections(outline, a, b) do
+            if hit.t > EPSILON and hit.t < 1 - EPSILON then
+                interval[#interval + 1] = hit
+            end
         end
+        table.sort(interval, function(x, y) return x.t < y.t end)
 
-        if #clipped > 0 and (entry - clipped[#clipped]).Magnitude > 0.0001 then
-            return nil, 'Score exits the metal and enters it again'
+        for k = 2, #interval do
+            local first, last = interval[k - 1], interval[k]
+            if last.t - first.t < 1e-8 then continue end
+            if not Profile.contains(outline, (first.point + last.point) * 0.5) then
+                continue
+            end
+            if #clipped > 0 and (first.point - clipped[#clipped]).Magnitude > 0.0001 then
+                return nil, 'Cut leaves the workpiece and re-enters it'
+            end
+            if #clipped == 0 or (first.point - clipped[#clipped]).Magnitude > EPSILON then
+                clipped[#clipped + 1] = first.point
+            end
+            clipped[#clipped + 1] = last.point
         end
-
-        if #clipped == 0 or (entry - clipped[#clipped]).Magnitude > EPSILON then
-            clipped[#clipped + 1] = entry
-        end
-        clipped[#clipped + 1] = exit
     end
 
     clipped = clean(clipped, false)
-    if #clipped < 2 then
-        return nil, 'Score does not cross the interior of the metal'
-    end
+    if #clipped < 2 then return nil, 'Score does not cross the remaining metal' end
     return clipped
 end
 
-local function offsetPath(points, side, halfKerf, hx, hz)
+local function offsetPath(points, side, halfKerf, outline)
     local shifted = {}
     for i, point in points do
         local previous = if i == 1 then (points[2] - point).Unit
@@ -174,12 +130,12 @@ local function offsetPath(points, side, halfKerf, hx, hz)
         shifted[#shifted + 1] = point + miter * (side * halfKerf / factor)
     end
 
-    local clipped, failure = clippedChain(shifted, hx, hz)
+    local clipped, failure = clippedChain(shifted, outline)
     if not clipped then return nil, failure end
     local firstDirection = (clipped[2] - clipped[1]).Unit
     local lastDirection = (clipped[#clipped] - clipped[#clipped - 1]).Unit
-    local start = rayExit(clipped[1], -firstDirection, hx, hz)
-    local finish = rayExit(clipped[#clipped], lastDirection, hx, hz)
+    local start = Profile.rayExit(outline, clipped[1], -firstDirection)
+    local finish = Profile.rayExit(outline, clipped[#clipped], lastDirection)
     if not start or not finish or (start - finish).Magnitude < 0.05 then
         return nil, 'Score must separate two distinct edges of the metal'
     end
@@ -193,54 +149,9 @@ local function offsetPath(points, side, halfKerf, hx, hz)
     return chain
 end
 
-local function perimeter(point, hx, hz)
-    local tolerance = 0.0001
-    if math.abs(point.Y + hz) < tolerance then return point.X + hx end
-    if math.abs(point.X - hx) < tolerance then return 2 * hx + point.Y + hz end
-    if math.abs(point.Y - hz) < tolerance then return 2 * hx + 2 * hz + hx - point.X end
-    if math.abs(point.X + hx) < tolerance then return 4 * hx + 2 * hz + hz - point.Y end
-    return nil
-end
-
-local function boundaryForward(from, to, hx, hz)
-    local a, b = perimeter(from, hx, hz), perimeter(to, hx, hz)
-    if not a or not b then return nil end
-    local full = 4 * (hx + hz)
-    if b <= a + EPSILON then b += full end
-    local corners = {
-        {at = 0, pos = Vector2.new(-hx, -hz)},
-        {at = 2 * hx, pos = Vector2.new(hx, -hz)},
-        {at = 2 * hx + 2 * hz, pos = Vector2.new(hx, hz)},
-        {at = 4 * hx + 2 * hz, pos = Vector2.new(-hx, hz)},
-    }
-    local sequence = {from}
-    for winding = 0, 1 do
-        for _, corner in corners do
-            local at = corner.at + winding * full
-            if at > a + EPSILON and at < b - EPSILON then
-                sequence[#sequence + 1] = corner.pos
-            end
-        end
-    end
-    sequence[#sequence + 1] = to
-    return sequence
-end
-
-local function contains(polygon, point)
-    local inside = false
-    for i = 1, #polygon do
-        local a, b = polygon[i], polygon[i % #polygon + 1]
-        if (a.Y > point.Y) ~= (b.Y > point.Y) then
-            local x = a.X + (point.Y - a.Y) * (b.X - a.X) / (b.Y - a.Y)
-            if point.X < x then inside = not inside end
-        end
-    end
-    return inside
-end
-
-local function makePolygon(chain, witness, hx, hz)
-    local forward = boundaryForward(chain[#chain], chain[1], hx, hz)
-    local reversed = boundaryForward(chain[1], chain[#chain], hx, hz)
+local function makePolygon(chain, witness, outline)
+    local forward = Profile.boundaryForward(outline, chain[#chain], chain[1])
+    local reversed = Profile.boundaryForward(outline, chain[1], chain[#chain])
     if not forward or not reversed then return nil end
 
     local backward = {}
@@ -252,7 +163,7 @@ local function makePolygon(chain, witness, hx, hz)
         return clean(polygon, true)
     end
     local first, second = assemble(forward), assemble(backward)
-    local a, b = contains(first, witness), contains(second, witness)
+    local a, b = Profile.contains(first, witness), Profile.contains(second, witness)
     if a == b then return nil end
     local polygon = if a then first else second
     if #polygon < 3 or selfIntersects(polygon, true)
@@ -332,15 +243,25 @@ local function extrude(polygon, thickness)
     return solid
 end
 
-function PathCut.split(work, points, kerfMM)
+function PathCut.split(work, points, kerfMM, existingSolid)
     if not work:IsA('Part') or work.Shape ~= Enum.PartType.Block
         or work:GetAttribute('FORMNativeStock') ~= true then
-        return nil, 'Curved sawing currently requires native rectangular FORM stock'
+        return nil, 'Curved cutting requires a FORM-backed workpiece'
     end
     if type(points) ~= 'table' or #points < 3 or #points > 128 then
         return nil, 'Score needs at least three sampled points'
     end
-    local size, hx, hz = work.Size, work.Size.X * 0.5, work.Size.Z * 0.5
+    local size = work.Size
+    local source = existingSolid or FORM.box(size / Stock.SCALE)
+    local original = FORM.signedVolume(source)
+    if original <= 0 then return nil, 'Invalid source solid volume' end
+    local perimeter, thickness = Profile.extract(source)
+    if not perimeter then return nil, thickness end
+    local outline = {}
+    for _, vertex in perimeter do outline[#outline + 1] = vertex * Stock.SCALE end
+    local boundsLow, boundsHigh = FORM.bounds(source)
+    local hx = math.max(math.abs(boundsLow.X), math.abs(boundsHigh.X)) * Stock.SCALE
+    local hz = math.max(math.abs(boundsLow.Z), math.abs(boundsHigh.Z)) * Stock.SCALE
     local centerLine = {}
     for _, point in points do
         if typeof(point) ~= 'Vector3' or point.X ~= point.X or point.Z ~= point.Z
@@ -360,9 +281,9 @@ function PathCut.split(work, points, kerfMM)
     if kerf <= 0 or kerf >= math.min(size.X, size.Z) * 0.2 then
         return nil, 'Saw kerf is too large for this stock'
     end
-    local left, leftErr = offsetPath(centerLine, 1, half, hx, hz)
+    local left, leftErr = offsetPath(centerLine, 1, half, outline)
     if not left then return nil, leftErr end
-    local right, rightErr = offsetPath(centerLine, -1, half, hx, hz)
+    local right, rightErr = offsetPath(centerLine, -1, half, outline)
     if not right then return nil, rightErr end
 
     local middle = math.max(1, math.floor(#centerLine / 2))
@@ -371,17 +292,21 @@ function PathCut.split(work, points, kerfMM)
     local witnessDistance = half + math.max(0.025, kerf * 0.7)
     local leftWitness = centerLine[middle] + side * witnessDistance
     local rightWitness = centerLine[middle] - side * witnessDistance
-    local leftPolygon = makePolygon(left, leftWitness, hx, hz)
-    local rightPolygon = makePolygon(right, rightWitness, hx, hz)
+    if not Profile.contains(outline, leftWitness)
+        or not Profile.contains(outline, rightWitness) then
+        return nil, 'Not enough metal remains on both sides of the scored cut'
+    end
+    local leftPolygon = makePolygon(left, leftWitness, outline)
+    local rightPolygon = makePolygon(right, rightWitness, outline)
     if not leftPolygon or not rightPolygon then
         return nil, 'Score path does not form two valid regions'
     end
 
-    local first, aErr = extrude(leftPolygon, size.Y)
+    local first, aErr = extrude(leftPolygon, thickness * Stock.SCALE)
     if not first then return nil, aErr end
-    local second, bErr = extrude(rightPolygon, size.Y)
+    local second, bErr = extrude(rightPolygon, thickness * Stock.SCALE)
     if not second then return nil, bErr end
-    local originalVolume = size.X * size.Y * size.Z / (Stock.SCALE ^ 3)
+    local originalVolume = original
     local retained = FORM.signedVolume(first) + FORM.signedVolume(second)
     local removed = originalVolume - retained
     if removed <= 0 or removed > originalVolume * 0.2 then
