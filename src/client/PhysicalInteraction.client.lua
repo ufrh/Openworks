@@ -755,15 +755,10 @@ RunService.RenderStepped:Connect(function(dt)
                 local elapsedScore = math.clamp(os.clock() - score.lastAt, 1 / 120, 0.06)
                 score.lastAt = os.clock()
                 local desired = point - score.tip
-                local alpha = 1 - math.exp(-12 * elapsedScore)
+                local alpha = 1 - math.exp(-24 * elapsedScore)
                 local move = desired * alpha
-                if score.previous then
-                    local direction = score.tip - score.previous
-                    if direction.Magnitude > 0.008 then
-                        local along = direction.Unit
-                        local parallel = along * move:Dot(along)
-                        move = parallel + (move - parallel) * 0.48
-                    end
+                if move.Magnitude > 0.22 then
+                    move = move.Unit * 0.22
                 end
                 if move.Magnitude > 0.004 then
                     local nextTip = score.tip + move
