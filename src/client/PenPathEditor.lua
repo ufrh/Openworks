@@ -1,9 +1,8 @@
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 
-local PenPath = require(ReplicatedStorage:WaitForChild('Openworks')
-    :WaitForChild('PenPath'))
-local ScorePath = require(ReplicatedStorage:WaitForChild('Openworks')
-    :WaitForChild('ScorePath'))
+local Openworks = ReplicatedStorage:WaitForChild('Openworks')
+local PenPath = require(Openworks:WaitForChild('PenPath'))
+local ScorePath = require(Openworks:WaitForChild('ScorePath'))
 
 local Editor = {}
 Editor.__index = Editor
@@ -31,6 +30,7 @@ function Editor.new()
     self.dirty = true
     self.parts = {}
     self.used = 0
+    self.lastRender = 0
     self.folder = Instance.new('Folder')
     self.folder.Name = 'OpenworksPenTool'
     self.folder.Parent = workspace
@@ -49,7 +49,7 @@ function Editor:clear()
     self.drag = nil
     self.cursor = nil
     self.dirty = true
-    self:render()
+    self:render(true)
 end
 
 function Editor:close()
@@ -185,8 +185,11 @@ function Editor:part(kind, from, to, color, diameter)
     part.Parent = self.folder
 end
 
-function Editor:render()
+function Editor:render(force)
     if not self.dirty then return end
+    local now = os.clock()
+    if not force and now - self.lastRender < 1 / 24 then return end
+    self.lastRender = now
     self.dirty = false
     self.used = 0
 
@@ -201,8 +204,14 @@ function Editor:render()
         local strokeColor = if valid then gold else Color3.fromRGB(246, 100, 100)
 
         if samples then
-            for i = 2, #samples do
-                self:part('Line', samples[i - 1], samples[i], strokeColor, 0.020)
+            local stride = math.max(1, math.ceil((#samples - 1) / 80))
+            local previous = samples[1]
+            for i = 2 + stride - 1, #samples, stride do
+                self:part('Line', previous, samples[i], strokeColor, 0.020)
+                previous = samples[i]
+            end
+            if previous ~= samples[#samples] then
+                self:part('Line', previous, samples[#samples], strokeColor, 0.020)
             end
         end
 
