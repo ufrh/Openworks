@@ -37,6 +37,15 @@ function GeometryRegression.run()
     local outline = PrismProfile.extract(original)
     assert(outline and #outline == 4, 'Cannot extract initial rectangular outline')
 
+    local rectangleStuds = {}
+    for _, point in outline do rectangleStuds[#rectangleStuds + 1] = point * Stock.SCALE end
+    local edge = PrismProfile.closest(rectangleStuds, Vector2.new(1.94, 0.25))
+    assert(edge and edge.distance < 0.07, 'Could not lock to a physical stock edge')
+    local followed, tangent = PrismProfile.sample(rectangleStuds, edge.travel + 0.2)
+    assert(followed and tangent and tangent.Magnitude > 0.99
+        and math.abs(followed.X - 2) < 0.0001,
+        'File stroke drifted off the selected contour edge')
+
     local firstPath = {
         Vector3.new(-2, 0.12, 0),
         Vector3.new(-0.7, 0.12, 0.2),
