@@ -1,8 +1,12 @@
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 
-local Openworks = ReplicatedStorage:WaitForChild('Openworks')
-local PenPath = require(Openworks:WaitForChild('PenPath'))
-local ScorePath = require(Openworks:WaitForChild('ScorePath'))
+local Openworks = ReplicatedStorage:WaitForChild('Openworks', 8)
+assert(Openworks, 'ReplicatedStorage.Openworks is not available')
+local penModule = Openworks:WaitForChild('PenPath', 8)
+local scoreModule = Openworks:WaitForChild('ScorePath', 8)
+assert(penModule and scoreModule, 'PenPath or ScorePath has not replicated')
+local PenPath = require(penModule)
+local ScorePath = require(scoreModule)
 
 local Editor = {}
 Editor.__index = Editor
