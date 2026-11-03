@@ -129,8 +129,7 @@ end
 
 local function toolContact(tool, part, kind)
     local marker = contactMarker(tool,
-        if kind == 'Saw' then 'BladeEdge'
-        elseif kind == 'Scorer' then 'ScoreTip' else 'FileFace')
+        if kind == 'Scorer' then 'ScoreTip' else 'FileFace')
     if marker then return marker.WorldCFrame end
 
     if kind == 'Scorer' then
@@ -172,35 +171,13 @@ local function toolContact(tool, part, kind)
             right:Cross(bodyDirection))
     end
 
-    local blade
-    if kind == 'Saw' then
-        for _, node in tool:GetDescendants() do
-            if node:IsA('BasePart') and (node.Name == 'Blade'
-                or node.Name == 'SawBlade' or node.Name == 'BladePart') then
-                blade = node
-                break
-            end
-        end
-        if not blade and tool:IsA('BasePart') then blade = tool end
-    end
-
     local bounds, size
-    if blade then
-        bounds, size = blade.CFrame, blade.Size
-    elseif tool:IsA('Model') then
+    if tool:IsA('Model') then
         bounds, size = tool:GetBoundingBox()
     else
         bounds, size = part.CFrame, part.Size
     end
-
-    local rotation = CFrame.identity
-    if size.Z > math.max(size.X, size.Y) * 1.12 then
-        rotation = CFrame.Angles(0, math.rad(-90), 0)
-    elseif size.Y > math.max(size.X, size.Z) * 1.12 then
-        rotation = CFrame.Angles(0, 0, math.rad(90))
-    end
-
-    return bounds * CFrame.new(0, -size.Y * 0.5, 0) * rotation
+    return bounds * CFrame.new(0, -size.Y * 0.5, 0)
 end
 
 local function sawMountOffset(tool, part, restingFrame)
@@ -589,7 +566,8 @@ local function startFabrication(player, material, tool)
     end
 
     local restingFrame = tool:GetPivot()
-    local contact = toolContact(tool, part, kind)
+    local contact = if kind == 'Saw' then restingFrame
+        else toolContact(tool, part, kind)
     local fileLengthLocal
     if kind == 'File' then
         local bounds, dimensions
@@ -1490,8 +1468,12 @@ RunService.Heartbeat:Connect(function(dt)
                 end
             end
 
-            local alpha = 1 - math.exp(-17 * math.min(dt, 0.1))
-            state.currentFrame = state.currentFrame:Lerp(state.goalFrame, alpha)
+            if state.kind == 'Saw' or state.kind == 'Scorer' then
+                state.currentFrame = state.goalFrame
+            else
+                local alpha = 1 - math.exp(-17 * math.min(dt, 0.1))
+                state.currentFrame = state.currentFrame:Lerp(state.goalFrame, alpha)
+            end
             state.item:PivotTo(state.currentFrame)
         elseif os.clock() - state.lastInput > 3 then
             finish(player)
