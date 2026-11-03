@@ -265,6 +265,7 @@ if RunService:IsStudio() then
     end)
 
     task.defer(function()
+        if workspace:GetAttribute('EnableBlueprintKit') ~= true then return end
         local bench = workspace:WaitForChild('Workbench', 20)
         if not bench then return end
         local surface
