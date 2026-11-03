@@ -8,7 +8,22 @@ local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 local Openworks = ReplicatedStorage:WaitForChild('Openworks')
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
-local MaterialLayout = require(Openworks:WaitForChild('MaterialLayout'))
+local MaterialLayout = {
+    rulerGuide = function() return nil end,
+    snap = function() return nil end,
+    rulerAngle = function() return 0 end,
+    rulerFrame = function() return nil end,
+}
+task.defer(function()
+    local module = Openworks:FindFirstChild('MaterialLayout')
+    if not module then return end
+    local ok, result = pcall(require, module)
+    if ok then
+        MaterialLayout = result
+    else
+        warn('[OPENWORKS:Layout] Optional ruler module unavailable:', result)
+    end
+end)
 local ScorePath
 local function loadScorePath()
     if ScorePath then return ScorePath end
@@ -23,8 +38,25 @@ local function loadScorePath()
     return ScorePath
 end
 local Inspector = require(script.Parent:WaitForChild('InspectionCamera'))
-local Drafting = require(script.Parent:WaitForChild('BlueprintDrafting'))
-local drafting = Drafting.new()
+local drafting = {
+    isActive = function() return false end,
+    open = function()
+        warn('[OPENWORKS:Blueprint] Optional drafting editor is unavailable')
+    end,
+    close = function() end,
+}
+local blueprintModule = script.Parent:FindFirstChild('BlueprintDrafting')
+if blueprintModule then
+    local ok, editor = pcall(function()
+        local Drafting = require(blueprintModule)
+        return Drafting.new()
+    end)
+    if ok then
+        drafting = editor
+    else
+        warn('[OPENWORKS:Blueprint] Optional drafting editor failed:', editor)
+    end
+end
 local pen
 local penErrorAt = -math.huge
 
