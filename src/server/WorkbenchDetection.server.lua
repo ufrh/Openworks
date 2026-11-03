@@ -89,6 +89,9 @@ local function classify(part)
 
     while node and node ~= workspace do
         if node:IsA('Model') or node:IsA('BasePart') then
+            if node:GetAttribute('isBlueprint') == true then
+                return node, 'Blueprint'
+            end
             if node:GetAttribute('isTool') == true then
                 return node, 'Tool'
             end
@@ -144,6 +147,7 @@ local function scan()
 
     local toolCount = 0
     local materialCount = 0
+    local blueprintCount = 0
 
     for item, kind in current do
         if detected[item] ~= kind then
@@ -152,6 +156,8 @@ local function scan()
 
         if kind == 'Tool' then
             toolCount += 1
+        elseif kind == 'Blueprint' then
+            blueprintCount += 1
         else
             materialCount += 1
         end
@@ -171,6 +177,7 @@ local function scan()
     detected = current
     workbench:SetAttribute('ToolCount', toolCount)
     workbench:SetAttribute('MaterialCount', materialCount)
+    workbench:SetAttribute('BlueprintCount', blueprintCount)
 end
 
 workbench:SetAttribute('ToolCount', 0)
