@@ -152,7 +152,7 @@ local function scoreWork()
     return item.PrimaryPart or item:FindFirstChildWhichIsA('BasePart', true)
 end
 
-local function scorePoint(work)
+local function scorePoint(work, allowOutside)
     if not work or not work.Parent then return nil end
     local axis, sign = ScorePath.face(work)
     local normal = work.CFrame:VectorToWorldSpace(ScorePath.normal(axis, sign))
@@ -167,7 +167,23 @@ local function scorePoint(work)
     if math.abs(denominator) < 0.015 then return nil end
     local t = (plane - ray.Origin):Dot(normal) / denominator
     if t < 0 or t > 160 then return nil end
-    return ScorePath.project(work, ray.Origin + ray.Direction * t)
+    local worldPoint = ray.Origin + ray.Direction * t
+    local point = ScorePath.project(work, worldPoint)
+    if point or not allowOutside then return point end
+
+    local localPoint = work.CFrame:PointToObjectSpace(worldPoint)
+    local clamped = Vector3.new(
+        math.clamp(localPoint.X, -half.X, half.X),
+        math.clamp(localPoint.Y, -half.Y, half.Y),
+        math.clamp(localPoint.Z, -half.Z, half.Z))
+    if axis == 'X' then
+        clamped = Vector3.new(extent * sign, clamped.Y, clamped.Z)
+    elseif axis == 'Y' then
+        clamped = Vector3.new(clamped.X, extent * sign, clamped.Z)
+    else
+        clamped = Vector3.new(clamped.X, clamped.Y, extent * sign)
+    end
+    return clamped
 end
 
 local rulerCache, rulerCacheAt = {}, 0
@@ -474,7 +490,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
             and target:GetAttribute('DraftingKind') == 'Ruler'
             and not fabrication.down then
             local work = scoreWork()
-            local localHit = work and scorePoint(work)
+            local localHit = work and scorePoint(work, true)
             local edge, distance
             if work and localHit then
                 edge, distance = MaterialLayout.rulerGuide(work, target, localHit)
@@ -993,7 +1009,7 @@ RunService.RenderStepped:Connect(function(dt)
 
     if fabrication and fabrication.kind == 'Scorer' then
         local work = scoreWork()
-        local rawPoint = scorePoint(work)
+        local rawPoint = scorePoint(work, fabrication.layoutDrag ~= nil)
         if fabrication.layoutDrag then
             local drag = fabrication.layoutDrag
             if work and rawPoint and drag.ruler and drag.ruler.Parent then
