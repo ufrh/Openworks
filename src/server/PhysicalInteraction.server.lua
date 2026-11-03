@@ -83,6 +83,7 @@ local function classify(part)
     local node = part
     while node and node ~= workspace do
         if node:IsA('Model') or node:IsA('BasePart') then
+            if node:GetAttribute('isBlueprint') == true then return node, 'Blueprint' end
             if node:GetAttribute('isTool') == true then return node, 'Tool' end
             if FORMMaterial.isMarked(node) then return node, 'Material' end
         end
