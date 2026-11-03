@@ -21,6 +21,12 @@ local function exposedFace(work)
     return CFrame.fromMatrix(center, x, normal, x:Cross(normal)), normal
 end
 
+function Layout.rulerAngle(work, ruler)
+    local frame = exposedFace(work)
+    local direction = frame:VectorToObjectSpace(ruler.CFrame.RightVector)
+    return math.atan2(-direction.Z, direction.X)
+end
+
 function Layout.rulerFrame(work, ruler, point, rotation)
     if not work or not ruler or typeof(point) ~= 'Vector3'
         or not finite(rotation) or math.abs(rotation) > math.pi * 2
