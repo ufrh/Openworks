@@ -215,11 +215,34 @@ function ScorePath.guide(work, position, radius)
                 kind = 'Straight', axis = line.axis, offset = line.offset,
                 point = line.point, tangent = line.tangent, normal = line.normal,
                 length = line.length,
-            } else {kind = 'Curved'}
+            } else {kind = 'Curved', points = path.points}
             distance = error
         end
     end
     return nearest
+end
+
+function ScorePath.sample(points, travel)
+    if type(points) ~= 'table' or #points < 2 then return nil end
+    local distance = 0
+    for i = 2, #points do
+        distance += (points[i] - points[i - 1]).Magnitude
+    end
+    if distance < 0.01 then return nil end
+    if travel == nil then return distance end
+    local remaining = math.clamp(travel, 0, distance)
+    for i = 2, #points do
+        local a, b = points[i - 1], points[i]
+        local delta = b - a
+        local length = delta.Magnitude
+        if length > 1e-5 then
+            if remaining <= length or i == #points then
+                return a + delta * math.clamp(remaining / length, 0, 1), delta.Unit, distance
+            end
+            remaining -= length
+        end
+    end
+    return points[#points], (points[#points] - points[#points - 1]).Unit, distance
 end
 
 function ScorePath.contactFrame(work, point, tangent)
