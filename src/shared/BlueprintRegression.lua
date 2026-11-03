@@ -7,6 +7,11 @@ function Regression.run()
     sheet.Size = Vector3.new(5, 0.06, 3.5)
     sheet.CFrame = CFrame.new(0, 10, 0)
     sheet:SetAttribute('isBlueprint', true)
+    Blueprint.decorate(sheet)
+    local grid = sheet:FindFirstChild('BlueprintPaperDetail')
+    assert(grid and #grid:GetChildren() > 35,
+        'Physical paper grid and title block were not created')
+    local gridCount = #grid:GetChildren()
 
     local ruler = Instance.new('Part')
     ruler.Size = Vector3.new(3, 0.075, 0.21)
@@ -41,6 +46,9 @@ function Regression.run()
     assert(#Blueprint.read(sheet) == 0
         and #sheet.BlueprintInk:GetChildren() == 0,
         'Erasing left phantom ink on the blueprint')
+    assert(sheet:FindFirstChild('BlueprintPaperDetail') == grid
+        and #grid:GetChildren() == gridCount,
+        'Grid was duplicated or erased when the drawing changed')
 
     ruler:Destroy()
     sheet:Destroy()
