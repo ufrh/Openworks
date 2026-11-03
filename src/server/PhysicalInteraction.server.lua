@@ -203,6 +203,44 @@ local function toolContact(tool, part, kind)
     return bounds * CFrame.new(0, -size.Y * 0.5, 0) * rotation
 end
 
+local function sawMountOffset(tool, part, restingFrame)
+    local blade = nil
+    if tool:IsA('BasePart') then blade = tool end
+    if not blade then
+        for _, candidate in tool:GetDescendants() do
+            if candidate:IsA('BasePart') and candidate.Name:lower():find('blade', 1, true) then
+                blade = candidate
+                break
+            end
+        end
+    end
+    if not blade then blade = part end
+
+    local size = blade.Size
+    local axes = {
+        {length = size.X, vector = blade.CFrame.RightVector},
+        {length = size.Y, vector = blade.CFrame.UpVector},
+        {length = size.Z, vector = blade.CFrame.LookVector},
+    }
+    table.sort(axes, function(a, b) return a.length > b.length end)
+    local along = axes[1].vector
+    local height = axes[2].vector
+    local teeth = tool:FindFirstChild('Teeth', true)
+    if teeth and teeth:IsA('BasePart') then
+        if (teeth.Position - blade.Position):Dot(height) > 0 then
+            height = -height
+        end
+    elseif height:Dot(Vector3.yAxis) < 0 then
+        height = -height
+    end
+
+    local marker = contactMarker(tool, 'BladeEdge')
+    local edgePoint = if marker then marker.WorldPosition
+        else blade.Position - height * axes[2].length * 0.5
+    local frame = CFrame.fromMatrix(edgePoint, along, height, along:Cross(height))
+    return frame:ToObjectSpace(restingFrame)
+end
+
 local function setToolCollision(item, state)
     state.collisions = {}
 
@@ -552,7 +590,6 @@ local function startFabrication(player, material, tool)
 
     local restingFrame = tool:GetPivot()
     local contact = toolContact(tool, part, kind)
-    local toolBounds, toolSize
     local fileLengthLocal
     if kind == 'File' then
         local bounds, dimensions
@@ -569,23 +606,8 @@ local function startFabrication(player, material, tool)
         end
         fileLengthLocal = restingFrame:VectorToObjectSpace(long)
     end
-    local sawLengthFrame, sawLengthSize
-    if kind == 'Saw' then
-        if tool:IsA('Model') then
-            toolBounds, toolSize = tool:GetBoundingBox()
-        else
-            toolBounds, toolSize = tool.CFrame, tool.Size
-        end
-
-        sawLengthFrame, sawLengthSize = toolBounds, toolSize
-        for _, toolPart in toolParts do
-            local name = toolPart.Name:lower()
-            if name:find('blade', 1, true) or name:find('teeth', 1, true) then
-                sawLengthFrame, sawLengthSize = toolPart.CFrame, toolPart.Size
-                break
-            end
-        end
-    end
+    local sawOffset = if kind == 'Saw'
+        then sawMountOffset(tool, part, restingFrame) else nil
 
     local state = {
         mode = 'Fabrication',
@@ -596,12 +618,8 @@ local function startFabrication(player, material, tool)
         work = work,
         restingFrame = restingFrame,
         contactOffset = contact:ToObjectSpace(restingFrame),
-        sawFlip = tool:GetAttribute('SawFlip180') == true,
-        toolBoundsOffset = if toolBounds then restingFrame:ToObjectSpace(toolBounds) else nil,
-        toolBoundsSize = toolSize,
         fileLengthLocal = fileLengthLocal,
-        sawLengthOffset = if sawLengthFrame then restingFrame:ToObjectSpace(sawLengthFrame) else nil,
-        sawLengthSize = sawLengthSize,
+        sawOffset = sawOffset,
         positioning = false,
         currentFrame = restingFrame,
         goalFrame = restingFrame,
@@ -1002,12 +1020,17 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         work.CFrame:VectorToWorldSpace(state.scoreCut.tangent)
         elseif axis == 'X' then work.CFrame.LookVector
         else work.CFrame.RightVector
-    local sawFlip = if state.kind == 'Saw' and state.sawFlip then 180 else 0
-    local contactFrame = CFrame.fromMatrix(pos, forward,
-        upward, forward:Cross(upward))
-        * CFrame.Angles(math.rad(state.roll + sawFlip), 0, 0)
-
-    state.goalFrame = contactFrame * state.contactOffset
+    local alongPath = forward.Unit
+    local surfaceUp = upward.Unit
+    alongPath = (alongPath - surfaceUp * alongPath:Dot(surfaceUp)).Unit
+    local contactFrame = CFrame.fromMatrix(pos, alongPath,
+        surfaceUp, alongPath:Cross(surfaceUp))
+    if state.kind == 'Saw' then
+        state.goalFrame = contactFrame * state.sawOffset
+    else
+        state.goalFrame = contactFrame
+            * CFrame.Angles(math.rad(state.roll), 0, 0) * state.contactOffset
+    end
 
     if state.kind == 'File' then
         local worldLong = state.goalFrame:VectorToWorldSpace(state.fileLengthLocal)
@@ -1020,43 +1043,6 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
             state.goalFrame = CFrame.new(pos)
                 * CFrame.fromAxisAngle(correctionAxis.Unit, angle)
                 * CFrame.new(-pos) * state.goalFrame
-        end
-    end
-
-    if state.kind == 'Saw' then
-        local lengthFrame = state.goalFrame * state.sawLengthOffset
-        local dimensions = state.sawLengthSize
-        local lengthAxis = lengthFrame.RightVector
-        if dimensions.Y > dimensions.X and dimensions.Y >= dimensions.Z then
-            lengthAxis = lengthFrame.UpVector
-        elseif dimensions.Z > dimensions.X and dimensions.Z > dimensions.Y then
-            lengthAxis = lengthFrame.LookVector
-        end
-
-        local lineAxis = forward.Unit
-        if lengthAxis:Dot(lineAxis) < 0 then lengthAxis = -lengthAxis end
-        local axis = lengthAxis:Cross(lineAxis)
-        if axis.Magnitude > 0.0001 then
-            local angle = math.atan2(axis.Magnitude, math.clamp(lengthAxis:Dot(lineAxis), -1, 1))
-            local pivotRotation = CFrame.new(pos)
-                * CFrame.fromAxisAngle(axis.Unit, angle) * CFrame.new(-pos)
-            state.goalFrame = pivotRotation * state.goalFrame
-        end
-
-        local bounds = state.goalFrame * state.toolBoundsOffset
-        local half = state.toolBoundsSize * 0.5
-        local lowest = bounds.Position.Y
-            - math.abs(bounds.RightVector.Y) * half.X
-            - math.abs(bounds.UpVector.Y) * half.Y
-            - math.abs(bounds.LookVector.Y) * half.Z
-
-        local top = work.Position.Y
-            + math.abs(work.CFrame.RightVector.Y) * size.X * 0.5
-            + math.abs(work.CFrame.UpVector.Y) * size.Y * 0.5
-            + math.abs(work.CFrame.LookVector.Y) * size.Z * 0.5
-
-        if not state.scoreCut and lowest < top + 0.01 then
-            state.goalFrame += Vector3.new(0, top + 0.01 - lowest, 0)
         end
     end
 
@@ -1470,12 +1456,8 @@ onRequest = function(player, action, ...)
         else
             remote:FireClient(player, 'Feedback', 'Invalid file profile or size')
         end
-    elseif action == 'FabricationSawFlip' and state.mode == 'Fabrication'
-        and state.kind == 'Saw' then
-        state.sawFlip = not state.sawFlip
-        state.item:SetAttribute('SawFlip180', state.sawFlip)
-        remote:FireClient(player, 'SawFlipChanged', state.sawFlip)
-    elseif action == 'FabricationRotate' and state.mode == 'Fabrication' then
+    elseif action == 'FabricationRotate' and state.mode == 'Fabrication'
+        and state.kind == 'File' then
         local step = ...
         if step == 1 or step == -1 then
             state.roll = (state.roll + step * 90) % 360
