@@ -135,8 +135,10 @@ local scorePreview = Instance.new('Folder')
 scorePreview.Name = 'OpenworksScorePreview'
 scorePreview.Parent = workspace
 
+local previewSegments = {}
 local function clearPreview()
-    for _, child in scorePreview:GetChildren() do child:Destroy() end
+    for _, child in previewSegments do child:Destroy() end
+    table.clear(previewSegments)
 end
 
 local function scoreWork()
@@ -164,27 +166,38 @@ local function scorePoint(work)
     return ScorePath.project(work, ray.Origin + ray.Direction * t)
 end
 
-local function drawPreview(work, a, b)
-    if #scorePreview:GetChildren() >= ScorePath.MAX_POINTS then return end
-    local distance = (b - a).Magnitude
-    if distance < 0.02 then return end
+local function drawSmoothedPreview(work, points)
     local face, sign = ScorePath.face(work)
     local normal = work.CFrame:VectorToWorldSpace(ScorePath.normal(face, sign))
-    local start = work.CFrame:PointToWorldSpace(a) + normal * 0.017
-    local finish = work.CFrame:PointToWorldSpace(b) + normal * 0.017
-    local segment = Instance.new('Part')
-    segment.Name = 'ScorePreview'
-    segment.Size = Vector3.new(0.019, 0.014, distance)
-    segment.CFrame = CFrame.lookAt((start + finish) * 0.5, finish)
-    segment.Anchored = true
-    segment.CanCollide = false
-    segment.CanTouch = false
-    segment.CanQuery = false
-    segment.CastShadow = false
-    segment.Material = Enum.Material.Neon
-    segment.Color = Color3.fromRGB(242, 188, 106)
-    segment.Transparency = 0.12
-    segment.Parent = scorePreview
+    local index = 0
+    for i = 2, #points do
+        local a = work.CFrame:PointToWorldSpace(points[i - 1]) + normal * 0.017
+        local b = work.CFrame:PointToWorldSpace(points[i]) + normal * 0.017
+        local length = (b - a).Magnitude
+        if length < 0.004 then continue end
+        index += 1
+        local segment = previewSegments[index]
+        if not segment then
+            segment = Instance.new('Part')
+            segment.Name = 'ScorePreview'
+            segment.Anchored = true
+            segment.CanCollide = false
+            segment.CanTouch = false
+            segment.CanQuery = false
+            segment.CastShadow = false
+            segment.Material = Enum.Material.Neon
+            segment.Color = Color3.fromRGB(242, 188, 106)
+            segment.Transparency = 0.12
+            segment.Parent = scorePreview
+            previewSegments[index] = segment
+        end
+        segment.Size = Vector3.new(0.019, 0.014, length)
+        segment.CFrame = CFrame.lookAt((a + b) * 0.5, b)
+        segment.Parent = scorePreview
+    end
+    for i = index + 1, #previewSegments do
+        previewSegments[i].Parent = nil
+    end
 end
 
 local curvedPreview = Instance.new('Folder')
@@ -434,7 +447,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
             end
             clearPreview()
             fabrication.score = {
-                tip = point, lastDrawn = point, lastAt = os.clock(),
+                tip = point, lastAt = os.clock(),
+                samples = {point}, previewAt = 0,
             }
             fabrication.down = true
             send('FabricationScoreBegin', point)
@@ -862,15 +876,32 @@ RunService.RenderStepped:Connect(function(dt)
                     local nextTip = score.tip + move
                     score.previous = score.tip
                     score.tip = nextTip
-                    if (nextTip - score.lastDrawn).Magnitude > 0.015 then
-                        drawPreview(work, score.lastDrawn, nextTip)
-                        score.lastDrawn = nextTip
+                    local samples = score.samples
+                    if not samples or (nextTip - samples[#samples]).Magnitude >= 0.007 then
+                        samples[#samples + 1] = nextTip
+                        if #samples > ScorePath.MAX_RAW_POINTS then
+                            local reduced = ScorePath.reduce(samples, 0.006)
+                            if #reduced > ScorePath.MAX_RAW_POINTS then
+                                local downsampled = {reduced[1]}
+                                for i = 3, #reduced - 1, 2 do
+                                    downsampled[#downsampled + 1] = reduced[i]
+                                end
+                                downsampled[#downsampled + 1] = reduced[#reduced]
+                                reduced = downsampled
+                            end
+                            score.samples = reduced
+                        end
                     end
                     score.lastSentAt = score.lastSentAt or 0
                     if os.clock() - score.lastSentAt >= 1 / 30 then
                         score.lastSentAt = os.clock()
                         send('FabricationScoreMove', nextTip)
                     end
+                end
+                if os.clock() - score.previewAt >= 1 / 15 then
+                    score.previewAt = os.clock()
+                    drawSmoothedPreview(work,
+                        ScorePath.smooth(work, score.samples))
                 end
             else
                 fabrication.scoreHoverAt = fabrication.scoreHoverAt or 0
