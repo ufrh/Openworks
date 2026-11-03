@@ -52,8 +52,10 @@ function Regression.run()
     assert(not invalid, 'An implausibly long pen handle must be rejected')
 
     local outside = PenPath.sample(sheet, {
-        node(first, nil, Vector3.new(-2.3, y, -2.3)),
-        node(last, Vector3.new(2.3, y, 2.3)),
+        node(Vector3.new(1.8, y, -1),
+            nil, Vector3.new(3.3, y, -0.5)),
+        node(Vector3.new(1.8, y, 1),
+            Vector3.new(3.3, y, 0.5)),
     })
     assert(not outside,
         'Bézier controls outside the material must fail when curve leaves the metal')
