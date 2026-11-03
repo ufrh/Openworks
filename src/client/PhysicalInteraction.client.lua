@@ -335,6 +335,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
     if input.KeyCode == Enum.KeyCode.Q and fabrication and not processed then
         fabrication.axis = if fabrication.axis == 'X' then 'Z' else 'X'
+        fabrication.scoreGuide = nil
         fabrication.stroke = 0
         inspector:status('Cut axis: ' .. fabrication.axis)
         return
@@ -371,6 +372,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
         end
 
         if pendingMaterial then return end
+        if fabrication.kind == 'Saw' and fabrication.scoreGuide == 'Curved' then
+            inspector:status('Curved scores require a swept-kerf cutter; move off the score for a straight cut')
+            return
+        end
         if fabrication.kind == 'Scorer' then
             local work = scoreWork()
             local point = scorePoint(work)
@@ -522,7 +527,8 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
         fabrication = {
             kind = a, material = b, tool = c,
             down = false, stroke = 0, offset = 0, axis = 'X',
-            fileSide = 1, pointerMoved = false, positioning = false,
+            fileSide = 1, pointerMoved = true, positioning = false,
+            scoreGuide = nil,
         }
         inspector:setTool(a)
         if a == 'File' then
@@ -815,8 +821,34 @@ RunService.RenderStepped:Connect(function(dt)
                         local coordinate = if candidate == 'X' then point.X
                             elseif candidate == 'Y' then point.Y else point.Z
                         fabrication.fileSide = if coordinate >= 0 then 1 else -1
-                    else
+                    elseif fabrication.kind ~= 'Saw' then
                         fabrication.offset = if fabrication.axis == 'X' then point.X else point.Z
+                    end
+                end
+
+                if fabrication.kind == 'Saw' then
+                    local hovered = loadScorePath() and scorePoint(work)
+                    local matched = hovered and ScorePath.guide(work, hovered, 0.22)
+                    local previousGuide = fabrication.scoreGuide
+                    fabrication.scoreGuide = matched and matched.kind or nil
+
+                    if matched and matched.kind == 'Straight' then
+                        fabrication.axis = matched.axis
+                        fabrication.offset = matched.offset
+                        if previousGuide ~= 'Straight' then
+                            inspector:status('STRAIGHT SCORE ENGAGED — saw blade follows the marked line')
+                        end
+                    else
+                        if matched and matched.kind == 'Curved'
+                            and previousGuide ~= 'Curved' then
+                            inspector:status('CURVED SCORE — visible guide only; swept cutting not implemented')
+                        elseif not matched and previousGuide then
+                            inspector:status('Freehand straight cut — hover a score to align')
+                        end
+                        if hit and (hit.Instance == work or hit.Instance:IsDescendantOf(work)) then
+                            local point = work.CFrame:PointToObjectSpace(hit.Position)
+                            fabrication.offset = if fabrication.axis == 'X' then point.X else point.Z
+                        end
                     end
                 end
             end
@@ -824,15 +856,12 @@ RunService.RenderStepped:Connect(function(dt)
             local span = if fabrication.axis == 'X' then size.X else size.Z
             local maximum = math.max(0, span * 0.5 - 0.17)
             fabrication.offset = math.clamp(fabrication.offset, -maximum, maximum)
-            if fabrication.kind == 'Saw' and loadScorePath() then
-                local scored = ScorePath.straight(work,
-                    fabrication.axis, fabrication.offset, 0.12)
-                if scored then fabrication.offset = scored end
-            end
 
             local guideHeight = size.Y * 0.5 + 0.025
             guide.Color = if fabrication.kind == 'File'
                 then Color3.fromRGB(125, 215, 184)
+                elseif fabrication.kind == 'Saw' and fabrication.scoreGuide == 'Straight'
+                then Color3.fromRGB(82, 225, 176)
                 else Color3.fromRGB(239, 182, 81)
             if fabrication.kind == 'File' then
                 local up = work.CFrame:VectorToObjectSpace(Vector3.yAxis)
