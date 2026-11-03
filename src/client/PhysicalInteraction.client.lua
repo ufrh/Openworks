@@ -559,9 +559,16 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             down = false, stroke = 0, offset = 0, axis = 'X',
             fileSide = 1, pointerMoved = true, positioning = false,
             scoreGuide = nil, scoreLine = nil, scoreReference = nil,
-            scoreContactOffset = if typeof(e) == 'CFrame' then e else nil,
+            scoreContactOffset = if typeof(e) == 'CFrame' then e else CFrame.identity,
         }
         inspector:setTool(a)
+        if a == 'Scorer' then
+            local function show(part)
+                if part:IsA('BasePart') then part.LocalTransparencyModifier = 0 end
+            end
+            show(c)
+            for _, part in c:GetDescendants() do show(part) end
+        end
         if a == 'File' then
             setFileSettings(inspector.fileShape, inspector.fileRadius)
         end
@@ -575,7 +582,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         end
     elseif action == 'ScoreSaved' then
         if fabrication and fabrication.kind == 'Scorer' then
-            inspector:status('Score saved (' .. tostring(a) .. ' path points). Curved cuts are not available yet.')
+            inspector:status('Score saved (' .. tostring(a) .. ' path points).')
         end
     elseif action == 'MaterialPositioning' then
         if fabrication then
@@ -822,8 +829,7 @@ RunService.RenderStepped:Connect(function(dt)
             local tracked = if fabrication.score then fabrication.score.tip else point
             guide.CFrame = CFrame.new(work.CFrame:PointToWorldSpace(tracked)
                 + normal * 0.018)
-            if fabrication.scoreContactOffset and fabrication.tool
-                and fabrication.tool.Parent then
+            if fabrication.tool and fabrication.tool.Parent then
                 local score = fabrication.score
                 local tangent = score and score.previous
                     and (score.tip - score.previous) or nil
