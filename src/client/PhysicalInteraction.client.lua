@@ -481,6 +481,7 @@ UserInputService.InputEnded:Connect(function(input)
         fabrication.materialDrag = nil
         fabrication.down = false
         fabrication.stroke = 0
+        fabrication.pointerMoved = true
         if fabrication.previousMouseBehavior then
             UserInputService.MouseBehavior = fabrication.previousMouseBehavior
             fabrication.previousMouseBehavior = nil
@@ -606,7 +607,15 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         end
     elseif action == 'MachiningCompleted' then
         if fabrication then
+            local scoredComplete = fabrication.kind == 'Saw'
+                and fabrication.scoreReference ~= nil and a ~= nil
             local keepSawing = fabrication.kind == 'Saw' and fabrication.down
+                and not scoredComplete
+            if scoredComplete then
+                fabrication.scoreGuide = nil
+                fabrication.scoreLine = nil
+                fabrication.scoreReference = nil
+            end
             if not keepSawing then
                 if fabrication.previousMouseBehavior then
                     UserInputService.MouseBehavior = fabrication.previousMouseBehavior
@@ -614,7 +623,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
                 end
                 fabrication.down = false
                 fabrication.stroke = 0
-                fabrication.pointerMoved = false
+                fabrication.pointerMoved = true
             end
 
             if not keepSawing and fabrication.kind == 'Saw' and typeof(c) == 'Vector3'
