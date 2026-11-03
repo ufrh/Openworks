@@ -498,7 +498,7 @@ function Inspector:setTool(kind)
         elseif kind == 'File' then
         'Hover edge: green guide snaps onto contour\nHold LMB: lock edge and file along it\nP: move | R: roll file | Esc: exit'
         elseif kind == 'Scorer' then
-        'Drag physical ruler onto metal; wheel rotates it\nTrace ruler edge with scorer, or draw freehand\nRelease: save mark | Esc: exit'
+        'Pen: click anchors, drag to curve, edit handles\nEnter: save score | Backspace: undo | Esc: clear\nF: freehand scoring | Esc again: exit'
         else 'RMB: orbit | MMB: pan | wheel: zoom\nChoose a physical tool resting on the table.'
     self.choices.Visible = true
     if kind then
