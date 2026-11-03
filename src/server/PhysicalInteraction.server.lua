@@ -25,7 +25,19 @@ remote.OnServerEvent:Connect(function(player, action, ...)
 end)
 
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
-local ScorePath = require(Openworks:WaitForChild('ScorePath'))
+local ScorePath
+local function loadScorePath()
+    if ScorePath then return ScorePath end
+    local module = Openworks:FindFirstChild('ScorePath')
+    if not module or not module:IsA('ModuleScript') then return nil end
+    local ok, result = pcall(require, module)
+    if not ok then
+        warn('[OPENWORKS:Scorer] ScorePath failed to load:', result)
+        return nil
+    end
+    ScorePath = result
+    return ScorePath
+end
 
 local function registerScorer(item)
     if item and (item:IsA('Model') or item:IsA('BasePart')) then
@@ -461,8 +473,10 @@ local function startFabrication(player, material, tool)
         return
     end
 
-    if material:GetAttribute('OnWorkbench') ~= true or tool:GetAttribute('OnWorkbench') ~= true then
-        reject('Both tool and material must rest on the workbench')
+    local isWorkspaceScorer = tool == workspace:FindFirstChild('Scorer')
+    if material:GetAttribute('OnWorkbench') ~= true
+        or (tool:GetAttribute('OnWorkbench') ~= true and not isWorkspaceScorer) then
+        reject('Material and tool must be available at the workbench')
         return
     end
 
@@ -475,7 +489,12 @@ local function startFabrication(player, material, tool)
         reject('Set FabricationKind to Saw, File, or Scorer')
         return
     end
-    if not work or not part or not root or not movable(tool)
+    if kind == 'Scorer' and not loadScorePath() then
+        reject('ScorePath module is missing or invalid; sync src/shared/ScorePath.lua')
+        return
+    end
+    if not work or not part or not root
+        or (kind ~= 'Scorer' and not movable(tool))
         or locked[material] or locked[tool] then
         reject('Material or tool is not available')
         return
@@ -776,7 +795,7 @@ local function cutSheet(state)
         }
     end
 
-    if work:GetAttribute(ScorePath.ATTRIBUTE) then
+    if work:GetAttribute('FORMScorePaths') then
         work:SetAttribute(ScorePath.ATTRIBUTE, nil)
         local marks = work:FindFirstChild('OpenworksScoreMarks')
         if marks then marks:Destroy() end
@@ -813,7 +832,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.lastMove = now
 
     local size = work.Size
-    if state.kind == 'Saw' then
+    if state.kind == 'Saw' and loadScorePath() then
         local aligned = ScorePath.straight(work, axis, offset, 0.12)
         if aligned then offset = aligned end
     end
