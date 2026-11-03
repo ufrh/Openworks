@@ -4,6 +4,7 @@ local ScorePath = {}
 ScorePath.ATTRIBUTE = 'FORMScorePaths'
 ScorePath.MAX_PATHS = 8
 ScorePath.MAX_POINTS = 128
+local decodedCache = setmetatable({}, {__mode = 'k'})
 
 local function coordinate(point, axis)
     if axis == 'X' then return point.X end
@@ -77,6 +78,8 @@ end
 function ScorePath.read(work)
     local raw = work:GetAttribute(ScorePath.ATTRIBUTE)
     if type(raw) ~= 'string' or #raw > 70000 then return {} end
+    local cached = decodedCache[work]
+    if cached and cached.raw == raw then return cached.paths end
     local ok, decoded = pcall(HttpService.JSONDecode, HttpService, raw)
     if not ok or type(decoded) ~= 'table' then return {} end
     local output = {}
@@ -97,6 +100,7 @@ function ScorePath.read(work)
         end
         if #output >= ScorePath.MAX_PATHS then break end
     end
+    decodedCache[work] = {raw = raw, paths = output}
     return output
 end
 
@@ -157,7 +161,7 @@ local function straightLine(work, path)
     for _, point in points do total += coordinate(point, axis) end
     local offset = total / #points
     local extent = coordinate(work.Size, axis)
-    if math.abs(offset) > extent * 0.5 - 0.05 then return nil end
+    if math.abs(offset) > math.max(0, extent * 0.5 - 0.17) then return nil end
 
     local deviation = 0
     for _, point in points do
