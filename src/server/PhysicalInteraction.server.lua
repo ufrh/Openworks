@@ -759,7 +759,11 @@ local function cutSheet(state)
         if not loaded then
             return nil, 'Curved cutter failed to load: ' .. tostring(result)
         end
-        fragments, failure = result.split(work, scoredCut.points)
+        if state.autoCurveFragments then
+            fragments = state.autoCurveFragments
+        else
+            fragments, failure = result.split(work, scoredCut.points)
+        end
     else
         fragments, failure = SawCut.split(item, point, normal)
     end
@@ -872,6 +876,166 @@ local function cutSheet(state)
     return work, 'Cut complete. Move the guide for another cut or press Esc'
 end
 
+local function beginAutomaticScore(player, state, reference)
+    if state.kind ~= 'Saw' or state.positioning or state.processing or state.autoCut then return end
+    local work = state.work
+    if not work or not work.Parent or typeof(reference) ~= 'Vector3'
+        or not loadScorePath() then return end
+
+    local face, sign = ScorePath.face(work)
+    if not ScorePath.valid(work, reference, face, sign) then
+        remote:FireClient(player, 'Feedback', 'Aim at the exposed scored face')
+        return
+    end
+    local root = rootOf(player)
+    if not root or (root.Position - work.CFrame:PointToWorldSpace(reference)).Magnitude > 27 then
+        remote:FireClient(player, 'Feedback', 'Scored cut is out of reach')
+        return
+    end
+
+    local scored = ScorePath.guide(work, reference, 0.22)
+    if not scored or not scored.points then
+        remote:FireClient(player, 'Feedback', 'No saved score under the saw cursor')
+        return
+    end
+    local length = ScorePath.sample(scored.points)
+    if not length or length < 0.12 then
+        remote:FireClient(player, 'Feedback', 'Score path is too short for an automatic cut')
+        return
+    end
+
+    if work:GetAttribute('FORMNativeStock') ~= true
+        or not work:IsA('Part') or work.Shape ~= Enum.PartType.Block then
+        remote:FireClient(player, 'Feedback',
+            'Automatic scoring currently requires native rectangular FORM stock')
+        return
+    end
+
+    local preparedCurve
+    if scored.kind == 'Curved' then
+        if modifiedSolids[work] then
+            remote:FireClient(player, 'Feedback',
+                'Curved sawing requires an unmodified FORM workpiece')
+            return
+        end
+        local module = Openworks:FindFirstChild('PathCut')
+        if not module or not module:IsA('ModuleScript') then
+            remote:FireClient(player, 'Feedback', 'PathCut module is not synchronized')
+            return
+        end
+        local loaded, cutter = pcall(require, module)
+        if not loaded then
+            remote:FireClient(player, 'Feedback',
+                'Curved cutter unavailable: ' .. tostring(cutter))
+            return
+        end
+        local ok, fragments, reason = pcall(cutter.split, work, scored.points)
+        if not ok or not fragments then
+            remote:FireClient(player, 'Feedback',
+                'Cannot follow this curve: ' .. tostring(if ok then reason else fragments))
+            return
+        end
+        preparedCurve = fragments
+    else
+        local ok, preview, reason = pcall(function()
+            local Stock = require(Openworks:WaitForChild('Stock'))
+            local SawCut = require(Openworks:WaitForChild('SawCut'))
+            local item = modifiedSolids[work] or Stock.create(1, 'Block', 'Steel', {
+                x = work.Size.X / Stock.SCALE,
+                y = work.Size.Y / Stock.SCALE,
+                z = work.Size.Z / Stock.SCALE,
+            }, work.CFrame)
+            item.frame = work.CFrame
+            return SawCut.preview(item,
+                work.CFrame:PointToWorldSpace(scored.point),
+                work.CFrame:VectorToWorldSpace(scored.normal))
+        end)
+        if not ok or not preview then
+            remote:FireClient(player, 'Feedback',
+                'Cannot saw this score: ' .. tostring(if ok then reason else preview))
+            return
+        end
+    end
+
+    state.autoCurveFragments = preparedCurve
+    state.scoreCut = scored
+    state.curvePath = nil
+    state.curveTravel = 0
+    state.processing = true
+    state.awaitRelease = true
+    state.reversals = 0
+    state.direction = 0
+    state.stroke = 0
+    state.lastStroke = 0
+    local duration = math.clamp(1.6 + length * 1.2, 2, 8)
+    state.autoCut = {
+        scored = scored,
+        length = length,
+        elapsed = 0,
+        duration = duration,
+        reported = 0,
+    }
+    remote:FireClient(player, 'AutoScoreStarted', scored.kind, duration)
+end
+
+local function advanceAutomaticScore(player, state, dt)
+    local auto = state.autoCut
+    if not auto then return end
+    local work = state.work
+    if not work or not work.Parent then
+        state.autoCut = nil
+        state.autoCurveFragments = nil
+        state.scoreCut = nil
+        state.processing = false
+        return
+    end
+
+    auto.elapsed = math.min(auto.duration, auto.elapsed + math.min(dt, 0.1))
+    local progress = math.clamp(auto.elapsed / auto.duration, 0, 1)
+    local amplitude = math.min(auto.length * 0.025, 0.05)
+    local feed = math.clamp(
+        auto.length * progress + math.sin(auto.elapsed * 35) * amplitude,
+        0, auto.length)
+    local point, tangent = ScorePath.sample(auto.scored.points, feed)
+    if point and tangent then
+        local face, sign = ScorePath.face(work)
+        local upward = work.CFrame:VectorToWorldSpace(ScorePath.normal(face, sign))
+        local forward = work.CFrame:VectorToWorldSpace(tangent)
+        forward = forward - upward * forward:Dot(upward)
+        if forward.Magnitude > 0.001 then
+            forward = forward.Unit
+            local contact = work.CFrame:PointToWorldSpace(point) + upward * 0.012
+            state.goalFrame = CFrame.fromMatrix(contact, forward,
+                upward, forward:Cross(upward)) * state.sawOffset
+        end
+    end
+
+    if progress >= 1 or auto.elapsed - auto.reported >= 0.1 then
+        auto.reported = auto.elapsed
+        remote:FireClient(player, 'AutoScoreProgress', progress)
+    end
+    if progress < 1 then return end
+
+    state.autoCut = nil
+    local ok, selected, message = pcall(cutSheet, state)
+    if not ok then
+        warn('[OPENWORKS:AutomaticSaw]', selected)
+        message = 'Automatic cut failed: ' .. tostring(selected)
+        selected = nil
+    end
+    state.autoCurveFragments = nil
+    state.scoreCut = nil
+    state.processing = false
+    state.reversals = 0
+    state.direction = 0
+    state.lastStroke = 0
+    state.awaitRelease = true
+    if active[player] == state then
+        remote:FireClient(player, 'AutoScoreFinished', selected,
+            message or (if selected then 'Automatic cut complete' else 'Cut failed'))
+    end
+end
+
 local function moveFabrication(player, state, stroke, offset, axis, isDown, fileSide, scoreReference)
     if not finite(stroke) or not finite(offset)
         or (axis ~= 'X' and axis ~= 'Z' and (state.kind ~= 'File' or axis ~= 'Y'))
@@ -887,7 +1051,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         return
     end
 
-    if state.positioning then return end
+    if state.positioning or state.autoCut then return end
 
     local now = os.clock()
     if now - state.lastMove < 1 / 40 then return end
@@ -1417,6 +1581,9 @@ onRequest = function(player, action, ...)
     elseif action == 'FabricationScoreEnd' and state.mode == 'Fabrication'
         and state.kind == 'Scorer' then
         endScore(player, state, ...)
+    elseif action == 'FabricationAutoScore' and state.mode == 'Fabrication'
+        and state.kind == 'Saw' then
+        beginAutomaticScore(player, state, ...)
     elseif action == 'FabricationMove' and state.mode == 'Fabrication'
         and state.kind ~= 'Scorer' then
         moveFabrication(player, state, ...)
@@ -1470,6 +1637,8 @@ RunService.Heartbeat:Connect(function(dt)
                     part.Anchored = true
                 end
             end
+
+            if state.autoCut then advanceAutomaticScore(player, state, dt) end
 
             if state.kind == 'Saw' or state.kind == 'Scorer' then
                 state.currentFrame = state.goalFrame
