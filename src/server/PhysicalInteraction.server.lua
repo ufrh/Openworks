@@ -25,6 +25,7 @@ remote.OnServerEvent:Connect(function(player, action, ...)
 end)
 
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
+local MaterialLayout = require(Openworks:WaitForChild('MaterialLayout'))
 local ScorePath
 local function loadScorePath()
     if ScorePath then return ScorePath end
@@ -401,6 +402,24 @@ end
 
 local endScore
 
+local function releaseLayoutRuler(state)
+    local ruler = state.layoutRuler
+    if not ruler then return end
+    locked[ruler] = nil
+    local original = state.layoutRulerOriginal
+    if ruler.Parent and original then
+        ruler.AssemblyLinearVelocity = Vector3.zero
+        ruler.AssemblyAngularVelocity = Vector3.zero
+        ruler.CanCollide = original.collide
+        ruler.CanTouch = original.touch
+        ruler.CanQuery = original.query
+        ruler.Anchored = original.anchored
+    end
+    state.layoutRuler = nil
+    state.layoutRulerOriginal = nil
+    state.layoutRulerMoving = false
+end
+
 local function finish(player)
     local state = active[player]
     if not state then return end
@@ -411,6 +430,7 @@ local function finish(player)
 
     if state.mode == 'Fabrication' then
         if state.kind == 'Scorer' and state.score then endScore(player, state) end
+        releaseLayoutRuler(state)
         if state.item and state.item.Parent then
             state.item:PivotTo(state.restingFrame)
             supportOnWorkbench(state.item)
@@ -1492,6 +1512,73 @@ local function drawScore(work, paths)
     end
 end
 
+local function rulerNearScore(player, state, point)
+    local root = rootOf(player)
+    if not root then return nil end
+    local best, selected, nearest
+    for _, ruler in workspace:GetDescendants() do
+        if not ruler:IsA('BasePart')
+            or ruler:GetAttribute('DraftingKind') ~= 'Ruler'
+            or (locked[ruler] and locked[ruler] ~= player)
+            or (ruler.Position - root.Position).Magnitude > 28 then
+            continue
+        end
+        local guide, distance = MaterialLayout.rulerGuide(state.work, ruler, point)
+        if guide and (not nearest or distance < nearest) then
+            best, selected, nearest = guide, ruler, distance
+        end
+    end
+    return best, selected
+end
+
+local function beginLayoutRuler(player, state, ruler)
+    if state.score or state.positioning or state.processing then return end
+    if typeof(ruler) ~= 'Instance' or not ruler:IsA('BasePart')
+        or ruler:GetAttribute('DraftingKind') ~= 'Ruler'
+        or ruler:GetAttribute('isTool') ~= true
+        or not ruler:IsDescendantOf(workspace)
+        or (locked[ruler] and locked[ruler] ~= player) then return end
+    local root = rootOf(player)
+    if not root or (root.Position - ruler.Position).Magnitude > 27
+        or (root.Position - state.work.Position).Magnitude > 27 then return end
+    if ruler ~= state.layoutRuler then
+        if ruler:GetAttribute('OnWorkbench') ~= true then
+            remote:FireClient(player, 'Feedback',
+                'Place the ruler on the workbench before using it')
+            return
+        end
+        releaseLayoutRuler(state)
+        state.layoutRulerOriginal = {
+            anchored = ruler.Anchored, collide = ruler.CanCollide,
+            touch = ruler.CanTouch, query = ruler.CanQuery,
+        }
+        state.layoutRuler = ruler
+        locked[ruler] = player
+        ruler.AssemblyLinearVelocity = Vector3.zero
+        ruler.AssemblyAngularVelocity = Vector3.zero
+        ruler.Anchored = true
+        ruler.CanCollide = false
+        ruler.CanTouch = false
+        ruler.CanQuery = false
+    end
+    state.layoutRulerMoving = true
+    state.lastRulerMove = 0
+end
+
+local function moveLayoutRuler(player, state, point, angle)
+    if not state.layoutRuler or not state.layoutRulerMoving
+        or state.score or state.positioning then return end
+    local ruler = state.layoutRuler
+    local root = rootOf(player)
+    if not root or (root.Position - state.work.Position).Magnitude > 27 then return end
+    local now = os.clock()
+    if now - (state.lastRulerMove or 0) < 1 / 30 then return end
+    local frame = MaterialLayout.rulerFrame(state.work, ruler, point, angle)
+    if not frame then return end
+    state.lastRulerMove = now
+    ruler.CFrame = frame
+end
+
 local function scorePosition(state, point, tangent)
     state.goalFrame = ScorePath.contactFrame(state.work, point, tangent)
         * state.contactOffset
@@ -1517,7 +1604,14 @@ local function beginScore(player, state, point)
     if state.positioning or state.processing or not ScorePath.valid(work, point, face, sign) then return end
     local root = rootOf(player)
     if not root or (work.CFrame:PointToWorldSpace(point) - root.Position).Magnitude > 27 then return end
-    state.score = {face = face, sign = sign, points = {point}}
+    local guide, ruler = rulerNearScore(player, state, point)
+    if guide then
+        point = MaterialLayout.snap(work, guide, point) or point
+    end
+    state.score = {
+        face = face, sign = sign, points = {point},
+        layoutGuide = guide, ruler = ruler,
+    }
     state.lastScoreAt = os.clock()
     scorePosition(state, point)
 end
@@ -1533,6 +1627,11 @@ local function extendScore(state, point)
     local now = os.clock()
     if now - (state.lastScoreAt or 0) < 1 / 45 then return end
     state.lastScoreAt = now
+
+    if score.layoutGuide then
+        point = MaterialLayout.snap(work, score.layoutGuide, point)
+        if not point then return end
+    end
 
     local points = score.points
     if #points >= ScorePath.MAX_RAW_POINTS then
@@ -1560,6 +1659,9 @@ end
 
 endScore = function(player, state, finalPoint)
     local score = state.score
+    if score and score.layoutGuide and typeof(finalPoint) == 'Vector3' then
+        finalPoint = MaterialLayout.snap(state.work, score.layoutGuide, finalPoint)
+    end
     if score and typeof(finalPoint) == 'Vector3'
         and ScorePath.valid(state.work, finalPoint, score.face, score.sign)
         and #score.points < ScorePath.MAX_RAW_POINTS then
@@ -1776,6 +1878,15 @@ onRequest = function(player, action, ...)
         local delta = point - root.Position
         if delta.Magnitude > 28 then point = root.Position + delta.Unit * 28 end
         state.target.CFrame = CFrame.new(point) * rotation
+    elseif action == 'FabricationLayoutRulerBegin'
+        and state.mode == 'Fabrication' and state.kind == 'Scorer' then
+        beginLayoutRuler(player, state, ...)
+    elseif action == 'FabricationLayoutRulerMove'
+        and state.mode == 'Fabrication' and state.kind == 'Scorer' then
+        moveLayoutRuler(player, state, ...)
+    elseif action == 'FabricationLayoutRulerEnd'
+        and state.mode == 'Fabrication' and state.kind == 'Scorer' then
+        state.layoutRulerMoving = false
     elseif action == 'FabricationScoreHover' and state.mode == 'Fabrication'
         and state.kind == 'Scorer' then
         hoverScore(player, state, ...)
