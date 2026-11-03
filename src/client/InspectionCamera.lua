@@ -248,6 +248,7 @@ function Inspector.new(onTool, onExit, onFileSettings, onMaterial, onMaterialFli
     table.insert(self.connections, UserInputService.InputChanged:Connect(function(input, processed)
         if not self.material then return end
         if input.UserInputType == Enum.UserInputType.MouseWheel and not processed then
+            if self.pauseWheel then return end
             self.distance = math.clamp(self.distance * (if input.Position.Z > 0 then 0.87 else 1.15), 1.5, 28)
         elseif input.UserInputType == Enum.UserInputType.MouseMovement then
             local delta = input.Delta
