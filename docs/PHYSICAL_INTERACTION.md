@@ -14,7 +14,7 @@ All interactions use actual Workspace objects. No Roblox Tool, Backpack, hotbar,
 
 A saw may have an **Attachment** named `BladeEdge` to mark the physical cutting edge. Without it, OPENWORKS finds a BasePart whose name contains `blade` and uses its longest dimension as the cutting direction; the next longest becomes the blade's upright direction. If no blade is identified, the primary Part is used. A Part named `Teeth` can indicate which side should face downward. The server converts that blade geometry into a single fixed mounting offset, then forces it to align to the active cutting path.
 
-`FileFace` is still supported for files; **R** and **Shift+R** rotate a file only. Saw rotation is automatic, with no F flip, R roll, legacy `SawFlip180` setting, or per-frame corrective rotations.
+`FileFace` is still supported for files; **R** and **Shift+R** rotate a file only. Saw rotation is automatic: no F flip, saw roll controls, or per-frame corrective rotations remain.
 
 During precision mode the real Workspace saw or scorer is temporarily anchored for kinematic placement. The saw is set directly to its correct path frame every Heartbeat. The scorer's original model is moved locally each render frame for responsive mouse tracking and the server moves the same physical model for replication. There is no hidden scorer clone. On exit, original anchor and collision states are restored. Normal free dragging still uses physics constraints.
 
