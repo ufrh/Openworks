@@ -173,6 +173,13 @@ local function straightLine(work, path)
     if axis then
         local extent = coordinate(work.Size, axis)
         if math.abs(offset) > math.max(0, extent * 0.5 - 0.17) then return nil end
+        if axis == 'X' then
+            direction = Vector3.new(0, 0, if direction.Z >= 0 then 1 else -1)
+            normal = Vector3.new(-direction.Z, 0, 0)
+        else
+            direction = Vector3.new(if direction.X >= 0 then 1 else -1, 0, 0)
+            normal = Vector3.new(0, 0, direction.X)
+        end
     end
 
     return {axis = axis, offset = offset, length = length,
