@@ -456,6 +456,9 @@ UserInputService.InputBegan:Connect(function(input, processed)
             send('FabricationScoreBegin', point)
             return
         end
+        if fabrication.kind == 'File' then
+            send('FabricationFileLock', fabrication.filePoint)
+        end
         fabrication.down = true
         if not inspector.rightHeld and not inspector.middleHeld then
             fabrication.previousMouseBehavior = UserInputService.MouseBehavior
@@ -536,6 +539,11 @@ UserInputService.InputEnded:Connect(function(input)
     end
 
     if fabrication then
+        if fabrication.kind == 'File' then
+            send('FabricationFileUnlock')
+            fabrication.fileLocked = false
+            fabrication.fileSnap = nil
+        end
         if fabrication.kind == 'Scorer' and fabrication.score then
             send('FabricationScoreEnd', fabrication.score and fabrication.score.tip or nil)
             fabrication.score = nil
@@ -555,6 +563,11 @@ end)
 UserInputService.WindowFocusReleased:Connect(function()
     dropHeld(false)
     if fabrication and fabrication.down then
+        if fabrication.kind == 'File' then
+            send('FabricationFileUnlock')
+            fabrication.fileLocked = false
+            fabrication.fileSnap = nil
+        end
         if fabrication.kind == 'Scorer' then
             send('FabricationScoreEnd', fabrication.score and fabrication.score.tip or nil)
             fabrication.score = nil
@@ -598,7 +611,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             autoPending = false, autoRunning = false,
             fileSide = 1, pointerMoved = true, positioning = false,
             scoreGuide = nil, scoreLine = nil, scoreReference = nil,
-            filePoint = nil,
+            filePoint = nil, fileSnap = nil, fileLocked = false,
             scoreContactOffset = if typeof(e) == 'CFrame' then e else CFrame.identity,
         }
         inspector:setTool(a)
@@ -619,6 +632,25 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             inspector:status('Hold LMB on the metal and trace a score. Release to save.')
         else
             inspector:status('Hover an edge, hold LMB and stroke to file it')
+        end
+    elseif action == 'FileEdgeGuide' then
+        if fabrication and fabrication.kind == 'File'
+            and not fabrication.fileLocked and not fabrication.down then
+            fabrication.fileSnap = if typeof(a) == 'Vector3'
+                and typeof(b) == 'Vector3'
+                then {point = a, tangent = b} else nil
+        end
+    elseif action == 'FileEdgeLocked' then
+        if fabrication and fabrication.kind == 'File' then
+            fabrication.fileLocked = typeof(a) == 'Vector3'
+            fabrication.fileSnap = if fabrication.fileLocked
+                and typeof(b) == 'Vector3'
+                then {point = a, tangent = b} else nil
+            if fabrication.fileLocked then
+                inspector:status('EDGE LOCKED — file strokes follow the contour')
+            else
+                inspector:status('No edge nearby. Move closer to a material edge.')
+            end
         end
     elseif action == 'AutoScoreStarted' then
         if fabrication and fabrication.kind == 'Saw' then
@@ -666,6 +698,8 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             fabrication.stroke = 0
             fabrication.offset = 0
             fabrication.filePoint = nil
+            fabrication.fileSnap = nil
+            fabrication.fileLocked = false
             fabrication.pointerMoved = true
             fabrication.scoreGuide = nil
             fabrication.scoreLine = nil
@@ -685,6 +719,8 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             fabrication.stroke = 0
             fabrication.offset = 0
             fabrication.filePoint = nil
+            fabrication.fileSnap = nil
+            fabrication.fileLocked = false
             fabrication.pointerMoved = true
             fabrication.scoreGuide = nil
             fabrication.scoreLine = nil
@@ -943,6 +979,7 @@ RunService.RenderStepped:Connect(function(dt)
             if fabrication.pointerMoved and not fabrication.down
                 and not fabrication.autoPending and not fabrication.autoRunning then
                 fabrication.pointerMoved = false
+                if fabrication.kind == 'File' then fabrication.filePoint = nil end
 
                 local camera = workspace.CurrentCamera
                 local mousePosition = UserInputService:GetMouseLocation()
@@ -1048,6 +1085,19 @@ RunService.RenderStepped:Connect(function(dt)
                     worldPoint + direction, work.CFrame.UpVector)
             elseif fabrication.kind == 'File' then
                 guide.Parent = workspace
+                if fabrication.fileSnap then
+                    local snap = fabrication.fileSnap
+                    local surfaceUp = work.CFrame:VectorToWorldSpace(
+                        Vector3.new(0, if work.CFrame.UpVector.Y >= 0 then 1 else -1, 0))
+                    local tangent = work.CFrame:VectorToWorldSpace(snap.tangent).Unit
+                    local point = work.CFrame:PointToWorldSpace(snap.point)
+                        + surfaceUp * 0.024
+                    guide.Size = Vector3.new(0.045, 0.018, 0.75)
+                    guide.CFrame = CFrame.lookAt(point,
+                        point + tangent, surfaceUp)
+                    guide.Color = Color3.fromRGB(82, 225, 176)
+                    guide.Transparency = 0.03
+                else
                 local up = work.CFrame:VectorToObjectSpace(Vector3.yAxis)
                 local face = if math.abs(up.X) >= math.abs(up.Y)
                     and math.abs(up.X) >= math.abs(up.Z) then 'X'
@@ -1077,6 +1127,7 @@ RunService.RenderStepped:Connect(function(dt)
                 guide.Size = Vector3.new(extent[along], 0.02, 0.055)
                 guide.CFrame = work.CFrame
                     * CFrame.fromMatrix(center, travel, top, travel:Cross(top))
+                end
             elseif fabrication.axis == 'X' then
                 guide.Parent = workspace
                 guide.Size = Vector3.new(
