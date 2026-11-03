@@ -877,10 +877,18 @@ local function cutSheet(state)
 end
 
 local function beginAutomaticScore(player, state, reference)
-    if state.kind ~= 'Saw' or state.positioning or state.processing or state.autoCut then return end
+    if state.kind ~= 'Saw' then return end
+    if state.positioning or state.processing or state.autoCut then
+        remote:FireClient(player, 'Feedback', 'Finish the current operation first')
+        return
+    end
     local work = state.work
     if not work or not work.Parent or typeof(reference) ~= 'Vector3'
-        or not loadScorePath() then return end
+        or not loadScorePath() then
+        remote:FireClient(player, 'Feedback',
+            'Automatic cutting is unavailable; check the workpiece and ScorePath module')
+        return
+    end
 
     local face, sign = ScorePath.face(work)
     if not ScorePath.valid(work, reference, face, sign) then
