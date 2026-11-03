@@ -890,6 +890,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
                 else 'Workpiece positioned. Resume machining.')
         end
     elseif action == 'MaterialFlipped' then
+        pen:clear()
         clearCurvedGuide()
         if fabrication then
             fabrication.down = false
@@ -909,6 +910,8 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             inspector:status('Workpiece flipped. Top-facing surface is now active.')
         end
     elseif action == 'FabricationTargetChanged' then
+        pen:attach(if a and a:IsA('BasePart') then a
+            elseif a and a:IsA('Model') then a.PrimaryPart else nil)
         clearCurvedGuide()
         pendingMaterial = nil
         if fabrication and a and a.Parent then
@@ -1096,6 +1099,39 @@ RunService.RenderStepped:Connect(function(dt)
     if fabrication and fabrication.kind == 'Scorer' then
         local work = scoreWork()
         local rawPoint = scorePoint(work, fabrication.layoutDrag ~= nil)
+        if fabrication.penMode then
+            pen:attach(work)
+            pen:hover(rawPoint)
+            if pen.drag and rawPoint then
+                pen:move(rawPoint,
+                    UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+                    or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt))
+            end
+            pen:render()
+
+            if work and rawPoint then
+                local face, sign = ScorePath.face(work)
+                local normal = work.CFrame:VectorToWorldSpace(
+                    ScorePath.normal(face, sign))
+                guide.Parent = workspace
+                guide.Size = Vector3.new(0.042, 0.012, 0.042)
+                guide.Color = Color3.fromRGB(101, 223, 207)
+                guide.CFrame = CFrame.new(work.CFrame:PointToWorldSpace(rawPoint)
+                    + normal * 0.025)
+                if fabrication.tool and fabrication.tool.Parent then
+                    fabrication.scorerFrame = ScorePath.contactFrame(work, rawPoint)
+                        * fabrication.scoreContactOffset
+                    fabrication.tool:PivotTo(fabrication.scorerFrame)
+                end
+                if os.clock() - (fabrication.scoreHoverAt or 0) >= 1 / 20 then
+                    fabrication.scoreHoverAt = os.clock()
+                    send('FabricationScoreHover', rawPoint)
+                end
+            else
+                guide.Parent = nil
+            end
+            return
+        end
         if fabrication.layoutDrag then
             local drag = fabrication.layoutDrag
             if work and rawPoint and drag.ruler and drag.ruler.Parent then
