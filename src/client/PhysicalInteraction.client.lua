@@ -633,7 +633,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         end
         guide.Parent = workspace
         if a == 'Saw' then
-            inspector:status('Hover to choose a cut. Straight scores attract the saw.')
+            inspector:status('Hover a scored line, hold LMB, and stroke. The saw follows that score.')
         elseif a == 'Scorer' then
             inspector:status('Hold LMB on the metal and trace a score. Release to save.')
         else
@@ -695,7 +695,11 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         end
     elseif action == 'Progress' then
         if fabrication then
-            inspector:status('Manual passes: ' .. math.floor(a * 100) .. '%')
+            if fabrication.kind == 'Saw' and fabrication.scoreGuide == 'Curved' then
+                inspector:status('Cutting along curved score: ' .. math.floor(a * 100) .. '%')
+            else
+                inspector:status('Manual passes: ' .. math.floor(a * 100) .. '%')
+            end
         end
     elseif action == 'MachiningCompleted' then
         if fabrication then
