@@ -666,6 +666,10 @@ local function cutSheet(state)
         local MeshRenderer = require(Openworks:WaitForChild('FORMWorkpieceRender'))
 
         local item = modifiedSolids[work]
+        if not item and (work:FindFirstChild('FORMFiledVisual')
+            or work:GetAttribute('FORMContourMode') == true) then
+            return nil, 'Shaped workpiece geometry is missing. Restart Play and machine a fresh piece; refusing to flatten the existing contour.'
+        end
         if not item then
             local dimensions = work.Size / Stock.SCALE
             item = Stock.create(1, 'Block', 'Steel', {
@@ -683,14 +687,19 @@ local function cutSheet(state)
         local contourMode = false
         if modifiedSolids[work] then
             local Profile = require(Openworks:WaitForChild('PrismProfile'))
-            local outline = Profile.extract(item.solid)
-            if outline then
-                local ContourFile = require(Openworks:WaitForChild('ContourFile'))
-                local localPoint = state.filePoint or target
-                solid, stats = ContourFile.apply(work, item,
-                    localPoint, state.fileRadius, state.fileShape)
-                contourMode = true
+            local outline, failure = Profile.extract(item.solid)
+            if not outline then
+                return nil, 'Cannot contour-file this shape: ' .. tostring(failure)
             end
+            local contact = if state.fileLock then state.fileLock.point3
+                else state.filePoint
+            if not contact then
+                return nil, 'Aim at a real edge before filing this shaped piece'
+            end
+            local ContourFile = require(Openworks:WaitForChild('ContourFile'))
+            solid, stats = ContourFile.apply(work, item,
+                contact, state.fileRadius, state.fileShape)
+            contourMode = true
         end
         if not contourMode then
             local spec, failure = FileShape.preview(item, worldHit, state.fileRadius)
