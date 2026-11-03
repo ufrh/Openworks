@@ -24,9 +24,32 @@ local function loadScorePath()
 end
 local Inspector = require(script.Parent:WaitForChild('InspectionCamera'))
 local Drafting = require(script.Parent:WaitForChild('BlueprintDrafting'))
-local PenEditor = require(script.Parent:WaitForChild('PenPathEditor'))
 local drafting = Drafting.new()
-local pen = PenEditor.new()
+local pen
+local penErrorAt = 0
+
+local function loadPen()
+    if pen then return true end
+    local now = os.clock()
+    if now - penErrorAt < 3 then return false end
+    penErrorAt = now
+
+    local module = script.Parent:FindFirstChild('PenPathEditor')
+    if not module or not module:IsA('ModuleScript') then
+        warn('[OPENWORKS:PenTool] PenPathEditor module unavailable; freehand remains active')
+        return false
+    end
+
+    local ok, result = pcall(function()
+        return require(module).new()
+    end)
+    if not ok then
+        warn('[OPENWORKS:PenTool] Could not initialize editor:', result)
+        return false
+    end
+    pen = result
+    return true
+end
 local remote = Openworks:WaitForChild('PhysicalInteraction')
 local receiverWarned = false
 
@@ -298,7 +321,7 @@ local function showCurvedGuide(work, points)
 end
 
 local function cancel()
-    pen:close()
+    if pen then pen:close() end
     held = nil
     dragging = nil
     if fabrication and fabrication.kind == 'Scorer' then send('FabricationScoreEnd', fabrication.score and fabrication.score.tip or nil) end
@@ -437,9 +460,13 @@ UserInputService.InputBegan:Connect(function(input, processed)
     elseif fabrication and fabrication.kind == 'Scorer'
         and not fabrication.penMode and not processed
         and input.KeyCode == Enum.KeyCode.F then
-        fabrication.penMode = true
-        pen:attach(scoreWork())
-        inspector:status('PEN TOOL — click anchors; drag handles; Enter: score; F: freehand')
+        if loadPen() then
+            fabrication.penMode = true
+            pen:attach(scoreWork())
+            inspector:status('PEN TOOL — click anchors; drag handles; Enter: score; F: freehand')
+        else
+            inspector:status('Pen Tool unavailable; freehand scoring remains active. Check Output.')
+        end
         return
     end
     if input.KeyCode == Enum.KeyCode.Escape and inspector.material then
@@ -737,7 +764,7 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 UserInputService.WindowFocusReleased:Connect(function()
-    pen:release()
+    if pen then pen:release() end
     dropHeld(false)
     if fabrication and fabrication.layoutDrag then
         send('FabricationLayoutRulerEnd')
@@ -794,9 +821,10 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         pendingTool = nil
             clearCurvedGuide()
         applyFabricationCollision(d or {})
+        local penReady = a == 'Scorer' and loadPen()
         fabrication = {
             kind = a, material = b, tool = c,
-            penMode = a == 'Scorer', penPending = false,
+            penMode = penReady == true, penPending = false,
             down = false, stroke = 0, offset = 0, axis = 'X',
             autoPending = false, autoRunning = false,
             fileSide = 1, pointerMoved = true, positioning = false,
@@ -806,7 +834,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         }
         inspector:setTool(a)
         if a == 'Scorer' then
-            pen:attach(scoreWork())
+            if penReady then pen:attach(scoreWork()) end
             local function show(part)
                 if part:IsA('BasePart') then part.LocalTransparencyModifier = 0 end
             end
@@ -820,7 +848,9 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         if a == 'Saw' then
             inspector:status('Click a saved score for automatic cutting. Saw unmarked metal manually.')
         elseif a == 'Scorer' then
-            inspector:status('PEN TOOL: click anchors, drag tangent handles, Enter to score | F: freehand')
+            inspector:status(if penReady
+                then 'PEN TOOL: click anchors, drag handles, Enter to score | F: freehand'
+                else 'FREEHAND: hold LMB to score; Pen Tool unavailable, check Output')
         else
             inspector:status('Hover until an edge glows green, then hold LMB and file along it')
         end
@@ -890,7 +920,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
                 else 'Workpiece positioned. Resume machining.')
         end
     elseif action == 'MaterialFlipped' then
-        pen:clear()
+        if pen then pen:clear() end
         clearCurvedGuide()
         if fabrication then
             fabrication.down = false
@@ -910,8 +940,10 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             inspector:status('Workpiece flipped. Top-facing surface is now active.')
         end
     elseif action == 'FabricationTargetChanged' then
-        pen:attach(if a and a:IsA('BasePart') then a
-            elseif a and a:IsA('Model') then a.PrimaryPart else nil)
+        if pen then
+            pen:attach(if a and a:IsA('BasePart') then a
+                elseif a and a:IsA('Model') then a.PrimaryPart else nil)
+        end
         clearCurvedGuide()
         pendingMaterial = nil
         if fabrication and a and a.Parent then
@@ -1007,7 +1039,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         end
         if inspector.material then inspector:status(a) end
     elseif action == 'Ended' then
-        pen:close()
+        if pen then pen:close() end
         inspector.pauseWheel = false
         clearPreview()
             clearCurvedGuide()
