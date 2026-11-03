@@ -119,6 +119,62 @@ function Profile.boundaryForward(points, from, to)
     return sequence
 end
 
+function Profile.closest(points, position)
+    if type(points) ~= 'table' or #points < 2 or typeof(position) ~= 'Vector2' then
+        return nil
+    end
+    local best, perimeter, cumulative = nil, 0, 0
+    for i = 1, #points do
+        local a = points[i]
+        local b = points[i % #points + 1]
+        local delta = b - a
+        local length = delta.Magnitude
+        if length > 1e-7 then
+            local t = math.clamp((position - a):Dot(delta) / (length * length), 0, 1)
+            local candidate = a + delta * t
+            local separation = (candidate - position).Magnitude
+            if not best or separation < best.distance then
+                best = {
+                    point = candidate,
+                    tangent = delta / length,
+                    distance = separation,
+                    travel = cumulative + length * t,
+                    edge = i,
+                }
+            end
+        end
+        cumulative += length
+        perimeter += length
+    end
+    if best then best.perimeter = perimeter end
+    return best
+end
+
+function Profile.sample(points, travel)
+    if type(points) ~= 'table' or #points < 2 or type(travel) ~= 'number' then
+        return nil
+    end
+    local length = 0
+    for i = 1, #points do
+        length += (points[i % #points + 1] - points[i]).Magnitude
+    end
+    if length < 1e-6 then return nil end
+    local remaining = ((travel % length) + length) % length
+    for i = 1, #points do
+        local a, b = points[i], points[i % #points + 1]
+        local delta = b - a
+        local step = delta.Magnitude
+        if step > 1e-7 then
+            if remaining <= step or i == #points then
+                return a + delta * math.clamp(remaining / step, 0, 1),
+                    delta / step
+            end
+            remaining -= step
+        end
+    end
+    return nil
+end
+
 function Profile.extract(solid)
     if not FORM.validate(solid).ok then return nil, 'FORM solid is invalid' end
     local low, high = FORM.bounds(solid)
