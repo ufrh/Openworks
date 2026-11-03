@@ -679,19 +679,33 @@ local function cutSheet(state)
         local target = basis(axis) * (side * measure(work.Size, axis) * 0.5)
             + basis(face) * (faceSign * measure(work.Size, face) * 0.5)
         local worldHit = work.CFrame:PointToWorldSpace(target)
-        local spec, failure = FileShape.preview(item, worldHit, state.fileRadius)
-        if not spec then return nil, failure end
-
         local solid, stats
-        if state.fileShape == 'Chamfer' then
-            solid, stats = FileShape.chamfer(item, spec)
-        else
-            solid, stats = FileShape.apply(item, spec)
+        local contourMode = false
+        if modifiedSolids[work] then
+            local Profile = require(Openworks:WaitForChild('PrismProfile'))
+            local outline = Profile.extract(item.solid)
+            if outline then
+                local ContourFile = require(Openworks:WaitForChild('ContourFile'))
+                local localPoint = state.filePoint or target
+                solid, stats = ContourFile.apply(work, item,
+                    localPoint, state.fileRadius, state.fileShape)
+                contourMode = true
+            end
+        end
+        if not contourMode then
+            local spec, failure = FileShape.preview(item, worldHit, state.fileRadius)
+            if not spec then return nil, failure end
+            if state.fileShape == 'Chamfer' then
+                solid, stats = FileShape.chamfer(item, spec)
+            else
+                solid, stats = FileShape.apply(item, spec)
+            end
         end
         if not solid then return nil, stats end
 
         local previous = work:FindFirstChild('FORMFiledVisual')
-        local visual = MeshRenderer.create(solid, work, previous or work)
+        local visual = MeshRenderer.create(solid, work, previous or work,
+            contourMode)
         local weld = Instance.new('WeldConstraint')
         weld.Part0 = work
         weld.Part1 = visual
@@ -1060,6 +1074,15 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     state.lastMove = now
 
     local size = work.Size
+    if state.kind == 'File' and typeof(scoreReference) == 'Vector3'
+        and validVector(scoreReference) then
+        local h = work.Size * 0.5 + Vector3.new(0.08, 0.08, 0.08)
+        if math.abs(scoreReference.X) <= h.X
+            and math.abs(scoreReference.Y) <= h.Y
+            and math.abs(scoreReference.Z) <= h.Z then
+            state.filePoint = scoreReference
+        end
+    end
     local matched
     if state.kind == 'Saw' and loadScorePath()
         and typeof(scoreReference) == 'Vector3' then
@@ -1114,6 +1137,9 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         stroke = math.clamp(stroke, -halfTravel, halfTravel)
         travel = basis(along) * stroke
         cross = basis(sideAxis) * (fileSide * (measure(size, sideAxis) * 0.5 + 0.002))
+        if modifiedSolids[work] and state.filePoint then
+            cross = Vector3.new(state.filePoint.X, 0, state.filePoint.Z)
+        end
         upward = work.CFrame:VectorToWorldSpace(basis(face) * faceSign)
     else
         stroke = math.clamp(stroke, -1.5, 1.5)
@@ -1544,6 +1570,7 @@ local function switchFabricationMaterial(player, state, material)
     state.work = part
     state.materialAnchors = anchors
     state.offset = 0
+    state.filePoint = nil
     state.stroke = 0
     state.lastStroke = 0
     state.lastTurn = 0
