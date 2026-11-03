@@ -583,7 +583,13 @@ UserInputService.WindowFocusReleased:Connect(function()
 end)
 
 remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
-    if action == 'DragStarted' then
+    if action == 'ScorerPose' then
+        if typeof(a) == 'Instance' and a.Parent and typeof(b) == 'CFrame'
+            and not (fabrication and fabrication.kind == 'Scorer'
+                and fabrication.tool == a) then
+            a:PivotTo(b)
+        end
+    elseif action == 'DragStarted' then
         if not held or held.part ~= a then
             send('End')
             return
@@ -1091,7 +1097,7 @@ RunService.RenderStepped:Connect(function(dt)
                 guide.CFrame = CFrame.lookAt(worldPoint,
                     worldPoint + direction, work.CFrame.UpVector)
             elseif fabrication.kind == 'File' then
-                guide.Parent = workspace
+                guide.Parent = if fabrication.fileSnap then workspace else nil
                 if fabrication.fileSnap then
                     local snap = fabrication.fileSnap
                     local surfaceUp = work.CFrame:VectorToWorldSpace(
@@ -1104,36 +1110,6 @@ RunService.RenderStepped:Connect(function(dt)
                         point + tangent, surfaceUp)
                     guide.Color = Color3.fromRGB(82, 225, 176)
                     guide.Transparency = 0.03
-                else
-                local up = work.CFrame:VectorToObjectSpace(Vector3.yAxis)
-                local face = if math.abs(up.X) >= math.abs(up.Y)
-                    and math.abs(up.X) >= math.abs(up.Z) then 'X'
-                    elseif math.abs(up.Z) >= math.abs(up.Y) then 'Z'
-                    else 'Y'
-                local sign = if (if face == 'X' then up.X
-                    elseif face == 'Y' then up.Y else up.Z) >= 0 then 1 else -1
-                local sideAxis = fabrication.axis
-                if sideAxis == face then
-                    sideAxis = if face == 'X' then 'Z' else 'X'
-                    fabrication.axis = sideAxis
-                end
-                local along
-                for _, a in {'X', 'Y', 'Z'} do
-                    if a ~= face and a ~= sideAxis then along = a break end
-                end
-                local vectors = {X = Vector3.xAxis, Y = Vector3.yAxis, Z = Vector3.zAxis}
-                local extent = {X = size.X, Y = size.Y, Z = size.Z}
-                local center = vectors[face] * sign * (extent[face] * 0.5 + 0.025)
-                    + vectors[sideAxis] * fabrication.fileSide * extent[sideAxis] * 0.5
-                if fabrication.filePoint then
-                    center = fabrication.filePoint
-                        + vectors[face] * (sign * 0.025)
-                end
-                local travel = vectors[along]
-                local top = vectors[face] * sign
-                guide.Size = Vector3.new(extent[along], 0.02, 0.055)
-                guide.CFrame = work.CFrame
-                    * CFrame.fromMatrix(center, travel, top, travel:Cross(top))
                 end
             elseif fabrication.axis == 'X' then
                 guide.Parent = workspace
