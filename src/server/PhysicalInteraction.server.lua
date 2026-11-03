@@ -12,6 +12,8 @@ if not remote or not remote:IsA('RemoteEvent') then
 end
 
 remote:SetAttribute('Ready', false)
+remote:SetAttribute('BootStage', 'Loading core modules')
+remote:SetAttribute('HeartbeatAt', workspace:GetServerTimeNow())
 
 local onRequest
 remote.OnServerEvent:Connect(function(player, action, ...)
@@ -25,6 +27,7 @@ remote.OnServerEvent:Connect(function(player, action, ...)
 end)
 
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
+remote:SetAttribute('BootStage', 'Core modules loaded')
 local MaterialLayout = {
     rulerGuide = function() return nil end,
     snap = function() return nil end,
@@ -2066,6 +2069,7 @@ for _, player in Players:GetPlayers() do watch(player) end
 Players.PlayerRemoving:Connect(function() finish(player) end)
 
 remote:SetAttribute('HeartbeatAt', workspace:GetServerTimeNow())
+remote:SetAttribute('BootStage', 'Receiver ready')
 remote:SetAttribute('Ready', true)
 
 local heartbeatElapsed = 0
