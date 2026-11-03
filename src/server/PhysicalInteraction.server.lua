@@ -26,7 +26,23 @@ end)
 
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
 local MaterialLayout = require(Openworks:WaitForChild('MaterialLayout'))
-local PenPath = require(Openworks:WaitForChild('PenPath'))
+local PenPath
+local function loadPenPath()
+    if PenPath then return PenPath end
+    local module = Openworks:FindFirstChild('PenPath')
+    if not module or not module:IsA('ModuleScript') then
+        warn('[OPENWORKS:PenTool] Module missing, existing workshop controls remain active')
+        return nil
+    end
+    local ok, result = pcall(require, module)
+    if not ok then
+        warn('[OPENWORKS:PenTool] Module failed to initialize:', result)
+        return nil
+    end
+    PenPath = result
+    return result
+end
+
 local ScorePath
 local function loadScorePath()
     if ScorePath then return ScorePath end
@@ -1707,7 +1723,13 @@ local function commitPenPath(player, state, anchors)
         return
     end
 
-    local points, detail = PenPath.sample(state.work, anchors)
+    local penModule = loadPenPath()
+    if not penModule then
+        remote:FireClient(player, 'Feedback',
+            'Pen Tool unavailable; original freehand scoring still works')
+        return
+    end
+    local points, detail = penModule.sample(state.work, anchors)
     if not points then
         remote:FireClient(player, 'Feedback', tostring(detail))
         return
