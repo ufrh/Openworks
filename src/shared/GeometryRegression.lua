@@ -75,6 +75,21 @@ function GeometryRegression.run()
     assert(FORM.validate(curvedFiled).ok
         and FORM.signedVolume(curvedFiled) < FORM.signedVolume(first[1]),
         'Filing a curved wall must retain a valid, smaller solid')
+    local filedOutline = PrismProfile.extract(curvedFiled)
+    assert(filedOutline, 'Filing must preserve the prismatic contour')
+    local preservedArc = 0
+    for _, originalVertex in curvedOutline do
+        if math.abs(originalVertex.X) < 25
+            and math.abs(originalVertex.Y) < 10
+            and (originalVertex - curvedContact).Magnitude > 5 then
+            local nearest = PrismProfile.closest(filedOutline, originalVertex)
+            if nearest and nearest.distance < 0.25 then
+                preservedArc += 1
+            end
+        end
+    end
+    assert(preservedArc >= 2,
+        'Filing replaced the curved saw-cut boundary with a straight edge')
 
     local one, size, translation = center(first[1])
     work.Size = size
