@@ -196,10 +196,13 @@ function Editor:render()
         local dim = Color3.fromRGB(123, 161, 173)
         local active = Color3.fromRGB(255, 228, 155)
         local samples = PenPath.sample(self.work, self.nodes, true)
+        local valid = #self.nodes < 2 or
+            PenPath.sample(self.work, self.nodes) ~= nil
+        local strokeColor = if valid then gold else Color3.fromRGB(246, 100, 100)
 
         if samples then
             for i = 2, #samples do
-                self:part('Line', samples[i - 1], samples[i], gold, 0.020)
+                self:part('Line', samples[i - 1], samples[i], strokeColor, 0.020)
             end
         end
 
