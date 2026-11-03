@@ -431,6 +431,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
         fabrication.scoreGuide = nil
         fabrication.scoreLine = nil
         fabrication.scoreReference = nil
+        clearCurvedGuide()
         fabrication.pointerMoved = true
         fabrication.stroke = 0
         inspector:status('Cut axis: ' .. fabrication.axis)
@@ -654,6 +655,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
                 else 'Workpiece positioned. Resume machining.')
         end
     elseif action == 'MaterialFlipped' then
+        clearCurvedGuide()
         if fabrication then
             fabrication.down = false
             fabrication.stroke = 0
@@ -675,6 +677,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
                 else 'Saw unflipped — press F to reverse')
         end
     elseif action == 'FabricationTargetChanged' then
+        clearCurvedGuide()
         pendingMaterial = nil
         if fabrication and a and a.Parent then
             fabrication.material = a
@@ -708,6 +711,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             local keepSawing = fabrication.kind == 'Saw' and fabrication.down
                 and not scoredComplete
             if scoredComplete then
+                clearCurvedGuide()
                 fabrication.scoreGuide = nil
                 fabrication.scoreLine = nil
                 fabrication.scoreReference = nil
