@@ -256,8 +256,8 @@ function PathCut.split(work, points, kerfMM, existingSolid)
         or work:GetAttribute('FORMNativeStock') ~= true then
         return nil, 'Curved cutting requires a FORM-backed workpiece'
     end
-    if type(points) ~= 'table' or #points < 3 or #points > 128 then
-        return nil, 'Score needs at least three sampled points'
+    if type(points) ~= 'table' or #points < 2 or #points > 256 then
+        return nil, 'Cut requires two or more path samples'
     end
     local size = work.Size
     local source = existingSolid or FORM.box(size / Stock.SCALE)
