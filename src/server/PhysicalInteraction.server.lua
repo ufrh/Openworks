@@ -943,6 +943,7 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     local travel
     local cross
     local upward
+    local curveStrokeTangent
     if state.kind == 'File' then
         local halfTravel = measure(size, along) * 0.5
         stroke = math.clamp(stroke, -halfTravel, halfTravel)
@@ -951,7 +952,14 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
         upward = work.CFrame:VectorToWorldSpace(basis(face) * faceSign)
     else
         stroke = math.clamp(stroke, -1.5, 1.5)
-        if state.scoreCut then
+        if state.scoreCut and state.scoreCut.kind == 'Curved' then
+            local strokeDistance = math.clamp(stroke * 0.12, -0.18, 0.18)
+            local sample, tangent = ScorePath.sample(state.scoreCut.points,
+                (state.curveTravel or 0) + strokeDistance)
+            cross = sample
+            curveStrokeTangent = tangent
+            travel = Vector3.zero
+        elseif state.scoreCut then
             travel = state.scoreCut.tangent * stroke
             cross = state.scoreCut.point
         else
@@ -988,6 +996,8 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
 
     local forward = if state.kind == 'File' then
         work.CFrame:VectorToWorldSpace(basis(along))
+        elseif curveStrokeTangent then
+        work.CFrame:VectorToWorldSpace(curveStrokeTangent)
         elseif state.scoreCut then
         work.CFrame:VectorToWorldSpace(state.scoreCut.tangent)
         elseif axis == 'X' then work.CFrame.LookVector
