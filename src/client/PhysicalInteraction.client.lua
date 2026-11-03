@@ -277,7 +277,8 @@ end
 
 local function chooseMaterial(material)
     if not fabrication or pendingMaterial or not material or not material.Parent
-        or material == fabrication.material or fabrication.down then return end
+        or material == fabrication.material or fabrication.down
+        or fabrication.autoPending or fabrication.autoRunning then return end
 
     pendingMaterial = material
     if not send('FabricationTarget', material) then
@@ -349,18 +350,21 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
     if fabrication and not processed
         and (input.KeyCode == Enum.KeyCode.X or input.KeyCode == Enum.KeyCode.Z) then
-        if not fabrication.down then
+        if not fabrication.down and not fabrication.autoPending
+            and not fabrication.autoRunning then
             send('FabricationMaterialFlip', if input.KeyCode == Enum.KeyCode.X then 'X' else 'Z')
         end
         return
     end
 
     if input.KeyCode == Enum.KeyCode.P and fabrication and not processed then
+        if fabrication.autoPending or fabrication.autoRunning then return end
         send('MaterialPositioning', not fabrication.positioning)
         return
     end
 
     if input.KeyCode == Enum.KeyCode.Q and fabrication and not processed then
+        if fabrication.autoPending or fabrication.autoRunning then return end
         fabrication.axis = if fabrication.axis == 'X' then 'Z' else 'X'
         fabrication.scoreGuide = nil
         fabrication.scoreLine = nil
@@ -403,7 +407,24 @@ UserInputService.InputBegan:Connect(function(input, processed)
             end
         end
 
-        if pendingMaterial then return end
+        if pendingMaterial or fabrication.autoPending or fabrication.autoRunning then return end
+        if fabrication.kind == 'Saw' and loadScorePath() then
+            local work = scoreWork()
+            local point = work and scorePoint(work)
+            local matched = point and ScorePath.guide(work, point, 0.22)
+            if matched then
+                fabrication.autoPending = true
+                fabrication.down = false
+                fabrication.stroke = 0
+                if not send('FabricationAutoScore', point) then
+                    fabrication.autoPending = false
+                    inspector:status('Interaction receiver offline; automatic sawing unavailable')
+                else
+                    inspector:status('Preparing automatic cut along ' .. matched.kind:lower() .. ' score')
+                end
+                return
+            end
+        end
         if fabrication.kind == 'Scorer' then
             local work = scoreWork()
             local point = scorePoint(work)
@@ -457,6 +478,7 @@ UserInputService.InputChanged:Connect(function(input)
         end
 
         if fabrication and not inspector.rightHeld and not inspector.middleHeld then
+            if fabrication.autoPending or fabrication.autoRunning then return end
             if fabrication.kind == 'Scorer' then
                 fabrication.pointerMoved = true
                 return
@@ -557,6 +579,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         fabrication = {
             kind = a, material = b, tool = c,
             down = false, stroke = 0, offset = 0, axis = 'X',
+            autoPending = false, autoRunning = false,
             fileSide = 1, pointerMoved = true, positioning = false,
             scoreGuide = nil, scoreLine = nil, scoreReference = nil,
             scoreContactOffset = if typeof(e) == 'CFrame' then e else CFrame.identity,
@@ -574,11 +597,36 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         end
         guide.Parent = workspace
         if a == 'Saw' then
-            inspector:status('Hover a scored line, hold LMB, and stroke. The saw follows that score.')
+            inspector:status('Click a saved score for automatic cutting. Saw unmarked metal manually.')
         elseif a == 'Scorer' then
             inspector:status('Hold LMB on the metal and trace a score. Release to save.')
         else
             inspector:status('Hover an edge, hold LMB and stroke to file it')
+        end
+    elseif action == 'AutoScoreStarted' then
+        if fabrication and fabrication.kind == 'Saw' then
+            fabrication.autoPending = false
+            fabrication.autoRunning = true
+            fabrication.down = false
+            fabrication.stroke = 0
+            inspector:status('Automatically cutting ' .. tostring(a):lower() .. ' score')
+        end
+    elseif action == 'AutoScoreProgress' then
+        if fabrication and fabrication.kind == 'Saw' and fabrication.autoRunning then
+            inspector:status('Automatic sawing: ' .. math.floor(math.clamp(a, 0, 1) * 100) .. '%')
+        end
+    elseif action == 'AutoScoreFinished' then
+        if fabrication and fabrication.kind == 'Saw' then
+            fabrication.autoPending = false
+            fabrication.autoRunning = false
+            fabrication.down = false
+            fabrication.stroke = 0
+            fabrication.scoreGuide = nil
+            fabrication.scoreLine = nil
+            fabrication.scoreReference = nil
+            fabrication.pointerMoved = true
+            clearCurvedGuide()
+            inspector:status(b or (if a then 'Automatic cut complete' else 'Automatic cut failed'))
         end
     elseif action == 'ScoreSaved' then
         if fabrication and fabrication.kind == 'Scorer' then
@@ -695,6 +743,9 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
     elseif action == 'Feedback' then
         pendingMaterial = nil
         pendingTool = nil
+        if fabrication and fabrication.kind == 'Saw' then
+            fabrication.autoPending = false
+        end
         if inspector.material then inspector:status(a) end
     elseif action == 'Ended' then
         clearPreview()
@@ -853,7 +904,8 @@ RunService.RenderStepped:Connect(function(dt)
             guide.Parent = nil
         else
             local size = work.Size
-            if fabrication.pointerMoved and not fabrication.down then
+            if fabrication.pointerMoved and not fabrication.down
+                and not fabrication.autoPending and not fabrication.autoRunning then
                 fabrication.pointerMoved = false
 
                 local camera = workspace.CurrentCamera
@@ -1007,7 +1059,7 @@ RunService.RenderStepped:Connect(function(dt)
         local ray = mouse.UnitRay
         send('DragMove',
             ray.Origin + ray.Direction.Unit * dragging.distance, dragging.rotation)
-    elseif fabrication then
+    elseif fabrication and not fabrication.autoPending and not fabrication.autoRunning then
         send('FabricationMove',
             fabrication.stroke, fabrication.offset, fabrication.axis,
             fabrication.down, fabrication.fileSide, fabrication.scoreReference)
