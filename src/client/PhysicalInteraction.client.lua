@@ -8,6 +8,7 @@ local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 local Openworks = ReplicatedStorage:WaitForChild('Openworks')
 local FORMMaterial = require(Openworks:WaitForChild('FORMMaterial'))
+local MaterialLayout = require(Openworks:WaitForChild('MaterialLayout'))
 local ScorePath
 local function loadScorePath()
     if ScorePath then return ScorePath end
@@ -167,6 +168,31 @@ local function scorePoint(work)
     local t = (plane - ray.Origin):Dot(normal) / denominator
     if t < 0 or t > 160 then return nil end
     return ScorePath.project(work, ray.Origin + ray.Direction * t)
+end
+
+local function rulerGuide(work, point)
+    if not work or not point then return nil end
+    local selected, nearest, bestGuide
+    for _, node in workspace:GetDescendants() do
+        if not node:IsA('BasePart')
+            or node:GetAttribute('DraftingKind') ~= 'Ruler' then continue end
+        local guide, distance = MaterialLayout.rulerGuide(work, node, point)
+        if guide and (not nearest or distance < nearest) then
+            selected, nearest, bestGuide = node, distance, guide
+        end
+    end
+    return bestGuide, selected
+end
+
+local function scoreWithRuler(work, point, lockedGuide)
+    if not point then return nil end
+    local guide = lockedGuide
+    local ruler
+    if not guide then guide, ruler = rulerGuide(work, point) end
+    if guide then
+        return MaterialLayout.snap(work, guide, point) or point, guide, ruler
+    end
+    return point
 end
 
 local function drawSmoothedPreview(work, points)
@@ -433,6 +459,25 @@ UserInputService.InputBegan:Connect(function(input, processed)
         end
 
         if pendingMaterial or fabrication.autoPending or fabrication.autoRunning then return end
+        if fabrication.kind == 'Scorer' and target
+            and target:IsA('BasePart')
+            and target:GetAttribute('DraftingKind') == 'Ruler'
+            and not fabrication.down then
+            local work = scoreWork()
+            local localHit = work and scorePoint(work)
+            if localHit then
+                fabrication.layoutDrag = {
+                    ruler = target,
+                    angle = MaterialLayout.rulerAngle(work, target),
+                    movedAt = 0,
+                }
+                inspector.pauseWheel = true
+                guide.Parent = nil
+                send('FabricationLayoutRulerBegin', target)
+                inspector:status('POSITION RULER: drag to move, scroll to rotate, release to set')
+            end
+            return
+        end
         if fabrication.kind == 'Saw' and loadScorePath() then
             local work = scoreWork()
             local point = work and scorePoint(work)
@@ -452,7 +497,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
         end
         if fabrication.kind == 'Scorer' then
             local work = scoreWork()
-            local point = scorePoint(work)
+            local point, layoutGuide, layoutRuler = scoreWithRuler(work, scorePoint(work))
             if not point then
                 inspector:status('Move the pointer onto the exposed metal face')
                 return
@@ -461,6 +506,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
             fabrication.score = {
                 tip = point, lastAt = os.clock(),
                 samples = {point}, previewAt = 0,
+                layoutGuide = layoutGuide, layoutRuler = layoutRuler,
             }
             fabrication.down = true
             send('FabricationScoreBegin', point)
@@ -502,6 +548,13 @@ end)
 
 UserInputService.InputChanged:Connect(function(input)
     if drafting:isActive() then return end
+    if input.UserInputType == Enum.UserInputType.MouseWheel
+        and fabrication and fabrication.layoutDrag then
+        local drag = fabrication.layoutDrag
+        drag.angle = (drag.angle + math.rad(5) * input.Position.Z + math.pi)
+            % (math.pi * 2) - math.pi
+        return
+    end
     if input.UserInputType == Enum.UserInputType.MouseMovement then
         if held and (UserInputService:GetMouseLocation() - held.screen).Magnitude > 6 then
             held.moved = true
@@ -551,6 +604,13 @@ UserInputService.InputEnded:Connect(function(input)
     end
 
     if fabrication then
+        if fabrication.layoutDrag then
+            send('FabricationLayoutRulerEnd')
+            fabrication.layoutDrag = nil
+            inspector.pauseWheel = false
+            inspector:status('Ruler placed. Trace one of its long edges with the scorer.')
+            return
+        end
         if fabrication.kind == 'File' then
             send('FabricationFileUnlock')
             fabrication.fileLocked = false
@@ -574,6 +634,11 @@ end)
 
 UserInputService.WindowFocusReleased:Connect(function()
     dropHeld(false)
+    if fabrication and fabrication.layoutDrag then
+        send('FabricationLayoutRulerEnd')
+        fabrication.layoutDrag = nil
+        inspector.pauseWheel = false
+    end
     if fabrication and fabrication.down then
         if fabrication.kind == 'File' then
             send('FabricationFileUnlock')
@@ -620,6 +685,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             dragging = nil
         end
     elseif action == 'FabricationStarted' then
+        inspector.pauseWheel = false
         pendingTool = nil
             clearCurvedGuide()
         applyFabricationCollision(d or {})
@@ -647,7 +713,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         if a == 'Saw' then
             inspector:status('Click a saved score for automatic cutting. Saw unmarked metal manually.')
         elseif a == 'Scorer' then
-            inspector:status('Hold LMB on the metal and trace a score. Release to save.')
+            inspector:status('Move physical ruler onto metal, then trace along its edge. Freehand still works.')
         else
             inspector:status('Hover until an edge glows green, then hold LMB and file along it')
         end
@@ -821,6 +887,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         end
         if inspector.material then inspector:status(a) end
     elseif action == 'Ended' then
+        inspector.pauseWheel = false
         clearPreview()
             clearCurvedGuide()
         pendingMaterial = nil
@@ -910,13 +977,32 @@ RunService.RenderStepped:Connect(function(dt)
 
     if fabrication and fabrication.kind == 'Scorer' then
         local work = scoreWork()
-        local point = scorePoint(work)
+        local rawPoint = scorePoint(work)
+        if fabrication.layoutDrag then
+            local drag = fabrication.layoutDrag
+            if work and rawPoint and drag.ruler and drag.ruler.Parent then
+                local frame = MaterialLayout.rulerFrame(
+                    work, drag.ruler, rawPoint, drag.angle)
+                if frame then
+                    drag.ruler.CFrame = frame
+                    if os.clock() - drag.movedAt > 1 / 30 then
+                        drag.movedAt = os.clock()
+                        send('FabricationLayoutRulerMove', rawPoint, drag.angle)
+                    end
+                end
+            end
+            guide.Parent = nil
+            return
+        end
+        local activeGuide = fabrication.score and fabrication.score.layoutGuide
+        local point, snappedGuide = scoreWithRuler(work, rawPoint, activeGuide)
         if work and point then
             guide.Parent = workspace
             local face, sign = ScorePath.face(work)
             local normal = work.CFrame:VectorToWorldSpace(ScorePath.normal(face, sign))
             guide.Size = Vector3.new(0.06, 0.014, 0.06)
-            guide.Color = Color3.fromRGB(244, 187, 98)
+            guide.Color = if snappedGuide then Color3.fromRGB(96, 224, 175)
+                else Color3.fromRGB(244, 187, 98)
             guide.CFrame = CFrame.new(work.CFrame:PointToWorldSpace(point) + normal * 0.018)
 
             if fabrication.down and fabrication.score then
