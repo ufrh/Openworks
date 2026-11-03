@@ -181,6 +181,11 @@ local function toolContact(tool, part, kind)
 end
 
 local function sawMountOffset(tool, part, restingFrame)
+    local marker = contactMarker(tool, 'BladeEdge')
+    if marker then
+        return marker.WorldCFrame:ToObjectSpace(restingFrame)
+    end
+
     local blade = nil
     if tool:IsA('BasePart') then blade = tool end
     if not blade then
@@ -211,9 +216,7 @@ local function sawMountOffset(tool, part, restingFrame)
         height = -height
     end
 
-    local marker = contactMarker(tool, 'BladeEdge')
-    local edgePoint = if marker then marker.WorldPosition
-        else blade.Position - height * axes[2].length * 0.5
+    local edgePoint = blade.Position - height * axes[2].length * 0.5
     local frame = CFrame.fromMatrix(edgePoint, along, height, along:Cross(height))
     return frame:ToObjectSpace(restingFrame)
 end
