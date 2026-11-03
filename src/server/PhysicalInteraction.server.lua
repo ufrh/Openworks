@@ -133,6 +133,45 @@ local function toolContact(tool, part, kind)
         elseif kind == 'Scorer' then 'ScoreTip' else 'FileFace')
     if marker then return marker.WorldCFrame end
 
+    if kind == 'Scorer' then
+        local bounds, size
+        if tool:IsA('Model') then
+            bounds, size = tool:GetBoundingBox()
+        else
+            bounds, size = part.CFrame, part.Size
+        end
+
+        local tip
+        for _, node in tool:GetDescendants() do
+            if node:IsA('BasePart') then
+                local name = node.Name:lower()
+                if name == 'tip' or name == 'point' or name == 'nib'
+                    or name == 'scoringtip' then
+                    tip = node.Position
+                    break
+                end
+            end
+        end
+
+        local shaft = bounds.UpVector
+        local length = size.Y
+        if size.X >= size.Y and size.X >= size.Z then
+            shaft, length = bounds.RightVector, size.X
+        elseif size.Z >= size.X and size.Z >= size.Y then
+            shaft, length = bounds.LookVector, size.Z
+        end
+        local point = tip or (bounds.Position - shaft * length * 0.5)
+        local bodyDirection = if tip and (bounds.Position - tip).Magnitude > 0.015
+            then (bounds.Position - tip).Unit else shaft
+        local right = bounds.RightVector
+        if math.abs(right:Dot(bodyDirection)) > 0.95 then
+            right = bounds.UpVector
+        end
+        right = (right - bodyDirection * right:Dot(bodyDirection)).Unit
+        return CFrame.fromMatrix(point, right, bodyDirection,
+            right:Cross(bodyDirection))
+    end
+
     local blade
     if kind == 'Saw' then
         for _, node in tool:GetDescendants() do
