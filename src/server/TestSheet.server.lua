@@ -22,6 +22,18 @@ task.defer(function()
     end
 end)
 
+task.defer(function()
+    local ok, passed, message = pcall(function()
+        return require(openworks:WaitForChild('MaterialLayoutRegression')).run()
+    end)
+    if ok and passed then
+        print('[OPENWORKS:Layout]', message)
+    else
+        warn('[OPENWORKS:Layout] Regression failed:',
+            if ok then message else passed)
+    end
+end)
+
 local remote = Instance.new('RemoteEvent')
 remote.Name = 'SpawnTestSheet'
 remote.Parent = openworks
