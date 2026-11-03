@@ -9,6 +9,19 @@ end
 local openworks = ReplicatedStorage:WaitForChild('Openworks')
 local FORMMaterial = require(openworks:WaitForChild('FORMMaterial'))
 
+task.defer(function()
+    local ok, result, message = pcall(function()
+        return require(openworks:WaitForChild('GeometryRegression')).run()
+    end)
+    if not ok then
+        warn('[OPENWORKS:FORM] Geometry regression failed:', result)
+    elseif result then
+        print('[OPENWORKS:FORM]', message)
+    else
+        warn('[OPENWORKS:FORM] Geometry regression failed:', message)
+    end
+end)
+
 local remote = Instance.new('RemoteEvent')
 remote.Name = 'SpawnTestSheet'
 remote.Parent = openworks
