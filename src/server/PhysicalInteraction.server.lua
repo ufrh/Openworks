@@ -1055,12 +1055,21 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
 
     local delta = stroke - state.lastStroke
     local direction = if delta > 0.035 then 1 elseif delta < -0.035 then -1 else 0
+    local curved = state.kind == 'Saw' and state.scoreCut
+        and state.scoreCut.kind == 'Curved'
+    local curveLength = if curved then ScorePath.sample(state.scoreCut.points) else nil
 
     if direction ~= 0 and state.direction ~= 0 and direction ~= state.direction
         and math.abs(stroke - state.lastTurn) > 0.2 then
         state.reversals += 1
         state.lastTurn = stroke
-        remote:FireClient(player, 'Progress', math.min(1, state.reversals / 5))
+        if curved and curveLength then
+            state.curveTravel = math.min(curveLength, (state.curveTravel or 0)
+                + curveLength / 28)
+            remote:FireClient(player, 'Progress', state.curveTravel / curveLength)
+        else
+            remote:FireClient(player, 'Progress', math.min(1, state.reversals / 5))
+        end
     elseif state.direction == 0 and direction ~= 0 then
         state.lastTurn = stroke
     end
@@ -1068,20 +1077,12 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     if direction ~= 0 then state.direction = direction end
     state.lastStroke = stroke
 
-    if state.reversals < 5 or state.processing then return end
-    if state.kind == 'Saw' and state.scoreCut
-        and state.scoreCut.kind == 'Curved' then
-        local full = ScorePath.sample(state.scoreCut.points)
-        if not full then return end
-        state.curveTravel = math.min(full, (state.curveTravel or 0)
-            + math.max(full / 12, 0.08))
-        state.reversals = 0
-        state.lastStroke = stroke
-        state.lastTurn = stroke
-        state.direction = 0
-        remote:FireClient(player, 'Progress', state.curveTravel / full)
-        if state.curveTravel < full - 0.0001 then return end
+    if curved then
+        if not curveLength or (state.curveTravel or 0) < curveLength - 0.0001 then return end
+    elseif state.reversals < 5 then
+        return
     end
+    if state.processing then return end
 
     local aimWorld = work.CFrame:PointToWorldSpace(
         if state.scoreCut then state.scoreCut.point
