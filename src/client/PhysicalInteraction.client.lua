@@ -187,6 +187,97 @@ local function drawPreview(work, a, b)
     segment.Parent = scorePreview
 end
 
+local scorerVisual
+local scorerHidden = {}
+
+local function clearScorerVisual()
+    if scorerVisual then scorerVisual:Destroy() end
+    scorerVisual = nil
+    for part, oldValue in scorerHidden do
+        if part.Parent then part.LocalTransparencyModifier = oldValue end
+    end
+    table.clear(scorerHidden)
+end
+
+local function showScorerVisual(tool)
+    clearScorerVisual()
+    if not tool or not tool.Parent then return end
+    local ok, replica = pcall(function() return tool:Clone() end)
+    if not ok or not replica then
+        warn('[OPENWORKS:Scorer] Could not clone physical model:', replica)
+        return
+    end
+    replica.Name = 'OpenworksActiveScorerVisual'
+    replica:SetAttribute('isTool', false)
+    replica:SetAttribute('OnWorkbench', false)
+
+    local function configure(item)
+        if item:IsA('BasePart') then
+            item.Anchored = true
+            item.CanCollide = false
+            item.CanTouch = false
+            item.CanQuery = false
+            item.LocalTransparencyModifier = 0
+        elseif item:IsA('Script') or item:IsA('LocalScript') then
+            item:Destroy()
+            return
+        end
+        if item:GetAttribute('isTool') == true then
+            item:SetAttribute('isTool', false)
+        end
+    end
+    configure(replica)
+    for _, child in replica:GetDescendants() do configure(child) end
+    local function hide(item)
+        if item:IsA('BasePart') then
+            scorerHidden[item] = item.LocalTransparencyModifier
+            item.LocalTransparencyModifier = 1
+        end
+    end
+    hide(tool)
+    for _, child in tool:GetDescendants() do hide(child) end
+    replica.Parent = workspace
+    scorerVisual = replica
+end
+
+local curvedPreview = Instance.new('Folder')
+curvedPreview.Name = 'OpenworksCurvedSawGuide'
+curvedPreview.Parent = workspace
+local previewWork, previewPoints
+
+local function clearCurvedGuide()
+    for _, child in curvedPreview:GetChildren() do child:Destroy() end
+    previewWork, previewPoints = nil, nil
+end
+
+local function showCurvedGuide(work, points)
+    if not work or not points then clearCurvedGuide() return end
+    if previewWork == work and previewPoints == points then return end
+    clearCurvedGuide()
+    previewWork, previewPoints = work, points
+    local face, sign = ScorePath.face(work)
+    local up = work.CFrame:VectorToWorldSpace(ScorePath.normal(face, sign))
+    for i = 2, #points do
+        local a = work.CFrame:PointToWorldSpace(points[i - 1]) + up * 0.022
+        local b = work.CFrame:PointToWorldSpace(points[i]) + up * 0.022
+        local len = (b - a).Magnitude
+        if len > 0.007 then
+            local part = Instance.new('Part')
+            part.Name = 'ScoreGuide'
+            part.Size = Vector3.new(0.026, 0.014, len)
+            part.CFrame = CFrame.lookAt((a + b) * 0.5, b)
+            part.Anchored = true
+            part.CanCollide = false
+            part.CanTouch = false
+            part.CanQuery = false
+            part.Material = Enum.Material.Neon
+            part.Color = Color3.fromRGB(82, 225, 176)
+            part.CastShadow = false
+            part.Parent = curvedPreview
+        end
+    end
+end
+
 local function cancel()
     held = nil
     dragging = nil
@@ -196,6 +287,8 @@ local function cancel()
     pendingMaterial = nil
     guide.Parent = nil
     clearPreview()
+    clearScorerVisual()
+    clearCurvedGuide()
     send('End')
 end
 
@@ -375,10 +468,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
         end
 
         if pendingMaterial then return end
-        if fabrication.kind == 'Saw' and fabrication.scoreGuide == 'Curved' then
-            inspector:status('Curved scores require a swept-kerf cutter; move off the score for a straight cut')
-            return
-        end
         if fabrication.kind == 'Scorer' then
             local work = scoreWork()
             local point = scorePoint(work)
@@ -527,6 +616,8 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         end
     elseif action == 'FabricationStarted' then
         pendingTool = nil
+        clearScorerVisual()
+        clearCurvedGuide()
         applyFabricationCollision(d or {})
         fabrication = {
             kind = a, material = b, tool = c,
@@ -536,6 +627,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
             scoreContactOffset = if typeof(e) == 'CFrame' then e else nil,
         }
         inspector:setTool(a)
+        if a == 'Scorer' then showScorerVisual(c) end
         if a == 'File' then
             setFileSettings(inspector.fileShape, inspector.fileRadius)
         end
@@ -664,6 +756,8 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d, e)
         if inspector.material then inspector:status(a) end
     elseif action == 'Ended' then
         clearPreview()
+        clearScorerVisual()
+        clearCurvedGuide()
         pendingMaterial = nil
         restoreFabricationCollision()
         dragging = nil
@@ -799,8 +893,8 @@ RunService.RenderStepped:Connect(function(dt)
                 local score = fabrication.score
                 local tangent = score and score.previous
                     and (score.tip - score.previous) or nil
-                fabrication.tool:PivotTo(
-                    ScorePath.contactFrame(work, tracked, tangent)
+                local display = scorerVisual or fabrication.tool
+                display:PivotTo(ScorePath.contactFrame(work, tracked, tangent)
                     * fabrication.scoreContactOffset)
             end
         else
@@ -867,6 +961,11 @@ RunService.RenderStepped:Connect(function(dt)
                     fabrication.scoreLine = if matched and matched.kind == 'Straight'
                         then matched else nil
                     fabrication.scoreReference = if matched then hovered else nil
+                    if matched and matched.kind == 'Curved' then
+                        showCurvedGuide(work, matched.points)
+                    else
+                        clearCurvedGuide()
+                    end
 
                     if matched and matched.kind == 'Straight' then
                         if matched.axis then
@@ -879,7 +978,7 @@ RunService.RenderStepped:Connect(function(dt)
                     else
                         if matched and matched.kind == 'Curved'
                             and previousGuide ~= 'Curved' then
-                            inspector:status('CURVED SCORE — visible guide only; swept cutting not implemented')
+                            inspector:status('CURVED SCORE ENGAGED — hold LMB and saw back and forth to advance')
                         elseif not matched and previousGuide then
                             inspector:status('Freehand straight cut — hover a score to align')
                         end
@@ -907,7 +1006,10 @@ RunService.RenderStepped:Connect(function(dt)
                 elseif fabrication.kind == 'Saw' and fabrication.scoreGuide == 'Straight'
                 then Color3.fromRGB(82, 225, 176)
                 else Color3.fromRGB(239, 182, 81)
-            if fabrication.kind == 'Saw' and fabrication.scoreLine then
+            if fabrication.kind == 'Saw' and fabrication.scoreGuide == 'Curved' then
+                guide.Parent = nil
+            elseif fabrication.kind == 'Saw' and fabrication.scoreLine then
+                guide.Parent = workspace
                 local line = fabrication.scoreLine
                 local direction = work.CFrame:VectorToWorldSpace(line.tangent)
                 local worldPoint = work.CFrame:PointToWorldSpace(
@@ -916,6 +1018,7 @@ RunService.RenderStepped:Connect(function(dt)
                 guide.CFrame = CFrame.lookAt(worldPoint,
                     worldPoint + direction, work.CFrame.UpVector)
             elseif fabrication.kind == 'File' then
+                guide.Parent = workspace
                 local up = work.CFrame:VectorToObjectSpace(Vector3.yAxis)
                 local face = if math.abs(up.X) >= math.abs(up.Y)
                     and math.abs(up.X) >= math.abs(up.Z) then 'X'
@@ -942,10 +1045,12 @@ RunService.RenderStepped:Connect(function(dt)
                 guide.CFrame = work.CFrame
                     * CFrame.fromMatrix(center, travel, top, travel:Cross(top))
             elseif fabrication.axis == 'X' then
+                guide.Parent = workspace
                 guide.Size = Vector3.new(
                     if fabrication.scoreGuide == 'Straight' then 0.026 else 0.055, 0.02, size.Z)
                 guide.CFrame = work.CFrame * CFrame.new(fabrication.offset, guideHeight, 0)
             else
+                guide.Parent = workspace
                 guide.Size = Vector3.new(size.X, 0.02,
                     if fabrication.scoreGuide == 'Straight' then 0.026 else 0.055)
                 guide.CFrame = work.CFrame * CFrame.new(0, guideHeight, fabrication.offset)
