@@ -11,13 +11,13 @@ On Play, the server places a small **OpenworksDraftingKit** on the largest `Work
 - **Drafting Pencil**: unanchored BasePart with `isTool = true`, `DraftingKind = 'Pencil'`.
 - **Drafting Eraser**: unanchored BasePart with `isTool = true`, `DraftingKind = 'Eraser'`.
 
-These are simple procedural placeholder models; replace them with custom rigid Models/parts in a later pass. The starter kit is for Studio. Real authored workspaces can place their own marked blueprint sheets and physical instruments.
+The starter paper is now printed with a physical 5 mm grid, stronger 25 mm grid lines, registration border, center datum and title block. Printed details are non-colliding Parts welded onto the sheet, kept separately from erasable ink. The paper includes a metal clip. The bright metallic gold ruler has black guide edges and etched tick marks; the pencil and eraser have small physical details. They are still procedural placeholder instruments that can eventually be replaced with authored rigid models. The starter kit is for Studio. Real authored workspaces can place their own marked blueprint sheets and physical instruments.
 
 ## Player workflow
 
 1. Leave the tools and blueprint sheet on a workbench; the existing detector sets `OnWorkbench` after they settle.
 2. **Short-click the paper**. The free-grab system releases it, the sheet is temporarily secured, and a separate overhead drafting camera opens. No CAD panel appears.
-3. **Hold LMB on the ruler body and drag** to reposition it across the paper. While holding it, **scroll** to rotate it in 5-degree steps. Release to set it down. When the pencil or eraser is selected, clicks directly along the ruler's edge perform the drawing operation rather than moving the ruler. The ruler is the real Workspace Part, not a ghost preview.
+3. **Hold LMB on the ruler body and drag** to reposition it across the paper. While holding it, **scroll** to rotate it in 5-degree steps. Release to set it down. With a drawing tool selected, clicks within 1.8 mm of the ruler's edge trace the edge; clicks farther into the ruler body move the ruler instead. The ruler is the real Workspace Part, not a ghost preview.
 4. **Click the pencil** to select the physical tool. Move the pointer to within roughly 7 mm of one of the ruler's long edges on the paper.
 5. **Hold LMB and drag along the edge**; the pencil follows the projected contact and a dark ink preview tracks the ruler. Release to create a mathematically straight measured line. A tiny stroke is rejected.
 6. **Click the eraser**, then click near a saved line to remove that complete line.
