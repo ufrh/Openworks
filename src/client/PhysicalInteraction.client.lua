@@ -465,18 +465,22 @@ UserInputService.InputBegan:Connect(function(input, processed)
             and not fabrication.down then
             local work = scoreWork()
             local localHit = work and scorePoint(work)
-            if localHit then
-                fabrication.layoutDrag = {
-                    ruler = target,
-                    angle = MaterialLayout.rulerAngle(work, target),
-                    movedAt = 0,
-                }
-                inspector.pauseWheel = true
-                guide.Parent = nil
-                send('FabricationLayoutRulerBegin', target)
-                inspector:status('POSITION RULER: drag to move, scroll to rotate, release to set')
+            local edge, distance = if work and localHit
+                then MaterialLayout.rulerGuide(work, target, localHit) else nil, nil
+            if not edge or not distance or distance > 0.06 then
+                if localHit then
+                    fabrication.layoutDrag = {
+                        ruler = target,
+                        angle = MaterialLayout.rulerAngle(work, target),
+                        movedAt = 0,
+                    }
+                    inspector.pauseWheel = true
+                    guide.Parent = nil
+                    send('FabricationLayoutRulerBegin', target)
+                    inspector:status('POSITION RULER: drag to move, scroll to rotate, release to set')
+                end
+                return
             end
-            return
         end
         if fabrication.kind == 'Saw' and loadScorePath() then
             local work = scoreWork()
