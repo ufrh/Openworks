@@ -1,4 +1,4 @@
-local ScorePath = require(script.Parent.ScorePath)
+local ScorePath = require(script.Parent:WaitForChild('ScorePath'))
 
 local Layout = {}
 Layout.SNAP_DISTANCE = 0.27
