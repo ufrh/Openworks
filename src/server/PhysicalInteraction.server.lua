@@ -809,7 +809,7 @@ local function cutSheet(state)
         end)
         mainSource:Destroy()
         offcutSource:Destroy()
-        if not ok then return nil, 'Unable to render filed cut: ' .. tostring(result) end
+        if not ok then return nil, 'Unable to render shaped saw cut: ' .. tostring(result) end
         mainVisual, offcutVisual = result, other
     end
 
@@ -1055,7 +1055,8 @@ local function moveFabrication(player, state, stroke, offset, axis, isDown, file
     if state.reversals < 5 or state.processing then return end
 
     local aimWorld = work.CFrame:PointToWorldSpace(
-        if axis == 'X' then Vector3.new(state.offset, size.Y * 0.5, 0)
+        if state.scoreCut then state.scoreCut.point
+        elseif axis == 'X' then Vector3.new(state.offset, size.Y * 0.5, 0)
         else Vector3.new(0, size.Y * 0.5, state.offset))
 
     state.processing = true
