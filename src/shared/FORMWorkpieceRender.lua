@@ -2,19 +2,18 @@ local AssetService = game:GetService('AssetService')
 
 local FORM = require(script.Parent.FORM)
 local Shading = require(script.Parent.FORM.Shading)
-local Planarize = require(script.Parent.FORM.Planarize)
 local Stock = require(script.Parent.Stock)
 
 local Renderer = {}
 
 function Renderer.create(solid, source, appearance, preciseCollision)
-    assert(FORM.validate(solid).ok, 'Filed geometry is invalid')
+    assert(FORM.validate(solid).ok, 'FORM geometry is invalid')
     appearance = appearance or source
 
     local low, high = FORM.bounds(solid)
     local center = (low + high) * 0.5
-    local display = Planarize.display(solid)
-    local shading = Shading.normals(display, 35)
+    local display = solid
+    local shading = Shading.normals(display, if preciseCollision then 65 else 40)
 
     local editable = AssetService:CreateEditableMesh()
     assert(editable, 'EditableMesh unavailable; enable Mesh / Image APIs and check memory budget')
@@ -44,7 +43,7 @@ function Renderer.create(solid, source, appearance, preciseCollision)
     editable:Destroy()
 
     assert(bakedResult == Enum.CreateContentResult.Success,
-        'Could not replicate filed geometry: ' .. tostring(bakedResult))
+        'Could not replicate FORM geometry: ' .. tostring(bakedResult))
 
     local mesh = AssetService:CreateMeshPartAsync(bakedContent, {
         CollisionFidelity = if preciseCollision
