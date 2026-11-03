@@ -22,6 +22,8 @@ local function loadScorePath()
     return ScorePath
 end
 local Inspector = require(script.Parent:WaitForChild('InspectionCamera'))
+local Drafting = require(script.Parent:WaitForChild('BlueprintDrafting'))
+local drafting = Drafting.new()
 local remote = Openworks:WaitForChild('PhysicalInteraction')
 local receiverWarned = false
 
@@ -111,6 +113,7 @@ local function identify(part)
     local node = part
     while node and node ~= workspace do
         if node:IsA('BasePart') or node:IsA('Model') then
+            if node:GetAttribute('isBlueprint') == true then return node, 'Blueprint' end
             if node:GetAttribute('isTool') == true then return node, 'Tool' end
             if FORMMaterial.isMarked(node) then return node, 'Material' end
         end
@@ -322,9 +325,15 @@ local function inspect(material)
 end
 
 local function select(item, kind)
+    if kind == 'Blueprint' then
+        if inspector.material then exitInspect() end
+        drafting:open(item)
+        return
+    end
     if kind == 'Material' then
         inspect(item)
     elseif kind == 'Tool' then
+        if item:GetAttribute('DraftingKind') then return end
         local material = inspector.material or defaultMaterial()
         if not material then return end
         if not inspector.material then inspect(material) end
@@ -339,6 +348,7 @@ task.spawn(function()
 end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
+    if drafting:isActive() then return end
     if input.KeyCode == Enum.KeyCode.Escape and inspector.material then
         exitInspect()
         return
@@ -491,6 +501,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 end)
 
 UserInputService.InputChanged:Connect(function(input)
+    if drafting:isActive() then return end
     if input.UserInputType == Enum.UserInputType.MouseMovement then
         if held and (UserInputService:GetMouseLocation() - held.screen).Magnitude > 6 then
             held.moved = true
@@ -531,6 +542,7 @@ local function dropHeld(allowSelect)
 end
 
 UserInputService.InputEnded:Connect(function(input)
+    if drafting:isActive() then return end
     if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 
     if held or dragging then
@@ -844,6 +856,7 @@ ContextActionService:BindActionAtPriority('OpenworksDragDepth', function(_, stat
 end, false, 3000, Enum.UserInputType.MouseWheel)
 
 RunService.RenderStepped:Connect(function(dt)
+    if drafting:isActive() then return end
     if fabricationCollision then
         for part in fabricationCollision do
             if part.Parent then
@@ -1152,5 +1165,8 @@ RunService:BindToRenderStep('OpenworksScorerPose',
         end
     end)
 
-player.CharacterRemoving:Connect(exitInspect)
+player.CharacterRemoving:Connect(function()
+    drafting:close(true)
+    exitInspect()
+end)
 print('[OPENWORKS:Interaction] Client ready')
