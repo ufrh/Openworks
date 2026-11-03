@@ -314,6 +314,7 @@ function Inspector:refreshTools()
     for _, node in workspace:GetDescendants() do
         if (node:IsA('Model') or node:IsA('BasePart'))
             and node:GetAttribute('isTool') == true
+            and node:GetAttribute('DraftingKind') == nil
             and (node:GetAttribute('OnWorkbench') == true
                 or node == workspace:FindFirstChild('Scorer')) then
             table.insert(available, node)
