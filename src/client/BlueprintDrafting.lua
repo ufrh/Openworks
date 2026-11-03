@@ -141,7 +141,10 @@ function Drafting.new()
             and hit:GetAttribute('DraftingKind') == 'Ruler' then
             local contact = self:pointUnderCursor()
             local edge = contact and Geometry.rulerGuide(self.sheet, hit, contact)
-            if not edge or not self.tool or self.toolKind == nil then
+            local edgeDistance = if edge and contact
+                then (contact - Geometry.snap(edge, contact)).Magnitude
+                else math.huge
+            if not self.tool or self.toolKind == nil or edgeDistance > 1.8 then
                 local localDirection = self.sheet.CFrame:VectorToObjectSpace(
                     hit.CFrame.RightVector)
                 self.rulerDrag = {
