@@ -167,6 +167,7 @@ local function scorePoint(work)
 end
 
 local function drawSmoothedPreview(work, points)
+    points = ScorePath.reduce(points, 0.006)
     local face, sign = ScorePath.face(work)
     local normal = work.CFrame:VectorToWorldSpace(ScorePath.normal(face, sign))
     local index = 0
@@ -215,11 +216,12 @@ local function showCurvedGuide(work, points)
     if previewWork == work and previewPoints == points then return end
     clearCurvedGuide()
     previewWork, previewPoints = work, points
+    local visualPoints = ScorePath.reduce(points, 0.006)
     local face, sign = ScorePath.face(work)
     local up = work.CFrame:VectorToWorldSpace(ScorePath.normal(face, sign))
-    for i = 2, #points do
-        local a = work.CFrame:PointToWorldSpace(points[i - 1]) + up * 0.022
-        local b = work.CFrame:PointToWorldSpace(points[i]) + up * 0.022
+    for i = 2, #visualPoints do
+        local a = work.CFrame:PointToWorldSpace(visualPoints[i - 1]) + up * 0.022
+        local b = work.CFrame:PointToWorldSpace(visualPoints[i]) + up * 0.022
         local len = (b - a).Magnitude
         if len > 0.007 then
             local part = Instance.new('Part')
@@ -898,7 +900,7 @@ RunService.RenderStepped:Connect(function(dt)
                         send('FabricationScoreMove', nextTip)
                     end
                 end
-                if os.clock() - score.previewAt >= 1 / 15 then
+                if os.clock() - score.previewAt >= 1 / 12 then
                     score.previewAt = os.clock()
                     drawSmoothedPreview(work,
                         ScorePath.smooth(work, score.samples))
