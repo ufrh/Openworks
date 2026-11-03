@@ -1478,7 +1478,7 @@ local function scorePosition(state, point, tangent)
     state.goalFrame = ScorePath.contactFrame(state.work, point, tangent)
         * state.contactOffset
     state.currentFrame = state.goalFrame
-    state.item:PivotTo(state.currentFrame)
+    remote:FireAllClients('ScorerPose', state.item, state.currentFrame)
 end
 
 local function hoverScore(player, state, point)
@@ -1841,7 +1841,9 @@ RunService.Heartbeat:Connect(function(dt)
                 local alpha = 1 - math.exp(-17 * math.min(dt, 0.1))
                 state.currentFrame = state.currentFrame:Lerp(state.goalFrame, alpha)
             end
-            state.item:PivotTo(state.currentFrame)
+            if state.kind ~= 'Scorer' then
+                state.item:PivotTo(state.currentFrame)
+            end
         elseif os.clock() - state.lastInput > 3 then
             finish(player)
         end
