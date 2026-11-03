@@ -745,7 +745,7 @@ local function cutSheet(state)
     local point = originalFrame:PointToWorldSpace(
         if state.axis == 'X' then Vector3.new(state.offset, 0, 0)
         else Vector3.new(0, 0, state.offset))
-    if scoredCut then
+    if scoredCut and scoredCut.kind == 'Straight' then
         point = originalFrame:PointToWorldSpace(scoredCut.point)
         normal = originalFrame:VectorToWorldSpace(scoredCut.normal)
     end
