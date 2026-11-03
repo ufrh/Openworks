@@ -6,93 +6,108 @@ end
 
 local function cornerAngle(a, b, c)
     local u, v = b - a, c - a
-    if u.Magnitude < 1e-9 or v.Magnitude < 1e-9 then return 0 end
-    return math.acos(math.clamp(u:Dot(v) / (u.Magnitude * v.Magnitude), -1, 1))
+    local m = u.Magnitude * v.Magnitude
+    if m < 1e-10 then return 0 end
+    return math.acos(math.clamp(u:Dot(v) / m, -1, 1))
 end
 
 function Shading.normals(solid, smoothAngle)
     smoothAngle = smoothAngle or 35
     assert(type(smoothAngle) == 'number' and smoothAngle >= 0 and smoothAngle <= 180,
         'Invalid smoothing angle')
-    assert(type(solid) == 'table' and type(solid.triangles) == 'table'
-        and type(solid.vertices) == 'table', 'Expected mesh data')
 
-    local faceNormals, faceWeights, corners, edges = {}, {}, {}, {}
-    for index, triangle in solid.triangles do
-        local a, b, c = solid.vertices[triangle[1]],
-            solid.vertices[triangle[2]], solid.vertices[triangle[3]]
-        assert(a and b and c, 'Invalid triangle vertex')
-        local cross = (b - a):Cross(c - a)
-        assert(cross.Magnitude > 1e-10, 'Degenerate render triangle')
-        faceNormals[index] = cross.Unit
-        faceWeights[index] = cross.Magnitude * 0.5
+    local faces, vertices = solid.triangles, solid.vertices
+    local normals, corners, edges = {}, {}, {}
+    local perVertex = {}
+
+    for index, triangle in faces do
+        local a, b, c = vertices[triangle[1]], vertices[triangle[2]], vertices[triangle[3]]
+        assert(a and b and c, 'Invalid render triangle')
+        local normal = (b - a):Cross(c - a)
+        assert(normal.Magnitude > 1e-10, 'Degenerate render triangle')
+        normals[index] = normal.Unit
         corners[index] = {
             cornerAngle(a, b, c),
             cornerAngle(b, c, a),
             cornerAngle(c, a, b),
         }
+
         for k = 1, 3 do
-            local one, two = triangle[k], triangle[k % 3 + 1]
-            local key = edgeKey(one, two)
+            local vertex = triangle[k]
+            perVertex[vertex] = perVertex[vertex] or {}
+            perVertex[vertex][#perVertex[vertex] + 1] = {
+                face = index, corner = k,
+            }
+            local nextVertex = triangle[k % 3 + 1]
+            local key = edgeKey(vertex, nextVertex)
             edges[key] = edges[key] or {}
-            edges[key][#edges[key] + 1] = {face = index, a = one, b = two}
+            edges[key][#edges[key] + 1] = index
         end
     end
 
     local neighbors = {}
-    for index, face in solid.triangles do
-        neighbors[index] = {}
-        for _, vertex in face do neighbors[index][vertex] = {} end
+    local function connect(vertex, a, b)
+        neighbors[vertex] = neighbors[vertex] or {}
+        local connections = neighbors[vertex]
+        connections[a] = connections[a] or {}
+        connections[b] = connections[b] or {}
+        connections[a][#connections[a] + 1] = b
+        connections[b][#connections[b] + 1] = a
     end
 
     local blended = 0
-    local threshold = math.cos(math.rad(smoothAngle))
-    for _, pair in edges do
+    local cosThreshold = math.cos(math.rad(smoothAngle))
+    for key, pair in edges do
         if #pair ~= 2 then continue end
-        local a, b = pair[1].face, pair[2].face
-        local first, second = faceNormals[a], faceNormals[b]
-        if first:Dot(second) < threshold then continue end
-        local capA = math.abs(first.Y) > 0.999
-        local capB = math.abs(second.Y) > 0.999
-        if capA ~= capB then continue end
-
+        local a, b = pair[1], pair[2]
+        local na, nb = normals[a], normals[b]
+        if na:Dot(nb) < cosThreshold then continue end
+        if (math.abs(na.Y) > 0.999) ~= (math.abs(nb.Y) > 0.999) then continue end
+        local colon = string.find(key, ':', 1, true)
+        local v1 = tonumber(string.sub(key, 1, colon - 1))
+        local v2 = tonumber(string.sub(key, colon + 1))
+        connect(v1, a, b)
+        connect(v2, a, b)
         blended += 1
-        for _, vertex in {pair[1].a, pair[1].b} do
-            neighbors[a][vertex][#neighbors[a][vertex] + 1] = b
-            neighbors[b][vertex][#neighbors[b][vertex] + 1] = a
-        end
     end
 
-    local result = {}
-    for index, face in solid.triangles do
-        result[index] = {}
-        for corner, vertex in face do
-            local visited, queue = {[index] = true}, {index}
-            local head, blendedNormal = 1, Vector3.zero
+    local output = {}
+    for index, _ in faces do
+        output[index] = {normals[index], normals[index], normals[index]}
+    end
+
+    for vertex, faceCorners in perVertex do
+        local cornerOf = {}
+        for _, pair in faceCorners do
+            cornerOf[pair.face] = pair.corner
+        end
+        local seen = {}
+        local links = neighbors[vertex] or {}
+        for _, pair in faceCorners do
+            if seen[pair.face] then continue end
+            local head, queue = 1, {pair.face}
+            seen[pair.face] = true
+            local average = Vector3.zero
             while head <= #queue do
                 local current = queue[head]
                 head += 1
-                local currentFace = solid.triangles[current]
-                for j = 1, 3 do
-                    if currentFace[j] == vertex then
-                        local weight = math.max(0.0001, corners[current][j])
-                        blendedNormal += faceNormals[current] * weight
-                        break
-                    end
-                end
-                for _, neighbor in neighbors[current][vertex] or {} do
-                    if not visited[neighbor] then
-                        visited[neighbor] = true
-                        queue[#queue + 1] = neighbor
+                local corner = cornerOf[current]
+                average += normals[current] * math.max(0.0001, corners[current][corner])
+                for _, other in links[current] or {} do
+                    if cornerOf[other] and not seen[other] then
+                        seen[other] = true
+                        queue[#queue + 1] = other
                     end
                 end
             end
-            result[index][corner] = if blendedNormal.Magnitude > 1e-8
-                then blendedNormal.Unit else faceNormals[index]
+            local resolved = if average.Magnitude > 1e-9 then average.Unit else normals[pair.face]
+            for _, index in queue do
+                output[index][cornerOf[index]] = resolved
+            end
         end
     end
 
-    return result, {smoothedEdges = blended, faces = #solid.triangles}
+    return output, {smoothedEdges = blended, faces = #faces}
 end
 
 return Shading
