@@ -14,7 +14,7 @@ end
 
 function ContourFile.apply(work, item, localPoint, radiusMM, style)
     if not work or not item or typeof(localPoint) ~= 'Vector3'
-        or type(radiusMM) ~= 'number' or radiusMM < 0.5 or radiusMM > 12
+        or type(radiusMM) ~= 'number' or radiusMM < 0.5 or radiusMM > 100
         or (style ~= 'Round' and style ~= 'Chamfer') then
         return nil, 'Invalid contour filing parameters'
     end
