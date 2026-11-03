@@ -281,8 +281,29 @@ function PathCut.split(work, points, kerfMM, existingSolid)
             centerLine[#centerLine + 1] = nextPoint
         end
     end
-    if #centerLine < 3 or selfIntersects(centerLine, false) then
-        return nil, 'Score folds over itself or is too short'
+    if #centerLine < 2 then return nil, 'Score path is too short' end
+
+    local ScorePath = require(script.Parent.ScorePath)
+    if #centerLine > 96 then
+        local vectorPoints = {}
+        for i, point in centerLine do
+            vectorPoints[i] = Vector3.new(point.X, 0, point.Y)
+        end
+        local simplified
+        for _, tolerance in {0.004, 0.007, 0.011} do
+            simplified = ScorePath.reduce(vectorPoints, tolerance)
+            if #simplified <= 96 then break end
+        end
+        if #simplified > 96 then
+            return nil, 'Cut has excessive geometric detail; make a smoother score'
+        end
+        centerLine = {}
+        for _, point in simplified do
+            centerLine[#centerLine + 1] = Vector2.new(point.X, point.Z)
+        end
+    end
+    if selfIntersects(centerLine, false) then
+        return nil, 'Score folds across itself'
     end
     local kerf = (kerfMM or PathCut.KERF_MM) * Stock.SCALE
     local half = kerf * 0.5
