@@ -761,23 +761,42 @@ local function cutSheet(state)
     end
 
     local fragments, failure
-    if isCurve then
-        local module = Openworks:FindFirstChild('PathCut')
-        if not module or not module:IsA('ModuleScript') then
-            return nil, 'Curved cutter module missing; synchronize src/shared/PathCut.lua'
-        end
-        local loaded, result = pcall(require, module)
-        if not loaded then
-            return nil, 'Curved cutter failed to load: ' .. tostring(result)
-        end
-        if state.autoCurveFragments then
-            fragments = state.autoCurveFragments
-        else
-            fragments, failure = result.split(work, scoredCut.points, nil,
-                modifiedSolids[work] and modifiedSolids[work].solid)
-        end
+    if state.autoCurveFragments then
+        fragments = state.autoCurveFragments
     else
-        fragments, failure = SawCut.split(item, point, normal)
+        local sourceProfile
+        if wasFiled then
+            local PrismProfile = require(Openworks:WaitForChild('PrismProfile'))
+            sourceProfile = PrismProfile.extract(item.solid)
+        end
+        if isCurve or sourceProfile then
+            local module = Openworks:FindFirstChild('PathCut')
+            if not module or not module:IsA('ModuleScript') then
+                return nil, 'Contour cutter module is not synchronized'
+            end
+            local loaded, cutter = pcall(require, module)
+            if not loaded then
+                return nil, 'Contour cutter failed to load: ' .. tostring(cutter)
+            end
+            local points
+            if scoredCut and scoredCut.points then
+                points = scoredCut.points
+            else
+                local span = if state.axis == 'X' then work.Size.Z else work.Size.X
+                local y = work.Size.Y * 0.5
+                points = if state.axis == 'X' then {
+                    Vector3.new(state.offset, y, -span),
+                    Vector3.new(state.offset, y, span),
+                } else {
+                    Vector3.new(-span, y, state.offset),
+                    Vector3.new(span, y, state.offset),
+                }
+            end
+            fragments, failure = cutter.split(work, points, nil,
+                if wasFiled then item.solid else nil)
+        else
+            fragments, failure = SawCut.split(item, point, normal)
+        end
     end
     if not fragments then return nil, failure end
 
@@ -932,23 +951,30 @@ local function beginAutomaticScore(player, state, reference)
     end
 
     local preparedCurve
-    if scored.kind == 'Curved' then
+    local source = modifiedSolids[work]
+    local silhouette
+    if source then
+        local PrismProfile = require(Openworks:WaitForChild('PrismProfile'))
+        silhouette = PrismProfile.extract(source.solid)
+    end
+
+    if scored.kind == 'Curved' or silhouette then
         local module = Openworks:FindFirstChild('PathCut')
         if not module or not module:IsA('ModuleScript') then
-            remote:FireClient(player, 'Feedback', 'PathCut module is not synchronized')
+            remote:FireClient(player, 'Feedback', 'Contour cutter is not synchronized')
             return
         end
         local loaded, cutter = pcall(require, module)
         if not loaded then
             remote:FireClient(player, 'Feedback',
-                'Curved cutter unavailable: ' .. tostring(cutter))
+                'Contour cutter unavailable: ' .. tostring(cutter))
             return
         end
         local ok, fragments, reason = pcall(cutter.split, work, scored.points,
-            nil, modifiedSolids[work] and modifiedSolids[work].solid)
+            nil, source and source.solid)
         if not ok or not fragments then
             remote:FireClient(player, 'Feedback',
-                'Cannot follow this curve: ' .. tostring(if ok then reason else fragments))
+                'Cannot follow this score: ' .. tostring(if ok then reason else fragments))
             return
         end
         preparedCurve = fragments
