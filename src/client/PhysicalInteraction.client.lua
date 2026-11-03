@@ -981,7 +981,6 @@ RunService.RenderStepped:Connect(function(dt)
                 fabrication.pointerMoved = false
                 if fabrication.kind == 'File' then
                     fabrication.filePoint = nil
-                    fabrication.fileSnap = nil
                 end
 
                 local camera = workspace.CurrentCamera
@@ -991,6 +990,11 @@ RunService.RenderStepped:Connect(function(dt)
                 rayParams.FilterType = Enum.RaycastFilterType.Exclude
                 rayParams.FilterDescendantsInstances = {fabrication.tool, guide}
                 local hit = workspace:Raycast(ray.Origin, ray.Direction * 150, rayParams)
+                if fabrication.kind == 'File'
+                    and (not hit or not (hit.Instance == work
+                        or hit.Instance:IsDescendantOf(work))) then
+                    fabrication.fileSnap = nil
+                end
 
                 if hit and (hit.Instance == work or hit.Instance:IsDescendantOf(work)) then
                     local point = work.CFrame:PointToObjectSpace(hit.Position)
