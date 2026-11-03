@@ -336,6 +336,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.Q and fabrication and not processed then
         fabrication.axis = if fabrication.axis == 'X' then 'Z' else 'X'
         fabrication.scoreGuide = nil
+        fabrication.pointerMoved = true
         fabrication.stroke = 0
         inspector:status('Cut axis: ' .. fabrication.axis)
         return
@@ -562,6 +563,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             fabrication.stroke = 0
             fabrication.offset = 0
             fabrication.pointerMoved = true
+            fabrication.scoreGuide = nil
             if fabrication.previousMouseBehavior then
                 UserInputService.MouseBehavior = fabrication.previousMouseBehavior
                 fabrication.previousMouseBehavior = nil
@@ -582,6 +584,7 @@ remote.OnClientEvent:Connect(function(action, a, b, c, d)
             fabrication.stroke = 0
             fabrication.offset = 0
             fabrication.pointerMoved = true
+            fabrication.scoreGuide = nil
             if fabrication.previousMouseBehavior then
                 UserInputService.MouseBehavior = fabrication.previousMouseBehavior
                 fabrication.previousMouseBehavior = nil
@@ -858,6 +861,12 @@ RunService.RenderStepped:Connect(function(dt)
             fabrication.offset = math.clamp(fabrication.offset, -maximum, maximum)
 
             local guideHeight = size.Y * 0.5 + 0.025
+            if fabrication.kind == 'Saw' and loadScorePath() then
+                local face, sign = ScorePath.face(work)
+                if face == 'Y' then guideHeight *= sign end
+            end
+            guide.Transparency = if fabrication.kind == 'Saw'
+                and fabrication.scoreGuide == 'Straight' then 0.04 else 0.15
             guide.Color = if fabrication.kind == 'File'
                 then Color3.fromRGB(125, 215, 184)
                 elseif fabrication.kind == 'Saw' and fabrication.scoreGuide == 'Straight'
@@ -890,10 +899,12 @@ RunService.RenderStepped:Connect(function(dt)
                 guide.CFrame = work.CFrame
                     * CFrame.fromMatrix(center, travel, top, travel:Cross(top))
             elseif fabrication.axis == 'X' then
-                guide.Size = Vector3.new(0.055, 0.02, size.Z)
+                guide.Size = Vector3.new(
+                    if fabrication.scoreGuide == 'Straight' then 0.026 else 0.055, 0.02, size.Z)
                 guide.CFrame = work.CFrame * CFrame.new(fabrication.offset, guideHeight, 0)
             else
-                guide.Size = Vector3.new(size.X, 0.02, 0.055)
+                guide.Size = Vector3.new(size.X, 0.02,
+                    if fabrication.scoreGuide == 'Straight' then 0.026 else 0.055)
                 guide.CFrame = work.CFrame * CFrame.new(0, guideHeight, fabrication.offset)
             end
         end
