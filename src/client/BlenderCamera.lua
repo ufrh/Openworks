@@ -76,6 +76,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 		getSelectedBounds = getSelectedBounds,
 		getSceneBounds = getSceneBounds,
 		onFrame = nil,
+		onWheel = nil,
 		connections = {},
 	}, BlenderCamera)
 
@@ -152,6 +153,9 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 		if input.UserInputType ~= Enum.UserInputType.MouseWheel or processed then return end
 		local steps = input.Position.Z
 		if steps == 0 then return end
+		-- Precision fabrication tools get the wheel before the camera;
+		-- this is a direct callback, no double-zoom or delayed event race.
+		if self.onWheel and self.onWheel(steps) then return end
 		-- Wheel zoom must not alter the orbit pivot, view orientation or grid origin.
 		self:zoom(math.pow(0.86, steps))
 	end)
@@ -276,6 +280,10 @@ end
 
 function BlenderCamera:setOnFrame(callback)
 	self.onFrame = callback
+end
+
+function BlenderCamera:setWheelHandler(callback)
+	self.onWheel = callback
 end
 
 function BlenderCamera:setProjection(enabled: boolean)
