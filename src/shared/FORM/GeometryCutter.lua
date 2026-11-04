@@ -310,6 +310,41 @@ local function roundedFileProfile(edgeA:Vector3,edgeB:Vector3,
 	return profile,(edgeB-edgeA)+axis*(extension*2)
 end
 
+-- Authoritative visible facet loops for a rounded exterior File.
+-- Both HistoryTopology and the miter generator use the same quarter arc,
+-- so the selectable geometry does not revert to a single flat chamfer.
+function GeometryCutter.roundedSurfaces(edgeA:Vector3,edgeB:Vector3,
+	n1:Vector3,n2:Vector3,width:number,segments:number)
+	if segments<2 or segments>12 then return nil,"Invalid round segment count" end
+	if math.abs(n1:Dot(n2))>0.12 then
+		return nil,"Rounded File requires a right-angle edge"
+	end
+	local centerA=edgeA-(n1+n2)*width
+	local centerB=edgeB-(n1+n2)*width
+	local a,b={},{}
+	for i=0,segments do
+		local angle=i/segments*math.pi*0.5
+		local normal=n1*math.cos(angle)+n2*math.sin(angle)
+		table.insert(a,centerA+normal*width)
+		table.insert(b,centerB+normal*width)
+	end
+	local faces={}
+	for i=1,segments do
+		local polygon={a[i],b[i],b[i+1],a[i+1]}
+		local normal=(polygon[2]-polygon[1]):Cross(polygon[3]-polygon[1])
+		if normal.Magnitude<1e-9 then
+			return nil,"Degenerate rounded edge segment"
+		end
+		normal=normal.Unit
+		if normal:Dot(n1+n2)<0 then
+			polygon={a[i+1],b[i+1],b[i],a[i]}
+			normal=-normal
+		end
+		table.insert(faces,{polygon=polygon,normal=normal})
+	end
+	return faces,nil
+end
+
 function GeometryCutter.validateFile(edgeA:Vector3,edgeB:Vector3,
 	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?):(boolean,string?)
 	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
