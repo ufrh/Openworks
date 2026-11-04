@@ -72,9 +72,20 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, (
 	local ok, failure = pcall(function()
 		editable = AssetService:CreateEditableMesh()
 		if not editable then error("EditableMesh allocation unavailable") end
-		local center = Vector3.zero
-		for _,p in ipairs(profile) do center += p end
-		center = center / #profile + travel / 2
+		-- MeshPart placement must use the actual AABB center, not the
+		-- polygon's vertex centroid. Asymmetric triangles otherwise acquire
+		-- offsets when converted to CSG mesh parts.
+		local minBounds=Vector3.new(math.huge,math.huge,math.huge)
+		local maxBounds=Vector3.new(-math.huge,-math.huge,-math.huge)
+		for _,p in ipairs(profile) do
+			for _,v in ipairs({p,p+travel}) do
+				minBounds=Vector3.new(math.min(minBounds.X,v.X),
+					math.min(minBounds.Y,v.Y),math.min(minBounds.Z,v.Z))
+				maxBounds=Vector3.new(math.max(maxBounds.X,v.X),
+					math.max(maxBounds.Y,v.Y),math.max(maxBounds.Z,v.Z))
+			end
+		end
+		local center=(minBounds+maxBounds)/2
 		local low, high = {}, {}
 		for _,p in ipairs(profile) do
 			table.insert(low, editable:AddVertex(p - center))
