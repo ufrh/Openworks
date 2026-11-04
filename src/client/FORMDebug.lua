@@ -2,12 +2,12 @@
 -- Temporary FORM construction harness. Intentionally not a Duotone UI.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local FORM = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Document = require(FORM.Document)
 local Preview = require(script.Parent.Preview)
+local BlenderCamera = require(script.Parent.BlenderCamera)
 
 local Debug = {}
 
@@ -37,81 +37,6 @@ local function drawGrid()
 				Position = if axis == 1 then Vector3.new(i, -0.15, 0) else Vector3.new(0, -0.15, i),
 			}, folder)
 			line.CastShadow = false
-		end
-	end
-end
-
-local function startCamera(getSelectionPosition)
-	local target = Vector3.new(0, 2, 0)
-	local yaw = math.rad(40)
-	local pitch = math.rad(30)
-	local distance = 26
-	local orbiting = false
-	local panning = false
-
-	local function activeCamera(): Camera
-		local camera = workspace.CurrentCamera
-		while not camera do
-			workspace:GetPropertyChangedSignal("CurrentCamera"):Wait()
-			camera = workspace.CurrentCamera
-		end
-		return camera
-	end
-
-	local function updateCamera()
-		local camera = activeCamera()
-		camera.CameraType = Enum.CameraType.Scriptable
-		local offset = Vector3.new(
-			math.cos(pitch) * math.sin(yaw),
-			math.sin(pitch),
-			math.cos(pitch) * math.cos(yaw)
-		) * distance
-		camera.CFrame = CFrame.lookAt(target + offset, target)
-		camera.Focus = CFrame.new(target)
-	end
-
-	RunService:BindToRenderStep("FORM_DebugCamera", Enum.RenderPriority.Camera.Value + 1, updateCamera)
-
-	UserInputService.InputBegan:Connect(function(input, processed)
-		if processed then return end
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			orbiting = true
-		elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
-			panning = true
-		elseif input.KeyCode == Enum.KeyCode.F then
-			local point = getSelectionPosition()
-			if point then
-				target = point
-				distance = math.clamp(distance, 10, 45)
-			end
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			orbiting = false
-		elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
-			panning = false
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input, processed)
-		if input.UserInputType == Enum.UserInputType.MouseMovement then
-			if orbiting then
-				yaw -= input.Delta.X * 0.007
-				pitch = math.clamp(pitch + input.Delta.Y * 0.006, math.rad(6), math.rad(85))
-			elseif panning then
-				local camera = activeCamera()
-				local speed = distance / 600
-				target += (-camera.CFrame.RightVector * input.Delta.X + camera.CFrame.UpVector * input.Delta.Y) * speed
-			end
-		elseif input.UserInputType == Enum.UserInputType.MouseWheel and not processed then
-			distance = math.clamp(distance * (if input.Position.Z > 0 then 0.85 else 1.15), 4, 130)
-		end
-	end)
-
-	return function(point: Vector3?)
-		if point then
-			target = point
-			distance = 18
 		end
 	end
 end
@@ -398,19 +323,143 @@ function Debug.start()
 		message("Component removed")
 	end)
 
-	local focusCamera = startCamera(function()
-		local node = selectedNode()
-		return if node then node.position else nil
+
+	-- Read the actual compiled solid when available; fall back to editable node dimensions.
+	local function selectionBounds()
+		local component = selectedComponent()
+		if not component then return nil, nil end
+		local model = preview:getModel(component.id)
+		if model then return model:GetBoundingBox() end
+		local node = component.nodes[1]
+		return CFrame.new(node.position), node.size
+	end
+
+	local function sceneBounds()
+		local minimum: Vector3? = nil
+		local maximum: Vector3? = nil
+		for _, id in ipairs(document.order) do
+			local component = document.components[id]
+			local model = preview:getModel(id)
+			local frame: CFrame
+			local size: Vector3
+			if model then
+				frame, size = model:GetBoundingBox()
+			else
+				local node = component.nodes[1]
+				frame = CFrame.new(node.position)
+				size = node.size
+			end
+			local half = size / 2
+			for _, x in ipairs({ -1, 1 }) do
+				for _, y in ipairs({ -1, 1 }) do
+					for _, z in ipairs({ -1, 1 }) do
+						local corner = frame:PointToWorldSpace(Vector3.new(half.X * x, half.Y * y, half.Z * z))
+						if minimum then
+							minimum = Vector3.new(math.min(minimum.X, corner.X), math.min(minimum.Y, corner.Y), math.min(minimum.Z, corner.Z))
+							maximum = Vector3.new(math.max(maximum.X, corner.X), math.max(maximum.Y, corner.Y), math.max(maximum.Z, corner.Z))
+						else
+							minimum = corner
+							maximum = corner
+						end
+					end
+				end
+			end
+		end
+		if not minimum or not maximum then return nil, nil end
+		return CFrame.new((minimum + maximum) / 2), maximum - minimum
+	end
+
+	local cameraController = BlenderCamera.new(selectionBounds, sceneBounds)
+	pair("Frame Selected (F)", function()
+		if not cameraController:frameSelected() then message("Select a component first") end
+	end, "Frame All (Home)", function()
+		if not cameraController:frameAll() then message("No components to frame") end
 	end)
-	pair("Focus (F)", function()
-		local node = selectedNode()
-		if node then focusCamera(node.position) end
-	end, "Deselect", function() selectComponent(nil) end)
-	line("Right drag: orbit  |  Middle drag: pan", 24)
-	line("Wheel: zoom  |  Left click: select", 24)
+	line("MMB orbit | Shift+MMB pan", 24)
+	line("Ctrl+MMB dolly | Wheel zoom", 24)
+	line("Numpad 1/3/7 views | 5 ortho", 24)
+	line("F selected | Home all | Alt+LMB orbit", 24)
+
+	-- Minimal view-axis navigator; like Blender's gizmo, aligned to world axes.
+	local nav = make("Frame", {
+		Name = "ViewNavigator",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -16, 0, 14),
+		Size = UDim2.fromOffset(140, 149),
+		BackgroundColor3 = Color3.fromRGB(28, 33, 38),
+		BackgroundTransparency = 0.15,
+		BorderSizePixel = 0,
+	}, gui)
+	make("UICorner", { CornerRadius = UDim.new(0, 7) }, nav)
+	local viewText = make("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Enum.Font.Code,
+		Text = "USER PERSP",
+		TextColor3 = Color3.fromRGB(226, 237, 240),
+		TextSize = 13,
+		Size = UDim2.new(1, 0, 0, 24),
+	}, nav)
+	local projectionButton = make("TextButton", {
+		Name = "ProjectionToggle",
+		BackgroundColor3 = Color3.fromRGB(56, 63, 70),
+		BorderSizePixel = 0,
+		Font = Enum.Font.Code,
+		Text = "ORTHO / PERSP [5]",
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(238, 240, 241),
+		Position = UDim2.fromOffset(6, 122),
+		Size = UDim2.fromOffset(128, 22),
+	}, nav)
+	make("UICorner", { CornerRadius = UDim.new(0, 3) }, projectionButton)
+	projectionButton.Activated:Connect(function()
+		cameraController:toggleProjection()
+	end)
+
+	local axes = {
+		{ label = "X", vector = Vector3.xAxis, view = "Right", color = Color3.fromRGB(221, 91, 91) },
+		{ label = "-X", vector = -Vector3.xAxis, view = "Left", color = Color3.fromRGB(143, 63, 63) },
+		{ label = "Y", vector = Vector3.yAxis, view = "Top", color = Color3.fromRGB(111, 195, 114) },
+		{ label = "-Y", vector = -Vector3.yAxis, view = "Bottom", color = Color3.fromRGB(64, 116, 68) },
+		{ label = "Z", vector = Vector3.zAxis, view = "Front", color = Color3.fromRGB(94, 141, 232) },
+		{ label = "-Z", vector = -Vector3.zAxis, view = "Back", color = Color3.fromRGB(62, 88, 143) },
+	}
+	for _, axis in ipairs(axes) do
+		local control = make("TextButton", {
+			Name = axis.view,
+			AutoButtonColor = true,
+			BackgroundColor3 = axis.color,
+			BorderSizePixel = 0,
+			Font = Enum.Font.Code,
+			Text = axis.label,
+			TextColor3 = Color3.new(1, 1, 1),
+			TextSize = 11,
+			Size = UDim2.fromOffset(24, 24),
+		}, nav)
+		make("UICorner", { CornerRadius = UDim.new(1, 0) }, control)
+		axis.control = control
+		control.Activated:Connect(function()
+			cameraController:setView(axis.view)
+		end)
+	end
+	cameraController:setOnFrame(function(cameraFrame, label)
+		if viewText.Text ~= label then viewText.Text = label end
+		for _, axis in ipairs(axes) do
+			local x = axis.vector:Dot(cameraFrame.RightVector)
+			local y = axis.vector:Dot(cameraFrame.UpVector)
+			local near = axis.vector:Dot(cameraFrame.LookVector) < 0
+			local diameter = if near then 24 else 18
+			local control = axis.control
+			control.Size = UDim2.fromOffset(diameter, diameter)
+			control.Position = UDim2.fromOffset(70 + x * 34 - diameter / 2, 72 - y * 34 - diameter / 2)
+			control.BackgroundTransparency = if near then 0 else 0.3
+			control.ZIndex = if near then 5 else 3
+			control.Text = if near then axis.label else ""
+		end
+	end)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
 		local mouse = UserInputService:GetMouseLocation()
 		local camera = workspace.CurrentCamera
 		if not camera then return end

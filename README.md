@@ -6,7 +6,7 @@ A Roblox engineering and manufacturing sandbox.
 
 ## Phase 1 — FORM construction sandbox
 
-A first client-local parametric CSG sandbox is now in the source tree. It supports creation and numeric editing of Block, Cylinder, Tube and Hole Block components; Add/Subtract nodes, a click-to-select preview, and an orbit/pan/zoom camera. The temporary debug UI is deliberately plain.
+A first client-local parametric CSG sandbox is now in the source tree. It supports creation and numeric editing of Block, Cylinder, Tube and Hole Block components; Add/Subtract nodes, a click-to-select preview, and an orbit/pan/zoom camera. The temporary debug UI is deliberately plain. Viewport navigation uses Blender-style middle-mouse orbit, Shift+middle pan, Ctrl+middle dolly, numpad views, and an axis gizmo.
 
 **See [Phase 1 instructions](docs/FORM_PHASE1.md)** for the Studio playtest checklist and limitations. The implementation is committed but has not been Studio-runtime validated.
 

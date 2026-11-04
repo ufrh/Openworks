@@ -20,7 +20,11 @@
 5. Navigate to the cutter using **Next Node >**, then change its **SIZE X** (diameter; Z stays equal). Press Enter or unfocus the box to recompile.
 6. Edit **POS**, **SIZE**, **ROT** of any selected node. Use **< Prev Node** to edit the original block.
 7. Try **Tube** and **Hole Block** as fresh components.
-8. Orbit with right-mouse drag, pan with middle-mouse drag, zoom with the wheel, and focus the selected node with F.
+8. Use Blender-style controls: **MMB drag orbit**, **Shift+MMB drag pan**, **Ctrl+MMB drag dolly**, **wheel zoom**; optionally **Alt+LMB drag** to orbit.
+9. Use **Numpad 1/3/7** for Front/Right/Top orthographic views; **Ctrl+Numpad 1/3/7** for Back/Left/Bottom. **Numpad 5** toggles orthographic/perspective.
+10. Use **Numpad 2/4/6/8** to orbit 15 degrees, **Numpad 9** to flip to the opposite view; **Shift+Numpad 4/6** rolls the camera, **Ctrl+Numpad 2/4/6/8** pans.
+11. Press **F** or **Numpad .** to frame the selection; **Home** frames all components. The top-right clickable axis gizmo provides the same six cardinal views without a numpad.
+12. Drag the mouse while orbiting and verify the cursor remains locked in place until the button is released. Test orbit, pan, zoom, click selection, reset to top view, then orbit again.
 
 The panel and scene grid are intentionally plain. The viewport preview is only a debug harness, not final Duotone.
 
@@ -29,6 +33,8 @@ The panel and scene grid are intentionally plain. The viewport preview is only a
 - No save/load, multiplayer sync, permission validation, server compilation, shipping, physics, constraints, or FORGE integration yet.
 - One component represents one CSG solid. Disconnected unions may fail and will surface an error instead of silently creating extra bodies.
 - No 3D transform handles yet: precise transforms are entered numerically.
+- Camera navigation follows Blender viewport fundamentals, but not every Blender mode or preference (no fly/walk navigation, camera-object view, or camera roll via gesture).
+- Native orthographic projection is used where supported by the Roblox client. If it is unavailable, a 1-degree perspective approximation is used; orthographic feature availability may vary between Studio versions.
 - A component's first additive node cannot be deleted from the debug panel; delete the entire component instead.
 - 0.05 studs is the model/grid precision, **not a guarantee** that Roblox CSG can successfully resolve every feature at that scale.
 - Roblox may simplify complex CSG meshes (20k triangle limit); collision fidelity and geometry precision need runtime testing.
@@ -40,7 +46,8 @@ The panel and scene grid are intentionally plain. The viewport preview is only a
 - `src/shared/FORM/Document.lua`: pure parametric state model.
 - `src/shared/FORM/Compiler.lua`: CSG operations via `GeometryService:UnionAsync` and `SubtractAsync`.
 - `src/client/Preview.lua`: async revision-aware preview management.
-- `src/client/FORMDebug.lua`: temporary editor controls and camera.
+- `src/client/FORMDebug.lua`: temporary editor controls, selection hooks, and view gizmo.
+- `src/client/BlenderCamera.lua`: independent Blender-style viewport controller.
 - `src/client/init.client.lua`: starts the harness.
 
 Roblox documentation: https://create.roblox.com/docs/reference/engine/classes/GeometryService
