@@ -346,7 +346,20 @@ function GeometryCutter.roundedSurfaces(edgeA:Vector3,edgeB:Vector3,
 end
 
 function GeometryCutter.validateFile(edgeA:Vector3,edgeB:Vector3,
-	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?):(boolean,string?)
+	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?,
+	segments:number?):(boolean,string?)
+	local count=segments or 1
+	if count~=math.floor(count) or count<1 or count>12 then
+		return false,"File segments must be 1 to 12"
+	end
+	if count>1 then
+		if math.abs(outwardA.Unit:Dot(outwardB.Unit))>0.12 then
+			return false,"Rounded File currently supports 90-degree edges"
+		end
+		if width*math.pi*0.5/count < 1.5/280 then
+			return false,"Increase File width or reduce segments for stable CSG"
+		end
+	end
 	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
 	return plan~=nil,why
 end
