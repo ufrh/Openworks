@@ -350,9 +350,12 @@ function SketchEditor:commit()
 		self.onStatus(reason or "Unable to commit sketch")
 		return
 	end
+	local newBody = self.standalone
+	local mode = self.mode
 	self:stop()
-	self.onStatus(string.format("Sketch %s committed (%d vertices, %.1f mm)",
-		self.mode, #points, depth * MM_PER_STUD))
+	self.onStatus(if newBody
+		then string.format("New body sketched (%d vertices, %.1f mm high)", #points, depth * MM_PER_STUD)
+		else string.format("Sketch %s committed (%d vertices, %.1f mm)", mode, #points, depth * MM_PER_STUD))
 end
 
 local function extrusionRange(node, mode: string, depth: number, through: boolean): (number, number)
