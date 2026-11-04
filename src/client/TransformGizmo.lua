@@ -94,9 +94,9 @@ local function visualScale(position: Vector3): number
 	return math.clamp(worldPerPixel * 11, 0.035, 0.5)
 end
 
--- Cone geometry is supplied by a classic Roblox file mesh. Keeping it on a
--- Part lets the entire two-piece arrow be recolored via one model Highlight.
-local CONE_MESH = "rbxassetid://1082802"
+-- Cone tip is a user-supplied MeshPart named "Cone" directly inside ReplicatedStorage.
+local coneTemplate = ReplicatedStorage:WaitForChild("Cone")
+assert(coneTemplate:IsA("MeshPart"), "ReplicatedStorage.Cone must be a MeshPart")
 
 local function makePart(parent: Instance, name: string, color: Color3, shape: Enum.PartType): Part
 	local part = Instance.new("Part")
@@ -119,12 +119,17 @@ local function newArrow(folder: Folder, name: string, color: Color3)
 	model.Parent = folder
 
 	local stem = makePart(model, "Stem", color, Enum.PartType.Cylinder)
-	local tip = makePart(model, "Tip", color, Enum.PartType.Block)
-	local mesh = Instance.new("SpecialMesh")
-	mesh.MeshType = Enum.MeshType.FileMesh
-	mesh.MeshId = CONE_MESH
-	mesh.TextureId = ""
-	mesh.Parent = tip
+	local tip = coneTemplate:Clone()
+	tip.Name = "Tip"
+	tip.Anchored = true
+	tip.CanCollide = false
+	tip.CanTouch = false
+	tip.CanQuery = true
+	tip.CastShadow = false
+	tip.Material = Enum.Material.SmoothPlastic
+	tip.Color = color
+	tip.TextureID = ""
+	tip.Parent = model
 
 	local highlight = Instance.new("Highlight")
 	highlight.Name = "AxisHighlight"
@@ -136,7 +141,7 @@ local function newArrow(folder: Folder, name: string, color: Color3)
 	highlight.Parent = model
 
 	return { model = model, part = tip, stem = stem, tip = tip,
-		mesh = mesh, highlight = highlight }
+		highlight = highlight }
 end
 
 local function newRotationGrip(folder: Folder, name: string, color: Color3)
@@ -168,12 +173,10 @@ local function placeArrow(grip, face: Vector3, direction: Vector3, unit: number)
 	grip.stem.Size = Vector3.new(shaftLength, shaftDiameter, shaftDiameter)
 	grip.stem.CFrame = CFrame.lookAt(stemCenter, stemCenter + direction)
 		* CFrame.Angles(0, math.pi / 2, 0)
-	-- Cone mesh axis is conventionally Y; adjust this constant if the
-	-- installed mesh differs in orientation.
+	-- ReplicatedStorage.Cone is modeled pointing along local +Y.
 	grip.tip.Size = Vector3.new(tipDiameter, tipLength, tipDiameter)
 	grip.tip.CFrame = CFrame.lookAt(tipCenter, tipCenter + direction)
 		* CFrame.Angles(-math.pi / 2, 0, 0)
-	grip.mesh.Scale = Vector3.one
 end
 
 function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
@@ -191,7 +194,7 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 		local arrow = newArrow(folder, "Face_" .. spec.name, spec.color)
 		local grip = {
 			model = arrow.model, part = arrow.part,
-			stem = arrow.stem, tip = arrow.tip, mesh = arrow.mesh,
+			stem = arrow.stem, tip = arrow.tip,
 			highlight = arrow.highlight, normal = spec.normal,
 			axis = spec.axis, mode = "Face",
 		}
