@@ -74,9 +74,10 @@ function FaceTools.boundary(face): ({Vector3}?,string?)
 end
 
 function FaceTools.inset(face,margin:number):({Vector3}?,string?)
-	if face.holes then
-		return nil,"Inset on faces with holes or raised features needs multiple contour loops"
-	end
+	-- The selected logical face's OUTER perimeter determines the pocket.
+	-- Existing drilled holes remain in the manufactured CSG: the pocket
+	-- cutter subtracts from the current solid, never refills the holes.
+	-- Offsetting each inner hole loop independently is future work.
 	if face.curved then return nil,"Inset needs a planar face" end
 	local loop,why=FaceTools.boundary(face)
 	if not loop then return nil,why end
