@@ -231,6 +231,41 @@ function Document:addOperation(component, kind: string, data)
 			return false, "File width must fit the top edge of the workpiece"
 		end
 		operation = { kind = "File", edge = edge, width = width }
+	elseif kind == "FileMesh" then
+		local a,b,n1,n2=data.a,data.b,data.normalA,data.normalB
+		local width=data.width
+		if typeof(a)~="Vector3" or typeof(b)~="Vector3"
+			or typeof(n1)~="Vector3" or typeof(n2)~="Vector3"
+			or typeof(width)~="number" or not Quantize.isFinite(width) then
+			return false, "Invalid compiled edge selection"
+		end
+		width=Quantize.snap(width,1/280)
+		if width < 5/280 or width > Quantize.MaxSize
+			or (b-a).Magnitude < 0.01 or n1.Magnitude<0.9 or n2.Magnitude<0.9 then
+			return false, "Invalid edge filing geometry"
+		end
+		operation={kind="FileMesh",a=a,b=b,normalA=n1.Unit,normalB=n2.Unit,width=width}
+	elseif kind == "InsetFace" then
+		local points=data.points
+		local normal=data.normal
+		local margin,depth=data.margin,data.depth
+		if typeof(points)~="table" or #points<3 or #points>64
+			or typeof(normal)~="Vector3" or normal.Magnitude<0.9
+			or typeof(margin)~="number" or typeof(depth)~="number"
+			or not Quantize.isFinite(margin) or not Quantize.isFinite(depth) then
+			return false,"Invalid compiled face selection"
+		end
+		local stored={}
+		for _,p in ipairs(points) do
+			if typeof(p)~="Vector3" then return false,"Inset face points must be Vector3" end
+			table.insert(stored,p)
+		end
+		margin=Quantize.snap(margin,1/280)
+		depth=Quantize.snap(depth,1/280)
+		if margin<5/280 or depth<5/280 or depth>Quantize.MaxSize then
+			return false,"Inset requires positive border and depth"
+		end
+		operation={kind="InsetFace",points=stored,normal=normal.Unit,margin=margin,depth=depth}
 	elseif kind == "SketchExtrude" then
 		local mode = data.mode
 		if mode ~= "Add" and mode ~= "Remove" and mode ~= "Intersect" then
