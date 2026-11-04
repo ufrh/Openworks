@@ -20,7 +20,8 @@ end
 local function generatedSaw(width: number, height: number, length: number, cf: CFrame): (MeshPart, EditableMesh)
 	local editable = AssetService:CreateEditableMesh()
 	if not editable then error("EditableMesh memory budget exhausted") end
-	local ok, meshPart = pcall(function()
+	local meshPart: MeshPart? = nil
+	local ok, failure = pcall(function()
 		local hx, hy, hz = width * 0.5, height * 0.5, length * 0.5
 		local vertices = {}
 		for _, v in ipairs({
@@ -39,19 +40,19 @@ local function generatedSaw(width: number, height: number, length: number, cf: C
 		}) do
 			editable:AddTriangle(vertices[face[1]], vertices[face[2]], vertices[face[3]])
 		end
-		local mesh = AssetService:CreateMeshPartAsync(Content.fromObject(editable), {})
+		meshPart = AssetService:CreateMeshPartAsync(Content.fromObject(editable), {})
+		local mesh = meshPart
 		mesh.Name = "FORM_DisposableMeshSaw"
 		mesh.CFrame = cf
 		mesh.Anchored = true
 		mesh.CanCollide = false
 		mesh.CanTouch = false
 		mesh.CanQuery = false
-		return mesh
 	end)
 	if not ok or not meshPart then
-		if typeof(meshPart) == "Instance" then meshPart:Destroy() end
+		if meshPart then meshPart:Destroy() end
 		editable:Destroy()
-		error(tostring(meshPart), 0)
+		error(tostring(failure or "No mesh returned"), 0)
 	end
 	return meshPart, editable
 end
