@@ -1,31 +1,55 @@
 --!strict
--- Paste into Roblox Studio Command Bar after syncing Openworks dev.
--- Checks ONLY the requested small triangle at two normal exterior File edges.
+-- Studio Command Bar: verify a 90-degree L-corner forms a proper shared
+-- 45-degree miter seam for flat AND segmented rounded File profiles.
+-- The source faces are checked here; Roblox CSG still needs visual testing.
 local root=game:GetService("ReplicatedStorage"):WaitForChild("Openworks"):WaitForChild("FORM")
-local CornerTriangle=require(root.CornerTriangle)
+local Miter=require(root.CornerTriangle)
+local Cutter=require(root.GeometryCutter)
 local X,Y,Z=Vector3.xAxis,Vector3.yAxis,Vector3.zAxis
-
-local function edge(a,b,wall,width)
-	return {a=a,b=b,n1=Y,n2=wall,width=width}
-end
 local p=Vector3.new(0,1,0)
-local first=edge(p,p+Z*2,X,0.14)
-local second=edge(p,p+X*2,Z,0.18)
-local triangle=CornerTriangle.between(first,second)
-assert(triangle,"Two outside bevels at a concave L-notch should produce one triangle")
-local faces=CornerTriangle.faces(triangle)
-assert(faces and #faces==4,"Corner volume should have four triangle faces")
-local points=triangle.points
-assert((points[1]-p).Magnitude<1e-6)
-assert((points[2]-(p-X*0.14)).Magnitude<1e-6)
-assert((points[3]-(p-Z*0.18)).Magnitude<1e-6)
-assert((points[4]-(p-Y*0.14)).Magnitude<1e-6)
-local testConvex=edge(p,p-Z*2,X,0.14)
-assert(CornerTriangle.between(testConvex,second)==nil,
-	"A normal exterior block corner must NOT be modified")
-assert(CornerTriangle.between(first,first)==nil,
-	"A single edge cannot create a corner triangle")
-local unrelated=edge(Vector3.new(0,1,0.3),Vector3.new(0,1,2),X,0.14)
-assert(CornerTriangle.between(unrelated,second)==nil,
-	"Nearby edges without shared vertex cannot form a corner triangle")
-print("FORM small corner triangle: four targeted geometry checks passed")
+local function file(last:Vector3,normal:Vector3,width:number,segments:number)
+	return {a=p,b=last,n1=Y,n2=normal,width=width,segments=segments}
+end
+local function key(v:Vector3):string
+	return string.format("%d:%d:%d",math.round(v.X*1e5),
+		math.round(v.Y*1e5),math.round(v.Z*1e5))
+end
+local function check(segments:number)
+	local left=file(p+Z*2,X,0.2,segments)
+	local right=file(p+X*2,Z,0.2,segments)
+	local miter=Miter.between(left,right)
+	assert(miter,"Concave 90-degree corner not recognized")
+	local faces,why=Miter.faces(miter)
+	assert(faces,tostring(why))
+	assert(#faces==3+2*segments,"Expected two miter strips per segment")
+	local incidence={}
+	local seamSegments=0
+	for _,face in ipairs(faces) do
+		for i,a in ipairs(face.polygon) do
+			local b=face.polygon[i%#face.polygon+1]
+			local ka,kb=key(a),key(b)
+			local k=if ka<kb then ka.."|"..kb else kb.."|"..ka
+			if not incidence[k] then incidence[k]={} end
+			table.insert(incidence[k],if ka<kb then 1 else -1)
+		end
+	end
+	for _,edge in pairs(incidence) do
+		assert(#edge==2 and edge[1]==-edge[2],
+			"Miter has an exposed, nonmanifold or inverted edge")
+	end
+	local round,why=Cutter.roundedSurfaces(p,p+Z*2,Y,X,0.2,
+		math.max(segments,2))
+	assert(round and #round==math.max(segments,2),tostring(why))
+	return #faces
+end
+
+for _,count in ipairs({1,2,3,4,6,8,12}) do
+	print(string.format("FORM miter: %d segments -> %d watertight facets",count,check(count)))
+end
+assert(Miter.between(file(p-Z*2,X,0.2,1),file(p+X*2,Z,0.2,1))==nil,
+	"Convex/outward-facing corner must not be mitered")
+assert(Miter.between(file(p+Z*2,X,0.2,1),file(p+X*2,Z,0.3,1))==nil,
+	"Unequal bevel widths cannot form this shared miter")
+assert(Miter.between(file(p+Z*2,X,0.2,2),file(p+X*2,Z,0.2,4))==nil,
+	"Mismatched rounding segments cannot form a shared miter")
+print("FORM: straight/rounded 90-degree miter regression passed")
