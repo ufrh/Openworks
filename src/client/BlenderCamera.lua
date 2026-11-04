@@ -38,14 +38,10 @@ local function isAltDown(): boolean
 		or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
 end
 
-local function mouseDragMode(button: Enum.UserInputType?): string
-	-- Conventional Roblox right-mouse orbit, Blender middle-mouse pan.
-	if button == Enum.UserInputType.MouseButton2
-		or button == Enum.UserInputType.MouseButton1 then
-		return "Orbit"
-	end
-	if isCtrlDown() then return "Dolly" end
-	return "Pan"
+local function mouseDragMode(_button: Enum.UserInputType?): string
+	-- The workspace pivot is locked. MMB/RMB orbit; Ctrl+MMB zooms.
+	if isCtrlDown() then return "Zoom" end
+	return "Orbit"
 end
 
 local function boundsRadius(size: Vector3): number
@@ -54,17 +50,20 @@ end
 
 function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	local self = setmetatable({
-		target = Vector3.new(0, 2, 0),
-		displayedTarget = Vector3.new(0, 2, 0),
-		displayedFrame = nil,
-		displayedOrthoHeight = 2 * 26 * PERSPECTIVE_TAN,
+		target = Vector3.zero,
+		displayedTarget = Vector3.zero,
+		displayedYaw = math.rad(40),
+		displayedPitch = math.rad(30),
+		displayedRoll = 0,
+		displayedDistance = 8,
+		displayedOrthoHeight = 2 * 8 * PERSPECTIVE_TAN,
 		yaw = math.rad(40),
 		pitch = math.rad(30),
 		roll = 0,
-		distance = 26,
+		distance = 8,
 		fov = INITIAL_FOV,
 		displayedFov = INITIAL_FOV,
-		orthographicHeight = 2 * 26 * PERSPECTIVE_TAN,
+		orthographicHeight = 2 * 8 * PERSPECTIVE_TAN,
 		orthographic = false,
 		axisView = nil,
 		autoOrthographic = false,
@@ -130,7 +129,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			if shift and not ctrl and dx ~= 0 then
 				self.roll += dx * SNAP_ANGLE
 			elseif ctrl or shift then
-				self:panPixels(-dx * 65, dy * 65)
+				self:zoom(math.pow(0.92, dy + dx))
 			else
 				self.yaw += dx * SNAP_ANGLE
 				self.pitch = math.clamp(self.pitch + dy * SNAP_ANGLE, -POLE_LIMIT, POLE_LIMIT)
@@ -184,8 +183,6 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 				local mode = mouseDragMode(self.dragButton)
 				if mode == "Orbit" then
 					self:orbitDelta(delta)
-				elseif mode == "Pan" then
-					self:panPixels(delta.X, delta.Y)
 				else
 					self:zoom(math.exp(delta.Y * 0.012))
 				end
@@ -213,35 +210,40 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 		local alpha = 1 - math.exp(-math.max(0, dt) * 16)
 		self.displayedFov += (self.fov - self.displayedFov) * alpha
 		camera.FieldOfView = self.displayedFov
-		self.displayedTarget = self.displayedTarget:Lerp(self.target, alpha)
+		self.displayedTarget = Vector3.zero
 		self.displayedOrthoHeight += (self.orthographicHeight - self.displayedOrthoHeight) * alpha
 		if self.nativeOrtho and self.orthographic then
 			camera.OrthographicSize = self.displayedOrthoHeight
 		end
 
+
+		-- Smooth the orbit variables, not the camera CFrame. The resultant
+		-- CFrame is always aimed exactly at the fixed world origin.
+		local yawDelta = (self.yaw - self.displayedYaw + math.pi) % (2 * math.pi) - math.pi
+		local rollDelta = (self.roll - self.displayedRoll + math.pi) % (2 * math.pi) - math.pi
+		self.displayedYaw += yawDelta * alpha
+		self.displayedPitch += (self.pitch - self.displayedPitch) * alpha
+		self.displayedRoll += rollDelta * alpha
+		self.displayedDistance += (self.distance - self.displayedDistance) * alpha
 		local direction = Vector3.new(
-			math.cos(self.pitch) * math.sin(self.yaw),
-			math.sin(self.pitch),
-			math.cos(self.pitch) * math.cos(self.yaw)
+			math.cos(self.displayedPitch) * math.sin(self.displayedYaw),
+			math.sin(self.displayedPitch),
+			math.cos(self.displayedPitch) * math.cos(self.displayedYaw)
 		)
 		local upVector = Vector3.yAxis
-		if self.axisView == "Top" then
-			direction = Vector3.yAxis
+		if self.axisView == "Top" and math.abs(self.displayedPitch - math.pi / 2) < 0.05 then
 			upVector = -Vector3.zAxis
-		elseif self.axisView == "Bottom" then
-			direction = -Vector3.yAxis
+		elseif self.axisView == "Bottom" and math.abs(self.displayedPitch + math.pi / 2) < 0.05 then
 			upVector = Vector3.zAxis
 		end
-		local desiredFrame = CFrame.lookAt(self.target + direction * self.distance, self.target, upVector)
-			* CFrame.Angles(0, 0, self.roll)
-		if self.displayedFrame == nil then
-			self.displayedFrame = desiredFrame
-		else
-			self.displayedFrame = self.displayedFrame:Lerp(desiredFrame, alpha)
-		end
-		camera.CFrame = self.displayedFrame
-		camera.Focus = CFrame.new(self.displayedTarget)
-		if self.onFrame then self.onFrame(camera.CFrame, self:viewLabel()) end
+		local frame = CFrame.lookAt(
+			direction * self.displayedDistance,
+			Vector3.zero,
+			upVector
+		) * CFrame.Angles(0, 0, self.displayedRoll)
+		camera.CFrame = frame
+		camera.Focus = CFrame.new(Vector3.zero)
+		if self.onFrame then self.onFrame(frame, self:viewLabel()) end
 	end)
 
 	return self
@@ -257,7 +259,7 @@ function BlenderCamera:orbitDelta(delta: Vector2)
 end
 
 function BlenderCamera:getFocusTarget(): Vector3
-	return self.displayedTarget
+	return Vector3.zero
 end
 
 function BlenderCamera:viewLabel(): string
@@ -328,20 +330,11 @@ function BlenderCamera:zoom(factor: number)
 	self.distance = distance
 end
 
-function BlenderCamera:panPixels(dx: number, dy: number)
-	local camera = workspace.CurrentCamera
-	if not camera then return end
-	local height = math.max(1, camera.ViewportSize.Y)
-	local visibleHeight = if self.orthographic and self.nativeOrtho then self.orthographicHeight
-		else 2 * self.distance * halfTan(self.fov)
-	local perPixel = visibleHeight / height
-	self.target += (-camera.CFrame.RightVector * dx + camera.CFrame.UpVector * dy) * perPixel
-end
-
 function BlenderCamera:frameBounds(frame: CFrame?, size: Vector3?)
 	if not frame or not size then return false end
-	self.target = frame.Position
-	local radius = boundsRadius(size)
+	-- Frame adjusts the zoom only. Never translate the camera pivot away
+	-- from the fixed world workspace origin.
+	local radius = frame.Position.Magnitude + boundsRadius(size)
 	local camera = workspace.CurrentCamera
 	local viewport = if camera then camera.ViewportSize else Vector2.new(1920, 1080)
 	local aspect = viewport.X / math.max(1, viewport.Y)

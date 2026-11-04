@@ -1,60 +1,61 @@
-# FORM — Phase 1: construction sandbox
+# FORM — Phase 1 construction sandbox
 
-## Working slice
+The `dev` branch contains a local, temporary CAD-style construction harness. It is not yet a saveable or replicated game system.
 
-- Each newly created component retains editable parametric nodes rather than permanently replacing its source with a union.
-- Primitives: Block, Cylinder (Y-axis), Tube, Hole Block; **every primitive spawns with a 0.05 x 0.05 x 0.05 stud envelope**.
-- Tube and Hole Block are solid when their 0.05-stud bodies cannot physically accommodate the hole; after you enlarge them sufficiently their parametric bores become active.
-- A node is **Add** or **Subtract**. The first node must be additive. Additional node operations compile in list order using GeometryService.
-- Numeric transforms: Position (X/Y/Z), Size (X/Y/Z), Rotation (X/Y/Z); tube wall and hole bore where relevant.
-- Positions and dimensions snap to 0.05 studs. Rotation snaps to 15 degrees. Minimum allowed size is 0.05 studs.
-- CSG is computed locally and asynchronously; obsolete results are discarded after newer edits.
-- Multiple nodes form one logical editable component and compile into one non-splitting solid.
-- Entire preview is local, anchored, and non-collidable. It is not persisted, simulated, shipped, or replicated.
+## Workspace invariants
 
-## Try it in Studio
+- **World-space workspace origin: `Vector3.zero`.** The 0.05-stud debug grid is fixed on the X/Z plane at Y=0 and never follows camera movement.
+- **Camera orbit pivot is locked to `(0,0,0)`.** Orbit and FOV/dolly hybrid zoom change the view, never the workspace or the orbit center.
+- Camera F/Home framing commands can change zoom to fit content but **cannot change the pivot**. Panning is intentionally disabled.
+- All new primitives spawn centered at the origin with **0.05 × 0.05 × 0.05 stud** envelopes.
+- Tube and Hole Block openings are inactive until their outer envelope can contain a valid opening.
 
-1. Open the configured OPENWORKS place and start Rojo with `START_OPENWORKS.bat`. Connect Studio to port 34872.
-2. Enter **Play**. The temporary `FORM // DEBUG 01` panel appears.
-3. Click **Block**. A tiny 0.05 x 0.05 x 0.05 component appears and the camera frames it automatically.
-4. Enlarge the original block using the numeric SIZE fields (for example, X=2, Y=1, Z=2).
-5. Click **- Cylinder**. It also begins at 0.05 studs. On the cutter, enlarge SIZE X (diameter) to about 0.5 and SIZE Y (height) to about 2, then the result should be a vertical cylindrical cut. CSG may not resolve every feature as small as 0.05 studs.
-6. Navigate between editable source nodes with **< Prev Node** / **Next Node >**, and test recompilation.
-7. Edit **POS**, **SIZE**, **ROT** of any selected node. Try **Tube** and **Hole Block** as new components; enlarge their X/Z dimensions enough for an opening.
-8. Select a component and press **G**, **S**, or **R** (or the temporary buttons) to show **Move**, **Scale**, or **Rotate** handles in the 3D viewport. Drag a handle to manipulate the selected source node; the translucent transform proxy follows during the drag. Releasing the mouse triggers CSG recompilation.
-9. Move/resize uses 0.05-stud snapping and rotation uses 15-degree snapping. This manipulates the active node, *not* the already-compiled PartOperation. Click **Hide Handles** to hide manipulators (press G/S/R to show again).
-10. Use viewport camera controls: **RMB drag orbit**, **MMB drag pan**, **Ctrl+MMB drag dolly/zoom**, **wheel zoom**; optionally **Alt+LMB drag** to orbit.
-11. Use **Numpad 1/3/7** for Front/Right/Top orthographic views; **Ctrl+Numpad 1/3/7** for Back/Left/Bottom. **Numpad 5** toggles orthographic/perspective.
-12. Use **Numpad 2/4/6/8** to orbit 15 degrees, **Numpad 9** to flip to the opposite view; **Shift+Numpad 4/6** rolls the camera, **Ctrl+Numpad 2/4/6/8** pans.
-13. Press **F** or **Numpad .** to frame the selection; **Home** frames all components. The top-right 3D ViewportFrame gizmo can be **dragged with left mouse** to orbit freely, or clicked on its axes for cardinal views without a numpad.
-14. Drag the mouse while orbiting with RMB and confirm the pointer locks until release. MMB should pan. The **HAND · DRAG TO PAN** control below the view gizmo also pans. Wheel zoom combines dolly and focal-length changes, with interpolation; neither the grid nor the orbit pivot should jump.
-15. Inspect the construction grid: it uses client-only LineHandleAdornments, not 3D grid Parts. Visible lines are **0.05 studs apart** across a 6x6 stud patch centered near your camera focus, with stronger lines at 0.5-stud intervals.
+## Camera
 
-The panel and scene grid are intentionally plain. The viewport preview is only a debug harness, not final Duotone.
+| Input | Behavior |
+| --- | --- |
+| RMB drag | Orbit fixed world origin |
+| MMB drag | Alternate orbit |
+| Ctrl+MMB drag | Zoom |
+| Mouse wheel | Smooth hybrid FOV + dolly zoom |
+| Drag the upper-right 3D view gizmo | Orbit |
+| Click a gizmo axis / Numpad 1,3,7 | Standard cardinal view |
+| Ctrl+Numpad 1,3,7 | Opposite cardinal view |
+| Numpad 5 | Orthographic toggle where supported |
+| Drag **ZOOM · DRAG UP/DOWN** button | Hybrid zoom |
+| F / Numpad Period | Zoom to include selection, without moving the origin |
+| Home | Zoom to include all components, without moving the origin |
 
-## Constraints and deliberate omissions
+The camera smooths its orbit angles, zoom distance and FOV independently and computes its final CFrame looking at `Vector3.zero` on each frame. Native orthographic view support depends on the Roblox client; unavailable clients remain in perspective, rather than using an extreme-distance approximation.
 
-- No save/load, multiplayer sync, permission validation, server compilation, shipping, physics, constraints, or FORGE integration yet.
-- One component represents one CSG solid. Disconnected unions may fail and will surface an error instead of silently creating extra bodies.
-- Temporary 3D transform handles (Move, Scale, Rotate) are available. They're not the finished Duotone gizmos, and they apply to the selected source node. The compiled CSG solid updates on mouse release.
-- Camera navigation follows Blender viewport fundamentals, but not every Blender mode or preference (no fly/walk navigation, camera-object view, or camera roll via gesture).
-- Native orthographic projection is used where supported by the Roblox client. When it is unavailable, the camera stays in perspective instead of using an extreme camera-distance approximation. Orthographic feature availability varies between Studio versions.
-- A component's first additive node cannot be deleted from the debug panel; delete the entire component instead.
-- 0.05 studs is the model/grid precision, **not a guarantee** that Roblox CSG can successfully resolve every feature at that scale.
-- Roblox may simplify complex CSG meshes (20k triangle limit); collision fidelity and geometry precision need runtime testing.
-- A successful repository commit does **not** prove Studio CSG will succeed on the target place. Test the cuts in Play mode and inspect the Output window if something fails.
+## Editing
 
-## Technical boundaries
+1. In Roblox Studio, connect Rojo to `localhost:34872` using `START_OPENWORKS.bat`, and enter **Play**.
+2. Spawn a Block in the temporary `FORM // DEBUG 01` panel. It appears centered on the origin.
+3. Press **G** to move, **S** to resize, or **R** to rotate (or use the panel buttons). The manipulators are custom screen-projected GUI lines/rings and compact colored X/Y/Z controls, **not** Roblox Handles/ArcHandles.
+4. Drag an axis control. Screen-space control dimensions scale with part magnification and are clamped to a small, usable size. Position and dimensions snap to **0.05 studs**; rotation snaps to **15 degrees**.
+5. The authoritative parametric node updates **during the drag**. A translucent live source preview reflects each update immediately, with source color distinguishing additive and subtractive geometry. The compiled CSG result is rebuilt asynchronously with coalesced requests (roughly every 0.11 seconds while dragging), and compiled again on release. CSG can lag behind the source ghost during expensive operations; full Boolean cuts cannot be guaranteed every display frame.
+6. Expand a Block to a useful dimension, add **- Cylinder**, then resize/position/rotate that subtractive source node and check the live Boolean result.
+7. Original source nodes remain editable after compilation. Numeric POS/SIZE/ROT and bore/wall fields remain available.
 
-- `src/shared/FORM/Quantize.lua`: precision rules.
-- `src/shared/FORM/Document.lua`: pure parametric state model, including atomic viewport transform editing.
-- `src/shared/FORM/Compiler.lua`: CSG operations via `GeometryService:UnionAsync` and `SubtractAsync`.
-- `src/client/Preview.lua`: async revision-aware preview management.
-- `src/client/FORMDebug.lua`: temporary editor controls and selection.
-- `src/client/ViewGizmo.lua`: interactive 3D orientation widget in a ViewportFrame, with a drag-to-pan hand button.
-- `src/client/TransformGizmo.lua`: live Move/Scale/Rotate handles that edit parametric nodes and defer CSG until drag release.
-- `src/client/GridOverlay.lua`: 0.05-stud debug grid using LineHandleAdornments with a single invisible anchor.
-- `src/client/BlenderCamera.lua`: independent Blender-style viewport controller.
-- `src/client/init.client.lua`: starts the harness.
+## Code boundaries
 
-Roblox documentation: https://create.roblox.com/docs/reference/engine/classes/GeometryService
+- `src/shared/FORM/Quantize.lua`: 0.05 stud and 15-degree snapping.
+- `src/shared/FORM/Document.lua`: pure parametric state and atomic transform validation.
+- `src/shared/FORM/Compiler.lua`: CSG compilation with GeometryService.
+- `src/client/Preview.lua`: live ghost plus throttled, revision-aware CSG compilation.
+- `src/client/FORMDebug.lua`: temporary inputs and selected-node bridge.
+- `src/client/BlenderCamera.lua`: fixed-origin camera with smooth hybrid zoom.
+- `src/client/GridOverlay.lua`: fixed nonphysical 0.05-stud adornment grid.
+- `src/client/ViewGizmo.lua`: draggable 3D ViewportFrame orientation and zoom control.
+- `src/client/TransformGizmo.lua`: custom projected handles/rings, no stock Roblox handles.
+
+## Known limitations
+
+- This branch is **not verified in a running Roblox Studio session** by the code author; verify UI hit testing and transform behavior in Play mode.
+- Roblox GeometryService may not resolve features as small as 0.05 studs. The grid snap precision does not guarantee CSG fidelity.
+- No save/load, server compilation, validation, persistence, multiplayer replication, shipped assemblies, constraints, or FORGE integration yet.
+- The 6×6-stud debug grid is a fixed visual patch, not an infinite world.
+- Temporary 2D projected transform handles prioritize cleanliness and accessibility over full CAD affordances such as free-plane transform and pivot editing.
+
+Roblox reference: https://create.roblox.com/docs/reference/engine/classes/GeometryService

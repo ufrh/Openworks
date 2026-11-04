@@ -1,25 +1,28 @@
 # OPENWORKS
 
-A Roblox engineering and manufacturing sandbox.
+An open-ended Roblox engineering/manufacturing sandbox.
 
-**Current branch:** `dev` is the clean reconstruction branch. The former workbench, saw/file, and prototype machinery remain preserved on `archive/pre-foundation-reset-2026-11-03`.
+**Development:** `dev` contains a locally editable, parametric FORM construction prototype. The previous workbench, saw/file, and fabrication prototype remain preserved on the `archive/pre-foundation-reset-2026-11-03` branch.
 
-## Phase 1 — FORM construction sandbox
+## Current construction slice
 
-A first client-local parametric CSG sandbox is now in the source tree. It supports creation and numeric editing of Block, Cylinder, Tube and Hole Block components; Add/Subtract nodes, a click-to-select preview, and an orbit/pan/zoom camera. The temporary debug UI is deliberately plain. New: G/S/R switch between live 3D Move/Scale/Rotate handles, editing parametric nodes; CSG recompiles on mouse release. Viewport navigation supports Roblox-style right-mouse orbit, middle-mouse pan, Ctrl+middle dolly, smooth blended FOV/dolly wheel zoom, numpad views, and draggable 3D ViewportFrame orientation and hand-pan controls. All new primitive envelopes are 0.05 x 0.05 x 0.05 studs; an adornment-only 0.05-stud grid replaces physical grid Parts.
+- CSG-backed Block, Cylinder, Tube, and Hole Block components with editable Add/Subtract source nodes.
+- All primitive envelopes start at **0.05 × 0.05 × 0.05 studs**.
+- Fixed construction workspace/grid and camera orbit pivot at **(0,0,0)**.
+- Smooth camera with **RMB/MMB orbit**, blended FOV/dolly wheel zoom and a draggable zoom control. No pan.
+- Custom, camera-responsive X/Y/Z Move/Scale/Rotate manipulators instead of oversized built-in Roblox handles.
+- During gizmo dragging, source nodes and a translucent preview update immediately; actual GeometryService compilation is coalesced asynchronously and finalized at release.
+- Temporary debug UI; final Duotone interface has not been built.
 
-**See [Phase 1 instructions](docs/FORM_PHASE1.md)** for the Studio playtest checklist and limitations. The implementation is committed but has not been Studio-runtime validated.
+[Phase 1 controls, instructions, limitations](docs/FORM_PHASE1.md)
 
-## Development
+## Development workflow
 
-1. Open the OPENWORKS place in Roblox Studio.
-2. Run `START_OPENWORKS.bat` on Windows, select `dev`, and connect the Rojo Studio plugin to `localhost:34872`.
-3. Press Play to load the construction sandbox.
-4. Use `STOP_OPENWORKS.bat` to stop sync.
+1. Open the configured OPENWORKS Roblox place in Studio.
+2. Run `START_OPENWORKS.bat` on Windows, select the `dev` branch, and connect Rojo to `localhost:34872`.
+3. Press Play to use the FORM construction harness.
+4. Use `STOP_OPENWORKS.bat` when finished.
 
-Rojo source mappings:
-- `src/shared` -> `ReplicatedStorage/Openworks`
-- `src/server` -> `ServerScriptService/Openworks`
-- `src/client` -> `StarterPlayer/StarterPlayerScripts/Openworks`
+Rojo mappings: `src/shared` → ReplicatedStorage/Openworks; `src/server` → ServerScriptService/Openworks; `src/client` → StarterPlayerScripts/Openworks.
 
-FORGE integration, shipping/server validation, physics, persistence, and final Duotone interface are future phases.
+This source has been committed, but the most recent camera and gizmo changes require a real Studio playtest. No save/load, shipping, network replication, physics assembly or FORGE integration is included.

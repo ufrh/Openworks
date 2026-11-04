@@ -1,5 +1,5 @@
 --!strict
--- FORM debug grid: 0.05-stud line spacing, no physical line Parts.
+-- FORM debug grid: 0.05-stud line spacing, fixed at world 0,0,0.
 -- A single non-queryable pivot allows LineHandleAdornments to render in 3D.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Quantize = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Quantize)
@@ -64,21 +64,12 @@ function GridOverlay.new(playerGui: PlayerGui)
 	return setmetatable({
 		anchor = anchor,
 		decorations = decorations,
-		centerX = 0,
-		centerZ = 0,
-	}, GridOverlay)
+			}, GridOverlay)
 end
 
-function GridOverlay:update(focus: Vector3)
-	-- Move the finite debug grid only after panning a meaningful distance.
-	-- The grid's origin always remains snapped to whole studs.
-	if math.abs(focus.X - self.centerX) < GRID_HALF / 2
-		and math.abs(focus.Z - self.centerZ) < GRID_HALF / 2 then
-		return
-	end
-	self.centerX = math.round(focus.X)
-	self.centerZ = math.round(focus.Z)
-	self.anchor.CFrame = CFrame.new(self.centerX, 0, self.centerZ)
+-- Fixed build plane. The grid never follows the camera or selection.
+function GridOverlay:update(_focus: Vector3)
+	-- Reserved for the debug overlay API; intentionally immobile at 0,0,0.
 end
 
 function GridOverlay:destroy()

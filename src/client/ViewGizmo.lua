@@ -115,10 +115,10 @@ function ViewGizmo.new(gui: ScreenGui, controller)
 	new("UICorner", { CornerRadius = UDim.new(0, 3) }, projection)
 	projection.Activated:Connect(function() controller:toggleProjection() end)
 	local panButton = new("TextButton", {
-		Name = "DragPan",
+		Name = "DragZoom",
 		BackgroundColor3 = Color3.fromRGB(66, 75, 83),
 		BorderSizePixel = 0, Font = Enum.Font.Code,
-		Text = "HAND  ·  DRAG TO PAN", TextSize = 11,
+		Text = "ZOOM  ·  DRAG UP/DOWN", TextSize = 11,
 		TextColor3 = Color3.fromRGB(236, 239, 241),
 		Position = UDim2.fromOffset(8, 176),
 		Size = UDim2.fromOffset(128, 23),
@@ -151,7 +151,7 @@ function ViewGizmo.new(gui: ScreenGui, controller)
 		labels = labels,
 		controller = controller,
 		dragging = false,
-		panning = false,
+		zooming = false,
 		start = Vector2.zero,
 		previous = Vector2.zero,
 		didDrag = false,
@@ -172,18 +172,18 @@ function ViewGizmo.new(gui: ScreenGui, controller)
 
 	connect(panButton.InputBegan, function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-		self.panning = true
+		self.zooming = true
 		self.dragging = false
 		self.previous = Vector2.new(input.Position.X, input.Position.Y)
 	end)
 	connect(UserInputService.InputChanged, function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
-		if not self.dragging and not self.panning then return end
+		if not self.dragging and not self.zooming then return end
 		local nextPosition = Vector2.new(input.Position.X, input.Position.Y)
 		local delta = nextPosition - self.previous
 		self.previous = nextPosition
-		if self.panning then
-			controller:panPixels(delta.X, delta.Y)
+		if self.zooming then
+			controller:zoom(math.exp(delta.Y * 0.013))
 			return
 		end
 		if (nextPosition - self.start).Magnitude > 3 then self.didDrag = true end
@@ -191,8 +191,8 @@ function ViewGizmo.new(gui: ScreenGui, controller)
 	end)
 	connect(UserInputService.InputEnded, function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-		if self.panning then
-			self.panning = false
+		if self.zooming then
+			self.zooming = false
 			return
 		end
 		if not self.dragging then return end
@@ -210,7 +210,7 @@ function ViewGizmo.new(gui: ScreenGui, controller)
 	end)
 	connect(UserInputService.WindowFocusReleased, function()
 		self.dragging = false
-		self.panning = false
+		self.zooming = false
 	end)
 	return self
 end

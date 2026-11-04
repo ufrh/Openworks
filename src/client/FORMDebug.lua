@@ -29,7 +29,6 @@ function Debug.start()
 	local document = Document.new()
 	local selectedId: number? = nil
 	local nodeIndex = 1
-	local spawnCount = 0
 	local cameraController: any = nil
 
 	local grid = GridOverlay.new(playerGui)
@@ -207,24 +206,27 @@ function Debug.start()
 		refresh()
 	end
 
-	transformGizmo = TransformGizmo.new(playerGui, document, function(commit: boolean)
-		local component = selectedComponent()
-		if not component then return end
-		if commit then
-			changed(component)
-		else
-			-- Visual handles and numeric fields update immediately;
-			-- expensive CSG compilation happens only at release.
+	transformGizmo = TransformGizmo.new(playerGui, document, function(phase: string, component, index: number, dirty: boolean?)
+		if phase == "begin" then
+			preview:beginLive(component, index)
+		elseif phase == "update" then
+			-- Update source ghost immediately; CSG compiles in throttled snapshots.
+			preview:updateLive(component, index)
+			refresh()
+		elseif phase == "finish" then
+			if dirty then
+				preview:finishLive(component)
+			else
+				preview:cancelLive(component.id)
+			end
 			refresh()
 		end
 	end)
 
 	line("CREATE COMPONENT")
 	local function create(kind: string)
-		spawnCount += 1
-		local index = spawnCount - 1
-		local position = Vector3.new((index % 4) * 0.5, 0.05, math.floor(index / 4) * 0.5)
-		local component = document:create(kind, position)
+		-- Fresh geometry begins at the locked workspace origin.
+		local component = document:create(kind, Vector3.zero)
 		selectComponent(component.id)
 		changed(component)
 		if cameraController then cameraController:frameSelected() end
@@ -399,28 +401,27 @@ function Debug.start()
 
 
 	cameraController = BlenderCamera.new(selectionBounds, sceneBounds)
-	pair("Frame Selected (F)", function()
+	pair("Zoom Selected (F)", function()
 		if not cameraController:frameSelected() then message("Select a component first") end
-	end, "Frame All (Home)", function()
+	end, "Zoom All (Home)", function()
 		if not cameraController:frameAll() then message("No components to frame") end
 	end)
-	line("RMB/MMB orbit | Shift+MMB pan", 24)
-	line("Ctrl+MMB dolly | Wheel zoom", 24)
+	line("RMB / MMB drag: orbit origin", 24)
+	line("Ctrl+MMB / wheel: hybrid zoom", 24)
 	line("Numpad 1/3/7 views | 5 ortho", 24)
-	line("F selected | Home all", 24)
-	line("Drag view gizmo to orbit; click axis", 24)
+	line("F / Home: zoom only (fixed origin)", 24)
+	line("Drag view gizmo; drag zoom control", 24)
 
 	local viewGizmo = ViewGizmo.new(gui, cameraController)
 	cameraController:setOnFrame(function(cameraFrame, label)
 		viewGizmo:update(cameraFrame, label)
-		grid:update(cameraController:getFocusTarget())
 	end)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
 		local mouse = UserInputService:GetMouseLocation()
-		if viewGizmo:containsPoint(mouse) or transformGizmo:isDragging() then return end
+		if viewGizmo:containsPoint(mouse) or transformGizmo:isDragging() or transformGizmo:capturesPoint(mouse) then return end
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
@@ -437,7 +438,7 @@ function Debug.start()
 	end)
 
 	refresh()
-	message("Ready: spawn a primitive; use G/S/R handles to move, scale, or rotate")
+	message("Workspace locked at origin. G/S/R: custom live transform handles.")
 end
 
 return Debug
