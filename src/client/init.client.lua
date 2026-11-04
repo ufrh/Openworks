@@ -1,1 +1,1 @@
-return
+-- OPENWORKS client bootstrap placeholder. No legacy fabrication runtime.

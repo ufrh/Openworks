@@ -2,43 +2,28 @@
 
 An open-ended Roblox engineering and manufacturing sandbox.
 
-**Source of truth:** `src/`. One Roblox place, one Rojo project. Do not hand-edit Rojo-owned scripts in Studio.
+## Status
 
-## Workflow
+Foundation reset for FORM's parametric CSG construction system. The former physical workbench, saw/file, stock, blueprint, and legacy FORM prototypes are preserved on `archive/pre-foundation-reset-2026-11-03` and removed from active `dev`.
 
-1. Clone `https://github.com/ufrh/Openworks.git` on Windows.
-2. Install Git and Rojo and its Studio plugin (Foreman is supported).
-3. Open your Openworks place in Roblox Studio.
-4. Run `START_OPENWORKS.bat`, select `dev`, and connect the Studio Rojo plugin to `localhost:34872`.
-5. Run `STOP_OPENWORKS.bat` when finished.
-6. Run `PUSH_OPENWORKS.bat` to commit and push changes.
+This is a **clean scaffold**, not a working geometry editor. FORGE integration, FORM CSG implementation, construction interactions, and debug controls are separate upcoming tasks.
 
-START supports current branch, switching branches, and a **destructive** opt-in reset to `origin/dev`. The live sync only fast-forward pulls a clean local branch; it never auto-commits or overwrites edits.
+## Development
 
-## Layout
+- `default.project.json` is the Rojo project, using port 34872 and the configured Roblox place.
+- `src/shared` maps to `ReplicatedStorage/Openworks`.
+- `src/server` maps to `ServerScriptService/Openworks`.
+- `src/client` maps to `StarterPlayer/StarterPlayerScripts/Openworks`.
+- `scripts/` and the root BAT launchers retain the existing workflow.
+- Open the place in Studio, run `START_OPENWORKS.bat`, and connect Rojo.
 
-- `src/shared` -> ReplicatedStorage/Openworks
-- `src/server` -> ServerScriptService/Openworks
-- `src/client` -> StarterPlayerScripts/Openworks
-- `scripts` -> project startup, shutdown, Git live sync and pushing
-- `docs` -> architecture, decisions and milestones
+## FORM direction
 
-## Current status — interaction reset
+- Parametric, non-destructive, CSG-backed solid primitives.
+- Default position/resize snapping: 0.05 studs; minimum primitive dimension: 0.05 studs.
+- Default rotation snapping: 15 degrees.
+- Many primitives may form one editable manufactured component.
+- Client construction is local; shipping uses validated definitions for server compilation.
+- Temporary debugging controls first; finished Duotone UI later.
 
-The old gameplay interaction prototype has been retired from `dev`. Its stock creation UI, saw/file UI, equipped-tool/backpack code, dragging controls, fabrication tool visuals/motion, timeline editor, and WorkshopStorage remote were removed. The client bootstrap no longer creates UI, spawns stock, or starts fabrication. No old tool UI, drag controls, or fabrication interactions are active. A new workbench detector is installed independently.
-
-The **FORM geometry kernel** remains, as do reusable pure geometry, material, and project-operation modules (`Stock`, `SawCut`, `SawTube`, `FileShape`, `Workshop`), the optional `FORMRenderer` adapter, with the old automatic runtime tests removed.
-
-Workbench detection uses the Studio-authored `Workspace.Workbench`: every descendant BasePart named `surface` generates an invisible proximity proxy at runtime. Tag tool Models (or standalone Parts) with Boolean attribute `isTool = true`. FORM-rendered parts receive `isMaterial = true` and the CollectionService tag `FORMMaterial` via `FORMMaterial.mark(instance)`. The detector publishes `OnWorkbench` on detected objects and `ToolCount` / `MaterialCount` on the workbench. FORM meshes created only on a client are not visible to the server detector; authoritative world materials must be replicated/server-created.
-
-Older machining/workshop documents under `docs/` describe experiments and do **not** mean those interfaces are active.
-
-**Verification:** this change is a source reset, not a Roblox Studio runtime test.
-
-## Workbench material detection test
-
-In Roblox Studio Play mode, a small bottom-right **Spawn Test Sheet** button creates one physical steel sheet a short distance above the largest `Workspace.Workbench.surface` region. The workbench detector generates an invisible, anchored collision support immediately beneath each authored surface, separate from its non-colliding detection volume; this protects thin imported tabletops from dropped stock passing through. The sheet is server-created and marked by `FORMMaterial.mark`, using the same material tag the workbench detector recognizes. Its `MaterialCount` is displayed on the test panel after the sheet settles. Clicking again replaces the previous sheet. This temporary test UI is disabled outside Studio; it does not reintroduce equipment, tool inventory or fabrication controls.
-
-## Physical workbench interaction
-
-Click a FORM-tagged physical material object to enter inspection. Mouse-drag and hold objects to carry them through physics. A physical saw/file with `isTool = true` resting on the table is selectable from inspection. The new precision camera has orbit/pan/zoom, and manual sideways-mouse strokes drive the same tool's rigid physical assembly. Test sheet stock supports FORM straight saw splitting and a simple planar filing pass. See [interaction guide](docs/PHYSICAL_INTERACTION.md). No inventory or equippable tools are used.
+This README describes intended architecture, not implemented behavior.

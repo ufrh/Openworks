@@ -1,4 +1,1 @@
-local ReplicatedStorage = game:GetService('ReplicatedStorage')
-local Openworks = ReplicatedStorage:WaitForChild('Openworks')
-
-print('[OPENWORKS] Server booted', Openworks.Name)
+-- OPENWORKS server bootstrap placeholder. No legacy workbench runtime.
