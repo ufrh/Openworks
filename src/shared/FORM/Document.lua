@@ -281,7 +281,8 @@ function Document:addOperation(component, kind: string, data)
 			return false, "Invalid edge filing geometry"
 		end
 		operation={kind="FileMesh",a=a,b=b,normalA=n1.Unit,normalB=n2.Unit,
-			width=width,interior=data.interior==true}
+			width=width,interior=data.interior==true,
+			taperA=data.taperA==true,taperB=data.taperB==true}
 	elseif kind == "InsetFace" then
 		local points=data.points
 		local normal=data.normal
