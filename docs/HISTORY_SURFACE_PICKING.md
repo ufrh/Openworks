@@ -1,3 +1,5 @@
+> **2026-11-04 editor refinement:** Fixed the click-time `pose` nil crash in FORMDebug. Inset now consumes a face's own polygon (instead of reconstructing the mixed adjacency edge graph), supports simple concave polygons with explicit self-intersection/containment rejection, and triangulates arbitrary simple inset contours before producing the CSG cutter. Faces containing drilled openings can be inset around their **outer boundary** while holes remain as existing CSG voids; independent inset borders around inner hole loops are not yet modeled. File now distinguishes exposed outer edges from **re-entrant pocket floor/wall corners**, generating a subtractive inner-corner cutter and labeling its preview. Studio validation remains necessary for the resulting CSG cuts.
+
 # FORM: history-based surface selection (CSG readback workaround)
 
 **Status:** Implemented in `dev`; Roblox Studio validation still required.
