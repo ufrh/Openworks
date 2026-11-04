@@ -315,7 +315,7 @@ function Debug.start()
 			local guidance = {
 				Drill = "Drill: hover a face, wheel to change diameter, click to bore",
 				Inset = "Inset: hover a planar manufactured face; wheel sets border width; click",
-				File = "File: hover ANY straight edge (vertical, horizontal or slanted); wheel sizes",
+				File = "File: exterior straight edges only; wheel changes width",
 				Groove = "Groove: click two points on the same planar face",
 				Kerf = "Kerf: click two points on the same planar face",
 			}
@@ -408,7 +408,7 @@ function Debug.start()
 	local fileWidthInput = toolNumberRow("File chamfer (mm)  [wheel]", "14")
 	local kerfInput = toolNumberRow("Through kerf (mm)", "14")
 
-	line("File: vertical edges work; cyan=outer, green=inner.", 24)
+	line("File: exterior only; inside corners are paused.", 24)
 	line("Groove/Kerf: two points on the same face.", 24)
 
 	line("3D TRANSFORM HANDLES")
@@ -806,7 +806,8 @@ function Debug.start()
 				and (string.find(f2.tag or "","_wall")~=nil))
 			or ((string.find(f2.tag or "","_floor")~=nil)
 				and (string.find(f1.tag or "","_wall")~=nil))
-		local ok,why=GeometryCutter.validateFile(a,b,n1,n2,width,interior)
+		if interior then return nil,"Interior edge filing is paused" end
+		local ok,why=GeometryCutter.validateFile(a,b,n1,n2,width,false)
 		if not ok then return nil,why end
 		-- A bevel cannot be wider than either of its adjacent physical
 		-- faces. Especially important for shallow recesses: cutting right
