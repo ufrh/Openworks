@@ -55,7 +55,7 @@ local function triangulate(profile:{Vector3},travel:Vector3):{{number}}
 	return triangles
 end
 
-function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, () -> ())
+function GeometryCutter.prism(profile: {Vector3}, travel: Vector3, miter): (MeshPart, () -> ())
 	if #profile < 3 or #profile > 128 or travel.Magnitude < 0.0001 then
 		error("Invalid geometry cutter profile", 0)
 	end
@@ -68,6 +68,36 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, (
 		profile=reversed
 	end
 	local capTriangles=triangulate(profile,travel)
+	-- Each corner profile is trimmed along the EDGE AXIS to one shared
+	-- 45-degree seam plane. Unlike a third corner cutter, this creates
+	-- no overlapping end caps or extra CSG Boolean operation.
+	local lower,upper={},{}
+	local direction=travel.Unit
+	for _,p in ipairs(profile) do
+		table.insert(lower,p)
+		table.insert(upper,p+travel)
+	end
+	if miter then
+		local normal=miter.normal.Unit
+		local denom=direction:Dot(normal)
+		if math.abs(denom)<0.15 then
+			error("Miter plane is parallel to the filed edge",0)
+		end
+		local function project(p)
+			local shift=(miter.corner-p):Dot(normal)/denom
+			if math.abs(shift)>miter.width*1.6+0.025 then
+				error("Miter projection exceeds its local corner",0)
+			end
+			return p+direction*shift
+		end
+		for i=1,#profile do
+			if miter.atStart then lower[i]=project(lower[i]) end
+			if miter.atEnd then upper[i]=project(upper[i]) end
+			if (upper[i]-lower[i]):Dot(direction)<=0.025 then
+				error("Miter consumes the entire filed edge",0)
+			end
+		end
+	end
 	local editable: EditableMesh? = nil
 	local part: MeshPart? = nil
 	local ok, failure = pcall(function()
@@ -78,8 +108,8 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, (
 		-- offsets when converted to CSG mesh parts.
 		local minBounds=Vector3.new(math.huge,math.huge,math.huge)
 		local maxBounds=Vector3.new(-math.huge,-math.huge,-math.huge)
-		for _,p in ipairs(profile) do
-			for _,v in ipairs({p,p+travel}) do
+		for i=1,#profile do
+			for _,v in ipairs({lower[i],upper[i]}) do
 				minBounds=Vector3.new(math.min(minBounds.X,v.X),
 					math.min(minBounds.Y,v.Y),math.min(minBounds.Z,v.Z))
 				maxBounds=Vector3.new(math.max(maxBounds.X,v.X),
@@ -88,9 +118,9 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, (
 		end
 		local center=(minBounds+maxBounds)/2
 		local low, high = {}, {}
-		for _,p in ipairs(profile) do
-			table.insert(low, editable:AddVertex(p - center))
-			table.insert(high, editable:AddVertex(p + travel - center))
+		for i=1,#profile do
+			table.insert(low, editable:AddVertex(lower[i] - center))
+			table.insert(high, editable:AddVertex(upper[i] - center))
 		end
 		local white = editable:AddColor(Color3.new(1, 1, 1),1)
 		local function triangle(a:number,b:number,c:number)
@@ -378,7 +408,7 @@ end
 
 function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
 	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?,
-	_taperA:boolean?,_taperB:boolean?,_planes,segments:number?)
+	_taperA:boolean?,_taperB:boolean?,_planes,segments:number?,miter)
 	local count=segments or 1
 	if count~=math.floor(count) or count<1 or count>12 then
 		error("File segments must be between 1 and 12",0)
@@ -388,10 +418,10 @@ function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
 	if interior then
 		error("Interior edge filing remains paused",0)
 	end
-	if count==1 then return GeometryCutter.prism(plan.profile,plan.travel) end
+	if count==1 then return GeometryCutter.prism(plan.profile,plan.travel,miter) end
 	local profile,travel=roundedFileProfile(edgeA,edgeB,
 		outwardA.Unit,outwardB.Unit,width,count)
-	return GeometryCutter.prism(profile,travel)
+	return GeometryCutter.prism(profile,travel,miter)
 end
 
 
