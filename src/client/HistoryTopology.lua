@@ -8,6 +8,7 @@ local FORM=ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Compiler=require(FORM.Compiler)
 local SurfaceTopology=require(script.Parent.SurfaceTopology)
 local BevelJunction=require(FORM.BevelJunction)
+local GeometryCutter=require(FORM.GeometryCutter)
 
 local HistoryTopology={}
 local EPS=0.0005
@@ -312,178 +313,71 @@ function HistoryTopology.build(part:BasePart,component)
 			end
 		end
 	end
-	-- Reconcile the SAME FILE junctions used by the CSG compiler, then
-	-- rebuild the actual bevel boundary graph. A new additive inside wedge
-	-- must shorten where an existing outside bevel plane cuts across it.
-	-- Source sharp edges are retired; trim lines and joined-corner edges
-	-- replace them in the next hover/click selection pass.
-	for i,spec in ipairs(completedBevels) do
-		for j=1,i-1 do
-			local plan=BevelJunction.plan(completedBevels[j],spec)
-			if plan then table.insert(bevelJunctions,plan) end
-		end
-	end
-
-	local function clipContour(poly:{Vector3},planePoint:Vector3,planeNormal:Vector3):{Vector3}
-		local result={}
-		for i,a in ipairs(poly) do
-			local b=poly[i%#poly+1]
-			local da=(a-planePoint):Dot(planeNormal)
-			local db=(b-planePoint):Dot(planeNormal)
-			local insideA,insideB=da<=0,db<=0
-			if insideA then table.insert(result,a) end
-			if insideA~=insideB then
-				local t=math.clamp(da/(da-db),0,1)
-				table.insert(result,a+(b-a)*t)
-			end
-		end
-		-- Avoid zero-length edges at exactly coplanar intersections.
-		local clean={}
-		for _,v in ipairs(result) do
-			if #clean==0 or (clean[#clean]-v).Magnitude>EPS then
-				table.insert(clean,v)
-			end
-		end
-		if #clean>=2 and (clean[1]-clean[#clean]).Magnitude<EPS then
-			table.remove(clean)
-		end
-		return clean
-	end
-
-	local faceByFile={}
-	local function addAdjacent(edge,face)
-		if not edge or not face or table.find(edge.faces,face.id) then return end
-		table.insert(edge.faces,face.id)
-		if not table.find(face.edges,edge) then table.insert(face.edges,edge) end
-	end
-
+	-- Exactly the same clipped bevel geometry as Fabricator. Never
+	-- reconstruct a guessed bevel corner after the Boolean: the new
+	-- exposed corner faces come from the source polyhedron itself.
 	for _,spec in ipairs(completedBevels) do
-		local a,b,n1,n2,w=spec.a,spec.b,spec.n1,spec.n2,spec.width
-		local old=edgeMap[edgeKey(point(a),point(b))]
+		if not spec.interior then continue end
+		for _,plane in ipairs(BevelJunction.planesFor(spec,completedBevels)) do
+			table.insert(bevelJunctions,plane)
+		end
+	end
+	local newBevelFaces={}
+	for _,spec in ipairs(completedBevels) do
+		local old=edgeMap[edgeKey(point(spec.a),point(spec.b))]
 		if old then old.retired=true end
-		local normalSum=n1+n2
-		local dot=n1:Dot(n2)
-		if normalSum.Magnitude<0.01 or math.abs(dot)>0.84 then continue end
-		local d1=(n1*dot-n2).Unit
-		local d2=(n2*dot-n1).Unit
-		local sign=if spec.interior then -1 else 1
-		local contour={
-			a+d1*w*sign,b+d1*w*sign,
-			b+d2*w*sign,a+d2*w*sign,
-		}
-		if spec.interior then
-			for _,junction in ipairs(bevelJunctions) do
-				if junction.inner~=spec then continue end
-				local o=junction.outer
-				local nd=o.n1:Dot(o.n2)
-				local tangent=(o.n1*nd-o.n2).Unit
-				local bevelPlanePoint=o.a+tangent*o.width
-				local bevelPlaneNormal=(o.n1+o.n2).Unit
-				contour=clipContour(contour,bevelPlanePoint,bevelPlaneNormal)
-				if #contour<3 then break end
+		local planes=BevelJunction.planesFor(spec,completedBevels)
+		local solidFaces,why=GeometryCutter.fileFaces(spec.a,spec.b,
+			spec.n1,spec.n2,spec.width,spec.interior,planes)
+		if not solidFaces then
+			warn("FORM bevel surface topology unavailable: "..tostring(why))
+			continue
+		end
+		local diagonal=(spec.n1+spec.n2).Unit
+		for _,surface in ipairs(solidFaces) do
+			local exposed=surface.normal:Dot(diagonal)>0.96
+			local junction=false
+			if spec.interior then
+				for _,plane in ipairs(planes) do
+					if surface.normal:Dot(plane.normal)>0.96 then
+						exposed=true
+						junction=true
+						break
+					end
+				end
+			end
+			if not exposed then continue end
+			local face=addFace(surface.polygon,surface.normal,
+				if junction then "file_junction" else "file_chamfer")
+			if face then
+				table.insert(newBevelFaces,face)
 			end
 		end
-		if #contour<3 then continue end
-		local face=addFace(contour,normalSum.Unit,"file_chamfer")
-		if not face then continue end
-		faceByFile[spec]=face
-		-- The chamfer's two long boundary lines lie on the original
-		-- adjacent faces. Attach them there; never leave them as one-face
-		-- decoration while the obsolete sharp edge remains selectable.
-		for _,edge in ipairs(face.edges) do
-			for _,rawNormal in ipairs({n1,n2}) do
-				local wanted=direction(rawNormal)
-				local origin=point(a)
-				if math.abs((edge.a-origin):Dot(wanted))>0.008
-					or math.abs((edge.b-origin):Dot(wanted))>0.008 then
+	end
+
+	-- Attach trim segments to the real adjacent planar faces. The original
+	-- source edge is no longer selectable; new bevel edges gain their own
+	-- normal pair, including when a top wedge meets a vertical chamfer.
+	for _,bevelFace in ipairs(newBevelFaces) do
+		for _,edge in ipairs(bevelFace.edges) do
+			if #edge.faces>=2 then continue end
+			for _,candidate in ipairs(faces) do
+				if candidate==bevelFace or candidate.normal:Dot(bevelFace.normal)>0.985 then
 					continue
 				end
-				local found=nil
-				if old then
-					for _,fid in ipairs(old.faces) do
-						local f=faces[fid]
-						if f and f~=face and f.normal:Dot(wanted)>0.97 then
-							found=f break
-						end
+				local normal=candidate.normal
+				local origin=candidate.polygon[1]
+				if math.abs((edge.a-origin):Dot(normal))<0.005
+					and math.abs((edge.b-origin):Dot(normal))<0.005 then
+					if not table.find(edge.faces,candidate.id) then
+						table.insert(edge.faces,candidate.id)
+						table.insert(candidate.edges,edge)
 					end
+					break
 				end
-				if not found then
-					for _,f in ipairs(faces) do
-						if f~=face and f.normal:Dot(wanted)>0.97 and
-							math.abs((edge.a-f.polygon[1]):Dot(f.normal))<0.008 then
-							found=f
-						end
-					end
-				end
-				addAdjacent(edge,found)
-				-- A newly filled inside corner still meets its neighboring
-				-- walls at a re-entrant crease. The bevel consumes the OLD
-				-- vertical sharp edge but produces two NEW inner trim edges.
-				if spec.interior and found then edge.interior=true end
 			end
 		end
 	end
-
-	-- Add the actual planar CORNER WEDGE surfaces. The inside additive
-	-- chamfer and its neighbouring outer bevels share their intersections:
-	-- there is no separate square corner cap to select anymore.
-	local junctionFaces={}
-	for _,junction in ipairs(bevelJunctions) do
-		local raw,normal=BevelJunction.surfacePolygon(junction)
-		for _,other in ipairs(bevelJunctions) do
-			if other~=junction and other.inner==junction.inner then
-				local o=other.outer
-				local n=(o.n1+o.n2).Unit
-				local dot=o.n1:Dot(o.n2)
-				local onPlane=o.a+(o.n1*dot-o.n2).Unit*o.width
-				raw=clipContour(raw,onPlane,n)
-				if #raw<3 then break end
-			end
-		end
-		if #raw>=3 then
-			junctionFaces[junction]=addFace(raw,normal,"file_junction")
-		end
-	end
-	-- A junction patch shares hard trim lines with the interior chamfer.
-	-- Those lines must belong to both authored surfaces, so they are
-	-- selectable for subsequent File/Inset operations.
-	for _,junction in ipairs(bevelJunctions) do
-		local patchFace=junctionFaces[junction]
-		local inside=faceByFile[junction.inner]
-		if not patchFace or not inside then continue end
-		local inner=junction.inner
-		local n=(inner.n1+inner.n2).Unit
-		local dot=inner.n1:Dot(inner.n2)
-		local origin=point(inner.a+(inner.n1*dot-inner.n2).Unit*
-			inner.width*(if inner.interior then -1 else 1))
-		local normal=direction(n)
-		for _,edge in ipairs(patchFace.edges) do
-			if math.abs((edge.a-origin):Dot(normal))<0.007
-				and math.abs((edge.b-origin):Dot(normal))<0.007 then
-				addAdjacent(edge,inside)
-			end
-		end
-	end
-
-	-- When the interior bevel is capped by an exterior bevel plane, the
-	-- resulting V-shaped trim edge is adjacent to BOTH new bevel surfaces.
-	-- Generate its selection adjacency from those actual shared planes.
-	for _,junction in ipairs(bevelJunctions) do
-		local innerFace=faceByFile[junction.inner]
-		local outerFace=faceByFile[junction.outer]
-		if not innerFace or not outerFace then continue end
-		local outside=junction.outer
-		local dot=outside.n1:Dot(outside.n2)
-		local surfacePoint=point(outside.a+(outside.n1*dot-outside.n2).Unit*outside.width)
-		local surfaceNormal=direction((outside.n1+outside.n2).Unit)
-		for _,edge in ipairs(innerFace.edges) do
-			if math.abs((edge.a-surfacePoint):Dot(surfaceNormal))<0.013
-				and math.abs((edge.b-surfacePoint):Dot(surfaceNormal))<0.013 then
-				addAdjacent(edge,outerFace)
-			end
-		end
-	end
-
 	-- Edges that have been replaced by chamfers are not selectable
 	-- again. Keep the new bevel trim lines (shared with real neighboring
 	-- faces) and expose the same joined-corner set used by Fabricator.
