@@ -1,6 +1,6 @@
 --!strict
 -- Small, camera-adaptive part grips with one Highlight per interactive axis handle.
--- Six signed face controls; rotation uses three axis-plane knobs.
+-- Three positive-axis move arrows, six face scale spheres, three rotation knobs.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -18,6 +18,8 @@ local AXES = {
 	{ normal = Vector3.zAxis, name = "Z+", axis = "Z", color = Color3.fromRGB(94, 155, 235) },
 	{ normal = -Vector3.zAxis, name = "Z-", axis = "Z", color = Color3.fromRGB(94, 155, 235) },
 }
+local MOVE_AXES = { AXES[1], AXES[3], AXES[5] }
+local MM_PER_STUD = 280 -- Roblox standard physical scale, 0.28 m per stud.
 local ROTATIONS = {
 	{ normal = Vector3.xAxis, radial = Vector3.yAxis, axis = "X", color = Color3.fromRGB(224, 88, 91) },
 	{ normal = Vector3.yAxis, radial = Vector3.zAxis, axis = "Y", color = Color3.fromRGB(99, 205, 122) },
@@ -89,7 +91,7 @@ local function visualScale(position: Vector3): number
 	if not camera then return 0.12 end
 	local viewport = camera.ViewportSize
 	local distance = (camera.CFrame.Position - position).Magnitude
-	-- 11 screen pixels per grip, independent of the object's world dimensions.
+	-- Approx. 8 screen pixels per grip, independent of the object dimensions.
 	local worldPerPixel = 2 * distance * math.tan(math.rad(camera.FieldOfView) / 2) / math.max(viewport.Y, 1)
 	return math.clamp(worldPerPixel * 8, 0.025, 0.34)
 end
@@ -144,6 +146,22 @@ local function newArrow(folder: Folder, name: string, color: Color3)
 		highlight = highlight }
 end
 
+local function newSphere(folder: Folder, name: string, color: Color3)
+	local model = Instance.new("Model")
+	model.Name = name
+	model.Parent = folder
+	local part = makePart(model, "Sphere", color, Enum.PartType.Ball)
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "AxisHighlight"
+	highlight.Adornee = model
+	highlight.FillColor = color
+	highlight.FillTransparency = 0
+	highlight.OutlineTransparency = 1
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Parent = model
+	return { model = model, part = part, highlight = highlight }
+end
+
 local function newRotationGrip(folder: Folder, name: string, color: Color3)
 	local model = Instance.new("Model")
 	model.Name = name
@@ -166,7 +184,7 @@ local function placeArrow(grip, face: Vector3, direction: Vector3, unit: number)
 	local shaftDiameter = unit * 0.12
 	local tipLength = unit * 0.95
 	local tipDiameter = unit * 0.62
-	local begin = face + direction * (unit * 0.18)
+	local begin = face + direction * (unit * 2.0)
 	local stemCenter = begin + direction * (shaftLength / 2)
 	local tipCenter = begin + direction * (shaftLength + tipLength / 2)
 	-- Native cylinder runs on local X.
@@ -179,28 +197,64 @@ local function placeArrow(grip, face: Vector3, direction: Vector3, unit: number)
 		* CFrame.Angles(-math.pi / 2, 0, 0)
 end
 
-function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
+local function newMeasurement(playerGui: PlayerGui)
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "FORM_TransformMeasurement"
+	gui.Size = UDim2.fromOffset(126, 30)
+	gui.StudsOffsetWorldSpace = Vector3.new(0, 0.18, 0)
+	gui.AlwaysOnTop = true
+	gui.Enabled = false
+	gui.Parent = playerGui
+	local label = Instance.new("TextLabel")
+	label.Name = "Distance"
+	label.BackgroundColor3 = Color3.fromRGB(20, 25, 29)
+	label.BackgroundTransparency = 0.12
+	label.BorderSizePixel = 0
+	label.Size = UDim2.fromScale(1, 1)
+	label.Font = Enum.Font.Code
+	label.TextSize = 15
+	label.TextColor3 = Color3.fromRGB(242, 245, 247)
+	label.Text = ""
+	label.Parent = gui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 5)
+	corner.Parent = label
+	return gui, label
+end
+
+function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	local folder = Instance.new("Folder")
 	folder.Name = "FORM_TransformGrips"
 	folder.Parent = workspace
+	local measurement, measurementText = newMeasurement(playerGui)
 	local self = setmetatable({
 		document = document, onChange = onChange, folder = folder,
 		grips = {}, lookup = {}, connections = {},
 		mode = "Move", hidden = false, component = nil, index = nil,
 		dragStart = nil, dragChanged = false, hovered = nil, visualFrame = nil, visualSize = nil,
+		measurement = measurement, measurementText = measurementText,
 	}, TransformGizmo)
 
-	for _, spec in ipairs(AXES) do
-		local arrow = newArrow(folder, "Face_" .. spec.name, spec.color)
+	for _, spec in ipairs(MOVE_AXES) do
+		local arrow = newArrow(folder, "Move_" .. spec.axis, spec.color)
 		local grip = {
-			model = arrow.model, part = arrow.part,
-			stem = arrow.stem, tip = arrow.tip,
-			highlight = arrow.highlight, baseColor = spec.color, hoverAlpha = 0, normal = spec.normal,
-			axis = spec.axis, mode = "Face",
+			model = arrow.model, part = arrow.part, stem = arrow.stem, tip = arrow.tip,
+			highlight = arrow.highlight, baseColor = spec.color, hoverAlpha = 0,
+			normal = spec.normal, axis = spec.axis, mode = "Move",
 		}
 		table.insert(self.grips, grip)
 		self.lookup[grip.stem] = grip
 		self.lookup[grip.tip] = grip
+	end
+	for _, spec in ipairs(AXES) do
+		local sphere = newSphere(folder, "Scale_" .. spec.name, spec.color)
+		local grip = {
+			model = sphere.model, part = sphere.part,
+			highlight = sphere.highlight, baseColor = spec.color, hoverAlpha = 0,
+			normal = spec.normal, axis = spec.axis, mode = "Scale",
+		}
+		table.insert(self.grips, grip)
+		self.lookup[grip.part] = grip
 	end
 	for _, spec in ipairs(ROTATIONS) do
 		local control = newRotationGrip(folder, "Rotate_" .. spec.axis, spec.color)
@@ -246,6 +300,9 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 		}
 		self.dragChanged = false
 		self.hovered = grip
+		self.measurement.Adornee = grip.part
+		self.measurement.Enabled = true
+		self.measurementText.Text = if grip.mode == "Rotate" then "0°" else "0 mm"
 		self.onChange("begin", self.component, self.index)
 	end
 
@@ -253,7 +310,7 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 		local start = self.dragStart
 		if not start then return end
 		local position, size, rotation = nil, nil, nil
-		if start.grip.mode == "Face" then
+		if start.grip.mode ~= "Rotate" then
 			local parameter = axisParameter(point, start.pivot, start.direction)
 			if not parameter or not start.initialParameter then return end
 			local distance = Quantize.snap(parameter - start.initialParameter, Quantize.Grid)
@@ -280,6 +337,18 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 			if node.position ~= start.position or node.size ~= start.size or node.rotation ~= start.rotation then
 				self.dragChanged = true
 			end
+			local delta
+			if self.mode == "Move" then
+				delta = (node.position - start.position):Dot(start.direction)
+			elseif self.mode == "Scale" then
+				delta = getAxis(node.size, start.grip.axis) - getAxis(start.size, start.grip.axis)
+			else
+				delta = getAxis(node.rotation, start.grip.axis) - getAxis(start.rotation, start.grip.axis)
+				if delta > 180 then delta -= 360 elseif delta < -180 then delta += 360 end
+			end
+			self.measurementText.Text = if self.mode == "Rotate"
+				then string.format("%+.0f°", delta)
+				else string.format("%+.1f mm", delta * MM_PER_STUD)
 			self:refresh()
 			self.onChange("update", start.component, start.index)
 		end
@@ -289,6 +358,8 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 		local start = self.dragStart
 		if not start then return end
 		self.dragStart = nil
+		self.measurement.Enabled = false
+		self.measurement.Adornee = nil
 		local changed = self.dragChanged
 		self.dragChanged = false
 		self.onChange("finish", start.component, start.index, changed)
@@ -299,8 +370,7 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 or self.dragStart then return end
 		local point = UserInputService:GetMouseLocation()
 		local grip = pick(point)
-		if grip and ((grip.mode == "Face" and self.mode ~= "Rotate")
-			or (grip.mode == "Rotate" and self.mode == "Rotate")) then
+		if grip and grip.mode == self.mode then
 			begin(grip, point)
 		end
 	end)
@@ -385,22 +455,24 @@ function TransformGizmo:refresh(dt: number?)
 		local hoverBlend = if dt then 1 - math.exp(-18 * dt) else 1
 		grip.hoverAlpha += (hoverTarget - grip.hoverAlpha) * hoverBlend
 		grip.highlight.FillColor = grip.baseColor:Lerp(Color3.new(1, 1, 1), grip.hoverAlpha * 0.38)
-		local visible = node ~= nil and not self.hidden
-			and ((self.mode == "Rotate" and grip.mode == "Rotate")
-				or (self.mode ~= "Rotate" and grip.mode == "Face"))
+		local visible = node ~= nil and not self.hidden and grip.mode == self.mode
 		grip.highlight.Enabled = visible
-		for _, part in ipairs(if grip.mode == "Face"
+		for _, part in ipairs(if grip.mode == "Move"
 			then { grip.stem, grip.tip } else { grip.part }) do
 			part.Transparency = if visible then 0 else 1
 			part.CanQuery = visible
 		end
 		if visible and node then
 			local unit = visualScale(cf.Position)
-			if grip.mode == "Face" then
+			if grip.mode == "Move" then
 				local direction = cf:VectorToWorldSpace(grip.normal)
 				local face = cf:PointToWorldSpace(
 					grip.normal * (getAxis(size, grip.axis) / 2))
 				placeArrow(grip, face, direction, unit)
+			elseif grip.mode == "Scale" then
+				grip.part.Position = cf:PointToWorldSpace(
+					grip.normal * (getAxis(size, grip.axis) / 2 + unit * 0.75))
+				grip.part.Size = Vector3.one * unit * (1.35 + 0.18 * grip.hoverAlpha)
 			else
 				grip.part.Position = cf:PointToWorldSpace(grip.radial * (unit * 6))
 				grip.part.Size = Vector3.one * unit * (1 + 0.14 * grip.hoverAlpha)
@@ -412,6 +484,7 @@ end
 function TransformGizmo:destroy()
 	for _, connection in ipairs(self.connections) do connection:Disconnect() end
 	self.folder:Destroy()
+	self.measurement:Destroy()
 end
 
 return TransformGizmo
