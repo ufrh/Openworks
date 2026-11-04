@@ -94,10 +94,14 @@ local function visualScale(position: Vector3): number
 	return math.clamp(worldPerPixel * 11, 0.035, 0.5)
 end
 
-local function newGrip(folder: Folder, name: string, color: Color3)
+-- Cone geometry is supplied by a classic Roblox file mesh. Keeping it on a
+-- Part lets the entire two-piece arrow be recolored via one model Highlight.
+local CONE_MESH = "rbxassetid://1082802"
+
+local function makePart(parent: Instance, name: string, color: Color3, shape: Enum.PartType): Part
 	local part = Instance.new("Part")
 	part.Name = name
-	part.Shape = Enum.PartType.Ball
+	part.Shape = shape
 	part.Anchored = true
 	part.CanCollide = false
 	part.CanTouch = false
@@ -105,17 +109,71 @@ local function newGrip(folder: Folder, name: string, color: Color3)
 	part.CastShadow = false
 	part.Material = Enum.Material.SmoothPlastic
 	part.Color = color
-	part.Size = Vector3.one * 0.1
-	part.Parent = folder
-	local outline = Instance.new("Highlight")
-	outline.Name = "AxisOutline"
-	outline.Adornee = part
-	outline.FillTransparency = 1
-	outline.OutlineColor = color
-	outline.OutlineTransparency = 0.05
-	outline.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	outline.Parent = part
-	return part, outline
+	part.Parent = parent
+	return part
+end
+
+local function newArrow(folder: Folder, name: string, color: Color3)
+	local model = Instance.new("Model")
+	model.Name = name
+	model.Parent = folder
+
+	local stem = makePart(model, "Stem", color, Enum.PartType.Cylinder)
+	local tip = makePart(model, "Tip", color, Enum.PartType.Block)
+	local mesh = Instance.new("SpecialMesh")
+	mesh.MeshType = Enum.MeshType.FileMesh
+	mesh.MeshId = CONE_MESH
+	mesh.TextureId = ""
+	mesh.Parent = tip
+
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "AxisHighlight"
+	highlight.Adornee = model
+	highlight.FillColor = color
+	highlight.FillTransparency = 0
+	highlight.OutlineTransparency = 1
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Parent = model
+
+	return { model = model, part = tip, stem = stem, tip = tip,
+		mesh = mesh, highlight = highlight }
+end
+
+local function newRotationGrip(folder: Folder, name: string, color: Color3)
+	local model = Instance.new("Model")
+	model.Name = name
+	model.Parent = folder
+	local part = makePart(model, "Knob", color, Enum.PartType.Ball)
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "AxisHighlight"
+	highlight.Adornee = model
+	highlight.FillColor = color
+	highlight.FillTransparency = 0
+	highlight.OutlineTransparency = 1
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Parent = model
+	return { model = model, part = part, highlight = highlight }
+end
+
+local function placeArrow(grip, face: Vector3, direction: Vector3, unit: number)
+	-- The arrow's length scales with camera distance; diameter remains delicate.
+	local shaftLength = unit * 4.0
+	local shaftDiameter = unit * 0.20
+	local tipLength = unit * 1.2
+	local tipDiameter = unit * 0.85
+	local begin = face + direction * (unit * 0.30)
+	local stemCenter = begin + direction * (shaftLength / 2)
+	local tipCenter = begin + direction * (shaftLength + tipLength / 2)
+	-- Native cylinder runs on local X.
+	grip.stem.Size = Vector3.new(shaftLength, shaftDiameter, shaftDiameter)
+	grip.stem.CFrame = CFrame.lookAt(stemCenter, stemCenter + direction)
+		* CFrame.Angles(0, math.pi / 2, 0)
+	-- Cone mesh axis is conventionally Y; adjust this constant if the
+	-- installed mesh differs in orientation.
+	grip.tip.Size = Vector3.new(tipDiameter, tipLength, tipDiameter)
+	grip.tip.CFrame = CFrame.lookAt(tipCenter, tipCenter + direction)
+		* CFrame.Angles(-math.pi / 2, 0, 0)
+	grip.mesh.Scale = Vector3.one
 end
 
 function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
@@ -130,29 +188,26 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 	}, TransformGizmo)
 
 	for _, spec in ipairs(AXES) do
-		local part, highlight = newGrip(folder, "Face_" .. spec.name, spec.color)
-		local stem = Instance.new("Part")
-		stem.Name = "AxisStem_" .. spec.name
-		stem.Shape = Enum.PartType.Cylinder
-		stem.Anchored = true
-		stem.CanCollide = false
-		stem.CanTouch = false
-		stem.CanQuery = false
-		stem.CastShadow = false
-		stem.Material = Enum.Material.SmoothPlastic
-		stem.Color = spec.color
-		stem.Parent = folder
-		local grip = { part = part, highlight = highlight, stem = stem, normal = spec.normal,
-			axis = spec.axis, mode = "Face" }
+		local arrow = newArrow(folder, "Face_" .. spec.name, spec.color)
+		local grip = {
+			model = arrow.model, part = arrow.part,
+			stem = arrow.stem, tip = arrow.tip, mesh = arrow.mesh,
+			highlight = arrow.highlight, normal = spec.normal,
+			axis = spec.axis, mode = "Face",
+		}
 		table.insert(self.grips, grip)
-		self.lookup[part] = grip
+		self.lookup[grip.stem] = grip
+		self.lookup[grip.tip] = grip
 	end
 	for _, spec in ipairs(ROTATIONS) do
-		local part, highlight = newGrip(folder, "Rotate_" .. spec.axis, spec.color)
-		local grip = { part = part, highlight = highlight, normal = spec.normal,
-			radial = spec.radial, axis = spec.axis, mode = "Rotate" }
+		local control = newRotationGrip(folder, "Rotate_" .. spec.axis, spec.color)
+		local grip = {
+			model = control.model, part = control.part,
+			highlight = control.highlight, normal = spec.normal,
+			radial = spec.radial, axis = spec.axis, mode = "Rotate",
+		}
 		table.insert(self.grips, grip)
-		self.lookup[part] = grip
+		self.lookup[grip.part] = grip
 	end
 
 	local function connect(signal, fn)
@@ -300,29 +355,23 @@ function TransformGizmo:refresh()
 		local visible = node ~= nil and not self.hidden
 			and ((self.mode == "Rotate" and grip.mode == "Rotate")
 				or (self.mode ~= "Rotate" and grip.mode == "Face"))
-		grip.part.Transparency = if visible then 0 else 1
-		grip.part.CanQuery = visible
 		grip.highlight.Enabled = visible
-		if grip.stem then grip.stem.Transparency = if visible then 0.15 else 1 end
+		for _, part in ipairs(if grip.mode == "Face"
+			then { grip.stem, grip.tip } else { grip.part }) do
+			part.Transparency = if visible then 0 else 1
+			part.CanQuery = visible
+		end
 		if visible and node then
 			local cf = frame(node)
 			local unit = visualScale(node.position)
-			local offset
 			if grip.mode == "Face" then
-				-- Place each control just beyond its own face; preserve face-local sizing.
-				offset = grip.normal * (getAxis(node.size, grip.axis) / 2 + unit * 1.35)
-			else
-				offset = grip.radial * (unit * 6)
-			end
-			grip.part.Position = cf:PointToWorldSpace(offset)
-			grip.part.Size = Vector3.one * unit
-			if grip.stem then
 				local direction = cf:VectorToWorldSpace(grip.normal)
-				local face = cf:PointToWorldSpace(grip.normal * (getAxis(node.size, grip.axis) / 2))
-				local length = unit * 1.35
-				grip.stem.Size = Vector3.new(length, unit * 0.18, unit * 0.18)
-				grip.stem.CFrame = CFrame.lookAt(face + direction * length / 2,
-					face + direction * length) * CFrame.Angles(0, math.pi / 2, 0)
+				local face = cf:PointToWorldSpace(
+					grip.normal * (getAxis(node.size, grip.axis) / 2))
+				placeArrow(grip, face, direction, unit)
+			else
+				grip.part.Position = cf:PointToWorldSpace(grip.radial * (unit * 6))
+				grip.part.Size = Vector3.one * unit
 			end
 		end
 	end
