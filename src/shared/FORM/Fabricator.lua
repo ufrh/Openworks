@@ -7,6 +7,7 @@ local Compiler = require(script.Parent.Compiler)
 local Cutters = require(script.Parent.Cutters)
 local Extrusion = require(script.Parent.Extrusion)
 local FileCutter = require(script.Parent.FileCutter)
+local GeometryCutter = require(script.Parent.GeometryCutter)
 
 local Fabricator = {}
 local OPTIONS = { SplitApart = false }
@@ -33,6 +34,13 @@ function Fabricator.geometryKey(component): string
 			table.insert(pieces, string.format("I|%.6f|%.6f", op.margin, op.depth))
 		elseif op.kind == "File" then
 			table.insert(pieces, string.format("F|%s|%.6f", op.edge, op.width))
+		elseif op.kind == "FileMesh" then
+			table.insert(pieces, string.format("FM|%.6f|%s|%s|%s|%s",
+				op.width,tostring(op.a),tostring(op.b),tostring(op.normalA),tostring(op.normalB)))
+		elseif op.kind == "InsetFace" then
+			table.insert(pieces, string.format("IF|%.6f|%.6f|%s",
+				op.margin,op.depth,tostring(op.normal)))
+			for _,point in ipairs(op.points) do table.insert(pieces,tostring(point)) end
 		elseif op.kind == "SketchExtrude" then
 			table.insert(pieces, string.format("E|%s|%.4f|%s",
 				op.mode, op.depth, tostring(op.through)))
@@ -84,14 +92,29 @@ local function compileUnlocked(component): (BasePart, string)
 	local meshCuts, nativeFallbacks = 0, 0
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled == false then continue end
-		if op.kind == "SketchExtrude" or op.kind == "File" then
-			local creator = if op.kind == "File" then FileCutter.create else Extrusion.create
-			local generated, cutter, release = pcall(creator, node, op)
+		if op.kind == "SketchExtrude" or op.kind == "File"
+			or op.kind == "FileMesh" or op.kind == "InsetFace" then
+			local function createTool()
+				if op.kind == "File" then return FileCutter.create(node,op) end
+				if op.kind == "FileMesh" then
+					return GeometryCutter.file(op.a,op.b,op.normalA,op.normalB,op.width)
+				end
+				if op.kind == "InsetFace" then
+					local margin=0.04
+					local profile={}
+					for _,p in ipairs(op.points) do
+						table.insert(profile,p+op.normal*margin)
+					end
+					return GeometryCutter.prism(profile,-op.normal*(op.depth+margin*2))
+				end
+				return Extrusion.create(node,op)
+			end
+			local generated, cutter, release = pcall(createTool)
 			if not generated then
 				current:Destroy()
 				error("Sketch extrusion " .. tostring(op.id) .. ": " .. tostring(cutter), 0)
 			end
-			local mode = if op.kind == "File" then "Remove" else op.mode
+			local mode = if op.kind == "SketchExtrude" then op.mode else "Remove"
 			local success, result = combine(current, cutter, mode)
 			release()
 			if not success then
