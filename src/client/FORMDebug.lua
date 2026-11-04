@@ -289,7 +289,8 @@ function Debug.start()
 	local diameterInput = toolNumberRow("Drill diameter (mm)", "56")
 	local kerfInput = toolNumberRow("Saw kerf (mm)", "14")
 	local meshRow = row(29)
-	local meshButton = button(meshRow, "EditableMesh saw: ON (native fallback)", 0, 1, function()
+	local meshButton: TextButton
+	meshButton = button(meshRow, "EditableMesh saw: ON (native fallback)", 0, 1, function()
 		meshSaw = not meshSaw
 		meshButton.Text = "EditableMesh saw: " .. (if meshSaw then "ON" else "OFF")
 	end)
