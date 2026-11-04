@@ -16,8 +16,9 @@ local function edgeKey(a: number, b: number): string
 end
 
 function SurfaceTopology.extract(part: BasePart)
+	if not part:IsA("MeshPart") then return nil, "Current solid is not a readable MeshPart" end
 	local ok, mesh = pcall(function()
-		return AssetService:CreateEditableMeshAsync(Content.fromObject(part), {FixedSize = true})
+		return AssetService:CreateEditableMeshAsync((part :: MeshPart).MeshContent, {FixedSize = true})
 	end)
 	if not ok or not mesh then return nil, tostring(mesh) end
 	local success, topology = pcall(function()
