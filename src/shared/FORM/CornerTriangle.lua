@@ -186,15 +186,23 @@ function CornerTriangle.faces(junction)
 		local top=p-cap*vertical
 		table.insert(a,top-wallA*inset)
 		table.insert(b,top-wallB*inset)
-		table.insert(seam,top-(wallA+wallB)*inset)
+		-- The diagonal miter seam is the MIDPOINT between the two
+		-- profiles at every height. Using the full offset of both
+		-- normals made a square notch instead of a triangular corner
+		-- and caused the overlapping CSG slivers visible in Studio.
+		table.insert(seam,top-(wallA+wallB)*(inset*0.5))
 	end
 	local result={}
 	local function add(points,exposed)
 		local polygon=face(points,exposed)
 		if polygon then table.insert(result,polygon) end
 	end
-	-- One top cap and two original wall-plane closures.
-	add({p,a[1],seam[1],b[1]},false)
+	-- Split the triangular top cap at the miter seam vertex.
+	-- Both top boundary segments must match their side strips exactly.
+	-- A single top quad would contain a collinear extra vertex, causing
+	-- unpaired T-junction edges in the generated CSG mesh.
+	add({p,a[1],seam[1]},false)
+	add({p,seam[1],b[1]},false)
 	local sideA={p}
 	local sideB={p}
 	for i=1,#a do table.insert(sideA,a[i]) table.insert(sideB,b[i]) end
