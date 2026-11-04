@@ -125,7 +125,12 @@ local function compileUnlocked(component): (BasePart, string)
 				current:Destroy()
 				error("Sketch extrusion " .. tostring(op.id) .. ": " .. tostring(cutter), 0)
 			end
-			local mode = if op.kind == "SketchExtrude" then op.mode else "Remove"
+			-- The two bevel topologies are not the same operation:
+			-- outside chamfer removes a corner, inside chamfer fills
+			-- the concave void with a triangular bridge.
+			local mode = if op.kind == "SketchExtrude" then op.mode
+				elseif op.kind == "FileMesh" and op.interior == true then "Add"
+				else "Remove"
 			local success, result = combine(current, cutter, mode)
 			release()
 			if not success then
