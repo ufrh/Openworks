@@ -105,6 +105,23 @@ function HistoryTopology.build(part:BasePart,component)
 				Vector3.new(p.X,top,p.Y),
 			},n,tag)
 		end
+		-- The original polygon tells us which *vertical corner* is
+		-- re-entrant. For an outer contour, a concave vertex is internal;
+		-- for a removed hole, a convex hole vertex is internal to the
+		-- manufactured solid. Do not infer this from face normal pairs,
+		-- which look identical at convex and concave right-angle corners.
+		for i,p in ipairs(poly) do
+			local prev=poly[(i-2)%#poly+1]
+			local nextP=poly[i%#poly+1]
+			local a,b=p-prev,nextP-p
+			local bend=(a.X*b.Y-a.Y*b.X)*sign
+			local isInner=if outer then bend < -1e-6 else bend > 1e-6
+			if not isInner then continue end
+			local low=point(Vector3.new(p.X,bottom,p.Y))
+			local high=point(Vector3.new(p.X,top,p.Y))
+			local edge=edgeMap[edgeKey(low,high)]
+			if edge then edge.interior=true end
+		end
 	end
 	local function profileCap(poly:{Vector2},y:number,up:boolean,tag:string)
 		local ring={}
