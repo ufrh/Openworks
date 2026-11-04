@@ -194,6 +194,23 @@ function HistoryTopology.build(part:BasePart,component)
 				addFace({a,b,bottom[j],bottom[i]},side.Unit,tag.."_wall")
 			end
 		end
+		-- An inset/pocket wall-wall corner is also re-entrant when the
+		-- chosen cavity loop is convex at that vertex. Concave vertices
+		-- of the cavity are convex material corners instead.
+		local signedArea=0
+		for i,p in ipairs(loop) do
+			local q=loop[i%#loop+1]
+			signedArea+=p:Cross(q):Dot(n)
+		end
+		local sign=if signedArea>=0 then 1 else -1
+		for i,p in ipairs(loop) do
+			local previous=loop[(i-2)%#loop+1]
+			local nextP=loop[i%#loop+1]
+			local turn=(p-previous):Cross(nextP-p):Dot(n)*sign
+			if turn<=1e-6 then continue end
+			local edge=edgeMap[edgeKey(point(p),point(bottom[i]))]
+			if edge then edge.interior=true end
+		end
 	end
 	local function kerfLoop(a:Vector3,b:Vector3,n:Vector3,width:number):{Vector3}?
 		local d=b-a
