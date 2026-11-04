@@ -91,7 +91,7 @@ local function visualScale(position: Vector3): number
 	local distance = (camera.CFrame.Position - position).Magnitude
 	-- 11 screen pixels per grip, independent of the object's world dimensions.
 	local worldPerPixel = 2 * distance * math.tan(math.rad(camera.FieldOfView) / 2) / math.max(viewport.Y, 1)
-	return math.clamp(worldPerPixel * 11, 0.035, 0.5)
+	return math.clamp(worldPerPixel * 8, 0.025, 0.34)
 end
 
 -- Cone tip is a user-supplied MeshPart named "Cone" directly inside ReplicatedStorage.
@@ -162,11 +162,11 @@ end
 
 local function placeArrow(grip, face: Vector3, direction: Vector3, unit: number)
 	-- The arrow's length scales with camera distance; diameter remains delicate.
-	local shaftLength = unit * 4.0
-	local shaftDiameter = unit * 0.20
-	local tipLength = unit * 1.2
-	local tipDiameter = unit * 0.85
-	local begin = face + direction * (unit * 0.30)
+	local shaftLength = unit * 3.0
+	local shaftDiameter = unit * 0.12
+	local tipLength = unit * 0.95
+	local tipDiameter = unit * 0.62
+	local begin = face + direction * (unit * 0.18)
 	local stemCenter = begin + direction * (shaftLength / 2)
 	local tipCenter = begin + direction * (shaftLength + tipLength / 2)
 	-- Native cylinder runs on local X.
@@ -187,7 +187,7 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 		document = document, onChange = onChange, folder = folder,
 		grips = {}, lookup = {}, connections = {},
 		mode = "Move", hidden = false, component = nil, index = nil,
-		dragStart = nil, dragChanged = false,
+		dragStart = nil, dragChanged = false, hovered = nil, visualFrame = nil, visualSize = nil,
 	}, TransformGizmo)
 
 	for _, spec in ipairs(AXES) do
@@ -195,7 +195,7 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 		local grip = {
 			model = arrow.model, part = arrow.part,
 			stem = arrow.stem, tip = arrow.tip,
-			highlight = arrow.highlight, normal = spec.normal,
+			highlight = arrow.highlight, baseColor = spec.color, hoverAlpha = 0, normal = spec.normal,
 			axis = spec.axis, mode = "Face",
 		}
 		table.insert(self.grips, grip)
@@ -206,7 +206,7 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 		local control = newRotationGrip(folder, "Rotate_" .. spec.axis, spec.color)
 		local grip = {
 			model = control.model, part = control.part,
-			highlight = control.highlight, normal = spec.normal,
+			highlight = control.highlight, baseColor = spec.color, hoverAlpha = 0, normal = spec.normal,
 			radial = spec.radial, axis = spec.axis, mode = "Rotate",
 		}
 		table.insert(self.grips, grip)
@@ -245,6 +245,7 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 			initialRadial = if radial then (planeRadial(point, pivot, direction) or radial) else nil,
 		}
 		self.dragChanged = false
+		self.hovered = grip
 		self.onChange("begin", self.component, self.index)
 	end
 
@@ -311,8 +312,16 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 	connect(UserInputService.InputEnded, function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then finish() end
 	end)
-	connect(RunService.RenderStepped, function()
-		if not self.hidden and self.component and not self.dragStart then self:refresh() end
+	connect(RunService.RenderStepped, function(dt)
+		-- Hover is resolved individually; a captured handle remains emphasized.
+		if self.hidden or not self.component then
+			self.hovered = nil
+		elseif self.dragStart then
+			self.hovered = self.dragStart.grip
+		else
+			self.hovered = pick(UserInputService:GetMouseLocation())
+		end
+		self:refresh(dt)
 	end)
 	self._pick = pick
 	return self
@@ -341,6 +350,9 @@ function TransformGizmo:setHidden(hidden: boolean)
 end
 
 function TransformGizmo:show(component, index: number)
+	if self.component ~= component or self.index ~= index then
+		self.visualFrame, self.visualSize = nil, nil
+	end
 	self.component, self.index = component, index
 	self:refresh()
 end
@@ -348,13 +360,31 @@ end
 function TransformGizmo:hide()
 	if self.dragStart then return end
 	self.component, self.index = nil, nil
+	self.visualFrame, self.visualSize, self.hovered = nil, nil, nil
 	self:refresh()
 end
 
-function TransformGizmo:refresh()
+function TransformGizmo:refresh(dt: number?)
 	local node = if self.component and self.index
 		then self.component.nodes[self.index] else nil
+	local targetFrame = if node then frame(node) else nil
+	local cf = targetFrame
+	local size = if node then node.size else nil
+	if node and targetFrame then
+		-- Exponential smoothing is frame-rate independent. Source node stays snapped.
+		local alpha = if dt then 1 - math.exp(-26 * dt) else 1
+		self.visualFrame = if self.visualFrame then self.visualFrame:Lerp(targetFrame, alpha) else targetFrame
+		self.visualSize = if self.visualSize then self.visualSize:Lerp(node.size, alpha) else node.size
+		cf = self.visualFrame
+		size = self.visualSize
+	else
+		self.visualFrame, self.visualSize = nil, nil
+	end
 	for _, grip in ipairs(self.grips) do
+		local hoverTarget = if grip == self.hovered then 1 else 0
+		local hoverBlend = if dt then 1 - math.exp(-18 * dt) else 1
+		grip.hoverAlpha += (hoverTarget - grip.hoverAlpha) * hoverBlend
+		grip.highlight.FillColor = grip.baseColor:Lerp(Color3.new(1, 1, 1), grip.hoverAlpha * 0.38)
 		local visible = node ~= nil and not self.hidden
 			and ((self.mode == "Rotate" and grip.mode == "Rotate")
 				or (self.mode ~= "Rotate" and grip.mode == "Face"))
@@ -365,16 +395,15 @@ function TransformGizmo:refresh()
 			part.CanQuery = visible
 		end
 		if visible and node then
-			local cf = frame(node)
-			local unit = visualScale(node.position)
+			local unit = visualScale(cf.Position)
 			if grip.mode == "Face" then
 				local direction = cf:VectorToWorldSpace(grip.normal)
 				local face = cf:PointToWorldSpace(
-					grip.normal * (getAxis(node.size, grip.axis) / 2))
+					grip.normal * (getAxis(size, grip.axis) / 2))
 				placeArrow(grip, face, direction, unit)
 			else
 				grip.part.Position = cf:PointToWorldSpace(grip.radial * (unit * 6))
-				grip.part.Size = Vector3.one * unit
+				grip.part.Size = Vector3.one * unit * (1 + 0.14 * grip.hoverAlpha)
 			end
 		end
 	end
