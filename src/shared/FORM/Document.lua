@@ -268,6 +268,11 @@ function Document:addOperation(component, kind: string, data)
 		end
 		operation = { kind = "File", edge = edge, width = width }
 	elseif kind == "FileMesh" then
+		-- Interior filing is intentionally suspended; historical entries
+		-- are retained for editing but excluded from compilation.
+		if data.interior==true then
+			return false,"Interior File is paused while corner geometry is rebuilt"
+		end
 		local a,b,n1,n2=data.a,data.b,data.normalA,data.normalB
 		local width=data.width
 		if typeof(a)~="Vector3" or typeof(b)~="Vector3"
@@ -281,8 +286,8 @@ function Document:addOperation(component, kind: string, data)
 			return false, "Invalid edge filing geometry"
 		end
 		operation={kind="FileMesh",a=a,b=b,normalA=n1.Unit,normalB=n2.Unit,
-			width=width,interior=data.interior==true,
-			taperA=data.taperA==true,taperB=data.taperB==true}
+			width=width,interior=false,
+			taperA=false,taperB=false}
 	elseif kind == "InsetFace" then
 		local points=data.points
 		local normal=data.normal
