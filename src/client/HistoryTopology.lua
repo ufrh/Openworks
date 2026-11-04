@@ -7,6 +7,7 @@ local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local FORM=ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Compiler=require(FORM.Compiler)
 local SurfaceTopology=require(script.Parent.SurfaceTopology)
+local BevelJunction=require(FORM.BevelJunction)
 
 local HistoryTopology={}
 local EPS=0.0005
@@ -39,6 +40,8 @@ function HistoryTopology.build(part:BasePart,component)
 	local faces,edges,edgeMap={}, {}, {}
 	local pendingHoles={}
 	local innerVerticalVertices={}
+	local completedBevels={}
+	local bevelJunctions={}
 	local half=node.size/2
 	local topFace=nil
 	local function point(p:Vector3):Vector3 return toPart:PointToWorldSpace(p) end
@@ -293,38 +296,68 @@ function HistoryTopology.build(part:BasePart,component)
 			local loop=kerfLoop(op.a,op.b,op.normal,op.width)
 			if loop then pocket(loop,op.normal,op.depth,op.through==true,"groove") end
 		elseif kind=="File" or kind=="FileMesh" then
-			local a,b,n1,n2,w
-			if kind=="FileMesh" then
-				a,b,n1,n2,w=op.a,op.b,op.normalA,op.normalB,op.width
-			else
-				w=op.width
-				n1=Vector3.yAxis
-				if op.edge=="X+" then
-					n2=Vector3.xAxis
-					a,b=Vector3.new(half.X,half.Y,-half.Z),Vector3.new(half.X,half.Y,half.Z)
-				elseif op.edge=="X-" then
-					n2=-Vector3.xAxis
-					a,b=Vector3.new(-half.X,half.Y,-half.Z),Vector3.new(-half.X,half.Y,half.Z)
-				elseif op.edge=="Z+" then
-					n2=Vector3.zAxis
-					a,b=Vector3.new(-half.X,half.Y,half.Z),Vector3.new(half.X,half.Y,half.Z)
-				else
-					n2=-Vector3.zAxis
-					a,b=Vector3.new(-half.X,half.Y,-half.Z),Vector3.new(half.X,half.Y,-half.Z)
+			local spec=BevelJunction.spec(node,op)
+			if spec then
+				local a,b,n1,n2,w=spec.a,spec.b,spec.n1,spec.n2,spec.width
+				local oldEdge=edgeMap[edgeKey(point(a),point(b))]
+				if oldEdge then oldEdge.retired=true end
+				local pairDot=n1:Dot(n2)
+				local normals=n1+n2
+				if normals.Magnitude>0.01 and math.abs(pairDot)<0.84 then
+					-- New surface replaces the two old joined faces. The
+					-- original sharp edge is retired; the two bevel trim
+					-- lines are now shared with their respective real faces.
+					local d1=(n1*pairDot-n2).Unit
+					local d2=(n2*pairDot-n1).Unit
+					local sign=if spec.interior then -1 else 1
+					local a1,b1=a+d1*w*sign,b+d1*w*sign
+					local a2,b2=a+d2*w*sign,b+d2*w*sign
+					local bevelFace=addFace({a1,b1,b2,a2},normals.Unit,"file_chamfer")
+					if bevelFace then
+						local function linkTrim(rawA:Vector3,rawB:Vector3,neighbor:Vector3)
+							local trim=edgeMap[edgeKey(point(rawA),point(rawB))]
+							if not trim then return end
+							local desired=direction(neighbor)
+							local candidate=nil
+							-- Original adjacent faces are authoritative if
+							-- still present. This also works when a second
+							-- File targets a prior chamfer's new trim line.
+							if oldEdge then
+								for _,fid in ipairs(oldEdge.faces) do
+									local face=faces[fid]
+									if face and face.id~=bevelFace.id and
+										face.normal:Dot(desired)>0.97 then
+										candidate=face break
+									end
+								end
+							end
+							if not candidate then
+								for _,face in ipairs(faces) do
+									if face.id~=bevelFace.id and
+										face.normal:Dot(desired)>0.97 and
+										math.abs((point(rawA)-face.polygon[1]):Dot(face.normal))<0.008 then
+										candidate=face
+									end
+								end
+							end
+							if candidate then
+								if not table.find(trim.faces,candidate.id) then
+									table.insert(trim.faces,candidate.id)
+								end
+								if not table.find(candidate.edges,trim) then
+									table.insert(candidate.edges,trim)
+								end
+							end
+						end
+						linkTrim(a1,b1,n1)
+						linkTrim(a2,b2,n2)
+					end
 				end
-			end
-			local normals=n1+n2
-			local parallel=n1:Dot(n2)
-			if normals.Magnitude>0.01 and math.abs(parallel)<0.84 then
-				-- Same two tangent offsets as GeometryCutter.file. The
-				-- previous -n1/-n2 face was not necessarily on the actual
-				-- slope (and was especially wrong for inside chamfers).
-				local d1=(n1*parallel-n2).Unit
-				local d2=(n2*parallel-n1).Unit
-				local sign=if kind=="FileMesh" and op.interior==true then -1 else 1
-				addFace({a+d1*w*sign,b+d1*w*sign,
-					b+d2*w*sign,a+d2*w*sign},
-					normals.Unit,"file_chamfer")
+				for _,prior in ipairs(completedBevels) do
+					local plan=BevelJunction.plan(prior,spec)
+					if plan then table.insert(bevelJunctions,plan) end
+				end
+				table.insert(completedBevels,spec)
 			end
 		end
 	end
@@ -359,10 +392,18 @@ function HistoryTopology.build(part:BasePart,component)
 			edge.taperB=innerVerticalVertices[key(edge.b)]==true
 		end
 	end
+	-- Edges that have been replaced by chamfers are not selectable
+	-- again. Keep the new bevel trim lines (shared with real neighboring
+	-- faces) and expose the same joined-corner set used by Fabricator.
+	local activeEdges={}
+	for _,edge in ipairs(edges) do
+		if not edge.retired then table.insert(activeEdges,edge) end
+	end
 	for _,face in ipairs(faces) do
 		face.vertices=table.clone(face.polygon)
 	end
-	return setmetatable({faces=faces,edges=edges,part=part,
+	return setmetatable({faces=faces,edges=activeEdges,part=part,
+		junctions=bevelJunctions,
 		vertices={},triangles={},history=true,componentId=component.id},
 		{__index=SurfaceTopology}),nil
 end
