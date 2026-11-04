@@ -70,6 +70,18 @@ function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onSt
 	local visuals = Instance.new("Folder")
 	visuals.Name = "FORM_SketchVisualization"
 	visuals.Parent = workspace
+	-- A single fill-only Highlight gives all edit strokes the same clean
+	-- silhouette language as the transform gizmo. Grid lines stay unlit.
+	local strokeModel = Instance.new("Model")
+	strokeModel.Name = "SketchStrokeModel"
+	strokeModel.Parent = visuals
+	local strokeGlow = Instance.new("Highlight")
+	strokeGlow.Adornee = strokeModel
+	strokeGlow.FillColor = ACCENT
+	strokeGlow.FillTransparency = 0.76
+	strokeGlow.OutlineTransparency = 1
+	strokeGlow.DepthMode = Enum.HighlightDepthMode.Occluded
+	strokeGlow.Parent = strokeModel
 	local gui = make("ScreenGui", {
 		Name = "FORM_SketchWorkspace", ResetOnSpawn = false,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Enabled = false,
@@ -101,8 +113,8 @@ function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onSt
 	local self = setmetatable({
 		camera = cameraController, onCommit = onCommit, onStatus = onStatus,
 		onExit = onExit, gui = gui, panel = panel, visuals = visuals,
-		lines = {}, dots = {}, gridParts = {}, connections = {},
-		active = false, component = nil, standalone = false, points = {}, closed = false,
+		lines = {}, dots = {}, gridParts = {}, sidePanels = {}, strokeModel = strokeModel, strokeGlow = strokeGlow, connections = {},
+		active = false, component = nil, standalone = false, sketchTool = "Extrude", points = {}, closed = false,
 		mode = "Remove", through = true, depthMM = 56,
 		cursor = nil, count = count, subtitle = subtitle,
 	}, SketchEditor)
@@ -118,6 +130,7 @@ function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onSt
 	end
 	self.modeButtons = modeButtons
 	self.modeTitle = modeTitle
+	self.heading = panel:FindFirstChildWhichIsA("TextLabel")
 
 	local depthTitle = text(panel, "EXTRUSION DEPTH   (mm)", 157, 11)
 	self.depthTitle = depthTitle
@@ -214,8 +227,9 @@ function SketchEditor:projectMouse(point: Vector2): Vector2?
 	)
 end
 
-function SketchEditor:start(component)
+function SketchEditor:start(component, tool: string?)
 	if self.active then self:stop() end
+	self.sketchTool = tool or "Extrude"
 	self.standalone = component == nil
 	if self.standalone then
 		-- Local sketch coordinates coincide with world X/Z. Its top face is
@@ -230,6 +244,9 @@ function SketchEditor:start(component)
 		self.mode, self.through = "Add", false
 	else
 		self.component = component
+		if self.sketchTool == "Saw" then
+			self.mode, self.through = "Remove", true
+		end
 	end
 	self.active = true
 	self.closed = false
@@ -256,6 +273,7 @@ function SketchEditor:stop()
 	for _, part in ipairs(self.lines) do part.Transparency = 1 end
 	for _, part in ipairs(self.dots) do part.Transparency = 1 end
 	for _, part in ipairs(self.gridParts) do part.Transparency = 1 end
+	for _, part in ipairs(self.sidePanels) do part.Transparency = 1 end
 	self.onExit()
 end
 
@@ -309,10 +327,12 @@ function SketchEditor:updateControls()
 	self.count.Text = string.format("%d vertices  ·  %s", #self.points,
 		if self.closed then "CLOSED PROFILE" else "OPEN PROFILE")
 	self.count.TextColor3 = if self.closed then COLORS[self.mode] else Color3.fromRGB(215, 228, 234)
-	self.modeTitle.Text = if self.standalone then "NEW BODY  /  CONSTRUCTION PROFILE" else "BOOLEAN OPERATION"
+	self.modeTitle.Text = if self.standalone then "NEW BODY  /  CONSTRUCTION PROFILE"
+		elseif self.sketchTool == "Saw" then "SAW  /  REMOVE MATERIAL" else "BOOLEAN OPERATION"
 	self.depthTitle.Text = if self.standalone then "BODY HEIGHT   (mm)" else "EXTRUSION DEPTH   (mm)"
+	self.heading.Text = if self.sketchTool == "Saw" then "FORM  /  PROFILE SAW" else "FORM  /  PROFILE SKETCH"
 	for mode, b in pairs(self.modeButtons) do
-		b.Visible = not self.standalone
+		b.Visible = not self.standalone and self.sketchTool ~= "Saw"
 		b.BackgroundColor3 = if self.mode == mode then COLORS[mode]
 			else Color3.fromRGB(57, 66, 76)
 		b.TextColor3 = if self.mode == mode then Color3.fromRGB(20, 28, 33)
@@ -323,7 +343,8 @@ function SketchEditor:updateControls()
 	self.depthBox.Text = string.format("%.1f", self.depthMM)
 	self.depthBox.TextEditable = self.standalone
 		or not (self.mode == "Intersect" or (self.mode == "Remove" and self.through))
-	self.commitButton.Text = if self.standalone then "CREATE NEW BODY" else "EXTRUDE / COMMIT"
+	self.commitButton.Text = if self.standalone then "CREATE NEW BODY"
+		elseif self.sketchTool == "Saw" then "SAW / REMOVE" else "EXTRUDE / COMMIT"
 	self.commitButton.BackgroundColor3 = if self.closed then COLORS[self.mode]
 		else Color3.fromRGB(68, 78, 86)
 	self.commitButton.TextColor3 = if self.closed then Color3.fromRGB(19, 27, 31)
@@ -367,14 +388,25 @@ end
 
 local function placeSegment(part: Part, a: Vector3, b: Vector3, width: number, color: Color3)
 	local length = (b - a).Magnitude
-	if length < 0.0001 then
-		part.Transparency = 1
-		return
-	end
+	if length < 0.0001 then part.Transparency = 1 return end
+	part.Shape = Enum.PartType.Cylinder
 	part.Color = color
-	part.Transparency = 0.03
-	part.Size = Vector3.new(width, width, length)
-	part.CFrame = CFrame.lookAt((a + b) / 2, b)
+	part.Transparency = 0.04
+	part.Size = Vector3.new(length, width, width)
+	part.CFrame = CFrame.lookAt((a + b) / 2, b) * CFrame.Angles(0, math.pi / 2, 0)
+end
+
+local function placeWall(part: Part, a: Vector3, b: Vector3, bottom: number, top: number, cf: CFrame, color: Color3)
+	local edge = b - a
+	local height = math.abs(top - bottom)
+	if edge.Magnitude < 0.0001 or height < 0.0001 then part.Transparency = 1 return end
+	local center = (a+b)/2
+	local localFrame = CFrame.lookAt(center, center + edge) * CFrame.Angles(0, math.pi / 2, 0)
+	part.Shape = Enum.PartType.Block
+	part.Color = color
+	part.Size = Vector3.new(edge.Magnitude, height, 0.003)
+	part.CFrame = localFrame
+	part.Transparency = 0.88
 end
 
 function SketchEditor:render()
@@ -433,6 +465,7 @@ function SketchEditor:render()
 	local segments = {}
 	local surfaceY = node.size.Y / 2 + 0.035
 	local color = if self.closed then COLORS[self.mode] else ACCENT
+	self.strokeGlow.FillColor = color
 	local function segment(a: Vector3, b: Vector3, tint: Color3?)
 		table.insert(segments, { a, b, tint or color })
 	end
@@ -441,11 +474,19 @@ function SketchEditor:render()
 			Quantize.snap(self.depthMM / MM_PER_STUD, Quantize.Grid), self.through)
 		for i, p in ipairs(self.points) do
 			local q = self.points[i % #self.points + 1]
-			segment(worldAt(p, top), worldAt(q, top))
-			segment(worldAt(p, bottom), worldAt(q, bottom), color:Lerp(Color3.new(0, 0, 0), 0.30))
-			segment(worldAt(p, bottom), worldAt(p, top), color:Lerp(Color3.new(1, 1, 1), 0.2))
+			local aw,bw = worldAt(p,top),worldAt(q,top)
+			segment(aw,bw)
+			segment(worldAt(p,bottom),worldAt(q,bottom),
+				color:Lerp(Color3.new(0, 0, 0), 0.28))
+			segment(worldAt(p,bottom), aw, color:Lerp(Color3.new(1,1,1),0.16))
+			if not self.sidePanels[i] then
+				self.sidePanels[i] = newVisual(self.visuals,"ExtrusionWall_"..i)
+			end
+			placeWall(self.sidePanels[i], aw, bw, bottom, top, cf, color)
 		end
+		for i=#self.points+1,#self.sidePanels do self.sidePanels[i].Transparency = 1 end
 	else
+		for _, wall in ipairs(self.sidePanels) do wall.Transparency = 1 end
 		for i = 1, #self.points - 1 do
 			segment(worldAt(self.points[i], surfaceY), worldAt(self.points[i + 1], surfaceY))
 		end
@@ -456,7 +497,7 @@ function SketchEditor:render()
 	end
 	for i, detail in ipairs(segments) do
 		if not self.lines[i] then
-			self.lines[i] = newVisual(self.visuals, "SketchEdge" .. i)
+			self.lines[i] = newVisual(self.strokeModel, "SketchEdge" .. i)
 		end
 		placeSegment(self.lines[i], detail[1], detail[2], thickness, detail[3])
 	end
@@ -465,12 +506,15 @@ function SketchEditor:render()
 	if self.cursor then table.insert(points, self.cursor) end
 	for i, p in ipairs(points) do
 		if not self.dots[i] then
-			self.dots[i] = newVisual(self.visuals, "Vertex" .. i)
+			self.dots[i] = newVisual(self.strokeModel, "Vertex" .. i)
 			self.dots[i].Shape = Enum.PartType.Ball
 		end
 		local part = self.dots[i]
 		part.Color = if self.cursor and i == #points then Color3.fromRGB(255, 201, 113) else color
-		part.Size = Vector3.one * thickness * 3.2
+		local closeTarget = self.cursor and i == 1 and #self.points >= 3
+			and (self.cursor - self.points[1]).Magnitude <= Quantize.Grid * 1.5
+		part.Size = Vector3.one * thickness * (if closeTarget then 4.5 else 2.0)
+		if closeTarget then part.Color = Color3.fromRGB(255, 201, 113) end
 		part.Position = worldAt(p, if self.closed then node.size.Y / 2 + 0.04 else surfaceY)
 		part.Transparency = 0
 	end
