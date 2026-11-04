@@ -37,6 +37,7 @@ function HistoryTopology.build(part:BasePart,component)
 	local pose=Compiler.pose(node)
 	local toPart=part.CFrame:ToObjectSpace(pose)
 	local faces,edges,edgeMap={}, {}, {}
+	local pendingHoles={}
 	local half=node.size/2
 	local topFace=nil
 	local function point(p:Vector3):Vector3 return toPart:PointToWorldSpace(p) end
@@ -69,14 +70,9 @@ function HistoryTopology.build(part:BasePart,component)
 	local function addHole(face,raw:{Vector3})
 		if not face then return end
 		face.holes=true
-		for i,v in ipairs(raw) do
-			local a,b=point(v),point(raw[i%#raw+1])
-			local e=edgeMap[edgeKey(a,b)]
-			if e then
-				if not table.find(e.faces,face.id) then table.insert(e.faces,face.id) end
-				if not table.find(face.edges,e) then table.insert(face.edges,e) end
-			end
-		end
+		-- The wall edges are created later than the parent face's
+		-- recess, so link the inner loop in a final topology pass.
+		table.insert(pendingHoles,{face=face,loop=table.clone(raw)})
 	end
 	local function onPlaneFace(raw:{Vector3},normal:Vector3)
 		if #raw<3 then return nil end
@@ -215,6 +211,7 @@ function HistoryTopology.build(part:BasePart,component)
 				table.clear(faces)
 				table.clear(edges)
 				table.clear(edgeMap)
+				table.clear(pendingHoles)
 				topFace=profileCap(poly,half.Y,true,"profile_top")
 				profileCap(poly,-half.Y,false,"profile_bottom")
 				profileWalls(poly,-half.Y,half.Y,true,"profile_side")
@@ -264,7 +261,24 @@ function HistoryTopology.build(part:BasePart,component)
 			end
 		end
 	end
-	-- Rebuild each face's edge list from the accumulated boundary graph.
+	-- Link pocket/bore lip edges to their actual containing planar face.
+	-- Without this step, the first cut's rim has only one adjacent face,
+	-- so a valid manufactured sharp edge could not be filed.
+	for _,entry in ipairs(pendingHoles) do
+		local face=entry.face
+		for i,v in ipairs(entry.loop) do
+			local a,b=point(v),point(entry.loop[i%#entry.loop+1])
+			local edge=edgeMap[edgeKey(a,b)]
+			if edge then
+				if not table.find(edge.faces,face.id) then
+					table.insert(edge.faces,face.id)
+				end
+				if not table.find(face.edges,edge) then
+					table.insert(face.edges,edge)
+				end
+			end
+		end
+	end
 	for _,face in ipairs(faces) do
 		face.vertices=table.clone(face.polygon)
 	end
