@@ -261,9 +261,13 @@ local function bevelPlan(edgeA:Vector3,edgeB:Vector3,
 	end
 	local along=edgeB-edgeA
 	if along.Magnitude<0.035 then return nil,"Edge is too short for a stable chamfer" end
-	if width<0.018 or width>along.Magnitude*0.35 then
-		return nil,"Chamfer width must fit within the selected edge"
+	if width<0.018 or width>128 then
+		return nil,"Chamfer width is outside safe fabrication limits"
 	end
+	-- Chamfer width is a distance ALONG the neighboring face planes,
+	-- not along the selected edge axis. A short vertical edge on a thin
+	-- plate can have a wide valid side bevel. Only *end-tapered* chamfers
+	-- need an edge-length restriction, handled by taperedBevelPrism.
 	if outwardA.Magnitude<0.9 or outwardB.Magnitude<0.9 then
 		return nil,"Invalid neighboring face normals"
 	end
