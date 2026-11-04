@@ -771,7 +771,7 @@ function Debug.start()
 				camera,mouse,24)
 			if not edge or #edge.faces~=2 then toolVisualizer:hide() return end
 			local f1,f2=topology.faces[edge.faces[1]],topology.faces[edge.faces[2]]
-			local inside=(string.find(f1.tag or "","_floor")~=nil
+			local inside=edge.interior==true or (string.find(f1.tag or "","_floor")~=nil
 				and string.find(f2.tag or "","_wall")~=nil)
 				or (string.find(f2.tag or "","_floor")~=nil
 				and string.find(f1.tag or "","_wall")~=nil)
@@ -895,7 +895,7 @@ function Debug.start()
 			-- re-entrant side. An exterior wedge would sit in empty space.
 			local f1=topology.faces[edge.faces[1]]
 			local f2=topology.faces[edge.faces[2]]
-			local interior=(string.find(f1.tag or "","_floor")~=nil
+			local interior=edge.interior==true or (string.find(f1.tag or "","_floor")~=nil
 				and string.find(f2.tag or "","_wall")~=nil)
 				or (string.find(f2.tag or "","_floor")~=nil
 				and string.find(f1.tag or "","_wall")~=nil)
