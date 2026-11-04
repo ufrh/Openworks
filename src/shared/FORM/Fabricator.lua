@@ -46,9 +46,10 @@ function Fabricator.geometryKey(component): string
 		elseif op.kind == "File" then
 			table.insert(pieces, string.format("F|%s|%.6f", op.edge, op.width))
 		elseif op.kind == "FileMesh" then
-			table.insert(pieces, string.format("FM|%.6f|%s|%s|%s|%s|%s|%s|%s",
+			table.insert(pieces, string.format("FM|%.6f|%s|%s|%s|%s|%s|%s|%s|%d",
 				op.width,vectorKey(op.a),vectorKey(op.b),vectorKey(op.normalA),vectorKey(op.normalB),
-				tostring(op.interior==true),tostring(op.taperA==true),tostring(op.taperB==true)))
+				tostring(op.interior==true),tostring(op.taperA==true),tostring(op.taperB==true),
+				op.segments or 1))
 		elseif op.kind == "InsetFace" then
 			table.insert(pieces, string.format("IF|%.6f|%.6f|%s",
 				op.margin,op.depth,vectorKey(op.normal)))
@@ -61,7 +62,7 @@ function Fabricator.geometryKey(component): string
 			end
 		end
 	end
-	return "FORM_CORNER_TRIANGLE_V4;"..table.concat(pieces, ";")
+	return "FORM_FILE_SEGMENTS_V5;"..table.concat(pieces, ";")
 end
 
 local function combine(source: BasePart, cutter: BasePart, mode: string): (boolean, any)
@@ -119,7 +120,7 @@ local function compileUnlocked(component): (BasePart, string)
 				if op.kind == "File" then return FileCutter.create(node,op) end
 				if op.kind == "FileMesh" then
 					return GeometryCutter.file(op.a,op.b,op.normalA,op.normalB,
-						op.width,false)
+						op.width,false,nil,nil,nil,op.segments or 1)
 				end
 				if op.kind == "InsetFace" then
 					local margin=0.04
