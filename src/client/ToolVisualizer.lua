@@ -29,6 +29,11 @@ function Visualizer.new(playerGui: PlayerGui)
 	local ghost = part("RemovalVolume", folder)
 	local ringAnchor = part("RingAnchor", folder)
 	local edgeLine = part("EdgeIndicator", folder)
+	local faceLines = {}
+	for i=1,64 do
+		local line=part("FaceBoundary_"..i,folder)
+		table.insert(faceLines,line)
+	end
 	local highlight = Instance.new("Highlight")
 	highlight.Name = "VolumeHighlight"
 	highlight.Adornee = ghost
@@ -72,7 +77,7 @@ function Visualizer.new(playerGui: PlayerGui)
 	corner.CornerRadius = UDim.new(0, 5)
 	corner.Parent = display
 	return setmetatable({
-		root = folder, ghost = ghost, edgeLine = edgeLine,
+		root = folder, ghost = ghost, edgeLine = edgeLine, faceLines=faceLines,
 		ringAnchor = ringAnchor, ring = ring,
 		highlight = highlight, label = label, display = display,
 	}, Visualizer)
@@ -84,6 +89,7 @@ function Visualizer:hide()
 	self.highlight.Enabled = false
 	self.ring.Visible = false
 	self.label.Enabled = false
+	for _,line in ipairs(self.faceLines) do line.Transparency=1 end
 end
 
 local function segment(p: Part, a: Vector3, b: Vector3, thickness: number)
@@ -106,6 +112,7 @@ function Visualizer:volume(frame: CFrame, size: Vector3, shape: Enum.PartType, c
 	self.ringAnchor.CFrame = CFrame.new(frame.Position)
 	self.ring.Visible = false
 	self.edgeLine.Transparency = 1
+	for _,line in ipairs(self.faceLines) do line.Transparency=1 end
 	self.display.Text = caption
 	self.label.Enabled = true
 end
@@ -148,6 +155,35 @@ function Visualizer:groove(pose: CFrame, node, a: Vector2, b: Vector2, width: nu
 	local cf = pose * CFrame.lookAt(center, center + v)
 	self:volume(cf, Vector3.new(width, penetration, v.Magnitude + width),
 		Enum.PartType.Block, string.format("GROOVE  %.0f × %.0f mm", width * 280, depth * 280))
+end
+
+function Visualizer:meshEdge(part:BasePart,edge,width:number)
+	self:hide()
+	local a=part.CFrame:PointToWorldSpace(edge.a)
+	local b=part.CFrame:PointToWorldSpace(edge.b)
+	self.edgeLine.Color=CYAN
+	segment(self.edgeLine,a,b,math.clamp(width*0.25,0.009,0.04))
+	self.ringAnchor.CFrame=CFrame.new((a+b)/2)
+	self.display.Text=string.format("FILE EDGE  ·  %.0f mm",width*280)
+	self.label.Enabled=true
+end
+
+function Visualizer:meshFace(part:BasePart,loop:{Vector3},margin:number,depth:number)
+	self:hide()
+	local center=Vector3.zero
+	for i,p in ipairs(loop) do
+		local q=loop[i%#loop+1]
+		if i>#self.faceLines then break end
+		local a=part.CFrame:PointToWorldSpace(p)
+		local b=part.CFrame:PointToWorldSpace(q)
+		local line=self.faceLines[i]
+		line.Color=CYAN
+		segment(line,a,b,0.013)
+		center+=a
+	end
+	self.ringAnchor.CFrame=CFrame.new(center/#loop)
+	self.display.Text=string.format("FACE INSET  %.0f / %.0f mm",margin*280,depth*280)
+	self.label.Enabled=true
 end
 
 function Visualizer:file(pose: CFrame, node, edge: string, width: number)
