@@ -398,7 +398,8 @@ function Debug.start()
 				else "Drill: BLIND (click to toggle)"
 		end
 	end)
-	line("Wheel: DRILL 2 / FILE 1 / INSET 2 mm   ·   SHIFT = coarse", 20)
+	line("Wheel: Drill 2 | File 1 | Inset 2 mm", 20)
+	line("Shift+Wheel: Drill 10 | File 5 | Inset 10 mm", 20)
 	line("POCKET  /  GROOVE  /  EDGE")
 	local insetMarginInput = toolNumberRow("Inset border (mm)  [wheel]", "28")
 	local insetDepthInput = toolNumberRow("Inset depth (mm)", "28")
@@ -407,7 +408,8 @@ function Debug.start()
 	local fileWidthInput = toolNumberRow("File chamfer (mm)  [wheel]", "14")
 	local kerfInput = toolNumberRow("Through kerf (mm)", "14")
 
-	line("Groove/Kerf: click start and end on the same face.", 24)
+	line("File: inside corners are detected automatically.", 24)
+	line("Groove/Kerf: two points on the same face.", 24)
 
 	line("3D TRANSFORM HANDLES")
 	local transformStatus = line("Mode: MOVE (G)")
