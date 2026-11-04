@@ -257,63 +257,67 @@ local function closestOnSegment(p: Vector3,a: Vector3,b: Vector3): (number,Vecto
 	return (p-q).Magnitude,q
 end
 
-local function cameraVisible(topology,camera:Camera,edge,point:Vector3,tolerance:number):boolean
-	local samples={point}
-	-- Probe the two adjacent material sides of the crease as well as the
-	-- exact edge. Upright concave corners can be occluded by the top plane.
-	for _,fid in ipairs(edge.faces) do
-		local face=topology.faces[fid]
-		if face and not face.curved then
-			local normal=topology.part.CFrame:VectorToWorldSpace(face.normal)
-			table.insert(samples,point-normal*math.min(tolerance*0.4,0.03))
-		end
-	end
+-- Picking is based on the whole authored line segment under the cursor.
+-- A face hit is not required: thin vertical edges can be selected even when
+-- the mouse ray lands on empty background or a neighboring top surface.
+local function visibleLine(topology,camera:Camera,edge,point:Vector3):boolean
 	local params=RaycastParams.new()
 	params.FilterType=Enum.RaycastFilterType.Include
 	params.FilterDescendantsInstances={topology.part}
-	for _,sample in ipairs(samples) do
+	local distance=(camera.CFrame.Position-point).Magnitude
+	local epsilon=math.max(0.02,math.min(0.065,distance*0.002))
+	local axis=(edge.b-edge.a)
+	if axis.Magnitude<1e-5 then return false end
+	axis=topology.part.CFrame:VectorToWorldSpace(axis.Unit)
+	local offsets={Vector3.zero}
+	for _,fid in ipairs(edge.faces) do
+		local face=topology.faces[fid]
+		if face and not face.curved then
+			local n=topology.part.CFrame:VectorToWorldSpace(face.normal)
+			local tangent=axis:Cross(n)
+			if tangent.Magnitude>0.1 then
+				table.insert(offsets,tangent.Unit*epsilon)
+				table.insert(offsets,-tangent.Unit*epsilon)
+			end
+		end
+	end
+	-- A short offset along each incident face lets the camera ray find
+	-- the visible seam without asking for a physically exact edge hit.
+	for _,offset in ipairs(offsets) do
+		local sample=point+offset
 		local delta=sample-camera.CFrame.Position
 		if delta.Magnitude<0.01 then continue end
 		local hit=workspace:Raycast(camera.CFrame.Position,
-			delta.Unit*(delta.Magnitude+0.1),params)
-		if hit and (hit.Position-point).Magnitude<=tolerance then
+			delta.Unit*(delta.Magnitude+epsilon),params)
+		if hit and (hit.Position-point).Magnitude<epsilon*3.5 then
 			return true
 		end
 	end
 	return false
 end
 
-function SurfaceTopology.closestEdge(topology,worldHit:Vector3,worldNormal:Vector3,
-	camera:Camera,mouse:Vector2,maxPixels:number?)
-	local best,bestPixels=nil,maxPixels or 22
+function SurfaceTopology.closestEdge(topology,camera:Camera,mouse:Vector2,
+	maxPixels:number?):(any,number?)
+	local best,bestDistance=nil,maxPixels or 20
 	for _,edge in ipairs(topology.edges) do
 		if edge.curved or #edge.faces~=2 then continue end
 		local a=topology.part.CFrame:PointToWorldSpace(edge.a)
 		local b=topology.part.CFrame:PointToWorldSpace(edge.b)
-		local pa,va=camera:WorldToViewportPoint(a)
-		local pb,vb=camera:WorldToViewportPoint(b)
-		if not va and not vb then continue end
-		local start=Vector2.new(pa.X,pa.Y)
-		local delta=Vector2.new(pb.X,pb.Y)-start
-		local squared=delta:Dot(delta)
-		if squared<0.01 then continue end
-		local t=math.clamp((mouse-start):Dot(delta)/squared,0,1)
-		local distancePixels=(mouse-start-delta*t).Magnitude
-		if distancePixels>=bestPixels then continue end
-		local closest=a+(b-a)*t
-		local distance=(camera.CFrame.Position-closest).Magnitude
-		local worldPixels=2*distance*math.tan(math.rad(camera.FieldOfView)*0.5)
-			/math.max(camera.ViewportSize.Y,1)
-		local tolerance=math.clamp(worldPixels*(maxPixels or 22)*1.65,0.05,0.25)
-		-- The cursor can land on an adjoining face while its projected
-		-- target is an upright crease. Trust screen proximity and the
-		-- camera occlusion check, not the arbitrary raycast hit distance.
-		if not cameraVisible(topology,camera,edge,closest,math.max(0.055,tolerance)) then
-			continue
-		end
-		best,bestPixels=edge,distancePixels
+		local screenA,okA=camera:WorldToViewportPoint(a)
+		local screenB,okB=camera:WorldToViewportPoint(b)
+		if not okA and not okB then continue end
+		local start=Vector2.new(screenA.X,screenA.Y)
+		local vector=Vector2.new(screenB.X,screenB.Y)-start
+		local len2=vector:Dot(vector)
+		if len2<0.1 then continue end
+		local t=math.clamp((mouse-start):Dot(vector)/len2,0,1)
+		local pixelDistance=(mouse-start-vector*t).Magnitude
+		if pixelDistance>=bestDistance then continue end
+		local point=a+(b-a)*t
+		if not visibleLine(topology,camera,edge,point) then continue end
+		best,bestDistance=edge,pixelDistance
 	end
-	return best
+	return best,if best then bestDistance else nil
 end
 
 local function containsTriangle(p:Vector3,a:Vector3,b:Vector3,c:Vector3):boolean
