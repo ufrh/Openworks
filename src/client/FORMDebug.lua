@@ -824,8 +824,10 @@ function Debug.start()
 			end
 			local widthBox = if kind == "Groove" then grooveWidthInput else kerfInput
 			local width, errorA = millimeters(widthBox, "Cut width")
-			local depth, errorB = if kind == "Groove"
-				then millimeters(grooveDepthInput, "Groove depth") else node.size.Y, nil
+			local depth, errorB = node.size.Y, nil
+			if kind == "Groove" then
+				depth, errorB = millimeters(grooveDepthInput, "Groove depth")
+			end
 			if not width or not depth then message(errorA or errorB) return end
 			data = {
 				x1 = sawFirst.x, z1 = sawFirst.z, x2 = x, z2 = z,
