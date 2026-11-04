@@ -48,7 +48,7 @@ function ViewGizmo.new(gui: ScreenGui, controller)
 		Name = "ViewNavigator",
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -16, 0, 14),
-		Size = UDim2.fromOffset(144, 174),
+		Size = UDim2.fromOffset(144, 206),
 		BackgroundColor3 = Color3.fromRGB(28, 33, 38),
 		BackgroundTransparency = 0.12,
 		BorderSizePixel = 0,
@@ -114,6 +114,17 @@ function ViewGizmo.new(gui: ScreenGui, controller)
 	}, panel)
 	new("UICorner", { CornerRadius = UDim.new(0, 3) }, projection)
 	projection.Activated:Connect(function() controller:toggleProjection() end)
+	local panButton = new("TextButton", {
+		Name = "DragPan",
+		BackgroundColor3 = Color3.fromRGB(66, 75, 83),
+		BorderSizePixel = 0, Font = Enum.Font.Code,
+		Text = "HAND  ·  DRAG TO PAN", TextSize = 11,
+		TextColor3 = Color3.fromRGB(236, 239, 241),
+		Position = UDim2.fromOffset(8, 176),
+		Size = UDim2.fromOffset(128, 23),
+		Active = true, ZIndex = 6,
+	}, panel)
+	new("UICorner", { CornerRadius = UDim.new(0, 3) }, panButton)
 
 	-- Labels are 2D overlays, aligned to the 3D ball endpoints at each camera update.
 	-- They are not active buttons, so drag input still belongs to the ViewportFrame.
@@ -140,6 +151,7 @@ function ViewGizmo.new(gui: ScreenGui, controller)
 		labels = labels,
 		controller = controller,
 		dragging = false,
+		panning = false,
 		start = Vector2.zero,
 		previous = Vector2.zero,
 		didDrag = false,
@@ -157,16 +169,33 @@ function ViewGizmo.new(gui: ScreenGui, controller)
 		self.dragging = true
 		self.didDrag = false
 	end)
+
+	connect(panButton.InputBegan, function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		self.panning = true
+		self.dragging = false
+		self.previous = Vector2.new(input.Position.X, input.Position.Y)
+	end)
 	connect(UserInputService.InputChanged, function(input)
-		if not self.dragging or input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+		if not self.dragging and not self.panning then return end
 		local nextPosition = Vector2.new(input.Position.X, input.Position.Y)
 		local delta = nextPosition - self.previous
 		self.previous = nextPosition
+		if self.panning then
+			controller:panPixels(delta.X, delta.Y)
+			return
+		end
 		if (nextPosition - self.start).Magnitude > 3 then self.didDrag = true end
 		if self.didDrag then controller:orbitDelta(delta) end
 	end)
 	connect(UserInputService.InputEnded, function(input)
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 or not self.dragging then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		if self.panning then
+			self.panning = false
+			return
+		end
+		if not self.dragging then return end
 		self.dragging = false
 		if self.didDrag then return end
 		local pos = self.start - viewport.AbsolutePosition
@@ -179,7 +208,10 @@ function ViewGizmo.new(gui: ScreenGui, controller)
 		end
 		if best then controller:setView(best) end
 	end)
-	connect(UserInputService.WindowFocusReleased, function() self.dragging = false end)
+	connect(UserInputService.WindowFocusReleased, function()
+		self.dragging = false
+		self.panning = false
+	end)
 	return self
 end
 

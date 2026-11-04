@@ -8,7 +8,9 @@ local BlenderCamera = {}
 BlenderCamera.__index = BlenderCamera
 
 local RENDER_NAME = "FORM_BlenderViewportCamera"
-local FOV = 60
+local INITIAL_FOV = 60
+local MIN_FOV = 22
+local MAX_FOV = 75
 local MIN_DISTANCE = 0.75
 local MAX_DISTANCE = 2000
 local MIN_ORTHO_HEIGHT = 0.06
@@ -16,8 +18,10 @@ local MAX_ORTHO_HEIGHT = 2000
 local ORBIT_SENSITIVITY = 0.007
 local SNAP_ANGLE = math.rad(15)
 local POLE_LIMIT = math.rad(89.9)
-local PERSPECTIVE_TAN = math.tan(math.rad(FOV) / 2)
-local FALLBACK_TAN = math.tan(math.rad(1) / 2)
+local function halfTan(fov: number): number
+	return math.tan(math.rad(fov) / 2)
+end
+local PERSPECTIVE_TAN = halfTan(INITIAL_FOV)
 
 local function isShiftDown(): boolean
 	return UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
@@ -34,10 +38,14 @@ local function isAltDown(): boolean
 		or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
 end
 
-local function mouseDragMode(): string
+local function mouseDragMode(button: Enum.UserInputType?): string
+	-- Conventional Roblox right-mouse orbit, Blender middle-mouse pan.
+	if button == Enum.UserInputType.MouseButton2
+		or button == Enum.UserInputType.MouseButton1 then
+		return "Orbit"
+	end
 	if isCtrlDown() then return "Dolly" end
-	if isShiftDown() then return "Pan" end
-	return "Orbit"
+	return "Pan"
 end
 
 local function boundsRadius(size: Vector3): number
@@ -47,10 +55,15 @@ end
 function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	local self = setmetatable({
 		target = Vector3.new(0, 2, 0),
+		displayedTarget = Vector3.new(0, 2, 0),
+		displayedFrame = nil,
+		displayedOrthoHeight = 2 * 26 * PERSPECTIVE_TAN,
 		yaw = math.rad(40),
 		pitch = math.rad(30),
 		roll = 0,
 		distance = 26,
+		fov = INITIAL_FOV,
+		displayedFov = INITIAL_FOV,
 		orthographicHeight = 2 * 26 * PERSPECTIVE_TAN,
 		orthographic = false,
 		axisView = nil,
@@ -79,6 +92,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			-- Roblox's default camera can mark RMB/MMB processed; navigation still owns them.
 			if UserInputService:GetFocusedTextBox() then return end
 			if processed and kind == Enum.UserInputType.MouseButton1 then return end
+			if self.dragging then return end
 			self.dragging = true
 			self.dragButton = kind
 			self.savedMouseBehavior = UserInputService.MouseBehavior
@@ -139,13 +153,8 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 		if input.UserInputType ~= Enum.UserInputType.MouseWheel or processed then return end
 		local steps = input.Position.Z
 		if steps == 0 then return end
-		if isShiftDown() then
-			self:panPixels(0, -steps * 40)
-		elseif isCtrlDown() then
-			self:panPixels(steps * 40, 0)
-		else
-			self:zoom(math.pow(0.85, steps))
-		end
+		-- Wheel zoom must not alter the orbit pivot, view orientation or grid origin.
+		self:zoom(math.pow(0.86, steps))
 	end)
 
 	connect(UserInputService.WindowFocusReleased, function()
@@ -158,7 +167,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 		self.projectionDirty = true
 	end)
 
-	RunService:BindToRenderStep(RENDER_NAME, Enum.RenderPriority.Camera.Value + 2, function()
+	RunService:BindToRenderStep(RENDER_NAME, Enum.RenderPriority.Camera.Value + 2, function(dt)
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		if camera ~= self.camera then
@@ -172,7 +181,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			end
 			local delta = UserInputService:GetMouseDelta()
 			if delta.Magnitude > 0 then
-				local mode = mouseDragMode()
+				local mode = mouseDragMode(self.dragButton)
 				if mode == "Orbit" then
 					self:orbitDelta(delta)
 				elseif mode == "Pan" then
@@ -184,10 +193,11 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 		end
 
 		camera.CameraType = Enum.CameraType.Scriptable
-		camera.FieldOfView = FOV
 
 		if self.projectionDirty then
 			self.projectionDirty = false
+			-- Real orthographic is a Studio Beta; do not teleport thousands of
+			-- studs backward to fake it on clients where it is not supported.
 			self.nativeOrtho = pcall(function()
 				camera.OrthographicMode = Enum.OrthographicMode.Vertical
 				camera.ProjectionType = if self.orthographic
@@ -195,17 +205,18 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 					else Enum.ProjectionType.Perspective
 			end)
 		end
+		if not self.nativeOrtho and self.orthographic then
+			self.orthographic = false
+			self.autoOrthographic = false
+		end
 
-		local renderDistance = self.distance
-		if self.orthographic then
-			if self.nativeOrtho then
-				camera.OrthographicSize = self.orthographicHeight
-			else
-				-- Fallback for clients without native orthographic support.
-				-- 1-degree FOV + an increased distance preserves apparent scale.
-				camera.FieldOfView = 1
-				renderDistance = math.min(MAX_DISTANCE * 20, self.orthographicHeight / (2 * FALLBACK_TAN))
-			end
+		local alpha = 1 - math.exp(-math.max(0, dt) * 16)
+		self.displayedFov += (self.fov - self.displayedFov) * alpha
+		camera.FieldOfView = self.displayedFov
+		self.displayedTarget = self.displayedTarget:Lerp(self.target, alpha)
+		self.displayedOrthoHeight += (self.orthographicHeight - self.displayedOrthoHeight) * alpha
+		if self.nativeOrtho and self.orthographic then
+			camera.OrthographicSize = self.displayedOrthoHeight
 		end
 
 		local direction = Vector3.new(
@@ -221,9 +232,15 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			direction = -Vector3.yAxis
 			upVector = Vector3.zAxis
 		end
-		local orientation = CFrame.lookAt(self.target + direction * renderDistance, self.target, upVector)
-		camera.CFrame = orientation * CFrame.Angles(0, 0, self.roll)
-		camera.Focus = CFrame.new(self.target)
+		local desiredFrame = CFrame.lookAt(self.target + direction * self.distance, self.target, upVector)
+			* CFrame.Angles(0, 0, self.roll)
+		if self.displayedFrame == nil then
+			self.displayedFrame = desiredFrame
+		else
+			self.displayedFrame = self.displayedFrame:Lerp(desiredFrame, alpha)
+		end
+		camera.CFrame = self.displayedFrame
+		camera.Focus = CFrame.new(self.displayedTarget)
 		if self.onFrame then self.onFrame(camera.CFrame, self:viewLabel()) end
 	end)
 
@@ -240,7 +257,7 @@ function BlenderCamera:orbitDelta(delta: Vector2)
 end
 
 function BlenderCamera:getFocusTarget(): Vector3
-	return self.target
+	return self.displayedTarget
 end
 
 function BlenderCamera:viewLabel(): string
@@ -262,9 +279,9 @@ end
 function BlenderCamera:setProjection(enabled: boolean)
 	if self.orthographic == enabled then return end
 	if enabled then
-		self.orthographicHeight = math.clamp(2 * self.distance * PERSPECTIVE_TAN, MIN_ORTHO_HEIGHT, MAX_ORTHO_HEIGHT)
+		self.orthographicHeight = math.clamp(2 * self.distance * halfTan(self.fov), MIN_ORTHO_HEIGHT, MAX_ORTHO_HEIGHT)
 	else
-		self.distance = math.clamp(self.orthographicHeight / (2 * PERSPECTIVE_TAN), MIN_DISTANCE, MAX_DISTANCE)
+		self.distance = math.clamp(self.orthographicHeight / (2 * halfTan(self.fov)), MIN_DISTANCE, MAX_DISTANCE)
 	end
 	self.orthographic = enabled
 	self.projectionDirty = true
@@ -295,19 +312,28 @@ function BlenderCamera:setView(view: string)
 end
 
 function BlenderCamera:zoom(factor: number)
-	if self.orthographic then
+	-- Hybrid dolly/lens zoom, about 60% physical travel and 40% FoV change.
+	-- Zoom does not change target, yaw, pitch, roll, or construction objects.
+	factor = math.clamp(factor, 0.05, 20)
+	if self.orthographic and self.nativeOrtho then
 		self.orthographicHeight = math.clamp(self.orthographicHeight * factor, MIN_ORTHO_HEIGHT, MAX_ORTHO_HEIGHT)
-	else
-		self.distance = math.clamp(self.distance * factor, MIN_DISTANCE, MAX_DISTANCE)
+		return
 	end
+	local desiredScale = self.distance * halfTan(self.fov) * factor
+	local dollyDistance = math.clamp(self.distance * math.pow(factor, 0.6), MIN_DISTANCE, MAX_DISTANCE)
+	local desiredFov = math.deg(2 * math.atan(desiredScale / dollyDistance))
+	local fov = math.clamp(desiredFov, MIN_FOV, MAX_FOV)
+	local distance = math.clamp(desiredScale / halfTan(fov), MIN_DISTANCE, MAX_DISTANCE)
+	self.fov = fov
+	self.distance = distance
 end
 
 function BlenderCamera:panPixels(dx: number, dy: number)
 	local camera = workspace.CurrentCamera
 	if not camera then return end
 	local height = math.max(1, camera.ViewportSize.Y)
-	local visibleHeight = if self.orthographic then self.orthographicHeight
-		else 2 * self.distance * PERSPECTIVE_TAN
+	local visibleHeight = if self.orthographic and self.nativeOrtho then self.orthographicHeight
+		else 2 * self.distance * halfTan(self.fov)
 	local perPixel = visibleHeight / height
 	self.target += (-camera.CFrame.RightVector * dx + camera.CFrame.UpVector * dy) * perPixel
 end
@@ -319,7 +345,7 @@ function BlenderCamera:frameBounds(frame: CFrame?, size: Vector3?)
 	local camera = workspace.CurrentCamera
 	local viewport = if camera then camera.ViewportSize else Vector2.new(1920, 1080)
 	local aspect = viewport.X / math.max(1, viewport.Y)
-	local effectiveHalfFov = math.atan(PERSPECTIVE_TAN * math.min(1, aspect))
+	local effectiveHalfFov = math.atan(halfTan(self.fov) * math.min(1, aspect))
 	local desiredDistance = math.clamp(radius / math.sin(effectiveHalfFov) * 1.25, MIN_DISTANCE, MAX_DISTANCE)
 	self.distance = desiredDistance
 	self.orthographicHeight = math.clamp(radius * 2.8, MIN_ORTHO_HEIGHT, MAX_ORTHO_HEIGHT)

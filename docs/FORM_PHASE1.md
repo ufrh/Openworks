@@ -21,11 +21,11 @@
 5. Click **- Cylinder**. It also begins at 0.05 studs. On the cutter, enlarge SIZE X (diameter) to about 0.5 and SIZE Y (height) to about 2, then the result should be a vertical cylindrical cut. CSG may not resolve every feature as small as 0.05 studs.
 6. Navigate between editable source nodes with **< Prev Node** / **Next Node >**, and test live recompilation.
 7. Edit **POS**, **SIZE**, **ROT** of any selected node. Try **Tube** and **Hole Block** as new components; enlarge their X/Z dimensions enough for an opening.
-8. Use Blender-style controls: **MMB drag orbit** or **RMB drag orbit**, **Shift+MMB drag pan**, **Ctrl+MMB drag dolly**, **wheel zoom**; optionally **Alt+LMB drag** to orbit.
+8. Use Blender-style controls: **RMB drag orbit**, **MMB drag pan**, **Ctrl+MMB drag dolly/zoom**, **wheel zoom**; optionally **Alt+LMB drag** to orbit.
 9. Use **Numpad 1/3/7** for Front/Right/Top orthographic views; **Ctrl+Numpad 1/3/7** for Back/Left/Bottom. **Numpad 5** toggles orthographic/perspective.
 10. Use **Numpad 2/4/6/8** to orbit 15 degrees, **Numpad 9** to flip to the opposite view; **Shift+Numpad 4/6** rolls the camera, **Ctrl+Numpad 2/4/6/8** pans.
 11. Press **F** or **Numpad .** to frame the selection; **Home** frames all components. The top-right 3D ViewportFrame gizmo can be **dragged with left mouse** to orbit freely, or clicked on its axes for cardinal views without a numpad.
-12. Drag the mouse while orbiting with RMB/MMB and confirm the pointer locks until release. Test orbit, pan, zoom, object selection, clicking a gizmo axis, dragging the gizmo, and orienting again.
+12. Drag the mouse while orbiting with RMB and confirm the pointer locks until release. MMB should pan. The **HAND · DRAG TO PAN** control below the view gizmo also pans. Wheel zoom combines dolly and focal-length changes, with interpolation; neither the grid nor the orbit pivot should jump.
 13. Inspect the construction grid: it uses client-only LineHandleAdornments, not 3D grid Parts. Visible lines are **0.05 studs apart** across a 6x6 stud patch centered near your camera focus, with stronger lines at 0.5-stud intervals.
 
 The panel and scene grid are intentionally plain. The viewport preview is only a debug harness, not final Duotone.
@@ -36,7 +36,7 @@ The panel and scene grid are intentionally plain. The viewport preview is only a
 - One component represents one CSG solid. Disconnected unions may fail and will surface an error instead of silently creating extra bodies.
 - No 3D transform handles yet: precise transforms are entered numerically.
 - Camera navigation follows Blender viewport fundamentals, but not every Blender mode or preference (no fly/walk navigation, camera-object view, or camera roll via gesture).
-- Native orthographic projection is used where supported by the Roblox client. If it is unavailable, a 1-degree perspective approximation is used; orthographic feature availability may vary between Studio versions.
+- Native orthographic projection is used where supported by the Roblox client. When it is unavailable, the camera stays in perspective instead of using an extreme camera-distance approximation. Orthographic feature availability varies between Studio versions.
 - A component's first additive node cannot be deleted from the debug panel; delete the entire component instead.
 - 0.05 studs is the model/grid precision, **not a guarantee** that Roblox CSG can successfully resolve every feature at that scale.
 - Roblox may simplify complex CSG meshes (20k triangle limit); collision fidelity and geometry precision need runtime testing.
