@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local FORM = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Document = require(FORM.Document)
 local Compiler = require(FORM.Compiler)
+local Fabricator = require(FORM.Fabricator)
 local Quantize = require(FORM.Quantize)
 local Preview = require(script.Parent.Preview)
 local BlenderCamera = require(script.Parent.BlenderCamera)
@@ -730,6 +731,13 @@ function Debug.start()
 		local component = if typeof(id) == "number" then document.components[id] else nil
 		if not component then return nil end
 		local node = component.nodes[1]
+		-- The rendered CSG may still be the previous revision while
+		-- asynchronous remanufacturing is in progress. Never pick stale
+		-- topology or commit a feature against a replaced mesh.
+		local state = preview.states[id]
+		if activeTool and (not state or state.key~=Fabricator.geometryKey(component)) then
+			return nil
+		end
 		local pose = Compiler.pose(node)
 		local normal = pose:VectorToObjectSpace(hit.Normal)
 		
