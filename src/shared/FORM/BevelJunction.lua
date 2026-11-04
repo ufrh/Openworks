@@ -92,10 +92,10 @@ function BevelJunction.plan(first,second)
 		then inner.b else inner.a
 	local innerSpan=(remainingInner-corner).Magnitude
 	if innerSpan<0.025 then return nil end
-	local span=math.min(inner.width*1.20,outerAxis.Magnitude*0.70)
-	-- Deliberately stop at the width of the additive corner, and never
-	-- reach unrelated features further along the old perimeter.
-	if span<0.02 then return nil end
+	-- A partial transition leaves another boxed ledge. Require enough
+	-- continuous exterior edge length to trim the WHOLE additive wedge.
+	if outerAxis.Magnitude<inner.width*1.08 then return nil end
+	local span=inner.width*1.08
 	return {corner=corner,intoVoid=intoVoid,shared=shared,
 		unshared=unshared,outer=outer,inner=inner,span=span}
 end
