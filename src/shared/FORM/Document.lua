@@ -152,32 +152,85 @@ function Document:addOperation(component, kind: string, data)
 	end
 	local operation
 	if kind == "Drill" then
-		local diameter = Quantize.snap(data.diameter, Quantize.Grid)
-		if not Quantize.isFinite(diameter) or diameter < Quantize.MinSize
-			or diameter > Quantize.MaxSize then
-			return false, "Drill diameter must be between 0.05 and 128 studs"
+		-- Drill dimensions use 1 mm resolution independently of the
+		-- 0.05-stud construction POSITION snap (14 mm).
+		local millimeter = 1 / 280
+		if typeof(data.diameter) ~= "number" or not Quantize.isFinite(data.diameter) then
+			return false, "Enter a finite drill diameter"
+		end
+		local diameter = Quantize.snap(data.diameter, millimeter)
+		local depth = data.depth or node.size.Y
+		if typeof(depth) ~= "number" or not Quantize.isFinite(depth) then
+			return false, "Enter a finite drilling depth"
+		end
+		depth = Quantize.snap(depth, millimeter)
+		if diameter < 5 / 280 or diameter > math.min(2 * math.max(node.size.X, node.size.Z), 128) then
+			return false, "Diameter must be at least 5 mm and fit the workpiece"
+		end
+		if depth < 5 / 280 or depth > Quantize.MaxSize then
+			return false, "Drill depth must be between 5 mm and 128 studs"
+		end
+		local x = Quantize.snap(data.x + node.size.X * 0.5, Quantize.Grid)
+		local z = Quantize.snap(data.z + node.size.Z * 0.5, Quantize.Grid)
+		if x < 0 or x > node.size.X or z < 0 or z > node.size.Z then
+			return false, "Drill center must be on the workpiece"
 		end
 		operation = {
-			kind = "Drill", diameter = diameter,
-			-- Store offsets from the material's minimum X/Z edges.
-			x = Quantize.snap(data.x + node.size.X * 0.5, Quantize.Grid),
-			z = Quantize.snap(data.z + node.size.Z * 0.5, Quantize.Grid),
+			kind = "Drill", diameter = diameter, depth = depth,
+			through = data.through ~= false,
+			x = x, z = z,
 		}
-	elseif kind == "Saw" then
-		local kerf = Quantize.snap(data.kerf, Quantize.Grid)
+	elseif kind == "Saw" or kind == "Groove" then
+		local kerf = Quantize.snap(data.kerf, 1 / 280)
 		local x1, z1 = Quantize.snap(data.x1 + node.size.X * 0.5, Quantize.Grid),
 			Quantize.snap(data.z1 + node.size.Z * 0.5, Quantize.Grid)
 		local x2, z2 = Quantize.snap(data.x2 + node.size.X * 0.5, Quantize.Grid),
 			Quantize.snap(data.z2 + node.size.Z * 0.5, Quantize.Grid)
-		if not Quantize.isFinite(kerf) or kerf < Quantize.MinSize
-			or kerf > Quantize.MaxSize then return false, "Invalid saw kerf" end
+		if not Quantize.isFinite(kerf) or kerf < 5 / 280
+			or kerf > Quantize.MaxSize then return false, "Cut width must be at least 5 mm" end
+		local depth = data.depth or node.size.Y
+		if typeof(depth) ~= "number" or not Quantize.isFinite(depth) then return false, "Invalid cut depth" end
+		depth = Quantize.snap(depth, 1 / 280)
+		if depth < 5 / 280 or depth > Quantize.MaxSize then return false, "Invalid cut depth" end
 		if (Vector2.new(x2 - x1, z2 - z1)).Magnitude < Quantize.MinSize - 0.00001 then
 			return false, "Saw cut must extend at least 0.05 studs"
 		end
 		operation = {
-			kind = "Saw", x1 = x1, z1 = z1, x2 = x2, z2 = z2,
-			kerf = kerf, useMesh = data.useMesh == true,
+			kind = kind, x1 = x1, z1 = z1, x2 = x2, z2 = z2,
+			kerf = kerf, useMesh = kind == "Saw" and data.useMesh == true,
+			through = kind == "Saw" or data.through == true, depth = depth,
 		}
+	elseif kind == "Inset" then
+		if node.kind ~= "Block" then return false, "Inset requires rectangular stock" end
+		local margin, depth = data.margin, data.depth
+		if typeof(margin) ~= "number" or typeof(depth) ~= "number"
+			or not Quantize.isFinite(margin) or not Quantize.isFinite(depth) then
+			return false, "Enter finite inset dimensions"
+		end
+		margin, depth = Quantize.snap(margin, 1 / 280), Quantize.snap(depth, 1 / 280)
+		if margin < 5 / 280 or margin * 2 >= math.min(node.size.X, node.size.Z) - 0.05 then
+			return false, "Inset border is too large for the workpiece"
+		end
+		if depth < 5 / 280 or depth > node.size.Y then
+			return false, "Inset depth must fit inside material"
+		end
+		operation = { kind = "Inset", margin = margin, depth = depth }
+	elseif kind == "File" then
+		if node.kind ~= "Block" then return false, "Edge filing requires rectangular stock" end
+		local edge = data.edge
+		if edge ~= "X+" and edge ~= "X-" and edge ~= "Z+" and edge ~= "Z-" then
+			return false, "Select a supported top perimeter edge"
+		end
+		local width = data.width
+		if typeof(width) ~= "number" or not Quantize.isFinite(width) then
+			return false, "Enter a finite filing width"
+		end
+		width = Quantize.snap(width, 1 / 280)
+		local maxWidth = math.min(node.size.Y, if string.sub(edge, 1, 1) == "X" then node.size.X else node.size.Z)
+		if width < 5 / 280 or width >= maxWidth - 0.005 then
+			return false, "File width must fit the top edge of the workpiece"
+		end
+		operation = { kind = "File", edge = edge, width = width }
 	elseif kind == "SketchExtrude" then
 		local mode = data.mode
 		if mode ~= "Add" and mode ~= "Remove" and mode ~= "Intersect" then
