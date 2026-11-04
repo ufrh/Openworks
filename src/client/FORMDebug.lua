@@ -9,6 +9,7 @@ local FORM = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Document = require(FORM.Document)
 local Compiler = require(FORM.Compiler)
 local Fabricator = require(FORM.Fabricator)
+local GeometryCutter = require(FORM.GeometryCutter)
 local Quantize = require(FORM.Quantize)
 local Preview = require(script.Parent.Preview)
 local BlenderCamera = require(script.Parent.BlenderCamera)
@@ -724,6 +725,33 @@ function Debug.start()
 			point = localPoint, x = x, z = z, hit = hit }
 	end
 
+	-- Derive a single validated filing operation from a current, visible
+	-- manufactured edge. Hover and click use identical face normals and
+	-- inside/outer classification, so a preview cannot promise another cut.
+	local function bevelData(topology,edge,pose:CFrame,width:number)
+		if not edge or #edge.faces~=2 or edge.curved then
+			return nil,"Select a straight manufactured edge between two faces"
+		end
+		local f1,f2=topology.faces[edge.faces[1]],topology.faces[edge.faces[2]]
+		if not f1 or not f2 or f1.curved or f2.curved then
+			return nil,"Filing curved faces is not yet supported"
+		end
+		local partFrame=topology.part.CFrame
+		local a=pose:PointToObjectSpace(partFrame:PointToWorldSpace(edge.a))
+		local b=pose:PointToObjectSpace(partFrame:PointToWorldSpace(edge.b))
+		local n1=pose:VectorToObjectSpace(partFrame:VectorToWorldSpace(f1.normal))
+		local n2=pose:VectorToObjectSpace(partFrame:VectorToWorldSpace(f2.normal))
+		local interior=edge.interior==true
+			or ((string.find(f1.tag or "","_floor")~=nil)
+				and (string.find(f2.tag or "","_wall")~=nil))
+			or ((string.find(f2.tag or "","_floor")~=nil)
+				and (string.find(f1.tag or "","_wall")~=nil))
+		local ok,why=GeometryCutter.validateFile(a,b,n1,n2,width,interior)
+		if not ok then return nil,why end
+		return {a=a,b=b,normalA=n1,normalB=n2,
+			width=width,interior=interior},nil
+	end
+
 	RunService.RenderStepped:Connect(function()
 		local target = fabricationHit()
 		if not target then toolVisualizer:hide() return end
@@ -770,12 +798,9 @@ function Debug.start()
 			local edge=topology.closestEdge(topology,target.hit.Position,target.hit.Normal,
 				camera,mouse,24)
 			if not edge or #edge.faces~=2 then toolVisualizer:hide() return end
-			local f1,f2=topology.faces[edge.faces[1]],topology.faces[edge.faces[2]]
-			local inside=edge.interior==true or (string.find(f1.tag or "","_floor")~=nil
-				and string.find(f2.tag or "","_wall")~=nil)
-				or (string.find(f2.tag or "","_floor")~=nil
-				and string.find(f1.tag or "","_wall")~=nil)
-			toolVisualizer:meshEdge(topology.part,edge,width,inside)
+			local plan=bevelData(topology,edge,pose,width)
+			if not plan then toolVisualizer:hide() return end
+			toolVisualizer:meshEdge(topology.part,edge,width,plan.interior)
 		elseif activeTool == "Groove" or activeTool == "Kerf" then
 			if not sawFirst or sawFirst.id~=target.id then
 				toolVisualizer:hide() return
@@ -885,23 +910,10 @@ function Debug.start()
 				message("Hover a visible hard edge of the manufactured solid")
 				return
 			end
-			local a=pose:PointToObjectSpace(topology.part.CFrame:PointToWorldSpace(edge.a))
-			local b=pose:PointToObjectSpace(topology.part.CFrame:PointToWorldSpace(edge.b))
-			local normalA=pose:VectorToObjectSpace(topology.part.CFrame:VectorToWorldSpace(
-				topology.faces[edge.faces[1]].normal))
-			local normalB=pose:VectorToObjectSpace(topology.part.CFrame:VectorToWorldSpace(
-				topology.faces[edge.faces[2]].normal))
-			-- On a recess floor/wall corner, the solid occupies the
-			-- re-entrant side. An exterior wedge would sit in empty space.
-			local f1=topology.faces[edge.faces[1]]
-			local f2=topology.faces[edge.faces[2]]
-			local interior=edge.interior==true or (string.find(f1.tag or "","_floor")~=nil
-				and string.find(f2.tag or "","_wall")~=nil)
-				or (string.find(f2.tag or "","_floor")~=nil
-				and string.find(f1.tag or "","_wall")~=nil)
+			local plan,why=bevelData(topology,edge,pose,width)
+			if not plan then message(why or "Selected edge cannot be filed") return end
 			kind="FileMesh"
-			data={a=a,b=b,normalA=normalA,normalB=normalB,
-				width=width,interior=interior}
+			data=plan
 		elseif kind == "Groove" or kind == "Kerf" then
 			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology then message(why or "Surface indexing in progress") return end
