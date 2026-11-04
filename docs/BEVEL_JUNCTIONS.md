@@ -1,109 +1,110 @@
-# FORM — Shared Bevel Junctions (Prototype)
+# FORM — Clipped Interior Bevels / Shared Corner Geometry
 
-Updated: 2026-11-04 · `dev`
+Updated: 2026-11-04 · Branch `dev` · Studio validation pending
 
-## Problem visible in Studio
+## Why the previous junction attempt was wrong
 
-Filing an L-shaped workpiece's two top perimeter edges and then its
-**vertical concave edge** created a rectangular block at the intersection.
-The File feature used an independent triangular-prism Boolean for each
-edge. An interior File **adds** a wedge along the entire vertical edge,
-which can refill material that the top and bottom bevels previously
-removed. The earlier automatic tetrahedral miter and endpoint-taper
-experiments did not solve this consistently.
+The first junction approach used a **second subtractive Boolean** after
+unioning an entire vertical inside bevel. It tried to guess an extension of
+the two outside bevels into the filled area. In Studio that made the
+corner *worse*, with a bigger box/protrusion. This approach is removed.
 
-## Current solution
+**Correct invariant:** Never union material in a region already removed
+by an adjoining outside bevel.
 
-`BevelJunction.lua` is a shared deterministic model used by:
+## Current implementation
 
-- **Fabricator**: After the second of two compatible File operations, it
-  continues the already-authored *outside bevel's slope* across the added
-  interior wedge, using a short, bounded planar cutter that follows the
-  perimeter into the inside corner. It only applies when an inside and
-  outside File share a real endpoint and one wall face and their edge
-  directions are nearly perpendicular.
-- **HistoryTopology**: Builds the same junction pairings, clips the
-  interior bevel face polygon against the neighboring outside bevel
-  planes, and exposes the resulting V-shaped boundary lines and planar
-  triangular corner-wedge faces to the edge/face picker. The original
-  sharp edge is retired and the new bevel trim lines are connected to
-  their adjacent logical faces.
+`BevelJunction.lua` defines **matching neighboring bevel planes** from
+the *actual authored FileMesh/File features*. An inside and outside bevel
+qualify only if:
 
-This is done **during normal replay**, not as an independent user feature
-or arbitrary auto-miter. A File feature can still be individually
-disabled or deleted; its related junctions disappear on recompilation.
+- their original edges share a real endpoint (6 mm precision in studs);
+- they share one matching outward wall normal;
+- the non-shared exterior normal points toward the end of the inside
+  (vertical) edge (top or bottom);
+- the exterior edge points outward along the *other* concave wall;
+- the outside edge is long enough to cover the entire inside-wedge width.
 
-The same mechanism is intended to work whether the interior File is
-committed before or after its neighboring exterior File.
+Each matching outside bevel yields a halfspace of material that may remain:
 
-### Geometry scope
+`(wallNormal + capNormal) · (position - corner) <= -outsideWidth`.
 
-A valid junction must have:
+The `GeometryCutter.file` pathway now starts from the inside bevel's
+normal triangular prism, **clips the convex polyhedron against every
+matching halfspace**, triangulates the closed clipped volume, creates one
+temporary MeshPart, and only THEN uses `GeometryService:UnionAsync`.
 
-- one additive concave straight File and one subtractive convex File
-- an actual shared vertex and a shared outward wall normal
-- nearly perpendicular edge directions, with the outer edge proceeding
-  along the exposed inner-corner wall ray, not backward into the solid
-- enough outer-edge span to cover the entire added wedge
-- independently validated cutting widths and a bounded CSG region
+There is **no additional post-union junction CSG operation**. If an
+inside bevel is created first, it is still pre-clipped using the full
+enabled feature history, so later outside bevels can be added without
+reintroducing boxed-off material. The whole part is recompiled after
+history edits.
 
-A plain joint between two convex bevels, a rounded edge, an arbitrary
-imported mesh or complex nonorthogonal intersection is **not** handled.
+### Numeric L-corner example
 
-## Numerical geometry check
-
-`scripts/VERIFY_BEVEL_JUNCTION.lua` can be pasted into the Studio
-Command Bar after Rojo sync. It asserts that the four matching
-top/bottom L-corner outer bevels all produce valid planar patch geometry,
-while an opposite-arm bevel and two exterior bevels are rejected.
-
-The example uses an inside vertical wedge of width 0.20 studs and
-outside top bevels of width 0.12 studs. For a 90° L notch the inside
-chamfer is clipped by the planes
+At a vertical concave corner `x=z=0` with a top surface `y=1`,
+an inside bevel width `0.20` and two upper outside bevels of width
+`0.12` produce these clipping planes:
 
 ```
-x + y = 1 - 0.12
-z + y = 1 - 0.12
-x + z = 0.20
+x + y <= 0.88
+z + y <= 0.88
 ```
 
-whose common junction point is `(0.10, 0.78, 0.10)`. This creates a
-sloped joined wedge, not a vertical rectangular end cap. The normal
-directions reverse as expected for bottom-plane bevels.
+At the center of the inside chamfer `x=z=0.10`, the top of its newly
+added wedge is `y=0.78` — **not** `y=1`. The bottom edges yield the
+matching inverted limits.
 
-This mathematical check is NOT a substitute for visual confirmation of
-`GeometryService` Boolean behavior in Studio.
+This removes the mathematical source of the boxed cap: the inside
+wedge simply never adds that upper/lower corner material.
 
-## Studio acceptance sequence
+## Shared selection topology
 
-1. Create a **fresh** L-shaped body using New Body Sketch.
-2. File the two top perimeter edges heading away from its inside corner.
-3. File the **full vertical inside edge**. Inspect the upper junction:
-   it should become sloped instead of forming a square block.
-4. Repeat on the bottom edges. The compiled status should include
-   `joined corners` when compatible junctions were recognized.
-5. Hover the newly generated bevel trim lines and junction edges.
-   The green/cyan File preview must target the NEW manufactured edge
-   rather than the original sharp vertex.
-6. Disable just the vertical File feature in history. Joined geometry
-   and its new edge candidates should disappear. Re-enable it.
-7. Reverse the order: file the vertical edge first and then top edges.
-8. Verify that an unrelated nearby exterior bevel does NOT create
-   a spurious corner trim.
+`HistoryTopology.lua` uses `GeometryCutter.fileFaces`, which runs the
+**same pure polyhedron clipping** used to manufacture the temporary
+mesh. It retires the original sharp edge, identifies the resulting
+diagonal bevel face and top/bottom clipping faces, then connects their
+newly formed trim edges to their adjacent planar surfaces. It no longer
+guesses a separate bevel-junction face from unrelated points.
 
-## Known limitations
+CSG mesh readback remains unsupported in this setup, so selection
+still uses feature history plus camera/physics hit-testing.
+The face model is not a full B-rep and cannot describe arbitrary
+imported mesh topology.
 
-This is a **restricted analytic feature graph**, not a complete CAD B-rep
-or general polygon-Boolean topology kernel. It currently handles the
-specific straight perpendicular concave/convex corner intersection shown
-in the user's L-profile screenshot; other junctions are unchanged.
+## Test before treating this as fixed
 
-Generated CSG mesh readback is unavailable in the current Studio setup,
-so selection still uses authored history plus CSG raycast visibility.
-Very narrow bevels, disconnected Boolean solids, and intersections with
-unrelated drill/groove cutters may be unstable or require more topology.
+Paste `scripts/VERIFY_BEVEL_JUNCTION.lua` into Roblox Studio Command
+Bar after Rojo sync. This checks matching L corner planes, clipped
+vertex positions, convex polyhedron manifoldness (every edge belongs to
+two faces), and rejection of unrelated exterior edges.
 
-**The algorithm has been reviewed against sample L-corner coordinates
-but has not been executed in Roblox Studio from this chat.** If a
-junction cutter fails, the compiler reports an error rather than
-silently applying a guessed corner patch.
+Then test the actual CSG visual result:
+
+1. Start a **fresh** L-shaped solid.
+2. File both exterior top edges leading into its inside corner.
+3. File the entire vertical inside edge. Watch the top junction for the
+   former box; it should become joined sloped geometry.
+4. Repeat with lower outside edges and inspect both corner ends.
+5. Hover new bevel trim edges. The original sharp edge should no longer
+   highlight; actual new boundaries should.
+6. Disable and re-enable each File operation. The new surfaces and
+   selection topology must follow the enabled feature history.
+7. Reverse operation order (inside bevel first, then exterior edges).
+   This should generate the same final solid.
+8. Test an unrelated File on an exterior corner. It must not affect the
+   inside bevel geometry.
+
+### Limitations
+
+- This is a limited straight 90-degree inside/outside bevel pairing,
+  not a general N-way fillet/chamfer solver.
+- It does not resolve every three-way bevel corner, and complex
+  intersections with independent drill/Inset/Saw operations still need
+  a stronger feature topology system.
+- Temporary EditableMesh buffers are needed for the new *clipped cutter
+  volume*, but never to read back compiled CSG.
+- **The geometry was checked numerically with sample L-corner planes;
+  the changed Roblox CSG pipeline has not been executed in Studio from
+  this conversation.** If the Boolean fails it must report a visible
+  error, not silently apply a fallback patch.
