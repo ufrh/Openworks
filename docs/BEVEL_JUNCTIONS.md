@@ -1,3 +1,5 @@
+> **Segmented miter correction (2026-11-04):** Studio showed overlapping triangular slivers at an L-shaped concave corner when File used multiple segments. The miter had used `seam = corner - (wallA + wallB) * inset`, moving the seam a full radius along **both** axes and creating a square top cap. The seam is now placed at the **midpoint between both rounded profiles** (`inset * 0.5` on both axes). The top is constructed as two matching triangles instead of a quad with an unmatched collinear vertex. The Studio regression now checks cap vertices, facet planarity, opposite manifold edge winding, and all tested segment counts. Only the corner-shell construction and its regression test changed in this fix. Roblox Studio CSG still needs visual testing.
+
 # FORM — Real 90° mitered File corners and segmented rounding
 
 Status: implemented in `dev`. **Requires Roblox Studio visual testing.**
