@@ -375,10 +375,13 @@ function Debug.start()
 	local diameterInput = toolNumberRow("Diameter (mm)  [wheel]", "56")
 	local drillDepthInput = toolNumberRow("Blind depth (mm)", "28")
 	local throughRow = row(29)
-	local throughButton = button(throughRow, "Drill: THROUGH (click to toggle)", 0, 1, function()
+	local throughButton: TextButton? = nil
+	throughButton = button(throughRow, "Drill: THROUGH (click to toggle)", 0, 1, function()
 		drillThrough = not drillThrough
-		throughButton.Text = if drillThrough then "Drill: THROUGH (click to toggle)"
-			else "Drill: BLIND (click to toggle)"
+		if throughButton then
+			throughButton.Text = if drillThrough then "Drill: THROUGH (click to toggle)"
+				else "Drill: BLIND (click to toggle)"
+		end
 	end)
 	line("Wheel: diameter ±2mm   Shift+Wheel: ±10mm", 20)
 	line("POCKET  /  GROOVE  /  EDGE")
@@ -647,71 +650,197 @@ function Debug.start()
 		end
 	)
 
-	UserInputService.InputBegan:Connect(function(input, processed)
-		if sketchEditor and sketchEditor.active then return end
-		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
+
+	-- The mouse wheel is handed to an active precision drill, otherwise it
+	-- retains the BlenderCamera dolly/FOV zoom behavior.
+	cameraController:setWheelHandler(function(steps: number): boolean
+		if activeTool ~= "Drill" or UserInputService:GetFocusedTextBox() then return false end
+		local current = tonumber(diameterInput.Text) or 56
+		local shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+			or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+		local increment = if shift then 10 else 2
+		local node = selectedNode()
+		local cap = if node then math.max(5, math.min(node.size.X, node.size.Z) * 280) else 2000
+		local nextMM = math.clamp(math.round(current + steps * increment), 5, cap)
+		diameterInput.Text = string.format("%.0f", nextMM)
+		return true
+	end)
+
+	local function millimeters(box: TextBox, label: string): (number?, string?)
+		local mm = tonumber(box.Text)
+		if not mm or not Quantize.isFinite(mm) or mm < 5 or mm > 35840 then
+			return nil, label .. " must be between 5 mm and 35840 mm"
+		end
+		return mm / 280, nil
+	end
+
+	local function nearestTopEdge(node, localPoint: Vector3): (string?, number)
+		if node.kind ~= "Block" then return nil, math.huge end
+		local hx, hz = node.size.X / 2, node.size.Z / 2
+		local edge, distance = nil, math.huge
+		for _, option in ipairs({
+			{ "X+", math.abs(localPoint.X - hx) },
+			{ "X-", math.abs(localPoint.X + hx) },
+			{ "Z+", math.abs(localPoint.Z - hz) },
+			{ "Z-", math.abs(localPoint.Z + hz) },
+		}) do
+			if option[2] < distance then edge, distance = option[1], option[2] end
+		end
+		return if distance <= math.min(0.18, math.min(node.size.X, node.size.Z) * 0.40)
+			then edge else nil, distance
+	end
+
+	-- Only ever raycast the actual manufactured geometry. Tool indicators
+	-- are CanQuery=false so the ghost itself cannot steal the mouse.
+	local function fabricationHit()
+		if not activeTool or (sketchEditor and sketchEditor.active) then return nil end
+		if UserInputService:GetFocusedTextBox() or cameraController.dragging then return nil end
 		local mouse = UserInputService:GetMouseLocation()
-		if viewGizmo:containsPoint(mouse) or transformGizmo:isDragging() or transformGizmo:capturesPoint(mouse) then return end
+		if mouse.X < 345 and mouse.Y < 615 then return nil end
 		local camera = workspace.CurrentCamera
-		if not camera then return end
+		if not camera then return nil end
+		if mouse.X > camera.ViewportSize.X - 340 and mouse.Y > 225 and mouse.Y < 610 then return nil end
+		if viewGizmo:containsPoint(mouse) or transformGizmo:capturesPoint(mouse) then return nil end
 		local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Include
 		params.FilterDescendantsInstances = { preview.root }
 		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
-		if not hit then return end
+		if not hit then return nil end
 		local model = hit.Instance:FindFirstAncestorOfClass("Model")
 		local id = if model then model:GetAttribute("FORMComponentId") else nil
-		if typeof(id) == "number" and document.components[id] then
-			local component = document.components[id]
-			if id ~= selectedId then selectComponent(id) sawFirst = nil end
-			if not activeTool then return end
-			-- Fabrication is intentionally defined on the upper local face,
-			-- using the selected material's uncut coordinate system.
-			local node = component.nodes[1]
-			local pose = Compiler.pose(node)
-			local normal = pose:VectorToObjectSpace(hit.Normal)
-			if normal.Y < 0.72 then
-				message("Drill and saw currently operate on the upper face")
-				return
+		local component = if typeof(id) == "number" then document.components[id] else nil
+		if not component then return nil end
+		local node = component.nodes[1]
+		local pose = Compiler.pose(node)
+		local normal = pose:VectorToObjectSpace(hit.Normal)
+		if normal.Y < 0.72 then return nil end
+		local localPoint = pose:PointToObjectSpace(hit.Position)
+		local x = Quantize.snap(localPoint.X, Quantize.Grid)
+		local z = Quantize.snap(localPoint.Z, Quantize.Grid)
+		return { component = component, id = id, node = node, pose = pose,
+			point = localPoint, x = x, z = z }
+	end
+
+	RunService.RenderStepped:Connect(function()
+		local target = fabricationHit()
+		if not target then toolVisualizer:hide() return end
+		local node, pose = target.node, target.pose
+		if activeTool == "Drill" then
+			local diameter = millimeters(diameterInput, "Diameter")
+			local depth = millimeters(drillDepthInput, "Drill depth")
+			if not diameter or not depth then toolVisualizer:hide() return end
+			toolVisualizer:drill(pose, node, target.x, target.z,
+				diameter, depth, drillThrough)
+		elseif activeTool == "Inset" then
+			local margin = millimeters(insetMarginInput, "Inset border")
+			local depth = millimeters(insetDepthInput, "Inset depth")
+			if not margin or not depth or node.kind ~= "Block"
+				or margin * 2 >= math.min(node.size.X, node.size.Z) then
+				toolVisualizer:hide() return
 			end
-			local localPoint = pose:PointToObjectSpace(hit.Position)
-			local x = Quantize.snap(localPoint.X, Quantize.Grid)
-			local z = Quantize.snap(localPoint.Z, Quantize.Grid)
-			if activeTool == "Drill" then
-				local mm = tonumber(diameterInput.Text)
-				if not mm or not Quantize.isFinite(mm) or mm <= 0 then
-					message("Enter a positive drill diameter in mm")
-					return
+			toolVisualizer:inset(pose, node, margin, depth)
+		elseif activeTool == "File" then
+			local width = millimeters(fileWidthInput, "File width")
+			local edge = nearestTopEdge(node, target.point)
+			if not edge or not width then toolVisualizer:hide() return end
+			toolVisualizer:file(pose, node, edge, width)
+		elseif activeTool == "Groove" or activeTool == "Kerf" then
+			if sawFirst and sawFirst.id == target.id then
+				local box = if activeTool == "Groove" then grooveWidthInput else kerfInput
+				local width = millimeters(box, "Cut width")
+				local depth = if activeTool == "Groove"
+					then millimeters(grooveDepthInput, "Groove depth") else node.size.Y
+				if width and depth then
+					toolVisualizer:groove(pose, node,
+						Vector2.new(sawFirst.x, sawFirst.z), Vector2.new(target.x, target.z),
+						width, depth)
+				else
+					toolVisualizer:hide()
 				end
-				local ok, reason = document:addOperation(component, "Drill", {
-					x = x, z = z, diameter = mm / 280,
-				})
-				if ok then changed(component) message(string.format("Drilled %.1f mm through-hole", Quantize.snap(mm / 280, Quantize.Grid) * 280))
-				else message(reason) end
-			elseif activeTool == "Saw" then
-				if not sawFirst then
-					sawFirst = { id = id, x = x, z = z }
-					message("Saw start chosen. Click endpoint on same upper face")
-					return
-				end
-				local mm = tonumber(kerfInput.Text)
-				if not mm or not Quantize.isFinite(mm) or mm <= 0 then
-					message("Enter a positive saw kerf in mm")
-					return
-				end
-				local ok, reason = document:addOperation(component, "Saw", {
-					x1 = sawFirst.x, z1 = sawFirst.z, x2 = x, z2 = z,
-					kerf = mm / 280, useMesh = meshSaw,
-				})
-				if ok then
-					sawFirst = nil
-					changed(component)
-					message(string.format("Saw cut (%.1f mm kerf) recorded; compiling", Quantize.snap(mm / 280, Quantize.Grid) * 280))
-				else message(reason) end
+			else
+				toolVisualizer:hide()
 			end
 		end
+	end)
+
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if sketchEditor and sketchEditor.active then return end
+		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+			or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
+		local target = fabricationHit()
+		if not target then
+			-- Selection still works when the editor is not using a fabrication tool.
+			if activeTool then return end
+			local mouse = UserInputService:GetMouseLocation()
+			if viewGizmo:containsPoint(mouse) or transformGizmo:capturesPoint(mouse) then return end
+			local camera = workspace.CurrentCamera
+			if not camera then return end
+			local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Include
+			params.FilterDescendantsInstances = { preview.root }
+			local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+			if not hit then return end
+			local model = hit.Instance:FindFirstAncestorOfClass("Model")
+			local id = if model then model:GetAttribute("FORMComponentId") else nil
+			if typeof(id) == "number" and document.components[id] then selectComponent(id) end
+			return
+		end
+		if target.id ~= selectedId then selectComponent(target.id) sawFirst = nil end
+		if not activeTool then return end
+		local component, node = target.component, target.node
+		local x, z = target.x, target.z
+		local kind = activeTool
+		local data = nil
+		if kind == "Drill" then
+			local diameter, errorA = millimeters(diameterInput, "Diameter")
+			local depth, errorB = millimeters(drillDepthInput, "Drill depth")
+			if not diameter or not depth then message(errorA or errorB) return end
+			data = { x = x, z = z, diameter = diameter,
+				depth = depth, through = drillThrough }
+		elseif kind == "Inset" then
+			local margin, errorA = millimeters(insetMarginInput, "Inset border")
+			local depth, errorB = millimeters(insetDepthInput, "Inset depth")
+			if not margin or not depth then message(errorA or errorB) return end
+			data = { margin = margin, depth = depth }
+		elseif kind == "File" then
+			local width, reason = millimeters(fileWidthInput, "File width")
+			if not width then message(reason) return end
+			local edge = nearestTopEdge(node, target.point)
+			if not edge then message("Move closer to an upper stock perimeter edge") return end
+			data = { edge = edge, width = width }
+		elseif kind == "Groove" or kind == "Kerf" then
+			if not sawFirst then
+				sawFirst = { id = target.id, x = x, z = z }
+				message("Start placed; click the same workpiece for the end of the cut")
+				return
+			end
+			if sawFirst.id ~= target.id then
+				sawFirst = nil
+				message("Cut path must stay on the same workpiece")
+				return
+			end
+			local widthBox = if kind == "Groove" then grooveWidthInput else kerfInput
+			local width, errorA = millimeters(widthBox, "Cut width")
+			local depth, errorB = if kind == "Groove"
+				then millimeters(grooveDepthInput, "Groove depth") else node.size.Y, nil
+			if not width or not depth then message(errorA or errorB) return end
+			data = {
+				x1 = sawFirst.x, z1 = sawFirst.z, x2 = x, z2 = z,
+				kerf = width, depth = depth, through = kind == "Kerf",
+				useMesh = meshSaw and kind == "Kerf",
+			}
+			kind = if kind == "Kerf" then "Saw" else "Groove"
+		else
+			return
+		end
+		local ok, reason = document:addOperation(component, kind, data)
+		if not ok then message(reason or "Unable to apply fabrication") return end
+		if kind == "Saw" or kind == "Groove" then sawFirst = nil end
+		changed(component)
+		message(kind .. " operation recorded; compiling CSG")
 	end)
 
 	refresh()
