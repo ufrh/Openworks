@@ -29,6 +29,10 @@ function Fabricator.geometryKey(component): string
 		elseif op.kind == "DrillFace" then
 			table.insert(pieces, string.format("DF|%.6f|%.6f|%s|%s|%s",
 				op.diameter,op.depth,tostring(op.through),tostring(op.origin),tostring(op.normal)))
+		elseif op.kind == "GrooveFace" then
+			table.insert(pieces,string.format("GF|%.6f|%.6f|%s|%s|%s|%s",
+				op.width,op.depth,tostring(op.through),tostring(op.a),
+				tostring(op.b),tostring(op.normal)))
 		elseif op.kind == "Saw" or op.kind == "Groove" then
 			table.insert(pieces, string.format("%s|%.6f|%.6f|%.6f|%.6f|%.6f|%.6f|%s|%s",
 				op.kind, op.x1, op.z1, op.x2, op.z2, op.kerf,
