@@ -37,6 +37,7 @@ function Debug.start()
 	local sawFirst = nil
 	local meshSaw = true
 	local historyInfo: any = nil
+	local historyRows = {}
 	local sketchEditor: any = nil
 
 	local grid = GridOverlay.new(playerGui)
@@ -172,9 +173,38 @@ function Debug.start()
 		info.Text = if component then ("Selection: " .. component.name) else "Selection: none"
 		nodeInfo.Text = if node then ("Material: " .. node.kind) else "Material: none"
 		if historyInfo then
+			local active = 0
+			if component then
+				for _, feature in ipairs(component.operations) do
+					if feature.enabled ~= false then active += 1 end
+				end
+			end
 			historyInfo.Text = if component
-				then ("Fabrication: " .. #component.operations .. " cut(s)")
+				then string.format("Fabrication: %d features (%d active)", #component.operations, active)
 				else "Fabrication: no material selected"
+		end
+		for slot, entry in ipairs(historyRows) do
+			local operation = if component
+				then component.operations[#component.operations - slot + 1] else nil
+			entry.container.Visible = operation ~= nil
+			if operation then
+				local description
+				if operation.kind == "SketchExtrude" then
+					description = "SKETCH " .. string.upper(operation.mode) .. " (" .. #operation.points .. "p)"
+				elseif operation.kind == "Drill" then
+					description = string.format("DRILL %.1fmm", operation.diameter * 280)
+				else
+					description = string.format("SAW %.1fmm", operation.kerf * 280)
+				end
+				entry.label.Text = string.format("%02d %s", operation.id, description)
+				entry.label.TextColor3 = if operation.enabled == false
+					then Color3.fromRGB(120, 135, 143)
+					else Color3.fromRGB(216, 231, 236)
+				entry.toggle.Text = if operation.enabled == false then "OFF" else "ON"
+				entry.toggle.BackgroundColor3 = if operation.enabled == false
+					then Color3.fromRGB(57, 66, 76)
+					else Color3.fromRGB(46, 97, 86)
+			end
 		end
 		for _, binding in ipairs(textFields) do
 			local box = binding.box
@@ -394,6 +424,34 @@ function Debug.start()
 	editRow("MIN", "position", { "X", "Y", "Z" })
 	editRow("SIZE", "size", { "X", "Y", "Z" })
 	editRow("ROT", "rotation", { "X", "Y", "Z" })
+
+	line("FEATURE HISTORY  /  LAST 6")
+	for slot = 1, 6 do
+		local entry = row(27)
+		local label = make("TextLabel", {
+			BackgroundTransparency = 1, Text = "",
+			Font = Enum.Font.Code, TextSize = 11,
+			TextColor3 = Color3.fromRGB(215, 228, 234),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Size = UDim2.new(0.64, 0, 1, 0),
+		}, entry)
+		local toggle = button(entry, "ON", 0.65, 0.18, function()
+			local component = selectedComponent()
+			local operation = component and component.operations[#component.operations - slot + 1]
+			if not operation then return end
+			local ok, reason = document:setOperationEnabled(component, operation.id, operation.enabled == false)
+			if ok then changed(component) else message(reason) end
+		end)
+		button(entry, "X", 0.84, 0.16, function()
+			local component = selectedComponent()
+			local operation = component and component.operations[#component.operations - slot + 1]
+			if not operation then return end
+			local ok, reason = document:removeOperation(component, operation.id)
+			if ok then changed(component) else message(reason) end
+		end)
+		table.insert(historyRows, { container = entry, label = label, toggle = toggle })
+		entry.Visible = false
+	end
 
 	local deleteRow = row(29)
 	button(deleteRow, "Delete Component", 0, 1, function()
