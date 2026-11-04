@@ -301,6 +301,12 @@ function SurfaceTopology.closestEdge(topology,camera:Camera,mouse:Vector2,
 	local best,bestDistance=nil,maxPixels or 20
 	for _,edge in ipairs(topology.edges) do
 		if edge.curved or #edge.faces~=2 then continue end
+		local f1,f2=topology.faces[edge.faces[1]],topology.faces[edge.faces[2]]
+		if not f1 or not f2 or f1.normal:Dot(f2.normal)>0.995 then
+			-- A rounded facet and its miter extension meet on the same
+			-- plane; that's not a physical crease and isn't fileable.
+			continue
+		end
 		local a=topology.part.CFrame:PointToWorldSpace(edge.a)
 		local b=topology.part.CFrame:PointToWorldSpace(edge.b)
 		local screenA,okA=camera:WorldToViewportPoint(a)
