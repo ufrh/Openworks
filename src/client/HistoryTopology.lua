@@ -291,8 +291,16 @@ function HistoryTopology.build(part:BasePart,component)
 				end
 			end
 			local normals=n1+n2
-			if normals.Magnitude>0.01 then
-				addFace({a-n1*w,b-n1*w,b-n2*w,a-n2*w},
+			local parallel=n1:Dot(n2)
+			if normals.Magnitude>0.01 and math.abs(parallel)<0.84 then
+				-- Same two tangent offsets as GeometryCutter.file. The
+				-- previous -n1/-n2 face was not necessarily on the actual
+				-- slope (and was especially wrong for inside chamfers).
+				local d1=(n1*parallel-n2).Unit
+				local d2=(n2*parallel-n1).Unit
+				local sign=if kind=="FileMesh" and op.interior==true then -1 else 1
+				addFace({a+d1*w*sign,b+d1*w*sign,
+					b+d2*w*sign,a+d2*w*sign},
 					normals.Unit,"file_chamfer")
 			end
 		end
