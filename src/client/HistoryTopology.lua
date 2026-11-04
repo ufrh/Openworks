@@ -39,7 +39,6 @@ function HistoryTopology.build(part:BasePart,component)
 	local toPart=part.CFrame:ToObjectSpace(pose)
 	local faces,edges,edgeMap={}, {}, {}
 	local pendingHoles={}
-	local innerVerticalVertices={}
 	local completedBevels={}
 	local bevelJunctions={}
 	local half=node.size/2
@@ -125,8 +124,6 @@ function HistoryTopology.build(part:BasePart,component)
 			local high=point(Vector3.new(p.X,top,p.Y))
 			local edge=edgeMap[edgeKey(low,high)]
 			if edge then edge.interior=true end
-			innerVerticalVertices[key(low)]=true
-			innerVerticalVertices[key(high)]=true
 		end
 	end
 	local function profileCap(poly:{Vector2},y:number,up:boolean,tag:string)
@@ -216,8 +213,6 @@ function HistoryTopology.build(part:BasePart,component)
 			if turn<=1e-6 then continue end
 			local edge=edgeMap[edgeKey(point(p),point(bottom[i]))]
 			if edge then edge.interior=true end
-			innerVerticalVertices[key(point(p))]=true
-			innerVerticalVertices[key(point(bottom[i]))]=true
 		end
 	end
 	local function kerfLoop(a:Vector3,b:Vector3,n:Vector3,width:number):{Vector3}?
@@ -254,7 +249,6 @@ function HistoryTopology.build(part:BasePart,component)
 				table.clear(edges)
 				table.clear(edgeMap)
 				table.clear(pendingHoles)
-				table.clear(innerVerticalVertices)
 				topFace=profileCap(poly,half.Y,true,"profile_top")
 				profileCap(poly,-half.Y,false,"profile_bottom")
 				profileWalls(poly,-half.Y,half.Y,true,"profile_side")
@@ -486,19 +480,6 @@ function HistoryTopology.build(part:BasePart,component)
 		end
 	end
 
-	-- Flat perimeter bevels taper at the endpoints of *concave*
-	-- vertical corners. Without this the cutter retains a full-width
-	-- rectangular endcap, creating the boxed triangle at the notch top
-	-- and bottom shown in Studio.
-	local vertical=direction(Vector3.yAxis)
-	for _,edge in ipairs(edges) do
-		local directionAlong=edge.b-edge.a
-		if directionAlong.Magnitude>EPS
-			and math.abs(directionAlong.Unit:Dot(vertical))<0.2 then
-			edge.taperA=innerVerticalVertices[key(edge.a)]==true
-			edge.taperB=innerVerticalVertices[key(edge.b)]==true
-		end
-	end
 	-- Edges that have been replaced by chamfers are not selectable
 	-- again. Keep the new bevel trim lines (shared with real neighboring
 	-- faces) and expose the same joined-corner set used by Fabricator.
