@@ -55,6 +55,10 @@ function FaceTools.boundary(face): ({Vector3}?,string?)
 end
 
 function FaceTools.inset(face,margin:number):({Vector3}?,string?)
+	if face.holes then
+		return nil,"Inset on faces with holes or raised features needs multiple contour loops"
+	end
+	if face.curved then return nil,"Inset needs a planar face" end
 	local loop,why=FaceTools.boundary(face)
 	if not loop then return nil,why end
 	local normal=face.normal.Unit
