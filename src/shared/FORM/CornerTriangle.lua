@@ -21,7 +21,8 @@ function CornerTriangle.fileSpec(node,op)
 			n1=Vector3.yAxis,n2=-Vector3.xAxis,width=op.width,segments=op.segments or 1}
 	elseif op.edge=="Z+" then
 		return {a=Vector3.new(-hx,hy,hz),b=Vector3.new(hx,hy,hz),
-			n1=Vector3.yAxis,n2=Vector3.zAxis,width=op.width,segments=op.segments or 1} then
+			n1=Vector3.yAxis,n2=Vector3.zAxis,width=op.width,segments=op.segments or 1}
+	elseif op.edge=="Z-" then
 		return {a=Vector3.new(-hx,hy,-hz),b=Vector3.new(hx,hy,-hz),
 			n1=Vector3.yAxis,n2=-Vector3.zAxis,width=op.width,segments=op.segments or 1}
 	end
@@ -29,8 +30,8 @@ function CornerTriangle.fileSpec(node,op)
 end
 
 local function capAndWall(spec)
-	if spec.n1.Y>0.985 then return spec.n1,spec.n2 end
-	if spec.n2.Y>0.985 then return spec.n2,spec.n1 end
+	if math.abs(spec.n1.Y)>0.985 then return spec.n1,spec.n2 end
+	if math.abs(spec.n2.Y)>0.985 then return spec.n2,spec.n1 end
 	return nil,nil
 end
 
