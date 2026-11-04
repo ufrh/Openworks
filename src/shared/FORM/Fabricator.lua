@@ -47,6 +47,7 @@ local function combine(source: BasePart, cutter: BasePart, mode: string): (boole
 		return GeometryService:SubtractAsync(source, { cutter }, OPTIONS)
 	end)
 	if not ok then return false, result end
+	if typeof(result) ~= "table" then return false, "CSG returned no result list" end
 	if #result ~= 1 then
 		for _, part in ipairs(result) do part:Destroy() end
 		return false, "CSG returned " .. tostring(#result) .. " solids, expected one; empty or separated cuts may need different geometry"
