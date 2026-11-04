@@ -51,37 +51,42 @@ local function button(parent: Instance, title: string, rect: UDim2, pos: UDim2, 
 	return b
 end
 
-local function newVisual(folder: Instance, name: string): Part
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanTouch = false
-	part.CanQuery = false
-	part.CastShadow = false
-	part.Material = Enum.Material.SmoothPlastic
-	part.Size = Vector3.one * 0.05
-	part.Transparency = 1
-	part.Parent = folder
-	return part
+-- Lightweight adornments only. One invisible coordinate anchor is used
+-- by every line, vertex marker, construction-grid line and wall overlay.
+local function newVisual(parent:Instance,anchor:BasePart,name:string,kind:string)
+	local visual=Instance.new(kind)
+	visual.Name=name
+	visual.Adornee=anchor
+	visual.AlwaysOnTop=false
+	visual.Visible=false
+	visual.Color3=ACCENT
+	visual.Transparency=0.1
+	if kind=="LineHandleAdornment" then
+		visual.Thickness=1.6
+	elseif kind=="SphereHandleAdornment" then
+		visual.Radius=0.015
+	elseif kind=="BoxHandleAdornment" then
+		visual.Size=Vector3.one*0.05
+	end
+	visual.Parent=parent
+	return visual
 end
 
 function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onStatus, onExit)
 	local visuals = Instance.new("Folder")
-	visuals.Name = "FORM_SketchVisualization"
-	visuals.Parent = workspace
-	-- A single fill-only Highlight gives all edit strokes the same clean
-	-- silhouette language as the transform gizmo. Grid lines stay unlit.
-	local strokeModel = Instance.new("Model")
-	strokeModel.Name = "SketchStrokeModel"
-	strokeModel.Parent = visuals
-	local strokeGlow = Instance.new("Highlight")
-	strokeGlow.Adornee = strokeModel
-	strokeGlow.FillColor = ACCENT
-	strokeGlow.FillTransparency = 0.76
-	strokeGlow.OutlineTransparency = 1
-	strokeGlow.DepthMode = Enum.HighlightDepthMode.Occluded
-	strokeGlow.Parent = strokeModel
+	visuals.Name = "FORM_SketchAdornments"
+	visuals.Parent = playerGui
+	local anchor=Instance.new("Part")
+	anchor.Name="FORM_SketchAdornmentOrigin"
+	anchor.Size=Vector3.one*0.05
+	anchor.Transparency=1
+	anchor.Anchored=true
+	anchor.CanCollide=false
+	anchor.CanTouch=false
+	anchor.CanQuery=false
+	anchor.CastShadow=false
+	anchor.CFrame=CFrame.identity
+	anchor.Parent=workspace
 	local gui = make("ScreenGui", {
 		Name = "FORM_SketchWorkspace", ResetOnSpawn = false,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Enabled = false,
@@ -113,7 +118,7 @@ function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onSt
 	local self = setmetatable({
 		camera = cameraController, onCommit = onCommit, onStatus = onStatus,
 		onExit = onExit, gui = gui, panel = panel, visuals = visuals,
-		lines = {}, dots = {}, gridParts = {}, sidePanels = {}, strokeModel = strokeModel, strokeGlow = strokeGlow, connections = {},
+		lines = {}, dots = {}, gridParts = {}, sidePanels = {}, anchor=anchor, connections = {},
 		active = false, component = nil, standalone = false, sketchTool = "Extrude", points = {}, closed = false,
 		mode = "Remove", through = true, depthMM = 56,
 		cursor = nil, count = count, subtitle = subtitle,
@@ -270,10 +275,10 @@ function SketchEditor:stop()
 	self.cursor = nil
 	self.closed = false
 	self.gui.Enabled = false
-	for _, part in ipairs(self.lines) do part.Transparency = 1 end
-	for _, part in ipairs(self.dots) do part.Transparency = 1 end
-	for _, part in ipairs(self.gridParts) do part.Transparency = 1 end
-	for _, part in ipairs(self.sidePanels) do part.Transparency = 1 end
+	for _, visual in ipairs(self.lines) do visual.Visible=false end
+	for _, visual in ipairs(self.dots) do visual.Visible=false end
+	for _, visual in ipairs(self.gridParts) do visual.Visible=false end
+	for _, visual in ipairs(self.sidePanels) do visual.Visible=false end
 	self.onExit()
 end
 
@@ -386,27 +391,32 @@ local function extrusionRange(node, mode: string, depth: number, through: boolea
 	return half - depth, half + 0.04
 end
 
-local function placeSegment(part: Part, a: Vector3, b: Vector3, width: number, color: Color3)
-	local length = (b - a).Magnitude
-	if length < 0.0001 then part.Transparency = 1 return end
-	part.Shape = Enum.PartType.Cylinder
-	part.Color = color
-	part.Transparency = 0.04
-	part.Size = Vector3.new(length, width, width)
-	part.CFrame = CFrame.lookAt((a + b) / 2, b) * CFrame.Angles(0, math.pi / 2, 0)
+local function placeSegment(adorn:LineHandleAdornment,a:Vector3,b:Vector3,
+	width:number,color:Color3)
+	local delta=b-a
+	if delta.Magnitude<0.0001 then adorn.Visible=false return end
+	adorn.CFrame=CFrame.lookAt(a,b)
+	adorn.Length=delta.Magnitude
+	adorn.Thickness=math.clamp(width*130,1,3.2)
+	adorn.Color3=color
+	adorn.Transparency=0.05
+	adorn.Visible=true
 end
 
-local function placeWall(part: Part, a: Vector3, b: Vector3, bottom: number, top: number, cf: CFrame, color: Color3)
-	local edge = b - a
-	local height = math.abs(top - bottom)
-	if edge.Magnitude < 0.0001 or height < 0.0001 then part.Transparency = 1 return end
-	local center = (a+b)/2 + cf.UpVector * ((bottom - top) * 0.5)
-	local localFrame = CFrame.lookAt(center, center + edge) * CFrame.Angles(0, math.pi / 2, 0)
-	part.Shape = Enum.PartType.Block
-	part.Color = color
-	part.Size = Vector3.new(edge.Magnitude, height, 0.003)
-	part.CFrame = localFrame
-	part.Transparency = 0.88
+local function placeWall(adorn:BoxHandleAdornment,a:Vector3,b:Vector3,
+	bottom:number,top:number,cf:CFrame,color:Color3)
+	local edge=b-a
+	local height=math.abs(top-bottom)
+	if edge.Magnitude<0.0001 or height<0.0001 then
+		adorn.Visible=false
+		return
+	end
+	local center=(a+b)/2+cf.UpVector*((bottom-top)*0.5)
+	adorn.CFrame=CFrame.lookAt(center,center+edge)*CFrame.Angles(0,math.pi/2,0)
+	adorn.Size=Vector3.new(edge.Magnitude,height,0.003)
+	adorn.Color3=color
+	adorn.Transparency=0.9
+	adorn.Visible=true
 end
 
 function SketchEditor:render()
@@ -453,19 +463,19 @@ function SketchEditor:render()
 	if self.standalone then table.clear(gridSegments) end
 	for i, entry in ipairs(gridSegments) do
 		if not self.gridParts[i] then
-			self.gridParts[i] = newVisual(self.visuals, "SketchGrid_" .. i)
+			self.gridParts[i] = newVisual(self.visuals,self.anchor,"SketchGrid_"..i,"LineHandleAdornment")
 		end
 		placeSegment(self.gridParts[i], entry[1], entry[2], thickness * 0.45,
 			Color3.fromRGB(117, 155, 169))
-		self.gridParts[i].Transparency = if entry[3] then 0.48 else 0.76
+		self.gridParts[i].Transparency = if entry[3] then 0.46 else 0.76
 	end
 	for i = #gridSegments + 1, #self.gridParts do
-		self.gridParts[i].Transparency = 1
+		self.gridParts[i].Visible=false
 	end
 	local segments = {}
 	local surfaceY = node.size.Y / 2 + 0.035
 	local color = if self.closed then COLORS[self.mode] else ACCENT
-	self.strokeGlow.FillColor = color
+	-- Stroke tint is applied to each LineHandleAdornment directly.
 	local function segment(a: Vector3, b: Vector3, tint: Color3?)
 		table.insert(segments, { a, b, tint or color })
 	end
@@ -486,13 +496,13 @@ function SketchEditor:render()
 				color:Lerp(Color3.new(0, 0, 0), 0.28))
 			segment(worldAt(p,bottom), aw, color:Lerp(Color3.new(1,1,1),0.16))
 			if not self.sidePanels[i] then
-				self.sidePanels[i] = newVisual(self.visuals,"ExtrusionWall_"..i)
+				self.sidePanels[i] = newVisual(self.visuals,self.anchor,"ExtrusionWall_"..i,"BoxHandleAdornment")
 			end
 			placeWall(self.sidePanels[i], aw, bw, bottom, top, cf, color)
 		end
-		for i=#self.points+1,#self.sidePanels do self.sidePanels[i].Transparency = 1 end
+		for i=#self.points+1,#self.sidePanels do self.sidePanels[i].Visible=false end
 	else
-		for _, wall in ipairs(self.sidePanels) do wall.Transparency = 1 end
+		for _, wall in ipairs(self.sidePanels) do wall.Visible=false end
 		for i = 1, #self.points - 1 do
 			segment(worldAt(self.points[i], surfaceY), worldAt(self.points[i + 1], surfaceY))
 		end
@@ -503,34 +513,35 @@ function SketchEditor:render()
 	end
 	for i, detail in ipairs(segments) do
 		if not self.lines[i] then
-			self.lines[i] = newVisual(self.strokeModel, "SketchEdge" .. i)
+			self.lines[i] = newVisual(self.visuals,self.anchor,"SketchEdge"..i,"LineHandleAdornment")
 		end
 		placeSegment(self.lines[i], detail[1], detail[2], thickness, detail[3])
 	end
-	for i = #segments + 1, #self.lines do self.lines[i].Transparency = 1 end
+	for i = #segments + 1, #self.lines do self.lines[i].Visible=false end
 	local points = table.clone(self.points)
 	if self.cursor then table.insert(points, self.cursor) end
 	for i, p in ipairs(points) do
 		if not self.dots[i] then
-			self.dots[i] = newVisual(self.strokeModel, "Vertex" .. i)
-			self.dots[i].Shape = Enum.PartType.Ball
+			self.dots[i] = newVisual(self.visuals,self.anchor,"Vertex"..i,"SphereHandleAdornment")
+			-- Native sphere adornment, no BasePart.
 		end
 		local part = self.dots[i]
-		part.Color = if self.cursor and i == #points then Color3.fromRGB(255, 201, 113) else color
+		part.Color3 = if self.cursor and i == #points then Color3.fromRGB(255,201,113) else color
 		local closeTarget = self.cursor and i == 1 and #self.points >= 3
 			and (self.cursor - self.points[1]).Magnitude <= Quantize.Grid * 1.5
-		part.Size = Vector3.one * thickness * (if closeTarget then 4.5 else 2.0)
-		if closeTarget then part.Color = Color3.fromRGB(255, 201, 113) end
-		part.Position = worldAt(p, if self.closed then node.size.Y / 2 + 0.04 else surfaceY)
-		part.Transparency = 0
+		part.Radius = thickness*(if closeTarget then 1.8 else 0.9)
+		if closeTarget then part.Color3 = Color3.fromRGB(255,201,113) end
+		part.CFrame = CFrame.new(worldAt(p,if self.closed then node.size.Y/2+0.04 else surfaceY))
+		part.Visible=true
 	end
-	for i = #points + 1, #self.dots do self.dots[i].Transparency = 1 end
+	for i = #points + 1, #self.dots do self.dots[i].Visible=false end
 end
 
 function SketchEditor:destroy()
 	self:stop()
 	for _, connection in ipairs(self.connections) do connection:Disconnect() end
 	self.visuals:Destroy()
+	self.anchor:Destroy()
 	self.gui:Destroy()
 end
 
