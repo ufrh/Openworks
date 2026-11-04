@@ -13,6 +13,7 @@ local BlenderCamera = require(script.Parent.BlenderCamera)
 local GridOverlay = require(script.Parent.GridOverlay)
 local ViewGizmo = require(script.Parent.ViewGizmo)
 local TransformGizmo = require(script.Parent.TransformGizmo)
+local SketchEditor = require(script.Parent.SketchEditor)
 
 local Debug = {}
 
@@ -36,6 +37,7 @@ function Debug.start()
 	local sawFirst = nil
 	local meshSaw = true
 	local historyInfo: any = nil
+	local sketchEditor: any = nil
 
 	local grid = GridOverlay.new(playerGui)
 
@@ -234,6 +236,7 @@ function Debug.start()
 
 	line("CREATE COMPONENT")
 	local function create(kind: string)
+		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		-- Fresh geometry begins at the locked workspace origin.
 		local component = document:create(kind, Vector3.zero)
 		selectComponent(component.id)
@@ -246,6 +249,7 @@ function Debug.start()
 	local toolStatus = line("Tool: none")
 	historyInfo = line("Fabrication: 0 cuts")
 	local function setTool(kind: string?)
+		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool = kind
 		sawFirst = nil
 		if kind then
@@ -259,6 +263,18 @@ function Debug.start()
 		end
 	end
 	pair("Drill", function() setTool("Drill") end, "Saw", function() setTool("Saw") end)
+	pair("Sketch / Extrude", function()
+		local component = selectedComponent()
+		if not component then message("Create or select a workpiece first") return end
+		if not sketchEditor then message("Sketch workspace is not initialized") return end
+		activeTool = nil
+		sawFirst = nil
+		transformGizmo:setHidden(true)
+		toolStatus.Text = "Tool: SKETCH"
+		sketchEditor:start(component)
+	end, "Close Sketch", function()
+		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
+	end)
 	pair("Exit Tool", function() setTool(nil) end, "Undo Last Cut", function()
 		local component = selectedComponent()
 		if not component then message("Select a material first") return end
@@ -297,6 +313,7 @@ function Debug.start()
 	line("3D TRANSFORM HANDLES")
 	local transformStatus = line("Mode: MOVE (G)")
 	local function setTransformMode(mode: string)
+		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool = nil
 		sawFirst = nil
 		toolStatus.Text = "Tool: none"
@@ -380,6 +397,7 @@ function Debug.start()
 
 	local deleteRow = row(29)
 	button(deleteRow, "Delete Component", 0, 1, function()
+		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		local component = selectedComponent()
 		if not component then message("No selection") return end
 		preview:remove(component.id)
@@ -451,8 +469,22 @@ function Debug.start()
 	cameraController:setOnFrame(function(cameraFrame, label)
 		viewGizmo:update(cameraFrame, label)
 	end)
+	sketchEditor = SketchEditor.new(playerGui, cameraController,
+		function(component, data)
+			local ok, reason = document:addOperation(component, "SketchExtrude", data)
+			if ok then changed(component) end
+			return ok, reason
+		end,
+		message,
+		function()
+			transformGizmo:setMode("Move")
+			toolStatus.Text = "Tool: none"
+			transformStatus.Text = "Mode: MOVE (G)"
+		end
+	)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
+		if sketchEditor and sketchEditor.active then return end
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
 		local mouse = UserInputService:GetMouseLocation()
@@ -519,7 +551,7 @@ function Debug.start()
 	end)
 
 	refresh()
-	message("Boundary-aligned workpieces. Drill click; saw click start/end. Cut history editable.")
+	message("Surface sketches now support polygon extrusion (Add / Remove / Intersect).")
 end
 
 return Debug
