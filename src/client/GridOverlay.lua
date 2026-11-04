@@ -1,5 +1,5 @@
 --!strict
--- FORM debug grid: 0.05-stud line spacing, fixed at world 0,0,0.
+-- FORM debug grid: visual 0.1-stud spacing; editing snap remains 0.05.
 -- A single non-queryable pivot allows LineHandleAdornments to render in 3D.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Quantize = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Quantize)
@@ -7,8 +7,8 @@ local Quantize = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChil
 local GridOverlay = {}
 GridOverlay.__index = GridOverlay
 
-local HALF_STEPS = 60 -- 6x6 studs visible at every location (121 lines per axis)
-local STEP = Quantize.Grid
+local STEP = 0.1 -- Visual grid only. Quantize.Grid remains the 0.05 edit increment.
+local HALF_STEPS = 30 -- 6x6 studs, 61 lines per axis
 local GRID_HALF = HALF_STEPS * STEP
 
 local function createLine(parent: Instance, pivot: BasePart, axis: string, index: number)
