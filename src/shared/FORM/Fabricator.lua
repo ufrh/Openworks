@@ -38,6 +38,20 @@ function Fabricator.geometryKey(component): string
 end
 
 local function combine(source: BasePart, cutter: BasePart, mode: string): (boolean, any)
+	-- GeometryService may bake the input face colors into every output
+	-- MeshPart; a final .Color alone cannot override those multipliers.
+	-- Neutralize *all* inputs, including subsequent CSG intermediates.
+	for _, inputPart in ipairs({ source, cutter }) do
+		inputPart.Color = Color3.new(1, 1, 1)
+		inputPart.Material = Enum.Material.SmoothPlastic
+		inputPart.Reflectance = 0
+		inputPart.Transparency = 0
+		if inputPart:IsA("PartOperation") then
+			inputPart.UsePartColor = true
+		elseif inputPart:IsA("MeshPart") then
+			inputPart.TextureID = ""
+		end
+	end
 	local ok, result = pcall(function()
 		if mode == "Add" then
 			return GeometryService:UnionAsync(source, { cutter }, OPTIONS)
