@@ -178,8 +178,37 @@ local function compileUnlocked(component): (BasePart, string)
 			current = result
 		end
 		current.Anchored = true
-
-
+		if op.kind=="File" or op.kind=="FileMesh" then
+			local file=CornerTriangle.fileSpec(node,op)
+			if file then
+				for _,prior in ipairs(exteriorFiles) do
+					local corner=CornerTriangle.between(prior,file)
+					if not corner then continue end
+					local key=string.format("%.5f:%.5f:%.5f",
+						corner.corner.X,corner.corner.Y,corner.corner.Z)
+					if completedCorners[key] then continue end
+					local faces=CornerTriangle.faces(corner)
+					if not faces then continue end
+					local created,tool,dispose=pcall(GeometryCutter.convexSolid,faces)
+					if created then
+						local ok,output=combine(current,tool,"Remove")
+						dispose()
+						if ok then
+							current:Destroy()
+							current=output
+							current.Anchored=true
+							completedCorners[key]=true
+							triangularCorners+=1
+						else
+							warn("FORM triangular corner Boolean: "..tostring(output))
+						end
+					else
+						warn("FORM triangular corner geometry: "..tostring(tool))
+					end
+				end
+				table.insert(exteriorFiles,file)
+			end
+		end
 	end
 	return current, string.format("%d features (%d mesh saws, %d fallback, %d paused inside files)",
 		#(component.operations or {}), meshCuts, nativeFallbacks, pausedInsideFiles)
