@@ -4,6 +4,56 @@
 local AssetService = game:GetService("AssetService")
 local GeometryCutter = {}
 
+-- Ear-clips arbitrary simple planar cutter contours. This lets a face inset
+-- follow a non-convex manufactured outline instead of fan-filling across it.
+local function triangulate(profile:{Vector3},travel:Vector3):{{number}}
+	local origin=profile[1]
+	local u=(profile[2]-origin).Unit
+	local v=travel.Unit:Cross(u).Unit
+	local points={}
+	for _,p in ipairs(profile) do
+		local d=p-origin
+		table.insert(points,Vector2.new(d:Dot(u),d:Dot(v)))
+	end
+	local remaining={}
+	for i=1,#points do table.insert(remaining,i) end
+	local function cross(a:Vector2,b:Vector2,c:Vector2):number
+		local ab,ac=b-a,c-a
+		return ab.X*ac.Y-ab.Y*ac.X
+	end
+	local function contains(p:Vector2,a:Vector2,b:Vector2,c:Vector2):boolean
+		return cross(a,b,p)>=-1e-9 and cross(b,c,p)>=-1e-9
+			and cross(c,a,p)>=-1e-9
+	end
+	local triangles={}
+	while #remaining>3 do
+		local found=false
+		for slot=1,#remaining do
+			local ai=remaining[(slot-2)%#remaining+1]
+			local bi=remaining[slot]
+			local ci=remaining[slot%#remaining+1]
+			local a,b,c=points[ai],points[bi],points[ci]
+			if cross(a,b,c)<=1e-9 then continue end
+			local occupied=false
+			for _,index in ipairs(remaining) do
+				if index~=ai and index~=bi and index~=ci
+					and contains(points[index],a,b,c) then
+					occupied=true break
+				end
+			end
+			if not occupied then
+				table.insert(triangles,{ai,bi,ci})
+				table.remove(remaining,slot)
+				found=true
+				break
+			end
+		end
+		if not found then error("Inset cutter polygon cannot be triangulated") end
+	end
+	table.insert(triangles,{remaining[1],remaining[2],remaining[3]})
+	return triangles
+end
+
 function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, () -> ())
 	if #profile < 3 or #profile > 128 or travel.Magnitude < 0.0001 then
 		error("Invalid geometry cutter profile", 0)
@@ -16,6 +66,7 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, (
 		for i=#profile,1,-1 do table.insert(reversed,profile[i]) end
 		profile=reversed
 	end
+	local capTriangles=triangulate(profile,travel)
 	local editable: EditableMesh? = nil
 	local part: MeshPart? = nil
 	local ok, failure = pcall(function()
@@ -40,11 +91,11 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, (
 			end
 			editable:SetFaceColors(face,{white,white,white})
 		end
-		-- Fan triangulation is valid only for a convex profile. Concave
-		-- faces must use polygon triangulation before this cutter is extended.
-		for i=2,#low-1 do
-			triangle(low[1],low[i+1],low[i])
-			triangle(high[1],high[i],high[i+1])
+		-- Contour-aware triangulation: no fan across a concave opening.
+		for _,ids in ipairs(capTriangles) do
+			local a,b,c=ids[1],ids[2],ids[3]
+			triangle(low[a],low[c],low[b])
+			triangle(high[a],high[b],high[c])
 		end
 		for i=1,#low do
 			local j=i%#low+1
@@ -79,7 +130,7 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, (
 	end
 end
 
-function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3, outwardA:Vector3,outwardB:Vector3,width:number)
+function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3, outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?)
 	local along=(edgeB-edgeA)
 	if along.Magnitude<0.005 then error("Edge too short to file") end
 	local n1,n2=outwardA.Unit,outwardB.Unit
@@ -89,11 +140,23 @@ function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3, outwardA:Vector3,outwa
 	-- solid along opposite faces; the exterior envelope cuts the corner.
 	local margin=0.025
 	local crossPoint = (n1+n2).Unit*(width+margin)
-	local profile={
-		edgeA-n1*width-n2*margin,
-		edgeA+crossPoint,
-		edgeA-n2*width-n1*margin,
-	}
+	local profile
+	if interior then
+		-- Re-entrant pocket/floor corners: enlarge the internal void by
+		-- removing a wedge *behind* the two original surfaces. A normal
+		-- outer-corner bevel would lie in the cavity and remove nothing.
+		profile={
+			edgeA+n1*(width+margin),
+			edgeA+n2*(width+margin),
+			edgeA-(n1+n2)*width,
+		}
+	else
+		profile={
+			edgeA-n1*width-n2*margin,
+			edgeA+crossPoint,
+			edgeA-n2*width-n1*margin,
+		}
+	end
 	local axis=along.Unit
 	local travel=along+axis*margin*2
 	for i,p in ipairs(profile) do profile[i]=p-axis*margin end
