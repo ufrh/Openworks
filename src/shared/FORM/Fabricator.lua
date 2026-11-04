@@ -95,99 +95,12 @@ local function combine(source: BasePart, cutter: BasePart, mode: string): (boole
 	return true, result[1]
 end
 
--- Keep corner cleanup isolated from the feature history. A junction is
--- optional manufacturing polish between two completed exterior bevels.
--- It must never invalidate a perfectly valid, already-compiled chamfer.
-local ENABLE_CORNER_MITERS=true
-
-local function fileSpec(node,op)
-	if op.kind=="FileMesh" then
-		return {
-			a=op.a,b=op.b,n1=op.normalA,n2=op.normalB,
-			width=op.width,interior=op.interior==true,
-		}
-	end
-	if op.kind~="File" or node.kind~="Block" then return nil end
-	local hx,hy,hz=node.size.X/2,node.size.Y/2,node.size.Z/2
-	local a,b,n2
-	if op.edge=="X+" then
-		a,b=Vector3.new(hx,hy,-hz),Vector3.new(hx,hy,hz)
-		n2=Vector3.xAxis
-	elseif op.edge=="X-" then
-		a,b=Vector3.new(-hx,hy,-hz),Vector3.new(-hx,hy,hz)
-		n2=-Vector3.xAxis
-	elseif op.edge=="Z+" then
-		a,b=Vector3.new(-hx,hy,hz),Vector3.new(hx,hy,hz)
-		n2=Vector3.zAxis
-	elseif op.edge=="Z-" then
-		a,b=Vector3.new(-hx,hy,-hz),Vector3.new(hx,hy,-hz)
-		n2=-Vector3.zAxis
-	else
-		return nil
-	end
-	return {a=a,b=b,n1=Vector3.yAxis,n2=n2,width=op.width,interior=false}
-end
-
-local function miterCandidate(first,second)
-	if first.interior or second.interior then return nil end
-	local endpointsA={first.a,first.b}
-	local endpointsB={second.a,second.b}
-	local shared,otherA,otherB
-	for i,p in ipairs(endpointsA) do
-		for j,q in ipairs(endpointsB) do
-			if (p-q).Magnitude<0.005 then
-				shared=(p+q)/2
-				otherA=endpointsA[3-i]
-				otherB=endpointsB[3-j]
-				break
-			end
-		end
-		if shared then break end
-	end
-	if not shared then return nil end
-	local normals={}
-	for _,n in ipairs({first.n1,first.n2,second.n1,second.n2}) do
-		local found=false
-		for _,old in ipairs(normals) do
-			if old:Dot(n)>0.985 then found=true break end
-		end
-		if not found then table.insert(normals,n.Unit) end
-	end
-	if #normals~=3 then return nil end
-	for i=1,3 do
-		for j=i+1,3 do
-			if math.abs(normals[i]:Dot(normals[j]))>0.15 then return nil end
-		end
-	end
-	-- The rays must lead from the shared vertex INTO the part along the
-	-- third trihedral direction. This rejects false meetings of unrelated
-	-- extruded, overlapping or interior edges.
-	local function followsMaterial(spec,other)
-		local missing
-		for _,n in ipairs(normals) do
-			if n:Dot(spec.n1)<0.985 and n:Dot(spec.n2)<0.985 then
-				missing=n break
-			end
-		end
-		return missing and (other-shared).Unit:Dot(-missing)>0.90
-	end
-	if not followsMaterial(first,otherA) or not followsMaterial(second,otherB) then
-		return nil
-	end
-	local width=math.min(first.width,second.width,
-		(first.a-first.b).Magnitude*0.22,(second.a-second.b).Magnitude*0.22)
-	if width<0.018 then return nil end
-	return shared,normals,width
-end
-
 -- Returns a material-local solid and a status summary. Intermediate source
 -- solids, cutters, and EditableMeshes are all disposed deterministically.
 local function compileUnlocked(component): (BasePart, string)
 	local node = component.nodes[1]
 	local current = Compiler.nativePart(node)
-	local meshCuts, nativeFallbacks, cornerMiters = 0, 0, 0
-	local completedFiles={}
-	local patchedCorners={}
+	local meshCuts, nativeFallbacks = 0, 0
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled == false then continue end
 		if op.kind == "SketchExtrude" or op.kind == "File"
@@ -258,42 +171,10 @@ local function compileUnlocked(component): (BasePart, string)
 			current = result
 		end
 		current.Anchored = true
-		if ENABLE_CORNER_MITERS and (op.kind=="FileMesh" or op.kind=="File") then
-			local spec=fileSpec(node,op)
-			if spec then
-				for _,previous in ipairs(completedFiles) do
-					local corner,normals,width=miterCandidate(previous,spec)
-					if not corner then continue end
-					local cornerKey=string.format("%.3f,%.3f,%.3f",
-						corner.X,corner.Y,corner.Z)
-					if patchedCorners[cornerKey] then continue end
-					-- Mark even when Roblox rejects the tiny tetrahedron:
-					-- repeated attempts on the same junction create extra
-					-- Boolean work and can amplify CSG artifacts.
-					patchedCorners[cornerKey]=true
-					local ok,tool,release=pcall(GeometryCutter.cornerMiter,
-						corner,normals[1],normals[2],normals[3],width)
-					if ok then
-						local success,result=combine(current,tool,"Remove")
-						release()
-						if success then
-							current:Destroy()
-							current=result
-							current.Anchored=true
-							cornerMiters+=1
-						else
-							warn("FORM corner miter skipped: "..tostring(result))
-						end
-					else
-						warn("FORM corner miter generation skipped: "..tostring(tool))
-					end
-				end
-				table.insert(completedFiles,spec)
-			end
-		end
+
 	end
-	return current, string.format("%d features (%d mesh saws, %d fallback, %d corner miter)",
-		#(component.operations or {}), meshCuts, nativeFallbacks, cornerMiters)
+	return current, string.format("%d features (%d mesh saws, %d fallback)",
+		#(component.operations or {}), meshCuts, nativeFallbacks)
 end
 
 -- Bound peak temporary EditableMesh use: only one manufacturing replay
