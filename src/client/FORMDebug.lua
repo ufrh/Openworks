@@ -16,6 +16,8 @@ local ViewGizmo = require(script.Parent.ViewGizmo)
 local TransformGizmo = require(script.Parent.TransformGizmo)
 local SketchEditor = require(script.Parent.SketchEditor)
 local ToolVisualizer = require(script.Parent.ToolVisualizer)
+local SurfacePicker = require(script.Parent.SurfacePicker)
+local FaceTools = require(FORM.FaceTools)
 
 local Debug = {}
 
@@ -42,6 +44,7 @@ function Debug.start()
 	local historyRows = {}
 	local sketchEditor: any = nil
 	local toolVisualizer = ToolVisualizer.new(playerGui)
+	local surfacePicker: any = nil
 	local drillThrough = true
 
 	local grid = GridOverlay.new(playerGui)
@@ -202,6 +205,10 @@ function Debug.start()
 					description = string.format("INSET %.0fmm", operation.margin * 280)
 				elseif operation.kind == "File" then
 					description = string.format("FILE %s %.0fmm", operation.edge, operation.width * 280)
+				elseif operation.kind == "FileMesh" then
+					description = string.format("FILE EDGE %.0fmm",operation.width*280)
+				elseif operation.kind == "InsetFace" then
+					description = string.format("INSET FACE %.0fmm",operation.margin*280)
 				elseif operation.kind == "Groove" then
 					description = string.format("GROOVE %.0fmm", operation.kerf * 280)
 				else
@@ -242,7 +249,9 @@ function Debug.start()
 		end
 	end
 
-	preview = Preview.new(message, function(id)
+	surfacePicker = SurfacePicker.new(message)
+	preview = Preview.new(message, function(id,model)
+		surfacePicker:request(id,model)
 		if id == selectedId then refresh() end
 	end)
 
@@ -520,6 +529,7 @@ function Debug.start()
 		local component = selectedComponent()
 		if not component then message("No selection") return end
 		preview:remove(component.id)
+		surfacePicker:remove(component.id)
 		document:removeComponent(component.id)
 		selectComponent(document.order[#document.order])
 		message("Component removed")
@@ -719,12 +729,13 @@ function Debug.start()
 		local node = component.nodes[1]
 		local pose = Compiler.pose(node)
 		local normal = pose:VectorToObjectSpace(hit.Normal)
-		if normal.Y < 0.72 then return nil end
+		if activeTool ~= "File" and activeTool ~= "Inset"
+			and normal.Y < 0.72 then return nil end
 		local localPoint = pose:PointToObjectSpace(hit.Position)
 		local x = Quantize.snap(localPoint.X, Quantize.Grid)
 		local z = Quantize.snap(localPoint.Z, Quantize.Grid)
 		return { component = component, id = id, node = node, pose = pose,
-			point = localPoint, x = x, z = z }
+			point = localPoint, x = x, z = z, hit = hit }
 	end
 
 	RunService.RenderStepped:Connect(function()
