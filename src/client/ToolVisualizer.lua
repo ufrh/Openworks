@@ -189,7 +189,8 @@ function Visualizer:groove(pose: CFrame, node, a: Vector2, b: Vector2, width: nu
 end
 
 function Visualizer:meshEdge(part:BasePart,edge,width:number,
-	interior:boolean?,normalA:Vector3?,normalB:Vector3?,taperA:boolean?,taperB:boolean?)
+	interior:boolean?,normalA:Vector3?,normalB:Vector3?,
+	taperA:boolean?,taperB:boolean?,segments:number?)
 	self:hide()
 	local a=part.CFrame:PointToWorldSpace(edge.a)
 	local b=part.CFrame:PointToWorldSpace(edge.b)
@@ -200,6 +201,23 @@ function Visualizer:meshEdge(part:BasePart,edge,width:number,
 		local n1=part.CFrame:VectorToWorldSpace(normalA).Unit
 		local n2=part.CFrame:VectorToWorldSpace(normalB).Unit
 		local dot=n1:Dot(n2)
+		local count=segments or 1
+		if count>1 and math.abs(dot)<0.12 then
+			local offset=(n1+n2)*width
+			for i=0,count do
+				local angle=i/count*math.pi*0.5
+				local radial=(n1*math.cos(angle)+n2*math.sin(angle))*width
+				local shift=radial-offset
+				local line=self.faceLines[i+1]
+				line.Color=color
+				segment(line,a+shift,b+shift,0.007)
+			end
+			self.ringAnchor.CFrame=CFrame.new((a+b)/2)
+			self.display.Text=string.format("ROUND FILE  ·  %.0f mm  ·  %d SEG",
+				width*280,count)
+			self.label.Enabled=true
+			return
+		end
 		if math.abs(dot)<0.84 then
 			local dirA=(n1*dot-n2).Unit
 			local dirB=(n2*dot-n1).Unit
