@@ -10,6 +10,7 @@ local Preview = require(script.Parent.Preview)
 local BlenderCamera = require(script.Parent.BlenderCamera)
 local GridOverlay = require(script.Parent.GridOverlay)
 local ViewGizmo = require(script.Parent.ViewGizmo)
+local TransformGizmo = require(script.Parent.TransformGizmo)
 
 local Debug = {}
 
@@ -146,6 +147,7 @@ function Debug.start()
 	}, workspace)
 
 	local preview
+	local transformGizmo: any = nil
 	local textFields = {}
 	local function selectedComponent()
 		return if selectedId then document.components[selectedId] else nil
@@ -180,6 +182,13 @@ function Debug.start()
 		local model = if component then preview:getModel(component.id) else nil
 		highlight.Adornee = model
 		highlight.Enabled = model ~= nil
+		if transformGizmo then
+			if component and node then
+				transformGizmo:show(component, nodeIndex)
+			else
+				transformGizmo:hide()
+			end
+		end
 	end
 
 	preview = Preview.new(message, function(id)
@@ -198,6 +207,18 @@ function Debug.start()
 		refresh()
 	end
 
+	transformGizmo = TransformGizmo.new(playerGui, document, function(commit: boolean)
+		local component = selectedComponent()
+		if not component then return end
+		if commit then
+			changed(component)
+		else
+			-- Visual handles and numeric fields update immediately;
+			-- expensive CSG compilation happens only at release.
+			refresh()
+		end
+	end)
+
 	line("CREATE COMPONENT")
 	local function create(kind: string)
 		spawnCount += 1
@@ -210,6 +231,32 @@ function Debug.start()
 	end
 	pair("Block", function() create("Block") end, "Cylinder", function() create("Cylinder") end)
 	pair("Tube", function() create("Tube") end, "Hole Block", function() create("HoleBlock") end)
+
+	line("3D TRANSFORM HANDLES")
+	local transformStatus = line("Mode: MOVE (G)")
+	local function setTransformMode(mode: string)
+		transformGizmo:setMode(mode)
+		transformStatus.Text = "Mode: " .. string.upper(mode)
+	end
+	pair("Move [G]", function() setTransformMode("Move") end,
+		"Scale [S]", function() setTransformMode("Scale") end)
+	pair("Rotate [R]", function() setTransformMode("Rotate") end,
+		"Hide Handles", function()
+			transformGizmo:setHidden(true)
+			transformStatus.Text = "Mode: HIDDEN (G/S/R)"
+		end)
+
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed or UserInputService:GetFocusedTextBox() then return end
+		if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+		if input.KeyCode == Enum.KeyCode.G then
+			setTransformMode("Move")
+		elseif input.KeyCode == Enum.KeyCode.S then
+			setTransformMode("Scale")
+		elseif input.KeyCode == Enum.KeyCode.R then
+			setTransformMode("Rotate")
+		end
+	end)
 
 	line("EDIT SELECTED COMPONENT")
 	local function add(kind: string, operation: string)
@@ -373,7 +420,7 @@ function Debug.start()
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
 		local mouse = UserInputService:GetMouseLocation()
-		if viewGizmo:containsPoint(mouse) then return end
+		if viewGizmo:containsPoint(mouse) or transformGizmo:isDragging() then return end
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
@@ -381,7 +428,7 @@ function Debug.start()
 		params.FilterType = Enum.RaycastFilterType.Include
 		params.FilterDescendantsInstances = { preview.root }
 		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
-		if not hit then selectComponent(nil) return end
+		if not hit then return end
 		local model = hit.Instance:FindFirstAncestorOfClass("Model")
 		local id = if model then model:GetAttribute("FORMComponentId") else nil
 		if typeof(id) == "number" and document.components[id] then
@@ -390,7 +437,7 @@ function Debug.start()
 	end)
 
 	refresh()
-	message("Ready: add a Block, then use - Cylinder to cut a hole")
+	message("Ready: spawn a primitive; use G/S/R handles to move, scale, or rotate")
 end
 
 return Debug

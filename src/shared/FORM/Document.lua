@@ -128,6 +128,60 @@ function Document:editNode(component, index: number, field: string, axis: string
 	return true, nil
 end
 
+-- Atomic transform editing for viewport manipulators. A single drag step is one
+-- parametric revision; validation happens before any source definition is changed.
+function Document:applyTransform(component, index: number, position: Vector3?, size: Vector3?, rotation: Vector3?)
+	local node = component.nodes[index]
+	if not node then return false, "No node selected" end
+
+	local newPosition = Quantize.vector(position or node.position, Quantize.Grid)
+	local newSize = Quantize.vector(size or node.size, Quantize.Grid)
+	local inputRotation = rotation or node.rotation
+	local newRotation = Vector3.new(
+		Quantize.snap(inputRotation.X, Quantize.Rotation) % 360,
+		Quantize.snap(inputRotation.Y, Quantize.Rotation) % 360,
+		Quantize.snap(inputRotation.Z, Quantize.Rotation) % 360
+	)
+	for _, componentValue in ipairs({
+		newPosition.X, newPosition.Y, newPosition.Z,
+		newSize.X, newSize.Y, newSize.Z,
+		newRotation.X, newRotation.Y, newRotation.Z,
+	}) do
+		if not Quantize.isFinite(componentValue) then
+			return false, "Transform must contain finite numbers"
+		end
+	end
+	if math.abs(newPosition.X) > Quantize.MaxPosition
+		or math.abs(newPosition.Y) > Quantize.MaxPosition
+		or math.abs(newPosition.Z) > Quantize.MaxPosition then
+		return false, "Position must be within +/-512 studs"
+	end
+	if newSize.X < Quantize.MinSize or newSize.Y < Quantize.MinSize or newSize.Z < Quantize.MinSize
+		or newSize.X > Quantize.MaxSize or newSize.Y > Quantize.MaxSize or newSize.Z > Quantize.MaxSize then
+		return false, "Dimensions must be between 0.05 and 128 studs"
+	end
+	if node.kind == "Cylinder" or node.kind == "Tube" then
+		-- The diameter is shared by X/Z; for handles, the larger edited radial
+		-- dimension carries the resize, while Y continues independently.
+		local xDifference = math.abs(newSize.X - node.size.X)
+		local zDifference = math.abs(newSize.Z - node.size.Z)
+		local diameter = if xDifference >= zDifference then newSize.X else newSize.Z
+		newSize = Vector3.new(diameter, newSize.Y, diameter)
+	end
+
+	local previousPosition, previousSize, previousRotation = node.position, node.size, node.rotation
+	node.position, node.size, node.rotation = newPosition, newSize, newRotation
+	local ok, reason = validNode(node)
+	if not ok then
+		node.position, node.size, node.rotation = previousPosition, previousSize, previousRotation
+		return false, reason
+	end
+	if previousPosition ~= newPosition or previousSize ~= newSize or previousRotation ~= newRotation then
+		component.revision += 1
+	end
+	return true, nil
+end
+
 function Document:deleteNode(component, index: number)
 	if index <= 1 then return false, "Keep the first additive node; delete the component instead" end
 	if not component.nodes[index] then return false, "No node at that index" end
