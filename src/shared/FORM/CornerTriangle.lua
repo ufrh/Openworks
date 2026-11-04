@@ -77,6 +77,25 @@ function CornerTriangle.between(first,second)
 		width=(wa+wb)*0.5,segments=first.segments or 1}
 end
 
+-- This is the authoritative 45-degree junction plane. Each edge
+-- cutter is TRIMMED directly to this plane; the old standalone corner
+-- cutter is never manufactured. Both edge cutters therefore share the
+-- same line at every rounded segment.
+function CornerTriangle.miterEnds(junction,first,second)
+	local normal=(junction.wallA-junction.wallB).Unit
+	local corner=junction.corner
+	local function endFor(spec)
+		local atStart=(spec.a-corner).Magnitude<EPS
+		local atEnd=(spec.b-corner).Magnitude<EPS
+		if not atStart and not atEnd then
+			error("Miter edge has no endpoint at its shared corner",0)
+		end
+		return {corner=corner,normal=normal,
+			atStart=atStart,atEnd=atEnd,width=junction.width}
+	end
+	return endFor(first),endFor(second)
+end
+
 local function face(points,exposed)
 	local unique={}
 	for _,p in ipairs(points) do
