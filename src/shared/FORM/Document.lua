@@ -51,8 +51,6 @@ function Document:create(kind: string, minimumCorner: Vector3)
 		position = Quantize.vector(minimumCorner, Quantize.Grid) + size * 0.5,
 		size = size,
 		rotation = Vector3.zero,
-		bore = Quantize.MinSize,
-		wall = Quantize.MinSize,
 	}
 	local component = {
 		id = self.nextComponent, name = kind .. " " .. self.nextComponent,
