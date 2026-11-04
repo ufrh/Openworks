@@ -156,7 +156,7 @@ end
 -- cap on both the top and bottom surfaces. This loft reduces the width
 -- near those vertices instead of applying a second destructive corner cut.
 local function taperedBevelPrism(profile:{Vector3},travel:Vector3,
-	taperA:boolean,taperB:boolean,width:number):(MeshPart,()->())
+	taperA:boolean,taperB:boolean,width:number,edgeA:Vector3):(MeshPart,()->())
 	if #profile~=3 then error("Chamfer loft requires triangular profile",0) end
 	local length=travel.Magnitude
 	if length<0.06 then error("Chamfer edge too short",0) end
@@ -169,7 +169,12 @@ local function taperedBevelPrism(profile:{Vector3},travel:Vector3,
 	if taperA then table.insert(stages,{t=inset,scale=1}) end
 	if taperB then table.insert(stages,{t=length-inset,scale=1}) end
 	table.insert(stages,{t=length,scale=if taperB then 0.12 else 1})
-	local anchor=(profile[1]+profile[2]+profile[3])/3
+	-- Collapse around the original physical edge, not the centroid
+	-- of the removed wedge. This prevents a triangular stub at the
+	-- concave junction where multiple chamfers meet.
+	local extension=math.min(math.clamp(width*0.07,0.002,0.006),
+		(edgeA-(edgeA+travel)).Magnitude*0.02)
+	local anchor=edgeA-axis*extension
 	local worldPoints={}
 	for _,stage in ipairs(stages) do
 		for _,point in ipairs(profile) do
@@ -310,7 +315,7 @@ function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
 	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
 	if not plan then error(why or "Invalid bevel geometry",0) end
 	if taperA or taperB then
-		return taperedBevelPrism(plan.profile,plan.travel,taperA==true,taperB==true,width)
+		return taperedBevelPrism(plan.profile,plan.travel,taperA==true,taperB==true,width,edgeA)
 	end
 	return GeometryCutter.prism(plan.profile,plan.travel)
 end
