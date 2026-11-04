@@ -847,23 +847,6 @@ function Debug.start()
 				selection.topology.faces[edge.faces[2]].normal)
 			return
 		end
-		if activeTool=="File" then
-			local selection=fileEdgeTarget()
-			if not selection then
-				message("Hover a visible straight edge of a manufactured body")
-				return
-			end
-			local width,why=millimeters(fileWidthInput,"File width")
-			if not width then message(why) return end
-			local data,reason=bevelData(selection.topology,selection.edge,selection.pose,width)
-			if not data then message(reason or "Unable to file that edge") return end
-			if selection.id~=selectedId then selectComponent(selection.id) end
-			local ok,errorMessage=document:addOperation(selection.component,"FileMesh",data)
-			if not ok then message(errorMessage or "Unable to file edge") return end
-			changed(selection.component)
-			message("File edge recorded; compiling CSG")
-			return
-		end
 		local target = fabricationHit()
 		if not target then toolVisualizer:hide() return end
 		local node, pose = target.node, target.pose
@@ -928,6 +911,23 @@ function Debug.start()
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
 			or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
+		if activeTool=="File" then
+			local selection=fileEdgeTarget()
+			if not selection then
+				message("Hover a visible full-length edge to file")
+				return
+			end
+			local width,why=millimeters(fileWidthInput,"File width")
+			if not width then message(why) return end
+			local data,reason=bevelData(selection.topology,selection.edge,selection.pose,width)
+			if not data then message(reason or "Unable to file selected edge") return end
+			if selection.id~=selectedId then selectComponent(selection.id) end
+			local ok,err=document:addOperation(selection.component,"FileMesh",data)
+			if not ok then message(err or "Unable to file edge") return end
+			changed(selection.component)
+			message("File edge recorded; compiling CSG")
+			return
+		end
 		local target = fabricationHit()
 		if not target then
 			-- Selection still works when the editor is not using a fabrication tool.
