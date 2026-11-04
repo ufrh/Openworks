@@ -92,14 +92,10 @@ function FaceTools.inset(face,margin:number):({Vector3}?,string?)
 		for i=#loop,1,-1 do table.insert(reversed,loop[i]) end
 		loop=reversed
 	end
-	-- Reject concave faces explicitly: robust miter offsets for curved,
-	-- multi-loop or concave CSG faces require a separate offset kernel.
-	for i,p in ipairs(loop) do
-		local q=loop[i%#loop+1]
-		local r=loop[(i+1)%#loop+1]
-		local bend=(q-p):Cross(r-q):Dot(normal)
-		if bend<0.00001 then return nil,"Inset currently supports convex planar faces" end
-	end
+	-- Offset every actual polygon edge, including concave profile corners.
+	-- Reject an offset if it self-crosses or leaves the original region.
+	-- Concave shapes that split into multiple islands need a polygon clipping
+	-- kernel; they are not converted into a misleading rectangular pocket.
 	local result={}
 	for i,p in ipairs(loop) do
 		local previous=loop[(i-2)%#loop+1]
@@ -111,22 +107,65 @@ function FaceTools.inset(face,margin:number):({Vector3}?,string?)
 		local a=p+inwardPrev*margin
 		local b=p+inwardNext*margin
 		local determinant=prevDir:Cross(nextDir):Dot(normal)
-		if determinant<0.0001 then return nil,"Inset has an ambiguous corner" end
+		if math.abs(determinant)<0.0001 then return nil,"Inset has an ambiguous corner" end
 		local t=(b-a):Cross(nextDir):Dot(normal)/determinant
 		local point=a+prevDir*t
 		if (point-p).Magnitude>margin*12 then return nil,"Inset border produces an oversized miter" end
 		table.insert(result,point)
 	end
-	-- Verify that the offset did not invert the polygon or cross an edge.
-	local sign=0
+	-- Reject inverted, self-crossing or outside offsets explicitly.
+	local function orient(a:Vector2,b:Vector2,c:Vector2):number
+		return (b.X-a.X)*(c.Y-a.Y)-(b.Y-a.Y)*(c.X-a.X)
+	end
+	local function project(v:Vector3):Vector2
+		local a,b,c=math.abs(normal.X),math.abs(normal.Y),math.abs(normal.Z)
+		if b>=a and b>=c then return Vector2.new(v.X,v.Z) end
+		if a>=c then return Vector2.new(v.Z,v.Y) end
+		return Vector2.new(v.X,v.Y)
+	end
+	local source2,inner2={},{}
+	for _,p in ipairs(loop) do table.insert(source2,project(p)) end
+	for _,p in ipairs(result) do table.insert(inner2,project(p)) end
+	local function inPolygon(p:Vector2,ring:{Vector2}):boolean
+		local inside=false
+		for i,a in ipairs(ring) do
+			local b=ring[i%#ring+1]
+			local d=b-a
+			if d.Magnitude>1e-8 then
+				local t=math.clamp((p-a):Dot(d)/d:Dot(d),0,1)
+				if (a+d*t-p).Magnitude<0.0002 then return true end
+			end
+			if (a.Y>p.Y)~=(b.Y>p.Y) then
+				local x=a.X+(p.Y-a.Y)*(b.X-a.X)/(b.Y-a.Y)
+				if p.X<x then inside=not inside end
+			end
+		end
+		return inside
+	end
+	for _,p in ipairs(inner2) do
+		if not inPolygon(p,source2) then
+			return nil,"Inset border exceeds this face's available geometry"
+		end
+	end
+	local signedArea=0
 	for i,p in ipairs(result) do
 		local q=result[i%#result+1]
-		local r=result[(i+1)%#result+1]
-		local bend=(q-p):Cross(r-q):Dot(normal)
-		if bend<0.0000001 then return nil,"Inset border exceeds face area" end
-		sign+=bend
+		signedArea+=(p:Cross(q)):Dot(normal)
 	end
-	if sign<=0 then return nil,"Inset border exceeds face area" end
+	if signedArea<1e-7 then return nil,"Inset collapses or inverts face area" end
+	for i=1,#inner2 do
+		local a,b=inner2[i],inner2[i%#inner2+1]
+		for j=i+1,#inner2 do
+			if j==i+1 or (i==1 and j==#inner2) then continue end
+			local c,d=inner2[j],inner2[j%#inner2+1]
+			local o1,o2=orient(a,b,c),orient(a,b,d)
+			local o3,o4=orient(c,d,a),orient(c,d,b)
+			if o1*o2 < -1e-10 and o3*o4 < -1e-10 then
+				return nil,"Inset would create crossing edges on this face"
+			end
+		end
+	end
+
 	return result,nil
 end
 
