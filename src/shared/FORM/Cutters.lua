@@ -64,8 +64,13 @@ function Cutters.create(node, operation, preferMesh: boolean?): (BasePart, () ->
 		local part = Instance.new("Part")
 		part.Name = "FORM_DrillCutter"
 		part.Shape = Enum.PartType.Cylinder
-		part.Size = Vector3.new(node.size.Y + 1, operation.diameter, operation.diameter)
-		part.CFrame = CFrame.new(operation.x - node.size.X * 0.5, 0, operation.z - node.size.Z * 0.5)
+		local through = operation.through ~= false
+		local margin = 0.04
+		local depth = if through then node.size.Y + margin * 2
+			else math.min(operation.depth or node.size.Y, node.size.Y) + margin
+		local y = if through then 0 else node.size.Y / 2 - depth / 2 + margin
+		part.Size = Vector3.new(depth, operation.diameter, operation.diameter)
+		part.CFrame = CFrame.new(operation.x - node.size.X * 0.5, y, operation.z - node.size.Z * 0.5)
 			* CFrame.Angles(0, 0, math.pi / 2)
 		part.Anchored = true
 		part.CanCollide = false
@@ -73,13 +78,30 @@ function Cutters.create(node, operation, preferMesh: boolean?): (BasePart, () ->
 		part.CanQuery = false
 		return part, function() part:Destroy() end, "native"
 	end
-	if operation.kind ~= "Saw" then error("Unknown cutter kind " .. tostring(operation.kind)) end
+	if operation.kind == "Inset" then
+		local margin = operation.margin
+		local width, length = node.size.X - 2 * margin, node.size.Z - 2 * margin
+		local depth = math.min(node.size.Y, operation.depth)
+		local top = node.size.Y / 2
+		local part = nativeCut(width / 2, depth + 0.04, length,
+			CFrame.new(0, top - depth / 2 + 0.02, 0))
+		part.Name = "FORM_InsetPocketCutter"
+		return part, function() part:Destroy() end, "native"
+	end
+	if operation.kind ~= "Saw" and operation.kind ~= "Groove" then
+		error("Unknown cutter kind " .. tostring(operation.kind))
+	end
 	local a = Vector3.new(operation.x1 - node.size.X * 0.5, 0, operation.z1 - node.size.Z * 0.5)
 	local b = Vector3.new(operation.x2 - node.size.X * 0.5, 0, operation.z2 - node.size.Z * 0.5)
 	local delta = b - a
 	local length = delta.Magnitude + operation.kerf
-	local height = node.size.Y + 1
-	local cf = CFrame.lookAt((a + b) * 0.5, (a + b) * 0.5 + delta)
+	local through = operation.kind == "Saw" or operation.through == true
+	local margin = 0.04
+	local height = if through then node.size.Y + margin * 2
+		else math.min(operation.depth or node.size.Y, node.size.Y) + margin
+	local centerY = if through then 0 else node.size.Y / 2 - height / 2 + margin
+	local midpoint = (a + b) / 2 + Vector3.new(0, centerY, 0)
+	local cf = CFrame.lookAt(midpoint, midpoint + delta)
 	if preferMesh then
 		local ok, part, editable = pcall(generatedSaw, operation.kerf, height, length, cf)
 		if ok and part and editable then
