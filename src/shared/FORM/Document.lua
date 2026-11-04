@@ -142,8 +142,8 @@ function Document:applyTransform(component, index: number, position: Vector3?, s
 	return true, nil
 end
 
--- Geometry operations are stored in material-local X/Z coordinates; this
--- survives world-space moves and rotations without reauthoring cutter paths.
+-- Fabrication locations are snapped offsets from minimum material edges, so
+-- resizing from the opposite face does not unexpectedly move previous cuts.
 function Document:addOperation(component, kind: string, data)
 	local node = component.nodes[1]
 	if node.kind ~= "Block" and node.kind ~= "Cylinder" then
@@ -158,13 +158,16 @@ function Document:addOperation(component, kind: string, data)
 		end
 		operation = {
 			kind = "Drill", diameter = diameter,
-			x = Quantize.snap(data.x, Quantize.Grid),
-			z = Quantize.snap(data.z, Quantize.Grid),
+			-- Store offsets from the material's minimum X/Z edges.
+			x = Quantize.snap(data.x + node.size.X * 0.5, Quantize.Grid),
+			z = Quantize.snap(data.z + node.size.Z * 0.5, Quantize.Grid),
 		}
 	elseif kind == "Saw" then
 		local kerf = Quantize.snap(data.kerf, Quantize.Grid)
-		local x1, z1 = Quantize.snap(data.x1, Quantize.Grid), Quantize.snap(data.z1, Quantize.Grid)
-		local x2, z2 = Quantize.snap(data.x2, Quantize.Grid), Quantize.snap(data.z2, Quantize.Grid)
+		local x1, z1 = Quantize.snap(data.x1 + node.size.X * 0.5, Quantize.Grid),
+			Quantize.snap(data.z1 + node.size.Z * 0.5, Quantize.Grid)
+		local x2, z2 = Quantize.snap(data.x2 + node.size.X * 0.5, Quantize.Grid),
+			Quantize.snap(data.z2 + node.size.Z * 0.5, Quantize.Grid)
 		if not Quantize.isFinite(kerf) or kerf < Quantize.MinSize
 			or kerf > Quantize.MaxSize then return false, "Invalid saw kerf" end
 		if (Vector2.new(x2 - x1, z2 - z1)).Magnitude < Quantize.MinSize - 0.00001 then
