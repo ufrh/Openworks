@@ -101,7 +101,7 @@ function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onSt
 	local self = setmetatable({
 		camera = cameraController, onCommit = onCommit, onStatus = onStatus,
 		onExit = onExit, gui = gui, panel = panel, visuals = visuals,
-		lines = {}, dots = {}, connections = {},
+		lines = {}, dots = {}, gridParts = {}, connections = {},
 		active = false, component = nil, points = {}, closed = false,
 		mode = "Remove", through = true, depthMM = 56,
 		cursor = nil, count = count, subtitle = subtitle,
@@ -236,6 +236,7 @@ function SketchEditor:stop()
 	self.gui.Enabled = false
 	for _, part in ipairs(self.lines) do part.Transparency = 1 end
 	for _, part in ipairs(self.dots) do part.Transparency = 1 end
+	for _, part in ipairs(self.gridParts) do part.Transparency = 1 end
 	self.onExit()
 end
 
@@ -359,7 +360,48 @@ function SketchEditor:render()
 	local function worldAt(p: Vector2, height: number)
 		return cf:PointToWorldSpace(Vector3.new(p.X, height, p.Y))
 	end
-	self.cursor = if self.closed then nil else self:projectMouse(UserInputService:GetMouseLocation())
+	local mouse = UserInputService:GetMouseLocation()
+	self.cursor = if self.closed or self:isOverUI(mouse) then nil else self:projectMouse(mouse)
+	if self.cursor then
+		self.subtitle.Text = string.format("Grid 0.10  |  Snap 0.05  |  X %.2f  Z %.2f",
+			self.cursor.X + node.size.X / 2,
+			self.cursor.Y + node.size.Z / 2)
+	else
+		self.subtitle.Text = "Click the top construction plane  ·  Snap 0.05"
+	end
+	-- Overlay a local workpiece grid slightly above the face, even though
+	-- the global floor grid may be hidden beneath solid stock.
+	local gridSegments = {}
+	local xHalf, zHalf = node.size.X / 2, node.size.Z / 2
+	local step = math.max(0.1, Quantize.snap(math.max(node.size.X, node.size.Z) / 40, 0.1))
+	local nx, nz = math.floor(node.size.X / step), math.floor(node.size.Z / step)
+	for i = 0, nx do
+		local x = -xHalf + i * step
+		table.insert(gridSegments, {
+			cf:PointToWorldSpace(Vector3.new(x, node.size.Y / 2 + 0.018, -zHalf)),
+			cf:PointToWorldSpace(Vector3.new(x, node.size.Y / 2 + 0.018, zHalf)),
+			i % 5 == 0,
+		})
+	end
+	for i = 0, nz do
+		local z = -zHalf + i * step
+		table.insert(gridSegments, {
+			cf:PointToWorldSpace(Vector3.new(-xHalf, node.size.Y / 2 + 0.018, z)),
+			cf:PointToWorldSpace(Vector3.new(xHalf, node.size.Y / 2 + 0.018, z)),
+			i % 5 == 0,
+		})
+	end
+	for i, entry in ipairs(gridSegments) do
+		if not self.gridParts[i] then
+			self.gridParts[i] = newVisual(self.visuals, "SketchGrid_" .. i)
+		end
+		placeSegment(self.gridParts[i], entry[1], entry[2], thickness * 0.45,
+			Color3.fromRGB(117, 155, 169))
+		self.gridParts[i].Transparency = if entry[3] then 0.48 else 0.76
+	end
+	for i = #gridSegments + 1, #self.gridParts do
+		self.gridParts[i].Transparency = 1
+	end
 	local segments = {}
 	local surfaceY = node.size.Y / 2 + 0.035
 	local color = if self.closed then COLORS[self.mode] else ACCENT
