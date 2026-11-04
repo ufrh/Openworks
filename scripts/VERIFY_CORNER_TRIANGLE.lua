@@ -21,10 +21,29 @@ local function check(segments:number)
 	assert(miter,"Concave 90-degree corner not recognized")
 	local faces,why=Miter.faces(miter)
 	assert(faces,tostring(why))
-	assert(#faces==3+2*segments,"Expected two miter strips per segment")
+	assert(#faces==4+2*segments,"Expected two triangular top faces, two side caps and two miter strips per segment")
+	-- Top MUST be a triangle with the seam vertex at its midpoint:
+	-- old implementation cut a square into the L corner.
+	local top=faces[1].polygon
+	local secondTop=faces[2].polygon
+	assert(#top==3 and #secondTop==3,"Miter cap must be two triangles")
+	local upperPoint=top[3]
+	local leftPoint=top[2]
+	local rightPoint=secondTop[3]
+	assert((upperPoint-(leftPoint+rightPoint)*0.5).Magnitude<0.00002,
+		"Miter top seam must bisect the two face profiles")
 	local incidence={}
 	local seamSegments=0
 	for _,face in ipairs(faces) do
+		-- Each rounded strip is an actual plane; a twisted quad can
+		-- generate giant diagonal triangles after MeshPart conversion.
+		local verts=face.polygon
+		local base=verts[1]
+		local normal=(verts[2]-base):Cross(verts[3]-base).Unit
+		for _,v in ipairs(verts) do
+			assert(math.abs((v-base):Dot(normal))<1e-5,
+				"Rounded miter facet is twisted/nonplanar")
+		end
 		for i,a in ipairs(face.polygon) do
 			local b=face.polygon[i%#face.polygon+1]
 			local ka,kb=key(a),key(b)
