@@ -206,7 +206,10 @@ local function taperedBevelPrism(profile:{Vector3},travel:Vector3,
 			local n=(q-p):Cross(r-p)
 			if n.Magnitude<1e-9 then error("Degenerate chamfer loft triangle") end
 			-- Both caps and sidewalls face outward from the loft's center.
-			if n:Dot((p+q+r)/3-midpoint)<0 then j,k=k,j n=-n end
+			if n:Dot((p+q+r)/3-midpoint)<0 then
+				j,k=k,j
+				n=-n
+			end
 			local normal=mesh:AddNormal(n.Unit)
 			local face=mesh:AddTriangle(ids[i],ids[j],ids[k])
 			mesh:SetFaceNormals(face,{normal,normal,normal})
