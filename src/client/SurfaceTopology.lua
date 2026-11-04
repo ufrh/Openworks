@@ -257,6 +257,22 @@ local function closestOnSegment(p: Vector3,a: Vector3,b: Vector3): (number,Vecto
 	return (p-q).Magnitude,q
 end
 
+local function surfaceEdgeVisible(topology,edge,q:Vector3):boolean
+	if not topology.history then return true end
+	if edge.curved or #edge.faces~=2 then return false end
+	local fa,fb=topology.faces[edge.faces[1]],topology.faces[edge.faces[2]]
+	if not fa or not fb then return false end
+	local normal=fa.normal+fb.normal
+	if normal.Magnitude<0.1 then return false end
+	normal=topology.part.CFrame:VectorToWorldSpace(normal.Unit)
+	local params=RaycastParams.new()
+	params.FilterType=Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances={topology.part}
+	local ray=workspace:Raycast(q+normal*0.13,-normal*0.24,params)
+	return ray~=nil and ray.Instance==topology.part
+		and (ray.Position-q).Magnitude<0.065
+end
+
 function SurfaceTopology.closestEdge(topology, worldHit: Vector3, worldNormal: Vector3,
 	camera: Camera, mouse: Vector2, maxPixels: number?)
 	local candidate,bestPixels=nil,maxPixels or 18
@@ -274,7 +290,8 @@ function SurfaceTopology.closestEdge(topology, worldHit: Vector3, worldNormal: V
 				local _,q=closestOnSegment(worldHit,a,b)
 				-- Face-adjacency check avoids selecting edges behind
 				-- unrelated surfaces.
-				if (q-worldHit).Magnitude<0.25 then
+				if (q-worldHit).Magnitude<0.25
+					and surfaceEdgeVisible(topology,edge,q) then
 					bestPixels=screenDistance
 					candidate=edge
 				end
@@ -297,25 +314,68 @@ local function containsTriangle(p:Vector3,a:Vector3,b:Vector3,c:Vector3):boolean
 	return t>=-0.004 and s>=-0.004 and t+s<=1.004
 end
 
+local function project2(p:Vector3,normal:Vector3):Vector2
+	local ax,ay,az=math.abs(normal.X),math.abs(normal.Y),math.abs(normal.Z)
+	if ay>=ax and ay>=az then return Vector2.new(p.X,p.Z) end
+	if ax>=az then return Vector2.new(p.Z,p.Y) end
+	return Vector2.new(p.X,p.Y)
+end
+
+local function withinPolygon(p:Vector3,points:{Vector3},normal:Vector3):boolean
+	if #points<3 then return false end
+	local q=project2(p,normal)
+	local inside=false
+	for i,a3 in ipairs(points) do
+		local b3=points[i%#points+1]
+		local a,b=project2(a3,normal),project2(b3,normal)
+		local delta=b-a
+		local ab=q-a
+		if delta.Magnitude>0.000001 then
+			local t=math.clamp(ab:Dot(delta)/delta:Dot(delta),0,1)
+			if (a+delta*t-q).Magnitude<0.003 then return true end
+		end
+		if (a.Y>q.Y)~=(b.Y>q.Y) then
+			local x=a.X+(q.Y-a.Y)*(b.X-a.X)/(b.Y-a.Y)
+			if q.X<x then inside=not inside end
+		end
+	end
+	return inside
+end
+
 function SurfaceTopology.faceAt(topology,hitPoint:Vector3,hitNormal:Vector3)
 	local localPoint=topology.part.CFrame:PointToObjectSpace(hitPoint)
 	local localNormal=topology.part.CFrame:VectorToObjectSpace(hitNormal)
 	local best,bestError=nil,math.huge
 	for _,face in ipairs(topology.faces) do
-		if face.normal:Dot(localNormal)<0.90 then continue end
-		local first=topology.triangles[face.triangles[1]]
-		local origin=topology.vertices[first.v[1]]
-		local error=math.abs((localPoint-origin):Dot(face.normal))
-		if error>0.035 or error>=bestError then continue end
-		local projected=localPoint-face.normal*((localPoint-origin):Dot(face.normal))
-		for _,index in ipairs(face.triangles) do
-			local tri=topology.triangles[index]
-			local a,b,c=topology.vertices[tri.v[1]],
-				topology.vertices[tri.v[2]],topology.vertices[tri.v[3]]
-			if containsTriangle(projected,a,b,c) then
-				best,bestError=face,error
-				break
+		if face.curved or face.normal:Dot(localNormal)<0.85 then continue end
+		local origin
+		if face.polygon then
+			origin=face.polygon[1]
+		else
+			local first=topology.triangles[face.triangles[1]]
+			origin=topology.vertices[first.v[1]]
+		end
+		local signed=(localPoint-origin):Dot(face.normal)
+		local err=math.abs(signed)
+		if err>0.04 or err>bestError+0.002 then continue end
+		local projected=localPoint-face.normal*signed
+		local contains=false
+		if face.polygon then
+			contains=withinPolygon(projected,face.polygon,face.normal)
+		else
+			for _,index in ipairs(face.triangles) do
+				local tri=topology.triangles[index]
+				local a,b,c=topology.vertices[tri.v[1]],
+					topology.vertices[tri.v[2]],topology.vertices[tri.v[3]]
+				if containsTriangle(projected,a,b,c) then contains=true break end
 			end
+		end
+		-- Prefer the newest authored planar patch when two candidate
+		-- surfaces overlap in the same plane. The raycast already verifies
+		-- a surface exists there on the finished CSG result.
+		if contains and (err<bestError-0.002 or not best
+			or (math.abs(err-bestError)<0.002 and face.id>best.id)) then
+			best,bestError=face,err
 		end
 	end
 	return best
