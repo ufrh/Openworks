@@ -247,9 +247,9 @@ function TransformGizmo:refresh()
 
 	self.proxy.CFrame = nodeCFrame(node)
 	self.proxy.Size = Vector3.new(
-		math.max(node.size.X, 0.20),
-		math.max(node.size.Y, 0.20),
-		math.max(node.size.Z, 0.20)
+		math.max(node.size.X, Quantize.MinSize),
+		math.max(node.size.Y, Quantize.MinSize),
+		math.max(node.size.Z, Quantize.MinSize)
 	)
 end
 
