@@ -188,15 +188,51 @@ function Visualizer:groove(pose: CFrame, node, a: Vector2, b: Vector2, width: nu
 		Enum.PartType.Block, string.format("GROOVE  %.0f × %.0f mm", width * 280, depth * 280))
 end
 
-function Visualizer:meshEdge(part:BasePart,edge,width:number,interior:boolean?)
+function Visualizer:meshEdge(part:BasePart,edge,width:number,
+	interior:boolean?,normalA:Vector3?,normalB:Vector3?)
 	self:hide()
 	local a=part.CFrame:PointToWorldSpace(edge.a)
 	local b=part.CFrame:PointToWorldSpace(edge.b)
-	self.edgeLine.Color=CYAN
-	segment(self.edgeLine,a,b,math.clamp(width*0.25,0.009,0.04))
+	local color=if interior then Color3.fromRGB(125,223,175) else CYAN
+	self.edgeLine.Color=color
+	segment(self.edgeLine,a,b,0.008)
+	if normalA and normalB then
+		local n1=part.CFrame:VectorToWorldSpace(normalA).Unit
+		local n2=part.CFrame:VectorToWorldSpace(normalB).Unit
+		local dot=n1:Dot(n2)
+		if math.abs(dot)<0.84 then
+			local dirA=(n1*dot-n2).Unit
+			local dirB=(n2*dot-n1).Unit
+			local sign=if interior then -1 else 1
+			local p1,p2=a+dirA*width*sign,a+dirB*width*sign
+			local q1,q2=b+dirA*width*sign,b+dirB*width*sign
+			self.faceLines[1].Color=color
+			self.faceLines[2].Color=color
+			segment(self.faceLines[1],p1,q1,0.008)
+			segment(self.faceLines[2],p2,q2,0.008)
+			local across=p2-p1
+			local along=b-a
+			if across.Magnitude>0.0001 and along.Magnitude>0.0001 then
+				local x=across.Unit
+				local z=along.Unit
+				local y=z:Cross(x)
+				if y.Magnitude>0.0001 then
+					self.ghost.Shape=Enum.PartType.Block
+					self.ghost.CFrame=CFrame.fromMatrix((p1+p2+q1+q2)/4,x,y.Unit,z)
+					self.ghost.Size=Vector3.new(across.Magnitude,0.003,along.Magnitude)
+					self.ghost.Color=color
+					self.ghost.Transparency=0.78
+					self.highlight.FillColor=color
+					self.highlight.OutlineColor=color
+					self.highlight.OutlineTransparency=0.35
+					self.highlight.Enabled=true
+				end
+			end
+		end
+	end
 	self.ringAnchor.CFrame=CFrame.new((a+b)/2)
 	self.display.Text=string.format("%s  ·  %.0f mm",
-		if interior then "FILE INNER CORNER" else "FILE OUTER EDGE",width*280)
+		if interior then "INSIDE CHAMFER" else "OUTSIDE CHAMFER",width*280)
 	self.label.Enabled=true
 end
 
