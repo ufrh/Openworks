@@ -180,6 +180,23 @@ function Document:addOperation(component, kind: string, data)
 			through = data.through ~= false,
 			x = x, z = z,
 		}
+	elseif kind == "DrillFace" then
+		local origin,normal=data.origin,data.normal
+		local diameter,depth=data.diameter,data.depth
+		if typeof(origin)~="Vector3" or typeof(normal)~="Vector3"
+			or typeof(diameter)~="number" or typeof(depth)~="number"
+			or normal.Magnitude<0.9 or not Quantize.isFinite(diameter)
+			or not Quantize.isFinite(depth) then
+			return false,"Invalid drill face selection"
+		end
+		diameter=Quantize.snap(diameter,1/280)
+		depth=Quantize.snap(depth,1/280)
+		if diameter<5/280 or diameter>Quantize.MaxSize
+			or depth<5/280 or depth>Quantize.MaxSize then
+			return false,"Drill dimensions out of bounds"
+		end
+		operation={kind="DrillFace",origin=origin,normal=normal.Unit,
+			diameter=diameter,depth=depth,through=data.through~=false}
 	elseif kind == "Saw" or kind == "Groove" then
 		local kerf = Quantize.snap(data.kerf, 1 / 280)
 		local x1, z1 = Quantize.snap(data.x1 + node.size.X * 0.5, Quantize.Grid),
