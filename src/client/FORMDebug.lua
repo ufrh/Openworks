@@ -302,8 +302,13 @@ function Debug.start()
 		transformGizmo:setHidden(true)
 		toolStatus.Text = "Tool: SKETCH"
 		sketchEditor:start(component)
-	end, "Close Sketch", function()
-		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
+	end, "New Body Sketch", function()
+		if not sketchEditor then message("Sketch workspace is not initialized") return end
+		activeTool = nil
+		sawFirst = nil
+		transformGizmo:setHidden(true)
+		toolStatus.Text = "Tool: NEW BODY"
+		sketchEditor:start(nil)
 	end)
 	pair("Exit Tool", function() setTool(nil) end, "Undo Last Cut", function()
 		local component = selectedComponent()
@@ -529,9 +534,50 @@ function Debug.start()
 	end)
 	sketchEditor = SketchEditor.new(playerGui, cameraController,
 		function(component, data)
-			local ok, reason = document:addOperation(component, "SketchExtrude", data)
-			if ok then changed(component) end
-			return ok, reason
+			if component then
+				local ok, reason = document:addOperation(component, "SketchExtrude", data)
+				if ok then changed(component) end
+				return ok, reason
+			end
+			-- Standalone sketch: construct a snapped bounding workpiece, then
+			-- intersect it with the sketched through-extrusion. The retained
+			-- result is a normal CSG solid, not a persistent EditableMesh.
+			local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+			for _, p in ipairs(data.points) do
+				minX, maxX = math.min(minX, p.X), math.max(maxX, p.X)
+				minZ, maxZ = math.min(minZ, p.Y), math.max(maxZ, p.Y)
+			end
+			local width, length = maxX - minX, maxZ - minZ
+			if width < Quantize.MinSize or length < Quantize.MinSize then
+				return false, "New body sketch is smaller than the minimum workpiece"
+			end
+			local body = document:create("Block", Vector3.new(minX, 0, minZ))
+			for _, axisInfo in ipairs({
+				{ "X", width }, { "Y", data.depth }, { "Z", length },
+			}) do
+				local ok, reason = document:editNode(body, 1, "size", axisInfo[1], axisInfo[2])
+				if not ok then
+					document:removeComponent(body.id)
+					return false, reason
+				end
+			end
+			local middleX = (minX + maxX) * 0.5
+			local middleZ = (minZ + maxZ) * 0.5
+			local localPoints = {}
+			for _, p in ipairs(data.points) do
+				table.insert(localPoints, Vector2.new(p.X - middleX, p.Y - middleZ))
+			end
+			local ok, reason = document:addOperation(body, "SketchExtrude", {
+				points = localPoints, mode = "Intersect",
+				depth = data.depth, through = true,
+			})
+			if not ok then
+				document:removeComponent(body.id)
+				return false, reason
+			end
+			selectComponent(body.id)
+			changed(body)
+			return true, nil
 		end,
 		message,
 		function()
