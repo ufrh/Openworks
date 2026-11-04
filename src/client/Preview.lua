@@ -2,6 +2,7 @@
 -- One visible primitive per component. Native shapes update immediately;
 -- special parametric cutters compile ONLY when shape dimensions change.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Compiler = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Compiler)
 local Document = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Document)
 
@@ -24,7 +25,7 @@ function Preview.new(onStatus, onRendered)
 	local root = Instance.new("Folder")
 	root.Name = "FORM_LocalPreview"
 	root.Parent = workspace
-	return setmetatable({
+	local self = setmetatable({
 		root = root,
 		models = {},
 		states = {},
@@ -33,6 +34,24 @@ function Preview.new(onStatus, onRendered)
 		onStatus = onStatus,
 		onRendered = onRendered,
 	}, Preview)
+	-- Only the rendering interpolates. Parametric source remains precisely snapped.
+	self.renderConnection = RunService.RenderStepped:Connect(function(dt)
+		local alpha = 1 - math.exp(-26 * dt)
+		for _, state in pairs(self.states) do
+			if state.smoothing and state.part and state.part.Parent then
+				state.part.CFrame = state.part.CFrame:Lerp(state.targetFrame, alpha)
+				state.part.Size = state.part.Size:Lerp(state.targetSize, alpha)
+				if not state.dragging and
+					(state.part.Position - state.targetFrame.Position).Magnitude < 0.0005 and
+					(state.part.Size - state.targetSize).Magnitude < 0.0005 then
+					state.part.CFrame = state.targetFrame
+					state.part.Size = state.targetSize
+					state.smoothing = false
+				end
+			end
+		end
+	end)
+	return self
 end
 
 function Preview:getModel(id: number): Model?
@@ -70,7 +89,14 @@ function Preview:replace(component, part: BasePart, key: string, madeWithCSG: bo
 	local previous = self.states[id]
 	local localFrame = part.CFrame -- template-space frame, before world transform
 	configure(part)
-	part.CFrame = Compiler.pose(component.nodes[1]) * localFrame
+	local targetFrame = Compiler.pose(component.nodes[1]) * localFrame
+	local targetSize = part.Size
+	if previous and previous.smoothing and previous.part then
+		part.CFrame = previous.part.CFrame
+		part.Size = previous.part.Size
+	else
+		part.CFrame = targetFrame
+	end
 	if previous and previous.part then previous.part:Destroy() end
 	part.Parent = model
 	self.states[id] = {
@@ -79,6 +105,9 @@ function Preview:replace(component, part: BasePart, key: string, madeWithCSG: bo
 		key = key,
 		kind = component.nodes[1].kind,
 		boolean = madeWithCSG,
+		targetFrame = targetFrame, targetSize = targetSize,
+		smoothing = previous ~= nil and previous.smoothing or false,
+		dragging = self.dragging[id] == true,
 	}
 	self.onRendered(id, model)
 end
@@ -96,8 +125,12 @@ function Preview:updateGeometry(component)
 		if state and state.part:IsA("Part") and not state.boolean
 			and state.kind == node.kind then
 			part = state.part
-			part.Size = Compiler.partSize(node)
-			part.CFrame = Compiler.pose(node) * state.localFrame
+			state.targetSize = Compiler.partSize(node)
+			state.targetFrame = Compiler.pose(node) * state.localFrame
+			if not state.smoothing then
+				part.Size = state.targetSize
+				part.CFrame = state.targetFrame
+			end
 			state.key = key
 		else
 			part = Compiler.nativePart(node)
@@ -115,9 +148,11 @@ function Preview:updateGeometry(component)
 
 	-- Moving/rotating already-manufactured CSG solids changes only CFrame.
 	-- Resizing temporarily stretches the current solid until re-manufacture.
-	state.part.CFrame = Compiler.pose(node) * state.localFrame
-	if state.key ~= key then
-		state.part.Size = Compiler.partSize(node)
+	state.targetFrame = Compiler.pose(node) * state.localFrame
+	state.targetSize = if state.key ~= key then Compiler.partSize(node) else state.part.Size
+	if not state.smoothing then
+		state.part.CFrame = state.targetFrame
+		state.part.Size = state.targetSize
 	end
 	return state.key ~= key or not state.boolean
 end
@@ -175,6 +210,8 @@ end
 
 function Preview:beginLive(component, _index: number)
 	self.dragging[component.id] = true
+	local state = self.states[component.id]
+	if state then state.smoothing, state.dragging = true, true end
 	-- No ghost meshes and no background Boolean builds during dragging.
 	self:updateGeometry(component)
 end
@@ -185,11 +222,15 @@ end
 
 function Preview:finishLive(component)
 	self.dragging[component.id] = nil
+	local state = self.states[component.id]
+	if state then state.dragging = false end
 	self:render(component)
 end
 
 function Preview:cancelLive(id: number)
 	self.dragging[id] = nil
+	local state = self.states[id]
+	if state then state.dragging = false end
 end
 
 return Preview
