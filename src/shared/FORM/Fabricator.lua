@@ -62,7 +62,7 @@ function Fabricator.geometryKey(component): string
 			end
 		end
 	end
-	return "FORM_FILE_SEGMENTS_V5;"..table.concat(pieces, ";")
+	return "FORM_ROUND_MITER_V6;"..table.concat(pieces, ";")
 end
 
 local function combine(source: BasePart, cutter: BasePart, mode: string): (boolean, any)
@@ -102,9 +102,9 @@ end
 local function compileUnlocked(component): (BasePart, string)
 	local node = component.nodes[1]
 	local current = Compiler.nativePart(node)
-	local meshCuts, nativeFallbacks, pausedInsideFiles, triangularCorners = 0, 0, 0, 0
+	local meshCuts, nativeFallbacks, pausedInsideFiles, miterCorners = 0, 0, 0, 0
 	local exteriorFiles={}
-	local completedCorners={}
+	local completedMiters={}
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled == false then continue end
 		-- Keep historical interior File entries for possible later repair,
@@ -211,7 +211,7 @@ local function compileUnlocked(component): (BasePart, string)
 			end
 		end
 	end
-	return current, string.format("%d features (%d saws, %d fallback, %d corner triangles, %d paused inside)",
+	return current, string.format("%d features (%d saws, %d fallback, %d corner miters, %d paused inside)",
 		#(component.operations or {}), meshCuts, nativeFallbacks, triangularCorners, pausedInsideFiles)
 end
 
