@@ -404,24 +404,27 @@ function HistoryTopology.build(part:BasePart,component)
 			cornerDone[cornerKey]=true
 			local chipFaces=CornerTriangle.faces(corner)
 			if not chipFaces then continue end
-			-- The fourth tetra face is the new manufactured triangular
-			-- surface (its first three faces are internal cutter planes).
-			local face=chipFaces[4]
-			local displayed=addFace(face.polygon,-face.normal,"file_corner_triangle")
-			if displayed then
-				for _,edge in ipairs(displayed.edges) do
-					if #edge.faces>=2 then continue end
-					for _,otherFace in ipairs(faces) do
-						if otherFace==displayed then continue end
-						local n=otherFace.normal
-						local origin=otherFace.polygon[1]
-						if math.abs((edge.a-origin):Dot(n))<0.008
-							and math.abs((edge.b-origin):Dot(n))<0.008 then
-							if not table.find(edge.faces,otherFace.id) then
-								table.insert(edge.faces,otherFace.id)
-								table.insert(otherFace.edges,edge)
+			-- Both exterior profiles meet along the same diagonal seam.
+			-- Register every resulting miter strip, not a fake single
+			-- triangular face, so edge selection follows its segmentation.
+			for _,surface in ipairs(chipFaces) do
+				if not surface.exposed then continue end
+				local displayed=addFace(surface.polygon,-surface.normal,"file_corner_miter")
+				if displayed then
+					for _,edge in ipairs(displayed.edges) do
+						if #edge.faces>=2 then continue end
+						for _,otherFace in ipairs(faces) do
+							if otherFace==displayed then continue end
+							local n=otherFace.normal
+							local origin=otherFace.polygon[1]
+							if math.abs((edge.a-origin):Dot(n))<0.008
+								and math.abs((edge.b-origin):Dot(n))<0.008 then
+								if not table.find(edge.faces,otherFace.id) then
+									table.insert(edge.faces,otherFace.id)
+									table.insert(otherFace.edges,edge)
+								end
+								break
 							end
-							break
 						end
 					end
 				end
