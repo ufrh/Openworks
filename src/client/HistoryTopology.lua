@@ -334,8 +334,8 @@ function HistoryTopology.build(part:BasePart,component)
 		local result={}
 		for i,a in ipairs(poly) do
 			local b=poly[i%#poly+1]
-			local da=(a-planePoint):Dot(planeNormal)-0.002
-			local db=(b-planePoint):Dot(planeNormal)-0.002
+			local da=(a-planePoint):Dot(planeNormal)
+			local db=(b-planePoint):Dot(planeNormal)
 			local insideA,insideB=da<=0,db<=0
 			if insideA then table.insert(result,a) end
 			if insideA~=insideB then
@@ -422,6 +422,47 @@ function HistoryTopology.build(part:BasePart,component)
 					end
 				end
 				addAdjacent(edge,found)
+			end
+		end
+	end
+
+	-- Add the actual planar CORNER WEDGE surfaces. The inside additive
+	-- chamfer and its neighbouring outer bevels share their intersections:
+	-- there is no separate square corner cap to select anymore.
+	local junctionFaces={}
+	for _,junction in ipairs(bevelJunctions) do
+		local raw,normal=BevelJunction.surfacePolygon(junction)
+		for _,other in ipairs(bevelJunctions) do
+			if other~=junction and other.inner==junction.inner then
+				local o=other.outer
+				local n=(o.n1+o.n2).Unit
+				local dot=o.n1:Dot(o.n2)
+				local onPlane=o.a+(o.n1*dot-o.n2).Unit*o.width
+				raw=clipContour(raw,onPlane,n)
+				if #raw<3 then break end
+			end
+		end
+		if #raw>=3 then
+			junctionFaces[junction]=addFace(raw,normal,"file_junction")
+		end
+	end
+	-- A junction patch shares hard trim lines with the interior chamfer.
+	-- Those lines must belong to both authored surfaces, so they are
+	-- selectable for subsequent File/Inset operations.
+	for _,junction in ipairs(bevelJunctions) do
+		local patchFace=junctionFaces[junction]
+		local inside=faceByFile[junction.inner]
+		if not patchFace or not inside then continue end
+		local inner=junction.inner
+		local n=(inner.n1+inner.n2).Unit
+		local dot=inner.n1:Dot(inner.n2)
+		local origin=point(inner.a+(inner.n1*dot-inner.n2).Unit*
+			inner.width*(if inner.interior then -1 else 1))
+		local normal=direction(n)
+		for _,edge in ipairs(patchFace.edges) do
+			if math.abs((edge.a-origin):Dot(normal))<0.007
+				and math.abs((edge.b-origin):Dot(normal))<0.007 then
+				addAdjacent(edge,inside)
 			end
 		end
 	end
