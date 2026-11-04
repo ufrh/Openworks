@@ -38,9 +38,13 @@ local function nativeBlock(part:Part)
 		local face={id=fi,normal=spec.normal,edges={},triangles={},vertices={}}
 		table.insert(faces,face)
 		for _,v in ipairs(spec.ring) do table.insert(face.vertices,vertices[v]) end
-		table.insert(triangles,{v={spec.ring[1],spec.ring[2],spec.ring[3]},
-			normal=spec.normal})
-		table.insert(face.triangles,#triangles)
+		for _,indices in ipairs({
+			{spec.ring[1],spec.ring[2],spec.ring[3]},
+			{spec.ring[1],spec.ring[3],spec.ring[4]},
+		}) do
+			table.insert(triangles,{v=indices,normal=spec.normal})
+			table.insert(face.triangles,#triangles)
+		end
 		for i=1,4 do
 			local a,b=spec.ring[i],spec.ring[i%4+1]
 			local key=edgeKey(a,b)
@@ -271,19 +275,40 @@ function SurfaceTopology.closestEdge(topology, worldHit: Vector3, worldNormal: V
 	return candidate
 end
 
-function SurfaceTopology.faceAt(topology, hitPoint: Vector3, hitNormal: Vector3)
+local function containsTriangle(p:Vector3,a:Vector3,b:Vector3,c:Vector3):boolean
+	local u=b-a
+	local v=c-a
+	local w=p-a
+	local uu,uv,vv=u:Dot(u),u:Dot(v),v:Dot(v)
+	local wu,wv=w:Dot(u),w:Dot(v)
+	local determinant=uu*vv-uv*uv
+	if determinant<1e-12 then return false end
+	local t=(wu*vv-wv*uv)/determinant
+	local s=(wv*uu-wu*uv)/determinant
+	return t>=-0.004 and s>=-0.004 and t+s<=1.004
+end
+
+function SurfaceTopology.faceAt(topology,hitPoint:Vector3,hitNormal:Vector3)
 	local localPoint=topology.part.CFrame:PointToObjectSpace(hitPoint)
 	local localNormal=topology.part.CFrame:VectorToObjectSpace(hitNormal)
 	local best,bestError=nil,math.huge
 	for _,face in ipairs(topology.faces) do
+		if face.normal:Dot(localNormal)<0.90 then continue end
 		local first=topology.triangles[face.triangles[1]]
 		local origin=topology.vertices[first.v[1]]
 		local error=math.abs((localPoint-origin):Dot(face.normal))
-		if face.normal:Dot(localNormal)>0.90 and error<bestError then
-			best,bestError=face,error
+		if error>0.035 or error>=bestError then continue end
+		local projected=localPoint-face.normal*((localPoint-origin):Dot(face.normal))
+		for _,index in ipairs(face.triangles) do
+			local tri=topology.triangles[index]
+			local a,b,c=topology.vertices[tri.v[1]],
+				topology.vertices[tri.v[2]],topology.vertices[tri.v[3]]
+			if containsTriangle(projected,a,b,c) then
+				best,bestError=face,error
+				break
+			end
 		end
 	end
-	if bestError>0.035 then return nil end
 	return best
 end
 
