@@ -295,7 +295,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			component = self.component, index = self.index,
 			position = node.position, size = node.size, rotation = node.rotation,
 			grip = grip, direction = direction, pivot = pivot,
-			initialParameter = if grip.mode == "Face" then axisParameter(point, pivot, direction) else nil,
+			initialParameter = if grip.mode ~= "Rotate" then axisParameter(point, pivot, direction) else nil,
 			initialRadial = if radial then (planeRadial(point, pivot, direction) or radial) else nil,
 		}
 		self.dragChanged = false
