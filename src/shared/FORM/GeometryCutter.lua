@@ -429,7 +429,13 @@ function GeometryCutter.fileSurfaceFaces(edgeA:Vector3,edgeB:Vector3,
 	end
 	local lower,upper=GeometryCutter.projectRings(profile,travel,miter)
 	local facets={}
-	for i=2,#profile-1 do
+	-- The legacy flat File profile is [tangentA, tangentB, outside].
+	-- The rounded File profile is [outside, arc0, arc1, ...]. Selecting
+	-- index 2 for the flat case would expose the cutter's OUTSIDE wall
+	-- instead of the manufactured chamfer itself.
+	local first=if segments==1 then 1 else 2
+	local last=if segments==1 then 1 else #profile-1
+	for i=first,last do
 		local polygon={lower[i],upper[i],upper[i+1],lower[i+1]}
 		local n=(polygon[2]-polygon[1]):Cross(polygon[3]-polygon[1])
 		if n.Magnitude>1e-8 then
