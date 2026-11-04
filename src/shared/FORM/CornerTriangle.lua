@@ -1,9 +1,8 @@
 --!strict
--- One narrowly scoped repair: two exterior File bevels ending at the
--- SAME concave profile corner leave a small square top cap. Replace just
--- that cap with one triangular corner face.
+-- Two exterior File profiles meeting at a concave L corner form a real
+-- 45-degree miter seam, with matching round segments on both sides.
 --
--- Not a generic bevel junction solver and NOT interior vertical filing.
+-- Legacy module name; this does NOT enable interior vertical filing.
 local CornerTriangle={}
 local EPS=0.008
 
@@ -19,13 +18,12 @@ function CornerTriangle.fileSpec(node,op)
 			n1=Vector3.yAxis,n2=Vector3.xAxis,width=op.width,segments=op.segments or 1}
 	elseif op.edge=="X-" then
 		return {a=Vector3.new(-hx,hy,-hz),b=Vector3.new(-hx,hy,hz),
-			n1=Vector3.yAxis,n2=-Vector3.xAxis,width=op.width}
+			n1=Vector3.yAxis,n2=-Vector3.xAxis,width=op.width,segments=op.segments or 1}
 	elseif op.edge=="Z+" then
 		return {a=Vector3.new(-hx,hy,hz),b=Vector3.new(hx,hy,hz),
-			n1=Vector3.yAxis,n2=Vector3.zAxis,width=op.width}
-	elseif op.edge=="Z-" then
+			n1=Vector3.yAxis,n2=Vector3.zAxis,width=op.width,segments=op.segments or 1} then
 		return {a=Vector3.new(-hx,hy,-hz),b=Vector3.new(hx,hy,-hz),
-			n1=Vector3.yAxis,n2=-Vector3.zAxis,width=op.width}
+			n1=Vector3.yAxis,n2=-Vector3.zAxis,width=op.width,segments=op.segments or 1}
 	end
 	return nil
 end
@@ -78,7 +76,7 @@ function CornerTriangle.between(first,second)
 		width=(wa+wb)*0.5,segments=first.segments or 1}
 end
 
-local function face(points,centroid,exposed)
+local function face(points,exposed)
 	local unique={}
 	for _,p in ipairs(points) do
 		if #unique==0 or (unique[#unique]-p).Magnitude>1e-6 then
@@ -89,22 +87,88 @@ local function face(points,centroid,exposed)
 		table.remove(unique)
 	end
 	if #unique<3 then return nil end
-	local normal=nil
-	for i=2,#unique-1 do
-		local cross=(unique[i]-unique[1]):Cross(unique[i+1]-unique[1])
-		if cross.Magnitude>1e-8 then normal=cross.Unit break end
+	return {polygon=unique,exposed=exposed}
+end
+
+local function orientClosedShell(faces)
+	local incidence={}
+	local function vertexKey(p:Vector3)
+		return string.format("%d:%d:%d",math.round(p.X*1e5),
+			math.round(p.Y*1e5),math.round(p.Z*1e5))
 	end
-	if not normal then return nil end
-	local middle=Vector3.zero
-	for _,p in ipairs(unique) do middle+=p end
-	middle/=#unique
-	if normal:Dot(middle-centroid)<0 then
-		local reversed={}
-		for i=#unique,1,-1 do table.insert(reversed,unique[i]) end
-		unique=reversed
-		normal=-normal
+	for index,surface in ipairs(faces) do
+		local polygon=surface.polygon
+		for i,a in ipairs(polygon) do
+			local b=polygon[i%#polygon+1]
+			local ak,bk=vertexKey(a),vertexKey(b)
+			if ak==bk then return nil,"Degenerate miter edge" end
+			local key=if ak<bk then ak.."|"..bk else bk.."|"..ak
+			local edge=incidence[key]
+			if not edge then edge={} incidence[key]=edge end
+			table.insert(edge,{index=index,direction=if ak<bk then 1 else -1})
+		end
 	end
-	return {polygon=unique,normal=normal,exposed=exposed}
+	local neighbors={}
+	for i=1,#faces do neighbors[i]={} end
+	for _,incident in pairs(incidence) do
+		if #incident~=2 then return nil,"Miter shell is not watertight" end
+		local a,b=incident[1],incident[2]
+		table.insert(neighbors[a.index],{other=b.index,sign=-a.direction*b.direction})
+		table.insert(neighbors[b.index],{other=a.index,sign=-a.direction*b.direction})
+	end
+	local orientation={[1]=1}
+	local queue={1}
+	local head=1
+	while head<=#queue do
+		local i=queue[head]
+		head+=1
+		for _,neighbor in ipairs(neighbors[i]) do
+			local expected=orientation[i]*neighbor.sign
+			if orientation[neighbor.other] then
+				if orientation[neighbor.other]~=expected then
+					return nil,"Miter faces have conflicting winding"
+				end
+			else
+				orientation[neighbor.other]=expected
+				table.insert(queue,neighbor.other)
+			end
+		end
+	end
+	if #queue~=#faces then return nil,"Miter has disconnected surfaces" end
+	local volume6=0
+	for i,surface in ipairs(faces) do
+		local points=surface.polygon
+		if orientation[i]<0 then
+			local reversed={}
+			for j=#points,1,-1 do table.insert(reversed,points[j]) end
+			points=reversed
+			surface.polygon=points
+		end
+		for j=2,#points-1 do
+			volume6+=points[1]:Dot(points[j]:Cross(points[j+1]))
+		end
+	end
+	if math.abs(volume6)<1e-8 then return nil,"Miter has no volume" end
+	if volume6<0 then
+		for _,surface in ipairs(faces) do
+			local reversed={}
+			for i=#surface.polygon,1,-1 do
+				table.insert(reversed,surface.polygon[i])
+			end
+			surface.polygon=reversed
+		end
+	end
+	for _,surface in ipairs(faces) do
+		local points=surface.polygon
+		local normal=nil
+		for j=2,#points-1 do
+			local cross=(points[j]-points[1]):Cross(points[j+1]-points[1])
+			if cross.Magnitude>1e-8 then normal=cross.Unit break end
+		end
+		if not normal then return nil,"Miter contains a collapsed face" end
+		surface.normal=normal
+	end
+	return faces,nil
 end
 
 function CornerTriangle.faces(junction)
@@ -123,10 +187,9 @@ function CornerTriangle.faces(junction)
 		table.insert(b,top-wallB*inset)
 		table.insert(seam,top-(wallA+wallB)*inset)
 	end
-	local centroid=p-(cap+wallA+wallB)*(radius*0.3)
 	local result={}
 	local function add(points,exposed)
-		local polygon=face(points,centroid,exposed)
+		local polygon=face(points,exposed)
 		if polygon then table.insert(result,polygon) end
 	end
 	-- One top cap and two original wall-plane closures.
@@ -144,7 +207,7 @@ function CornerTriangle.faces(junction)
 		add({b[i],b[i+1],seam[i+1],seam[i]},true)
 	end
 	if #result<5 then return nil,"Miter solid collapsed" end
-	return result
+	return orientClosedShell(result)
 end
 
 return CornerTriangle
