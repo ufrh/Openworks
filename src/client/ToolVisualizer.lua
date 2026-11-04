@@ -162,6 +162,21 @@ function Visualizer:inset(pose: CFrame, node, margin: number, depth: number)
 		Enum.PartType.Block, string.format("INSET  %.0f mm  ·  DEPTH %.0f mm", margin * 280, depth * 280))
 end
 
+function Visualizer:grooveFace(pose:CFrame,a:Vector3,b:Vector3,
+	normal:Vector3,width:number,depth:number,through:boolean,maxDepth:number)
+	local forward=b-a
+	if forward.Magnitude<0.02 then self:hide() return end
+	local outward=normal.Unit
+	local right=outward:Cross(forward.Unit).Unit
+	local back=right:Cross(outward).Unit
+	local penetration=if through then maxDepth*2+0.08 else depth+0.04
+	local center=(a+b)/2-outward*(penetration/2-0.04)
+	self:volume(pose*CFrame.fromMatrix(center,right,outward,back),
+		Vector3.new(width,penetration,forward.Magnitude+width),Enum.PartType.Block,
+		string.format("%s  %.0f × %.0f mm",if through then "KERF" else "GROOVE",
+			width*280,depth*280))
+end
+
 function Visualizer:groove(pose: CFrame, node, a: Vector2, b: Vector2, width: number, depth: number)
 	local v = Vector3.new(b.X - a.X, 0, b.Y - a.Y)
 	if v.Magnitude < 0.02 then self:hide() return end
