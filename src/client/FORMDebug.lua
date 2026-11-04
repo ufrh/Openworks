@@ -211,6 +211,9 @@ function Debug.start()
 					description = string.format("INSET FACE %.0fmm",operation.margin*280)
 				elseif operation.kind == "Groove" then
 					description = string.format("GROOVE %.0fmm", operation.kerf * 280)
+				elseif operation.kind == "GrooveFace" then
+					description = string.format("%s %.0fmm",
+						if operation.through then "KERF" else "GROOVE",operation.width*280)
 				else
 					description = string.format("KERF %.0fmm", operation.kerf * 280)
 				end
@@ -729,9 +732,7 @@ function Debug.start()
 		local node = component.nodes[1]
 		local pose = Compiler.pose(node)
 		local normal = pose:VectorToObjectSpace(hit.Normal)
-		if activeTool == "Groove" or activeTool == "Kerf" then
-			if normal.Y < 0.72 then return nil end
-		end
+		
 		local localPoint = pose:PointToObjectSpace(hit.Position)
 		local x = Quantize.snap(localPoint.X, Quantize.Grid)
 		local z = Quantize.snap(localPoint.Z, Quantize.Grid)
@@ -787,21 +788,29 @@ function Debug.start()
 			if not edge or #edge.faces~=2 then toolVisualizer:hide() return end
 			toolVisualizer:meshEdge(topology.part,edge,width)
 		elseif activeTool == "Groove" or activeTool == "Kerf" then
-			if sawFirst and sawFirst.id == target.id then
-				local box = if activeTool == "Groove" then grooveWidthInput else kerfInput
-				local width = millimeters(box, "Cut width")
-				local depth = if activeTool == "Groove"
-					then millimeters(grooveDepthInput, "Groove depth") else node.size.Y
-				if width and depth then
-					toolVisualizer:groove(pose, node,
-						Vector2.new(sawFirst.x, sawFirst.z), Vector2.new(target.x, target.z),
-						width, depth)
-				else
-					toolVisualizer:hide()
-				end
-			else
-				toolVisualizer:hide()
+			if not sawFirst or sawFirst.id~=target.id then
+				toolVisualizer:hide() return
 			end
+			local topology=surfacePicker:get(target.id,preview:getModel(target.id))
+			if not topology or topology.part~=target.hit.Instance then
+				toolVisualizer:hide() return
+			end
+			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
+			if not face then toolVisualizer:hide() return end
+			local worldNormal=topology.part.CFrame:VectorToWorldSpace(face.normal)
+			local localNormal=pose:VectorToObjectSpace(worldNormal)
+			local endPoint=pose:PointToObjectSpace(target.hit.Position)
+			if localNormal:Dot(sawFirst.normal)<0.99
+				or math.abs((endPoint-sawFirst.point):Dot(sawFirst.normal))>0.008 then
+				toolVisualizer:hide() return
+			end
+			local box=if activeTool=="Groove" then grooveWidthInput else kerfInput
+			local width=millimeters(box,"Cut width")
+			local depth=if activeTool=="Groove"
+				then millimeters(grooveDepthInput,"Groove depth") else node.size.Y
+			if not width or not depth then toolVisualizer:hide() return end
+			toolVisualizer:grooveFace(pose,sawFirst.point,endPoint,
+				sawFirst.normal,width,depth,activeTool=="Kerf",node.size.Magnitude)
 		end
 	end)
 
@@ -892,35 +901,40 @@ function Debug.start()
 			kind="FileMesh"
 			data={a=a,b=b,normalA=normalA,normalB=normalB,width=width}
 		elseif kind == "Groove" or kind == "Kerf" then
+			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id))
+			if not topology then message(why or "Surface indexing in progress") return end
+			if topology.part~=target.hit.Instance then message("Surface selection changed") return end
+			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
+			if not face then message("Cut path requires a planar manufactured face") return end
+			local normal=pose:VectorToObjectSpace(
+				topology.part.CFrame:VectorToWorldSpace(face.normal))
+			local point=pose:PointToObjectSpace(target.hit.Position)
 			if not sawFirst then
-				sawFirst = { id = target.id, x = x, z = z }
-				message("Start placed; click the same workpiece for the end of the cut")
+				sawFirst={id=target.id,point=point,normal=normal}
+				message("Start placed; click another point on the same planar face")
 				return
 			end
-			if sawFirst.id ~= target.id then
-				sawFirst = nil
-				message("Cut path must stay on the same workpiece")
+			if sawFirst.id~=target.id or normal:Dot(sawFirst.normal)<0.99
+				or math.abs((point-sawFirst.point):Dot(sawFirst.normal))>0.008 then
+				message("Both cut endpoints must lie on the same planar face")
 				return
 			end
-			local widthBox = if kind == "Groove" then grooveWidthInput else kerfInput
-			local width, errorA = millimeters(widthBox, "Cut width")
-			local depth, errorB = node.size.Y, nil
-			if kind == "Groove" then
-				depth, errorB = millimeters(grooveDepthInput, "Groove depth")
+			local box=if kind=="Groove" then grooveWidthInput else kerfInput
+			local width,errorA=millimeters(box,"Cut width")
+			local depth,errorB=node.size.Y,nil
+			if kind=="Groove" then
+				depth,errorB=millimeters(grooveDepthInput,"Groove depth")
 			end
 			if not width or not depth then message(errorA or errorB) return end
-			data = {
-				x1 = sawFirst.x, z1 = sawFirst.z, x2 = x, z2 = z,
-				kerf = width, depth = depth, through = kind == "Kerf",
-				useMesh = meshSaw and kind == "Kerf",
-			}
-			kind = if kind == "Kerf" then "Saw" else "Groove"
+			data={a=sawFirst.point,b=point,normal=sawFirst.normal,
+				width=width,depth=depth,through=kind=="Kerf"}
+			kind="GrooveFace"
 		else
 			return
 		end
 		local ok, reason = document:addOperation(component, kind, data)
 		if not ok then message(reason or "Unable to apply fabrication") return end
-		if kind == "Saw" or kind == "Groove" then sawFirst = nil end
+		if kind == "Saw" or kind == "Groove" or kind == "GrooveFace" then sawFirst = nil end
 		changed(component)
 		message(kind .. " operation recorded; compiling CSG")
 	end)
