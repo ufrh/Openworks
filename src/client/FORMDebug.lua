@@ -207,9 +207,9 @@ function Debug.start()
 				elseif operation.kind == "File" then
 					description = string.format("FILE %s %.0fmm", operation.edge, operation.width * 280)
 				elseif operation.kind == "FileMesh" then
-					description = string.format("%s %.0fmm",
+					description = string.format("%s %.0fmm · %d seg",
 						if operation.interior then "FILE INNER (PAUSED)" else "FILE EDGE",
-						operation.width*280)
+						operation.width*280,operation.segments or 1)
 				elseif operation.kind == "InsetFace" then
 					description = string.format("INSET FACE %.0fmm",operation.margin*280)
 				elseif operation.kind == "Groove" then
@@ -315,7 +315,7 @@ function Debug.start()
 			local guidance = {
 				Drill = "Drill: hover a face, wheel to change diameter, click to bore",
 				Inset = "Inset: hover a planar manufactured face; wheel sets border width; click",
-				File = "File: exterior straight edges only; wheel changes width",
+				File = "File: width via wheel, 1 flat segment or 2-12 rounded segments",
 				Groove = "Groove: click two points on the same planar face",
 				Kerf = "Kerf: click two points on the same planar face",
 			}
@@ -406,6 +406,7 @@ function Debug.start()
 	local grooveWidthInput = toolNumberRow("Groove width (mm)", "28")
 	local grooveDepthInput = toolNumberRow("Groove depth (mm)", "28")
 	local fileWidthInput = toolNumberRow("File chamfer (mm)  [wheel]", "14")
+	local fileSegmentsInput = toolNumberRow("File segments (1–12)", "1")
 	local kerfInput = toolNumberRow("Through kerf (mm)", "14")
 
 	line("File: exterior only; inside corners are paused.", 24)
@@ -788,7 +789,15 @@ function Debug.start()
 	-- Derive a single validated filing operation from a current, visible
 	-- manufactured edge. Hover and click use identical face normals and
 	-- inside/outer classification, so a preview cannot promise another cut.
-	local function bevelData(topology,edge,pose:CFrame,width:number)
+	local function fileSegments():number?
+		local n=tonumber(fileSegmentsInput.Text)
+		if not n or n~=math.floor(n) or n<1 or n>12 then
+			return nil
+		end
+		return n
+	end
+
+	local function bevelData(topology,edge,pose:CFrame,width:number,segments:number)
 		if not edge or #edge.faces~=2 or edge.curved then
 			return nil,"Select a straight manufactured edge between two faces"
 		end
@@ -831,7 +840,7 @@ function Debug.start()
 			end
 		end
 		return {a=a,b=b,normalA=n1,normalB=n2,
-			width=width,interior=interior,
+			width=width,interior=interior,segments=segments,
 			taperA=false,taperB=false},nil
 	end
 
@@ -840,12 +849,15 @@ function Debug.start()
 			local selection=fileEdgeTarget()
 			local width=millimeters(fileWidthInput,"File width")
 			if not selection or not width then toolVisualizer:hide() return end
-			local plan=bevelData(selection.topology,selection.edge,selection.pose,width)
+			local segments=fileSegments()
+			if not segments then toolVisualizer:hide() return end
+			local plan=bevelData(selection.topology,selection.edge,selection.pose,width,segments)
 			if not plan then toolVisualizer:hide() return end
 			local edge=selection.edge
 			toolVisualizer:meshEdge(selection.topology.part,edge,width,plan.interior,
 				selection.topology.faces[edge.faces[1]].normal,
-				selection.topology.faces[edge.faces[2]].normal)
+				selection.topology.faces[edge.faces[2]].normal,
+				nil,nil,segments)
 			return
 		end
 		local target = fabricationHit()
@@ -920,7 +932,9 @@ function Debug.start()
 			end
 			local width,why=millimeters(fileWidthInput,"File width")
 			if not width then message(why) return end
-			local data,reason=bevelData(selection.topology,selection.edge,selection.pose,width)
+			local segments=fileSegments()
+			if not segments then message("File segments must be a whole number from 1 to 12") return end
+			local data,reason=bevelData(selection.topology,selection.edge,selection.pose,width,segments)
 			if not data then message(reason or "Unable to file selected edge") return end
 			if selection.id~=selectedId then selectComponent(selection.id) end
 			local ok,err=document:addOperation(selection.component,"FileMesh",data)
