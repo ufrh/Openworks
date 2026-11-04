@@ -254,7 +254,7 @@ function Debug.start()
 
 	surfacePicker = SurfacePicker.new(message)
 	preview = Preview.new(message, function(id,model)
-		surfacePicker:request(id,model)
+		surfacePicker:request(id,model,document.components[id])
 		if id == selectedId then refresh() end
 	end)
 
@@ -730,7 +730,7 @@ function Debug.start()
 			local diameter = millimeters(diameterInput, "Diameter")
 			local depth = millimeters(drillDepthInput, "Drill depth")
 			if not diameter or not depth then toolVisualizer:hide() return end
-			local topology=surfacePicker:get(target.id,preview:getModel(target.id))
+			local topology=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology or topology.part~=target.hit.Instance then
 				toolVisualizer:hide() return
 			end
@@ -744,7 +744,7 @@ function Debug.start()
 			local margin = millimeters(insetMarginInput, "Inset border")
 			local depth = millimeters(insetDepthInput, "Inset depth")
 			if not margin or not depth then toolVisualizer:hide() return end
-			local topology = surfacePicker:get(target.id,preview:getModel(target.id))
+			local topology = surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology or topology.part ~= target.hit.Instance then
 				toolVisualizer:hide() return
 			end
@@ -758,7 +758,7 @@ function Debug.start()
 		elseif activeTool == "File" then
 			local width = millimeters(fileWidthInput, "File width")
 			if not width then toolVisualizer:hide() return end
-			local topology = surfacePicker:get(target.id,preview:getModel(target.id))
+			local topology = surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology or topology.part ~= target.hit.Instance then
 				toolVisualizer:hide() return
 			end
@@ -773,7 +773,7 @@ function Debug.start()
 			if not sawFirst or sawFirst.id~=target.id then
 				toolVisualizer:hide() return
 			end
-			local topology=surfacePicker:get(target.id,preview:getModel(target.id))
+			local topology=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology or topology.part~=target.hit.Instance then
 				toolVisualizer:hide() return
 			end
@@ -830,7 +830,7 @@ function Debug.start()
 			local diameter,errorA=millimeters(diameterInput,"Diameter")
 			local depth,errorB=millimeters(drillDepthInput,"Drill depth")
 			if not diameter or not depth then message(errorA or errorB) return end
-			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id))
+			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology then message(why or "Surface indexing in progress") return end
 			if topology.part~=target.hit.Instance then message("Surface selection changed") return end
 			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
@@ -844,7 +844,7 @@ function Debug.start()
 			local margin,errorA=millimeters(insetMarginInput,"Inset border")
 			local depth,errorB=millimeters(insetDepthInput,"Inset depth")
 			if not margin or not depth then message(errorA or errorB) return end
-			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id))
+			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology then message(why or "Compiling face topology") return end
 			if topology.part~=target.hit.Instance then message("Face selection is out of date") return end
 			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
@@ -863,7 +863,7 @@ function Debug.start()
 		elseif kind == "File" then
 			local width,why=millimeters(fileWidthInput,"File width")
 			if not width then message(why) return end
-			local topology,reason=surfacePicker:get(target.id,preview:getModel(target.id))
+			local topology,reason=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology then message(reason or "Compiling edge topology") return end
 			if topology.part~=target.hit.Instance then message("Edge selection is out of date") return end
 			local camera=workspace.CurrentCamera
@@ -883,7 +883,7 @@ function Debug.start()
 			kind="FileMesh"
 			data={a=a,b=b,normalA=normalA,normalB=normalB,width=width}
 		elseif kind == "Groove" or kind == "Kerf" then
-			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id))
+			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology then message(why or "Surface indexing in progress") return end
 			if topology.part~=target.hit.Instance then message("Surface selection changed") return end
 			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
