@@ -11,12 +11,16 @@ local Fabricator = {}
 local OPTIONS = { SplitApart = false }
 
 function Fabricator.requiresCompile(component): boolean
-	return #(component.operations or {}) > 0
+	for _, op in ipairs(component.operations or {}) do
+		if op.enabled ~= false then return true end
+	end
+	return false
 end
 
 function Fabricator.geometryKey(component): string
 	local pieces = { Compiler.geometryKey(component.nodes[1]) }
 	for _, op in ipairs(component.operations or {}) do
+		table.insert(pieces, if op.enabled == false then "disabled" else "enabled")
 		if op.kind == "Drill" then
 			table.insert(pieces, string.format("D|%.4f|%.4f|%.4f", op.x, op.z, op.diameter))
 		elseif op.kind == "Saw" then
@@ -57,6 +61,7 @@ function Fabricator.compile(component): (BasePart, string)
 	local current = Compiler.nativePart(node)
 	local meshCuts, nativeFallbacks = 0, 0
 	for _, op in ipairs(component.operations or {}) do
+		if op.enabled == false then continue end
 		if op.kind == "SketchExtrude" then
 			local generated, cutter, release = pcall(Extrusion.create, node, op)
 			if not generated then
