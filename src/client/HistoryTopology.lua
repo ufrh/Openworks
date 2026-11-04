@@ -416,6 +416,10 @@ function HistoryTopology.build(part:BasePart,component)
 					end
 				end
 				addAdjacent(edge,found)
+				-- A newly filled inside corner still meets its neighboring
+				-- walls at a re-entrant crease. The bevel consumes the OLD
+				-- vertical sharp edge but produces two NEW inner trim edges.
+				if spec.interior and found then edge.interior=true end
 			end
 		end
 	end
