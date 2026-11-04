@@ -187,7 +187,7 @@ local function compileUnlocked(component): (BasePart, string)
 					if not corner then continue end
 					local key=string.format("%.5f:%.5f:%.5f",
 						corner.corner.X,corner.corner.Y,corner.corner.Z)
-					if completedCorners[key] then continue end
+					if completedMiters[key] then continue end
 					local faces=CornerTriangle.faces(corner)
 					if not faces then continue end
 					local created,tool,dispose=pcall(GeometryCutter.convexSolid,faces)
@@ -198,13 +198,13 @@ local function compileUnlocked(component): (BasePart, string)
 							current:Destroy()
 							current=output
 							current.Anchored=true
-							completedCorners[key]=true
-							triangularCorners+=1
+							completedMiters[key]=true
+							miterCorners+=1
 						else
-							warn("FORM triangular corner Boolean: "..tostring(output))
+							warn("FORM corner miter Boolean: "..tostring(output))
 						end
 					else
-						warn("FORM triangular corner geometry: "..tostring(tool))
+						warn("FORM corner miter geometry: "..tostring(tool))
 					end
 				end
 				table.insert(exteriorFiles,file)
@@ -212,7 +212,7 @@ local function compileUnlocked(component): (BasePart, string)
 		end
 	end
 	return current, string.format("%d features (%d saws, %d fallback, %d corner miters, %d paused inside)",
-		#(component.operations or {}), meshCuts, nativeFallbacks, triangularCorners, pausedInsideFiles)
+		#(component.operations or {}), meshCuts, nativeFallbacks, miterCorners, pausedInsideFiles)
 end
 
 -- Bound peak temporary EditableMesh use: only one manufacturing replay
