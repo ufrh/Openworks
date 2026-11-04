@@ -8,7 +8,6 @@ local Cutters = require(script.Parent.Cutters)
 local Extrusion = require(script.Parent.Extrusion)
 local FileCutter = require(script.Parent.FileCutter)
 local GeometryCutter = require(script.Parent.GeometryCutter)
-local BevelJunction = require(script.Parent.BevelJunction)
 
 local Fabricator = {}
 local OPTIONS = { SplitApart = false }
@@ -61,7 +60,7 @@ function Fabricator.geometryKey(component): string
 			end
 		end
 	end
-	return "FORM_BEVEL_CLIP_V2;"..table.concat(pieces, ";")
+	return "FORM_EXTERIOR_FILE_ONLY_V3;"..table.concat(pieces, ";")
 end
 
 local function combine(source: BasePart, cutter: BasePart, mode: string): (boolean, any)
@@ -101,23 +100,23 @@ end
 local function compileUnlocked(component): (BasePart, string)
 	local node = component.nodes[1]
 	local current = Compiler.nativePart(node)
-	local meshCuts, nativeFallbacks, trimmedCorners = 0, 0, 0
-	local fileSpecs={}
-	for _,operation in ipairs(component.operations or {}) do
-		local spec=BevelJunction.spec(node,operation)
-		if spec then table.insert(fileSpecs,spec) end
-	end
+	local meshCuts, nativeFallbacks, pausedInsideFiles = 0, 0, 0
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled == false then continue end
+		-- Keep historical interior File entries for possible later repair,
+		-- but never compile their additive wedges in the exterior-only
+		-- prototype. Those wedges repeatedly refilled existing cuts.
+		if op.kind == "FileMesh" and op.interior == true then
+			pausedInsideFiles+=1
+			continue
+		end
 		if op.kind == "SketchExtrude" or op.kind == "File"
 			or op.kind == "FileMesh" or op.kind == "InsetFace" then
 			local function createTool()
 				if op.kind == "File" then return FileCutter.create(node,op) end
 				if op.kind == "FileMesh" then
-					local spec=BevelJunction.spec(node,op)
-					local clipPlanes=BevelJunction.planesFor(spec,fileSpecs)
-					return GeometryCutter.file(op.a,op.b,op.normalA,op.normalB,op.width,
-						op.interior,op.taperA,op.taperB,clipPlanes)
+					return GeometryCutter.file(op.a,op.b,op.normalA,op.normalB,
+						op.width,false)
 				end
 				if op.kind == "InsetFace" then
 					local margin=0.04
@@ -134,12 +133,8 @@ local function compileUnlocked(component): (BasePart, string)
 				current:Destroy()
 				error("Sketch extrusion " .. tostring(op.id) .. ": " .. tostring(cutter), 0)
 			end
-			-- The two bevel topologies are not the same operation:
-			-- outside chamfer removes a corner, inside chamfer fills
-			-- the concave void with a triangular bridge.
-			local mode = if op.kind == "SketchExtrude" then op.mode
-				elseif op.kind == "FileMesh" and op.interior == true then "Add"
-				else "Remove"
+			-- Exterior filing ONLY. No additive wedges or corner patch.
+			local mode = if op.kind == "SketchExtrude" then op.mode else "Remove"
 			local success, result = combine(current, cutter, mode)
 			release()
 			if not success then
@@ -181,16 +176,10 @@ local function compileUnlocked(component): (BasePart, string)
 		end
 		current.Anchored = true
 
-		-- No secondary Boolean junction patch. An inside File's volume
-		-- was already clipped against all connected exterior bevel planes
-		-- BEFORE union, so it cannot refill an existing chamfer.
-		if op.kind=="FileMesh" and op.interior==true then
-			local spec=BevelJunction.spec(node,op)
-			trimmedCorners+=#BevelJunction.planesFor(spec,fileSpecs)
-		end
+
 	end
-	return current, string.format("%d features (%d mesh saws, %d fallback, %d clipped junctions)",
-		#(component.operations or {}), meshCuts, nativeFallbacks, trimmedCorners)
+	return current, string.format("%d features (%d mesh saws, %d fallback, %d paused inside files)",
+		#(component.operations or {}), meshCuts, nativeFallbacks, pausedInsideFiles)
 end
 
 -- Bound peak temporary EditableMesh use: only one manufacturing replay
