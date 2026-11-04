@@ -130,37 +130,63 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, (
 	end
 end
 
-function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3, outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?)
-	local along=(edgeB-edgeA)
-	if along.Magnitude<0.005 then error("Edge too short to file") end
-	local n1,n2=outwardA.Unit,outwardB.Unit
-	if math.abs(n1:Dot(n2))>0.95 then error("Edge faces are not a defined hard corner") end
-	-- Plane intersections of the chamfer with both adjacent surfaces.
-	-- For a convex edge, the two inward offset points are inside the
-	-- solid along opposite faces; the exterior envelope cuts the corner.
-	local margin=0.025
-	local crossPoint = (n1+n2).Unit*(width+margin)
-	local profile
-	if interior then
-		-- Re-entrant pocket/floor corners: enlarge the internal void by
-		-- removing a wedge *behind* the two original surfaces. A normal
-		-- outer-corner bevel would lie in the cavity and remove nothing.
-		profile={
-			edgeA+n1*(width+margin),
-			edgeA+n2*(width+margin),
-			edgeA-(n1+n2)*width,
-		}
-	else
-		profile={
-			edgeA-n1*width-n2*margin,
-			edgeA+crossPoint,
-			edgeA-n2*width-n1*margin,
-		}
+-- A chamfer is different on convex and re-entrant edges:
+--   convex: SUBTRACT the outside corner of the existing body
+--   concave: UNION a triangular bridge into the empty inside corner
+-- Both operations make one flat bevel between two face points `width`
+-- away from the edge. Subtracting a wedge from a concave corner instead
+-- makes a hidden cavity / self-intersection, not an interior bevel.
+--
+-- This method expects an authored straight edge shared by exactly two
+-- planar faces. It refuses inconsistent frames and extreme angles rather
+-- than creating the huge malformed cutter triangles seen in the prototype.
+function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
+	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?)
+	local along=edgeB-edgeA
+	if along.Magnitude<0.035 then error("Selected edge is too short for a safe chamfer",0) end
+	if width<0.018 or width>along.Magnitude*0.35 then
+		error("Chamfer too wide for the selected edge",0)
 	end
 	local axis=along.Unit
-	local travel=along+axis*margin*2
-	for i,p in ipairs(profile) do profile[i]=p-axis*margin end
-	return GeometryCutter.prism(profile,travel)
+	local n1,n2=outwardA.Unit,outwardB.Unit
+	local dot=n1:Dot(n2)
+	if math.abs(dot)>0.84 then
+		error("Filing requires two distinct, non-tangent planar faces",0)
+	end
+	if math.abs(n1:Dot(axis))>0.015 or math.abs(n2:Dot(axis))>0.015 then
+		error("Selected edge and adjacent face normals are inconsistent",0)
+	end
+
+	-- Tangent directions lie IN each adjacent face. On an outer edge they
+	-- point into the existing material; on an inner edge the opposite
+	-- directions point along the exposed walls toward the void.
+	local intoFaceA=(n1*dot-n2).Unit
+	local intoFaceB=(n2*dot-n1).Unit
+	local bisector=(n1+n2).Unit
+	local isInterior=interior==true
+	local faceDir=if isInterior then -1 else 1
+	-- Minimal Boolean overlap prevents coplanar CSG seams, without
+	-- extending the cutter by half its width past neighboring corners.
+	local epsilon=math.clamp(width*0.07,0.002,0.006)
+	local edgeExtension=math.min(epsilon,along.Magnitude*0.02)
+	local a=edgeA-axis*edgeExtension
+
+	local profile={
+		a+intoFaceA*(width*faceDir),
+		a+intoFaceB*(width*faceDir),
+		a+bisector*(if isInterior then -epsilon else epsilon),
+	}
+	-- Unioning an inside bevel needs overlap along both adjacent faces.
+	-- Extend the bridge slightly INTO existing solid to make the connection
+	-- manifold. Exterior subtraction needs a modest outside overlap.
+	if isInterior then
+		profile[1] = profile[1] - n1*epsilon - n2*epsilon
+		profile[2] = profile[2] - n1*epsilon - n2*epsilon
+	else
+		profile[1] = profile[1] + bisector*epsilon
+		profile[2] = profile[2] + bisector*epsilon
+	end
+	return GeometryCutter.prism(profile,along+axis*edgeExtension*2)
 end
 
 return GeometryCutter
