@@ -492,7 +492,7 @@ function Debug.start()
 				local ok, reason = document:addOperation(component, "Drill", {
 					x = x, z = z, diameter = mm / 280,
 				})
-				if ok then changed(component) message("Drilled " .. tostring(mm) .. " mm through-hole")
+				if ok then changed(component) message(string.format("Drilled %.1f mm through-hole", Quantize.snap(mm / 280, Quantize.Grid) * 280))
 				else message(reason) end
 			elseif activeTool == "Saw" then
 				if not sawFirst then
@@ -512,7 +512,7 @@ function Debug.start()
 				if ok then
 					sawFirst = nil
 					changed(component)
-					message("Saw cut recorded; compiling material")
+					message(string.format("Saw cut (%.1f mm kerf) recorded; compiling", Quantize.snap(mm / 280, Quantize.Grid) * 280))
 				else message(reason) end
 			end
 		end
