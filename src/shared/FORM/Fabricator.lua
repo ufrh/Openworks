@@ -11,6 +11,9 @@ local GeometryCutter = require(script.Parent.GeometryCutter)
 
 local Fabricator = {}
 local OPTIONS = { SplitApart = false }
+local function vectorKey(v:Vector3):string
+	return string.format("%.6f,%.6f,%.6f",v.X,v.Y,v.Z)
+end
 
 function Fabricator.requiresCompile(component): boolean
 	for _, op in ipairs(component.operations or {}) do
@@ -28,11 +31,11 @@ function Fabricator.geometryKey(component): string
 				op.x, op.z, op.diameter, op.depth or 0, tostring(op.through ~= false)))
 		elseif op.kind == "DrillFace" then
 			table.insert(pieces, string.format("DF|%.6f|%.6f|%s|%s|%s",
-				op.diameter,op.depth,tostring(op.through),tostring(op.origin),tostring(op.normal)))
+				op.diameter,op.depth,tostring(op.through),vectorKey(op.origin),vectorKey(op.normal)))
 		elseif op.kind == "GrooveFace" then
 			table.insert(pieces,string.format("GF|%.6f|%.6f|%s|%s|%s|%s",
-				op.width,op.depth,tostring(op.through),tostring(op.a),
-				tostring(op.b),tostring(op.normal)))
+				op.width,op.depth,tostring(op.through),vectorKey(op.a),
+				vectorKey(op.b),vectorKey(op.normal)))
 		elseif op.kind == "Saw" or op.kind == "Groove" then
 			table.insert(pieces, string.format("%s|%.6f|%.6f|%.6f|%.6f|%.6f|%.6f|%s|%s",
 				op.kind, op.x1, op.z1, op.x2, op.z2, op.kerf,
@@ -43,11 +46,11 @@ function Fabricator.geometryKey(component): string
 			table.insert(pieces, string.format("F|%s|%.6f", op.edge, op.width))
 		elseif op.kind == "FileMesh" then
 			table.insert(pieces, string.format("FM|%.6f|%s|%s|%s|%s",
-				op.width,tostring(op.a),tostring(op.b),tostring(op.normalA),tostring(op.normalB)))
+				op.width,vectorKey(op.a),vectorKey(op.b),vectorKey(op.normalA),vectorKey(op.normalB)))
 		elseif op.kind == "InsetFace" then
 			table.insert(pieces, string.format("IF|%.6f|%.6f|%s",
-				op.margin,op.depth,tostring(op.normal)))
-			for _,point in ipairs(op.points) do table.insert(pieces,tostring(point)) end
+				op.margin,op.depth,vectorKey(op.normal)))
+			for _,point in ipairs(op.points) do table.insert(pieces,vectorKey(point)) end
 		elseif op.kind == "SketchExtrude" then
 			table.insert(pieces, string.format("E|%s|%.4f|%s",
 				op.mode, op.depth, tostring(op.through)))
