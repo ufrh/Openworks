@@ -828,7 +828,7 @@ function Debug.start()
 			or ((string.find(f2.tag or "","_floor")~=nil)
 				and (string.find(f1.tag or "","_wall")~=nil))
 		if interior then return nil,"Interior edge filing is paused" end
-		local ok,why=GeometryCutter.validateFile(a,b,n1,n2,width,false)
+		local ok,why=GeometryCutter.validateFile(a,b,n1,n2,width,false,segments)
 		if not ok then return nil,why end
 		-- A bevel cannot be wider than either of its adjacent physical
 		-- faces. Especially important for shallow recesses: cutting right
