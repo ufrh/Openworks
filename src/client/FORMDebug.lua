@@ -3,6 +3,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 local FORM = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Document = require(FORM.Document)
@@ -14,6 +15,7 @@ local GridOverlay = require(script.Parent.GridOverlay)
 local ViewGizmo = require(script.Parent.ViewGizmo)
 local TransformGizmo = require(script.Parent.TransformGizmo)
 local SketchEditor = require(script.Parent.SketchEditor)
+local ToolVisualizer = require(script.Parent.ToolVisualizer)
 
 local Debug = {}
 
@@ -39,6 +41,8 @@ function Debug.start()
 	local historyInfo: any = nil
 	local historyRows = {}
 	local sketchEditor: any = nil
+	local toolVisualizer = ToolVisualizer.new(playerGui)
+	local drillThrough = true
 
 	local grid = GridOverlay.new(playerGui)
 
@@ -192,9 +196,16 @@ function Debug.start()
 				if operation.kind == "SketchExtrude" then
 					description = "SKETCH " .. string.upper(operation.mode) .. " (" .. #operation.points .. "p)"
 				elseif operation.kind == "Drill" then
-					description = string.format("DRILL %.1fmm", operation.diameter * 280)
+					description = string.format("DRILL Ø%.0f%s", operation.diameter * 280,
+						if operation.through == false then " BLIND" else "")
+				elseif operation.kind == "Inset" then
+					description = string.format("INSET %.0fmm", operation.margin * 280)
+				elseif operation.kind == "File" then
+					description = string.format("FILE %s %.0fmm", operation.edge, operation.width * 280)
+				elseif operation.kind == "Groove" then
+					description = string.format("GROOVE %.0fmm", operation.kerf * 280)
 				else
-					description = string.format("SAW %.1fmm", operation.kerf * 280)
+					description = string.format("KERF %.0fmm", operation.kerf * 280)
 				end
 				entry.label.Text = string.format("%02d %s", operation.id, description)
 				entry.label.TextColor3 = if operation.enabled == false
@@ -282,23 +293,45 @@ function Debug.start()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool = kind
 		sawFirst = nil
+		toolVisualizer:hide()
 		if kind then
 			transformGizmo:setHidden(true)
 			toolStatus.Text = "Tool: " .. string.upper(kind)
-			message(if kind == "Drill" then "Drill: click top surface" else "Saw: click start, then end on top surface")
+			local guidance = {
+				Drill = "Drill: hover for depth preview; wheel adjusts diameter; click to bore",
+				Inset = "Inset: hover top face and click to make a rectangular pocket",
+				File = "File: hover near a top stock edge and click to chamfer it",
+				Groove = "Groove: click start then end to cut a channel",
+				Kerf = "Kerf: click start then end for a through slot",
+			}
+			message(guidance[kind] or "Choose a fabrication operation")
 		else
 			transformGizmo:setMode("Move")
 			toolStatus.Text = "Tool: none"
 			message("Fabrication tool cleared")
 		end
 	end
-	pair("Drill", function() setTool("Drill") end, "Saw", function() setTool("Saw") end)
+	pair("Drill", function() setTool("Drill") end, "Saw (Profile)", function()
+		local component = selectedComponent()
+		if not component then message("Select a workpiece before using Saw") return end
+		if not sketchEditor then message("Sketch workspace unavailable") return end
+		activeTool, sawFirst = nil, nil
+		toolVisualizer:hide()
+		toolStatus.Text = "Tool: SAW"
+		sketchEditor:start(component, "Saw")
+		transformGizmo:setHidden(true)
+	end)
+	pair("Inset / Pocket", function() setTool("Inset") end,
+		"File Edge", function() setTool("File") end)
+	pair("Groove", function() setTool("Groove") end,
+		"Straight Kerf", function() setTool("Kerf") end)
 	pair("Sketch / Extrude", function()
 		local component = selectedComponent()
 		if not component then message("Create or select a workpiece first") return end
 		if not sketchEditor then message("Sketch workspace is not initialized") return end
 		activeTool = nil
 		sawFirst = nil
+		toolVisualizer:hide()
 		transformGizmo:setHidden(true)
 		toolStatus.Text = "Tool: SKETCH"
 		sketchEditor:start(component)
@@ -307,6 +340,7 @@ function Debug.start()
 		if not sketchEditor then message("Sketch workspace is not initialized") return end
 		activeTool = nil
 		sawFirst = nil
+		toolVisualizer:hide()
 		transformGizmo:setHidden(true)
 		toolStatus.Text = "Tool: NEW BODY"
 		sketchEditor:start(nil)
@@ -337,20 +371,36 @@ function Debug.start()
 		make("UICorner", { CornerRadius = UDim.new(0, 3) }, input)
 		return input
 	end
-	local diameterInput = toolNumberRow("Drill diameter (mm)", "56")
-	local kerfInput = toolNumberRow("Saw kerf (mm)", "14")
+	line("DRILL  /  PRECISION CONTROLS")
+	local diameterInput = toolNumberRow("Diameter (mm)  [wheel]", "56")
+	local drillDepthInput = toolNumberRow("Blind depth (mm)", "28")
+	local throughRow = row(29)
+	local throughButton = button(throughRow, "Drill: THROUGH (click to toggle)", 0, 1, function()
+		drillThrough = not drillThrough
+		throughButton.Text = if drillThrough then "Drill: THROUGH (click to toggle)"
+			else "Drill: BLIND (click to toggle)"
+	end)
+	line("Wheel: diameter ±2mm   Shift+Wheel: ±10mm", 20)
+	line("POCKET  /  GROOVE  /  EDGE")
+	local insetMarginInput = toolNumberRow("Inset border (mm)", "28")
+	local insetDepthInput = toolNumberRow("Inset depth (mm)", "28")
+	local grooveWidthInput = toolNumberRow("Groove width (mm)", "28")
+	local grooveDepthInput = toolNumberRow("Groove depth (mm)", "28")
+	local fileWidthInput = toolNumberRow("File chamfer (mm)", "14")
+	local kerfInput = toolNumberRow("Through kerf (mm)", "14")
 	local meshRow = row(29)
 	local meshButton: any
-	meshButton = button(meshRow, "EditableMesh saw: ON (native fallback)", 0, 1, function()
+	meshButton = button(meshRow, "EditableMesh kerf: ON (native fallback)", 0, 1, function()
 		meshSaw = not meshSaw
-		meshButton.Text = "EditableMesh saw: " .. (if meshSaw then "ON" else "OFF")
+		meshButton.Text = "EditableMesh kerf: " .. (if meshSaw then "ON" else "OFF")
 	end)
-	line("Click material twice to define saw path.", 24)
+	line("Groove/Kerf: click start, then end on top face.", 24)
 
 	line("3D TRANSFORM HANDLES")
 	local transformStatus = line("Mode: MOVE (G)")
 	local function setTransformMode(mode: string)
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
+		toolVisualizer:hide()
 		activeTool = nil
 		sawFirst = nil
 		toolStatus.Text = "Tool: none"
@@ -366,6 +416,7 @@ function Debug.start()
 		end)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
+		if sketchEditor and sketchEditor.active then return end
 		if processed or UserInputService:GetFocusedTextBox() then return end
 		if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 		if input.KeyCode == Enum.KeyCode.G then
