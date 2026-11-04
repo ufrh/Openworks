@@ -52,7 +52,7 @@ local function nativeBlock(part:Part)
 			table.insert(face.edges,shared[key])
 		end
 	end
-	return {vertices=vertices,triangles=triangles,faces=faces,edges=edges,part=part,revision=part}
+	return setmetatable({vertices=vertices,triangles=triangles,faces=faces,edges=edges,part=part,revision=part}, {__index=SurfaceTopology})
 end
 
 function SurfaceTopology.extract(part: BasePart)
@@ -170,8 +170,8 @@ function SurfaceTopology.extract(part: BasePart)
 			end
 			for _,p in pairs(boundary) do table.insert(face.vertices,p) end
 		end
-		return {vertices=vertices,triangles=triangles,faces=faces,edges=edges,
-			part=part, revision=part}
+		return setmetatable({vertices=vertices,triangles=triangles,faces=faces,edges=edges,
+			part=part, revision=part}, {__index=SurfaceTopology})
 	end)
 	mesh:Destroy()
 	if not success then return nil, tostring(topology) end
