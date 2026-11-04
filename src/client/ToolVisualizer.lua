@@ -189,7 +189,7 @@ function Visualizer:groove(pose: CFrame, node, a: Vector2, b: Vector2, width: nu
 end
 
 function Visualizer:meshEdge(part:BasePart,edge,width:number,
-	interior:boolean?,normalA:Vector3?,normalB:Vector3?)
+	interior:boolean?,normalA:Vector3?,normalB:Vector3?,taperA:boolean?,taperB:boolean?)
 	self:hide()
 	local a=part.CFrame:PointToWorldSpace(edge.a)
 	local b=part.CFrame:PointToWorldSpace(edge.b)
@@ -204,8 +204,10 @@ function Visualizer:meshEdge(part:BasePart,edge,width:number,
 			local dirA=(n1*dot-n2).Unit
 			local dirB=(n2*dot-n1).Unit
 			local sign=if interior then -1 else 1
-			local p1,p2=a+dirA*width*sign,a+dirB*width*sign
-			local q1,q2=b+dirA*width*sign,b+dirB*width*sign
+			local startWidth=width*(if taperA then 0.12 else 1)
+			local endWidth=width*(if taperB then 0.12 else 1)
+			local p1,p2=a+dirA*startWidth*sign,a+dirB*startWidth*sign
+			local q1,q2=b+dirA*endWidth*sign,b+dirB*endWidth*sign
 			self.faceLines[1].Color=color
 			self.faceLines[2].Color=color
 			segment(self.faceLines[1],p1,q1,0.008)
@@ -231,8 +233,9 @@ function Visualizer:meshEdge(part:BasePart,edge,width:number,
 		end
 	end
 	self.ringAnchor.CFrame=CFrame.new((a+b)/2)
-	self.display.Text=string.format("%s  ·  %.0f mm",
-		if interior then "INSIDE CHAMFER" else "OUTSIDE CHAMFER",width*280)
+	self.display.Text=string.format("%s  ·  %.0f mm%s",
+		if interior then "INSIDE CHAMFER" else "OUTSIDE CHAMFER",width*280,
+		if taperA or taperB then "  ·  CORNER TAPER" else "")
 	self.label.Enabled=true
 end
 
