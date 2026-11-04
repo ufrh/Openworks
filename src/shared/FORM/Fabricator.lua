@@ -8,6 +8,7 @@ local Cutters = require(script.Parent.Cutters)
 local Extrusion = require(script.Parent.Extrusion)
 local FileCutter = require(script.Parent.FileCutter)
 local GeometryCutter = require(script.Parent.GeometryCutter)
+local BevelJunction = require(script.Parent.BevelJunction)
 
 local Fabricator = {}
 local OPTIONS = { SplitApart = false }
@@ -100,7 +101,8 @@ end
 local function compileUnlocked(component): (BasePart, string)
 	local node = component.nodes[1]
 	local current = Compiler.nativePart(node)
-	local meshCuts, nativeFallbacks = 0, 0
+	local meshCuts, nativeFallbacks, joinedCorners = 0, 0, 0
+	local finishedFiles = {}
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled == false then continue end
 		if op.kind == "SketchExtrude" or op.kind == "File"
@@ -173,9 +175,47 @@ local function compileUnlocked(component): (BasePart, string)
 		end
 		current.Anchored = true
 
+		-- Reconcile actual SHARED bevel geometry whenever a File operation
+		-- meets another File operation. The new inside wedge cannot simply
+		-- be unioned over an already removed top/bottom chamfer: doing so
+		-- refills the corner with the rectangular block seen in Studio.
+		--
+		-- Unlike the old automatic miter, this continuation is derived
+		-- from the exact two authored bevel planes, their shared wall, and
+		-- the endpoint of their edges. It only spans the new inner wedge.
+		if op.kind == "FileMesh" or op.kind == "File" then
+			local currentSpec = BevelJunction.spec(node,op)
+			if currentSpec then
+				for _,previous in ipairs(finishedFiles) do
+					local junction=BevelJunction.plan(previous,currentSpec)
+					if not junction then continue end
+					if joinedCorners>=64 then
+						current:Destroy()
+						error("Too many interacting bevel corners in one workpiece",0)
+					end
+					local profile,travel=BevelJunction.clipProfile(junction)
+					local generated,tool,release=pcall(GeometryCutter.prism,profile,travel)
+					if not generated then
+						current:Destroy()
+						error("Bevel junction cutter failed: "..tostring(tool),0)
+					end
+					local success,result=combine(current,tool,"Remove")
+					release()
+					if not success then
+						current:Destroy()
+						error("Bevel corner intersection failed: "..tostring(result),0)
+					end
+					current:Destroy()
+					current=result
+					current.Anchored=true
+					joinedCorners+=1
+				end
+				table.insert(finishedFiles,currentSpec)
+			end
+		end
 	end
-	return current, string.format("%d features (%d mesh saws, %d fallback)",
-		#(component.operations or {}), meshCuts, nativeFallbacks)
+	return current, string.format("%d features (%d mesh saws, %d fallback, %d joined corners)",
+		#(component.operations or {}), meshCuts, nativeFallbacks, joinedCorners)
 end
 
 -- Bound peak temporary EditableMesh use: only one manufacturing replay
