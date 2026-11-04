@@ -285,8 +285,13 @@ function Document:addOperation(component, kind: string, data)
 			or (b-a).Magnitude < 0.01 or n1.Magnitude<0.9 or n2.Magnitude<0.9 then
 			return false, "Invalid edge filing geometry"
 		end
+		local segments=data.segments or 1
+		if typeof(segments)~="number" or segments~=math.floor(segments)
+			or segments<1 or segments>12 then
+			return false,"File segmentation must be a whole number from 1 to 12"
+		end
 		operation={kind="FileMesh",a=a,b=b,normalA=n1.Unit,normalB=n2.Unit,
-			width=width,interior=false,
+			width=width,interior=false,segments=segments,
 			taperA=false,taperB=false}
 	elseif kind == "InsetFace" then
 		local points=data.points
