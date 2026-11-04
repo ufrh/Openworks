@@ -668,7 +668,7 @@ function Debug.start()
 	-- Ctrl+MMB remains available for camera zoom while using a tool.
 	local dimensionTools={
 		Drill={ box=diameterInput, step=2, coarse=10, default=56 },
-		File={ box=fileWidthInput, step=1, coarse=5, default=14 },
+		File={ box=fileWidthInput, step=1, coarse=5, default=14, minimum=6 },
 		Inset={ box=insetMarginInput, step=2, coarse=10, default=28 },
 	}
 	cameraController:setWheelHandler(function(steps:number):boolean
@@ -694,7 +694,7 @@ function Debug.start()
 				limit=math.max(5,math.min(major*0.45,35840))
 			end
 		end
-		local nextMM=math.clamp(math.round(current+steps*increment),5,limit)
+		local nextMM=math.clamp(math.round(current+steps*increment),entry.minimum or 5,limit)
 		entry.box.Text=string.format("%.0f",nextMM)
 		toolStatus.Text=string.format("Tool: %s · %d mm",
 			string.upper(activeTool),nextMM)
