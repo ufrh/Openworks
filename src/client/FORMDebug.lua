@@ -800,7 +800,9 @@ function Debug.start()
 			if not edge or #edge.faces~=2 then toolVisualizer:hide() return end
 			local plan=bevelData(topology,edge,pose,width)
 			if not plan then toolVisualizer:hide() return end
-			toolVisualizer:meshEdge(topology.part,edge,width,plan.interior)
+			toolVisualizer:meshEdge(topology.part,edge,width,plan.interior,
+				topology.faces[edge.faces[1]].normal,
+				topology.faces[edge.faces[2]].normal)
 		elseif activeTool == "Groove" or activeTool == "Kerf" then
 			if not sawFirst or sawFirst.id~=target.id then
 				toolVisualizer:hide() return
