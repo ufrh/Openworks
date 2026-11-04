@@ -399,7 +399,7 @@ function Debug.start()
 		end
 	end)
 	line("Wheel: Drill 2 | File 1 | Inset 2 mm", 20)
-	line("Shift+Wheel: Drill 10 | File 5 | Inset 10 mm", 20)
+	line("Shift+Wheel: coarse · Alt+Wheel: File segments", 20)
 	line("POCKET  /  GROOVE  /  EDGE")
 	local insetMarginInput = toolNumberRow("Inset border (mm)  [wheel]", "28")
 	local insetDepthInput = toolNumberRow("Inset depth (mm)", "28")
@@ -409,7 +409,7 @@ function Debug.start()
 	local fileSegmentsInput = toolNumberRow("File segments (1–12)", "1")
 	local kerfInput = toolNumberRow("Through kerf (mm)", "14")
 
-	line("File: exterior only; inside corners are paused.", 24)
+	line("File: 1 flat / 2–12 rounded; inside File paused.", 24)
 	line("Groove/Kerf: two points on the same face.", 24)
 
 	line("3D TRANSFORM HANDLES")
@@ -677,6 +677,18 @@ function Debug.start()
 	cameraController:setWheelHandler(function(steps:number):boolean
 		local entry=dimensionTools[activeTool]
 		if not entry or UserInputService:GetFocusedTextBox() then return false end
+		-- ALT + wheel changes geometric rounding segmentation. Plain
+		-- wheel still changes File width, matching the Drill workflow.
+		if activeTool=="File" and (
+			UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+			or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)) then
+			local current=tonumber(fileSegmentsInput.Text) or 1
+			local count=math.clamp(math.floor(current+steps+0.5),1,12)
+			fileSegmentsInput.Text=tostring(count)
+			toolStatus.Text=string.format("FILE: %d %s",count,
+				if count==1 then "flat segment" else "rounded segments")
+			return true
+		end
 		local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
 			or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
 		local increment=if shift then entry.coarse else entry.step
