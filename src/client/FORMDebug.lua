@@ -35,7 +35,7 @@ function Debug.start()
 	local activeTool: string? = nil
 	local sawFirst = nil
 	local meshSaw = true
-	local historyInfo: TextLabel? = nil
+	local historyInfo: any = nil
 
 	local grid = GridOverlay.new(playerGui)
 
@@ -181,8 +181,6 @@ function Debug.start()
 				local property = if binding.field == "position" then Document.minCorner(node) else node[binding.field]
 				if binding.axis ~= " " then
 					value = property[binding.axis]
-				elseif (binding.field == "bore" and node.kind == "HoleBlock") or (binding.field == "wall" and node.kind == "Tube") then
-					value = property
 				end
 			end
 			if not box:IsFocused() then
@@ -289,7 +287,7 @@ function Debug.start()
 	local diameterInput = toolNumberRow("Drill diameter (mm)", "56")
 	local kerfInput = toolNumberRow("Saw kerf (mm)", "14")
 	local meshRow = row(29)
-	local meshButton: TextButton
+	local meshButton: any
 	meshButton = button(meshRow, "EditableMesh saw: ON (native fallback)", 0, 1, function()
 		meshSaw = not meshSaw
 		meshButton.Text = "EditableMesh saw: " .. (if meshSaw then "ON" else "OFF")
