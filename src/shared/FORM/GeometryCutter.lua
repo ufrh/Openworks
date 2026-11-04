@@ -151,53 +151,68 @@ end
 -- This method expects an authored straight edge shared by exactly two
 -- planar faces. It refuses inconsistent frames and extreme angles rather
 -- than creating the huge malformed cutter triangles seen in the prototype.
-function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
+local function bevelPlan(edgeA:Vector3,edgeB:Vector3,
 	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?)
+	if typeof(edgeA)~="Vector3" or typeof(edgeB)~="Vector3"
+		or typeof(outwardA)~="Vector3" or typeof(outwardB)~="Vector3"
+		or typeof(width)~="number" or width~=width then
+		return nil,"Invalid chamfer geometry"
+	end
 	local along=edgeB-edgeA
-	if along.Magnitude<0.035 then error("Selected edge is too short for a safe chamfer",0) end
+	if along.Magnitude<0.035 then return nil,"Edge is too short for a stable chamfer" end
 	if width<0.018 or width>along.Magnitude*0.35 then
-		error("Chamfer too wide for the selected edge",0)
+		return nil,"Chamfer width must fit within the selected edge"
+	end
+	if outwardA.Magnitude<0.9 or outwardB.Magnitude<0.9 then
+		return nil,"Invalid neighboring face normals"
 	end
 	local axis=along.Unit
 	local n1,n2=outwardA.Unit,outwardB.Unit
 	local dot=n1:Dot(n2)
 	if math.abs(dot)>0.84 then
-		error("Filing requires two distinct, non-tangent planar faces",0)
+		return nil,"Cannot file tangent or nearly parallel faces"
 	end
 	if math.abs(n1:Dot(axis))>0.015 or math.abs(n2:Dot(axis))>0.015 then
-		error("Selected edge and adjacent face normals are inconsistent",0)
+		return nil,"Edge axis does not match its adjacent face planes"
 	end
-
-	-- Tangent directions lie IN each adjacent face. On an outer edge they
-	-- point into the existing material; on an inner edge the opposite
-	-- directions point along the exposed walls toward the void.
 	local intoFaceA=(n1*dot-n2).Unit
 	local intoFaceB=(n2*dot-n1).Unit
 	local bisector=(n1+n2).Unit
 	local isInterior=interior==true
 	local faceDir=if isInterior then -1 else 1
-	-- Minimal Boolean overlap prevents coplanar CSG seams, without
-	-- extending the cutter by half its width past neighboring corners.
 	local epsilon=math.clamp(width*0.07,0.002,0.006)
 	local edgeExtension=math.min(epsilon,along.Magnitude*0.02)
 	local a=edgeA-axis*edgeExtension
-
 	local profile={
 		a+intoFaceA*(width*faceDir),
 		a+intoFaceB*(width*faceDir),
 		a+bisector*(if isInterior then -epsilon else epsilon),
 	}
-	-- Unioning an inside bevel needs overlap along both adjacent faces.
-	-- Extend the bridge slightly INTO existing solid to make the connection
-	-- manifold. Exterior subtraction needs a modest outside overlap.
 	if isInterior then
-		profile[1] = profile[1] - n1*epsilon - n2*epsilon
-		profile[2] = profile[2] - n1*epsilon - n2*epsilon
+		-- Add a wedge *inside the empty cavity*; overlap its two mounting
+		-- planes by epsilon so UnionAsync connects it to the original solid.
+		profile[1]-=n1*epsilon+n2*epsilon
+		profile[2]-=n1*epsilon+n2*epsilon
 	else
-		profile[1] = profile[1] + bisector*epsilon
-		profile[2] = profile[2] + bisector*epsilon
+		-- Subtract an outer-corner chip; do not bury an enormous third
+		-- vertex inside the part as the previous unstable cutter did.
+		profile[1]+=bisector*epsilon
+		profile[2]+=bisector*epsilon
 	end
-	return GeometryCutter.prism(profile,along+axis*edgeExtension*2)
+	return {profile=profile,travel=along+axis*edgeExtension*2},nil
+end
+
+function GeometryCutter.validateFile(edgeA:Vector3,edgeB:Vector3,
+	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?):(boolean,string?)
+	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
+	return plan~=nil,why
+end
+
+function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
+	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?)
+	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
+	if not plan then error(why or "Invalid bevel geometry",0) end
+	return GeometryCutter.prism(plan.profile,plan.travel)
 end
 
 return GeometryCutter
