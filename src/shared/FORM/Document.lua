@@ -215,9 +215,35 @@ function Document:addOperation(component, kind: string, data)
 	end
 	self.nextOperation += 1
 	operation.id = self.nextOperation
+	operation.enabled = true
 	table.insert(component.operations, operation)
 	component.revision += 1
 	return true, nil
+end
+
+-- Individual feature controls: source remains intact when a feature is disabled.
+function Document:setOperationEnabled(component, id: number, enabled: boolean)
+	for _, operation in ipairs(component.operations) do
+		if operation.id == id then
+			if (operation.enabled ~= false) ~= enabled then
+				operation.enabled = enabled
+				component.revision += 1
+			end
+			return true, nil
+		end
+	end
+	return false, "Fabrication feature no longer exists"
+end
+
+function Document:removeOperation(component, id: number)
+	for i, operation in ipairs(component.operations) do
+		if operation.id == id then
+			table.remove(component.operations, i)
+			component.revision += 1
+			return true, nil
+		end
+	end
+	return false, "Fabrication feature no longer exists"
 end
 
 function Document:undoOperation(component)
