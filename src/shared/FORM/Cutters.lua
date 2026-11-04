@@ -62,7 +62,8 @@ function Cutters.create(node, operation, preferMesh: boolean?): (BasePart, () ->
 		part.Name = "FORM_DrillCutter"
 		part.Shape = Enum.PartType.Cylinder
 		part.Size = Vector3.new(node.size.Y + 1, operation.diameter, operation.diameter)
-		part.CFrame = CFrame.new(operation.x, 0, operation.z) * CFrame.Angles(0, 0, math.pi / 2)
+		part.CFrame = CFrame.new(operation.x - node.size.X * 0.5, 0, operation.z - node.size.Z * 0.5)
+			* CFrame.Angles(0, 0, math.pi / 2)
 		part.Anchored = true
 		part.CanCollide = false
 		part.CanTouch = false
@@ -70,8 +71,8 @@ function Cutters.create(node, operation, preferMesh: boolean?): (BasePart, () ->
 		return part, function() part:Destroy() end, "native"
 	end
 	if operation.kind ~= "Saw" then error("Unknown cutter kind " .. tostring(operation.kind)) end
-	local a = Vector3.new(operation.x1, 0, operation.z1)
-	local b = Vector3.new(operation.x2, 0, operation.z2)
+	local a = Vector3.new(operation.x1 - node.size.X * 0.5, 0, operation.z1 - node.size.Z * 0.5)
+	local b = Vector3.new(operation.x2 - node.size.X * 0.5, 0, operation.z2 - node.size.Z * 0.5)
 	local delta = b - a
 	local length = delta.Magnitude + operation.kerf
 	local height = node.size.Y + 1
