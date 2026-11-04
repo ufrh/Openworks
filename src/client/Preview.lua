@@ -4,6 +4,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Compiler = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Compiler)
+local Fabricator = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Fabricator)
 local Document = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Document)
 
 local Preview = {}
@@ -114,8 +115,8 @@ end
 
 function Preview:updateGeometry(component)
 	local node = component.nodes[1]
-	local key = Compiler.geometryKey(node)
-	local requiresCut = Compiler.requiresBoolean(node)
+	local key = Fabricator.geometryKey(component)
+	local requiresCut = Fabricator.requiresCompile(component)
 	local state = self.states[component.id]
 
 	-- Native blocks/cylinders and special templates before a valid hole
@@ -173,10 +174,10 @@ function Preview:queueManufacture(component)
 			local snapshot = job.pending
 			job.pending = nil
 			local source = snapshot.nodes[1]
-			local expectedKey = Compiler.geometryKey(source)
-			if not Compiler.requiresBoolean(source) then continue end
+			local expectedKey = Fabricator.geometryKey(snapshot)
+			if not Fabricator.requiresCompile(snapshot) then continue end
 			self.onStatus("Manufacturing " .. snapshot.name .. "...")
-			local ok, output = pcall(Compiler.compileTemplate, source)
+			local ok, output, summary = pcall(Fabricator.compile, snapshot)
 			if not ok then
 				self.onStatus("Primitive CSG failed: " .. tostring(output))
 				continue
@@ -185,16 +186,16 @@ function Preview:queueManufacture(component)
 			local current = component.nodes[1]
 			if job.cancelled or job.pending
 				or self.dragging[id]
-				or not Compiler.requiresBoolean(current)
-				or expectedKey ~= Compiler.geometryKey(current) then
+				or not Fabricator.requiresCompile(component)
+				or expectedKey ~= Fabricator.geometryKey(component) then
 				output:Destroy()
 				if not job.cancelled and not self.dragging[id]
-					and Compiler.requiresBoolean(current) and not job.pending then
+					and Fabricator.requiresCompile(component) and not job.pending then
 					job.pending = Document.snapshot(component)
 				end
 			else
 				self:replace(component, output, expectedKey, true)
-				self.onStatus(snapshot.name .. " ready")
+				self.onStatus(snapshot.name .. " ready: " .. summary)
 			end
 		end
 		job.running = false
