@@ -19,7 +19,15 @@ local function configure(part: BasePart)
 	part.CastShadow = true
 	part.Material = Enum.Material.SmoothPlastic
 	part.Color = Color3.fromRGB(170, 190, 196)
-	if part:IsA("PartOperation") then part.UsePartColor = true end
+	part.Reflectance = 0
+	part.Transparency = 0
+	if part:IsA("PartOperation") then
+		part.UsePartColor = true
+	elseif part:IsA("MeshPart") then
+		-- Mesh CSG results preserve source face colors; they are kept white by
+		-- Compiler/Extrusion so this displayed tint is uniform.
+		part.TextureID = ""
+	end
 end
 
 function Preview.new(onStatus, onRendered)
@@ -92,7 +100,9 @@ function Preview:replace(component, part: BasePart, key: string, madeWithCSG: bo
 	configure(part)
 	local targetFrame = Compiler.pose(component.nodes[1]) * localFrame
 	local targetSize = part.Size
-	if previous and previous.smoothing and previous.part then
+	if previous and previous.smoothing and previous.part and not madeWithCSG then
+		-- Native shapes can interpolate their dimensions. Resizing a CSG
+		-- MeshPart distorts its generated mesh and creates broken-looking faces.
 		part.CFrame = previous.part.CFrame
 		part.Size = previous.part.Size
 	else
@@ -107,7 +117,7 @@ function Preview:replace(component, part: BasePart, key: string, madeWithCSG: bo
 		kind = component.nodes[1].kind,
 		boolean = madeWithCSG,
 		targetFrame = targetFrame, targetSize = targetSize,
-		smoothing = previous ~= nil and previous.smoothing or false,
+		smoothing = not madeWithCSG and previous ~= nil and previous.smoothing or false,
 		dragging = self.dragging[id] == true,
 	}
 	self.onRendered(id, model)
@@ -146,10 +156,15 @@ function Preview:updateGeometry(component)
 		state = self.states[component.id]
 	end
 
-	-- Moving/rotating already-manufactured CSG solids changes only CFrame.
-	-- Resizing temporarily stretches the current solid until re-manufacture.
+	-- Keep the last valid manufactured mesh intact until the replacement is
+	-- compiled. Stretching it to the new block envelope turns its openings,
+	-- surface normals and colors into visually corrupted geometry.
 	state.targetFrame = Compiler.pose(node) * state.localFrame
-	state.targetSize = if state.key ~= key then Compiler.partSize(node) else state.part.Size
+	if state.boolean then
+		state.targetSize = state.part.Size
+	else
+		state.targetSize = Compiler.partSize(node)
+	end
 	if not state.smoothing then
 		state.part.CFrame = state.targetFrame
 		state.part.Size = state.targetSize
