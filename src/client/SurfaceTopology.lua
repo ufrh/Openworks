@@ -64,10 +64,19 @@ function SurfaceTopology.extract(part: BasePart)
 		return nativeBlock(part)
 	end
 	if not part:IsA("MeshPart") then return nil, "Surface selection requires a block or readable compiled MeshPart" end
-	local ok, mesh = pcall(function()
-		return AssetService:CreateEditableMeshAsync((part :: MeshPart).MeshContent, {FixedSize = true})
+	local okContent, contentOrError = pcall(function()
+		return (part :: MeshPart).MeshContent
 	end)
-	if not ok or not mesh then return nil, tostring(mesh) end
+	if not okContent then
+		return nil, "MeshContent inaccessible: " .. tostring(contentOrError)
+	end
+	local ok, mesh = pcall(function()
+		return AssetService:CreateEditableMeshAsync(contentOrError, {FixedSize = true})
+	end)
+	if not ok or not mesh then
+		return nil, "CreateEditableMeshAsync failed on " .. part.ClassName .. ": " ..
+			tostring(mesh) .. " (CSG output may not support EditableMesh readback)"
+	end
 	local success, topology = pcall(function()
 		local size = mesh:GetSize()
 		local scale = Vector3.new(
