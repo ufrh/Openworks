@@ -335,7 +335,12 @@ function HistoryTopology.build(part:BasePart,component)
 		end
 		local diagonal=(spec.n1+spec.n2).Unit
 		for _,surface in ipairs(solidFaces) do
-			local exposed=surface.normal:Dot(diagonal)>0.96
+			-- The CSG subtractive cutter's inner diagonal normal points
+			-- INTO the remaining material. Its resulting manufactured
+			-- bevel face points the other way. For additive interior
+			-- wedges the source surface already points outward.
+			local slopeDot=surface.normal:Dot(diagonal)
+			local exposed=if spec.interior then slopeDot>0.96 else slopeDot < -0.96
 			local junction=false
 			if spec.interior then
 				for _,plane in ipairs(planes) do
@@ -347,7 +352,14 @@ function HistoryTopology.build(part:BasePart,component)
 				end
 			end
 			if not exposed then continue end
-			local face=addFace(surface.polygon,surface.normal,
+			local surfaceNormal=if spec.interior then surface.normal else -surface.normal
+			local polygon=if spec.interior then surface.polygon else {}
+			if not spec.interior then
+				for i=#surface.polygon,1,-1 do
+					table.insert(polygon,surface.polygon[i])
+				end
+			end
+			local face=addFace(polygon,surfaceNormal,
 				if junction then "file_junction" else "file_chamfer")
 			if face then
 				table.insert(newBevelFaces,face)
