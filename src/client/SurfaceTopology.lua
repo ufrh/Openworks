@@ -257,14 +257,30 @@ local function closestOnSegment(p: Vector3,a: Vector3,b: Vector3): (number,Vecto
 	return (p-q).Magnitude,q
 end
 
-local function cameraVisible(topology, camera:Camera, point:Vector3, tolerance:number):boolean
-	local vector=point-camera.CFrame.Position
-	if vector.Magnitude<0.01 then return false end
+local function cameraVisible(topology,camera:Camera,edge,point:Vector3,tolerance:number):boolean
+	local samples={point}
+	-- Probe the two adjacent material sides of the crease as well as the
+	-- exact edge. Upright concave corners can be occluded by the top plane.
+	for _,fid in ipairs(edge.faces) do
+		local face=topology.faces[fid]
+		if face and not face.curved then
+			local normal=topology.part.CFrame:VectorToWorldSpace(face.normal)
+			table.insert(samples,point-normal*math.min(tolerance*0.4,0.03))
+		end
+	end
 	local params=RaycastParams.new()
 	params.FilterType=Enum.RaycastFilterType.Include
 	params.FilterDescendantsInstances={topology.part}
-	local hit=workspace:Raycast(camera.CFrame.Position,vector.Unit*(vector.Magnitude+0.10),params)
-	return hit~=nil and (hit.Position-point).Magnitude<=tolerance
+	for _,sample in ipairs(samples) do
+		local delta=sample-camera.CFrame.Position
+		if delta.Magnitude<0.01 then continue end
+		local hit=workspace:Raycast(camera.CFrame.Position,
+			delta.Unit*(delta.Magnitude+0.1),params)
+		if hit and (hit.Position-point).Magnitude<=tolerance then
+			return true
+		end
+	end
+	return false
 end
 
 function SurfaceTopology.closestEdge(topology,worldHit:Vector3,worldNormal:Vector3,
@@ -289,8 +305,8 @@ function SurfaceTopology.closestEdge(topology,worldHit:Vector3,worldNormal:Vecto
 		local worldPixels=2*distance*math.tan(math.rad(camera.FieldOfView)*0.5)
 			/math.max(camera.ViewportSize.Y,1)
 		local tolerance=math.clamp(worldPixels*(maxPixels or 22)*1.65,0.05,0.25)
-		if (worldHit-closest).Magnitude>tolerance then continue end
-		if not cameraVisible(topology,camera,closest,math.max(0.035,tolerance*0.7)) then
+		if (worldHit-closest).Magnitude>math.max(0.12,tolerance*1.8) then continue end
+		if not cameraVisible(topology,camera,edge,closest,math.max(0.055,tolerance)) then
 			continue
 		end
 		best,bestPixels=edge,distancePixels
