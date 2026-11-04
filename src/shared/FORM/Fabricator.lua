@@ -62,7 +62,7 @@ function Fabricator.geometryKey(component): string
 			end
 		end
 	end
-	return "FORM_ROUND_MITER_V6;"..table.concat(pieces, ";")
+	return "FORM_DIRECT_SHARED_SEAM_V7;"..table.concat(pieces, ";")
 end
 
 local function combine(source: BasePart, cutter: BasePart, mode: string): (boolean, any)
@@ -102,9 +102,35 @@ end
 local function compileUnlocked(component): (BasePart, string)
 	local node = component.nodes[1]
 	local current = Compiler.nativePart(node)
-	local meshCuts, nativeFallbacks, pausedInsideFiles, miterCorners = 0, 0, 0, 0
-	local exteriorFiles={}
-	local completedMiters={}
+	local meshCuts, nativeFallbacks, pausedInsideFiles = 0, 0, 0
+	-- Build pairings BEFORE replay so the first File already knows its
+	-- final miter plane. Applying a separate third corner patch afterward
+	-- caused overlapping slivers in segmented filing.
+	local pendingFiles={}
+	local miterByOperation={}
+	local matchedCorners={}
+	local miterCorners=0
+	for _,op in ipairs(component.operations or {}) do
+		local spec=CornerTriangle.fileSpec(node,op)
+		if spec then
+			for _,prior in ipairs(pendingFiles) do
+				local junction=CornerTriangle.between(prior.spec,spec)
+				if not junction then continue end
+				local key=string.format("%.5f:%.5f:%.5f",
+					junction.corner.X,junction.corner.Y,junction.corner.Z)
+				if matchedCorners[key] or miterByOperation[prior.op] or miterByOperation[op] then
+					continue
+				end
+				local earlier,later=CornerTriangle.miterEnds(junction,prior.spec,spec)
+				miterByOperation[prior.op]=earlier
+				miterByOperation[op]=later
+				matchedCorners[key]=true
+				miterCorners+=1
+				break
+			end
+			table.insert(pendingFiles,{op=op,spec=spec})
+		end
+	end
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled == false then continue end
 		-- Keep historical interior File entries for possible later repair,
@@ -117,10 +143,17 @@ local function compileUnlocked(component): (BasePart, string)
 		if op.kind == "SketchExtrude" or op.kind == "File"
 			or op.kind == "FileMesh" or op.kind == "InsetFace" then
 			local function createTool()
-				if op.kind == "File" then return FileCutter.create(node,op) end
+				if op.kind == "File" then
+					if miterByOperation[op] then
+						local spec=CornerTriangle.fileSpec(node,op)
+						return GeometryCutter.file(spec.a,spec.b,spec.n1,spec.n2,
+							spec.width,false,nil,nil,nil,spec.segments,miterByOperation[op])
+					end
+					return FileCutter.create(node,op)
+				end
 				if op.kind == "FileMesh" then
 					return GeometryCutter.file(op.a,op.b,op.normalA,op.normalB,
-						op.width,false,nil,nil,nil,op.segments or 1)
+						op.width,false,nil,nil,nil,op.segments or 1,miterByOperation[op])
 				end
 				if op.kind == "InsetFace" then
 					local margin=0.04
@@ -179,37 +212,7 @@ local function compileUnlocked(component): (BasePart, string)
 			current = result
 		end
 		current.Anchored = true
-		if op.kind=="File" or op.kind=="FileMesh" then
-			local file=CornerTriangle.fileSpec(node,op)
-			if file then
-				for _,prior in ipairs(exteriorFiles) do
-					local corner=CornerTriangle.between(prior,file)
-					if not corner then continue end
-					local key=string.format("%.5f:%.5f:%.5f",
-						corner.corner.X,corner.corner.Y,corner.corner.Z)
-					if completedMiters[key] then continue end
-					local faces=CornerTriangle.faces(corner)
-					if not faces then continue end
-					local created,tool,dispose=pcall(GeometryCutter.convexSolid,faces)
-					if created then
-						local ok,output=combine(current,tool,"Remove")
-						dispose()
-						if ok then
-							current:Destroy()
-							current=output
-							current.Anchored=true
-							completedMiters[key]=true
-							miterCorners+=1
-						else
-							warn("FORM corner miter Boolean: "..tostring(output))
-						end
-					else
-						warn("FORM corner miter geometry: "..tostring(tool))
-					end
-				end
-				table.insert(exteriorFiles,file)
-			end
-		end
+
 	end
 	return current, string.format("%d features (%d saws, %d fallback, %d corner miters, %d paused inside)",
 		#(component.operations or {}), meshCuts, nativeFallbacks, miterCorners, pausedInsideFiles)
