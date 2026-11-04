@@ -9,6 +9,7 @@ local Compiler=require(FORM.Compiler)
 local SurfaceTopology=require(script.Parent.SurfaceTopology)
 local BevelJunction=require(FORM.BevelJunction)
 local GeometryCutter=require(FORM.GeometryCutter)
+local CornerTriangle=require(FORM.CornerTriangle)
 
 local HistoryTopology={}
 local EPS=0.0005
@@ -383,6 +384,46 @@ function HistoryTopology.build(part:BasePart,component)
 						table.insert(candidate.edges,edge)
 					end
 					break
+				end
+			end
+		end
+	end
+	-- The little top triangle at the concave intersection is generated
+	-- from the identical pair of exterior File features as Fabricator.
+	-- It is an actual sloped face; the old squared corner is not a face.
+	local cornerDone={}
+	for i,op in ipairs(completedBevels) do
+		local candidate=CornerTriangle.fileSpec(node,op)
+		if not candidate then continue end
+		for j=1,i-1 do
+			local prior=CornerTriangle.fileSpec(node,completedBevels[j])
+			local corner=prior and CornerTriangle.between(prior,candidate)
+			if not corner then continue end
+			local cornerKey=key(point(corner.corner))
+			if cornerDone[cornerKey] then continue end
+			cornerDone[cornerKey]=true
+			local chipFaces=CornerTriangle.faces(corner)
+			if not chipFaces then continue end
+			-- The fourth tetra face is the new manufactured triangular
+			-- surface (its first three faces are internal cutter planes).
+			local face=chipFaces[4]
+			local displayed=addFace(face.polygon,-face.normal,"file_corner_triangle")
+			if displayed then
+				for _,edge in ipairs(displayed.edges) do
+					if #edge.faces>=2 then continue end
+					for _,otherFace in ipairs(faces) do
+						if otherFace==displayed then continue end
+						local n=otherFace.normal
+						local origin=otherFace.polygon[1]
+						if math.abs((edge.a-origin):Dot(n))<0.008
+							and math.abs((edge.b-origin):Dot(n))<0.008 then
+							if not table.find(edge.faces,otherFace.id) then
+								table.insert(edge.faces,otherFace.id)
+								table.insert(otherFace.edges,edge)
+							end
+							break
+						end
+					end
 				end
 			end
 		end
