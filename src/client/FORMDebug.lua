@@ -315,7 +315,7 @@ function Debug.start()
 			local guidance = {
 				Drill = "Drill: hover a face, wheel to change diameter, click to bore",
 				Inset = "Inset: hover a planar manufactured face; wheel sets border width; click",
-				File = "File: hover a sharp edge; wheel sets chamfer width; click to commit",
+				File = "File: hover ANY straight edge (vertical, horizontal or slanted); wheel sizes",
 				Groove = "Groove: click two points on the same planar face",
 				Kerf = "Kerf: click two points on the same planar face",
 			}
@@ -408,7 +408,7 @@ function Debug.start()
 	local fileWidthInput = toolNumberRow("File chamfer (mm)  [wheel]", "14")
 	local kerfInput = toolNumberRow("Through kerf (mm)", "14")
 
-	line("File: inside corners are detected automatically.", 24)
+	line("File: vertical edges work; cyan=outer, green=inner.", 24)
 	line("Groove/Kerf: two points on the same face.", 24)
 
 	line("3D TRANSFORM HANDLES")
