@@ -188,14 +188,15 @@ function Visualizer:groove(pose: CFrame, node, a: Vector2, b: Vector2, width: nu
 		Enum.PartType.Block, string.format("GROOVE  %.0f × %.0f mm", width * 280, depth * 280))
 end
 
-function Visualizer:meshEdge(part:BasePart,edge,width:number)
+function Visualizer:meshEdge(part:BasePart,edge,width:number,interior:boolean?)
 	self:hide()
 	local a=part.CFrame:PointToWorldSpace(edge.a)
 	local b=part.CFrame:PointToWorldSpace(edge.b)
 	self.edgeLine.Color=CYAN
 	segment(self.edgeLine,a,b,math.clamp(width*0.25,0.009,0.04))
 	self.ringAnchor.CFrame=CFrame.new((a+b)/2)
-	self.display.Text=string.format("FILE EDGE  ·  %.0f mm",width*280)
+	self.display.Text=string.format("%s  ·  %.0f mm",
+		if interior then "FILE INNER CORNER" else "FILE OUTER EDGE",width*280)
 	self.label.Enabled=true
 end
 
