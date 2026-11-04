@@ -96,105 +96,89 @@ local function visualScale(position: Vector3): number
 	return math.clamp(worldPerPixel * 8, 0.025, 0.34)
 end
 
--- Cone tip is a user-supplied MeshPart named "Cone" directly inside ReplicatedStorage.
-local coneTemplate = ReplicatedStorage:WaitForChild("Cone")
-assert(coneTemplate:IsA("MeshPart"), "ReplicatedStorage.Cone must be a MeshPart")
-
-local function makePart(parent: Instance, name: string, color: Color3, shape: Enum.PartType): Part
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Shape = shape
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanTouch = false
-	part.CanQuery = true
-	part.CastShadow = false
-	part.Material = Enum.Material.SmoothPlastic
-	part.Color = color
-	part.Parent = parent
-	return part
+-- Visible grips are adornments. Invisible Parts remain raycast targets,
+-- preserving the existing reliable move/scale/rotate drag calculations.
+local function makePart(parent:Instance,name:string,color:Color3,shape:Enum.PartType):Part
+	local p=Instance.new("Part")
+	p.Name=name
+	p.Shape=shape
+	p.Anchored=true
+	p.CanCollide=false
+	p.CanTouch=false
+	p.CanQuery=true
+	p.CastShadow=false
+	p.Transparency=1
+	p.Color=color
+	p.Parent=parent
+	return p
 end
 
-local function newArrow(folder: Folder, name: string, color: Color3)
-	local model = Instance.new("Model")
-	model.Name = name
-	model.Parent = folder
-
-	local stem = makePart(model, "Stem", color, Enum.PartType.Cylinder)
-	local tip = coneTemplate:Clone()
-	tip.Name = "Tip"
-	tip.Anchored = true
-	tip.CanCollide = false
-	tip.CanTouch = false
-	tip.CanQuery = true
-	tip.CastShadow = false
-	tip.Material = Enum.Material.SmoothPlastic
-	tip.Color = color
-	tip.TextureID = ""
-	tip.Parent = model
-
-	local highlight = Instance.new("Highlight")
-	highlight.Name = "AxisHighlight"
-	highlight.Adornee = model
-	highlight.FillColor = color
-	highlight.FillTransparency = 0
-	highlight.OutlineTransparency = 1
-	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	highlight.Parent = model
-
-	return { model = model, part = tip, stem = stem, tip = tip,
-		highlight = highlight }
+local function adorn(parent:Instance,anchor:BasePart,
+	class:string,name:string,color:Color3)
+	local a=Instance.new(class)
+	a.Name=name
+	a.Adornee=anchor
+	a.AlwaysOnTop=false
+	a.Color3=color
+	a.Transparency=0.04
+	a.Visible=false
+	a.Parent=parent
+	return a
 end
 
-local function newSphere(folder: Folder, name: string, color: Color3)
-	local model = Instance.new("Model")
-	model.Name = name
-	model.Parent = folder
-	local part = makePart(model, "Sphere", color, Enum.PartType.Ball)
-	local highlight = Instance.new("Highlight")
-	highlight.Name = "AxisHighlight"
-	highlight.Adornee = model
-	highlight.FillColor = color
-	highlight.FillTransparency = 0
-	highlight.OutlineTransparency = 1
-	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	highlight.Parent = model
-	return { model = model, part = part, highlight = highlight }
+local function newArrow(folder:Folder,decor:Instance,anchor:BasePart,
+	name:string,color:Color3)
+	local model=Instance.new("Model")
+	model.Name=name
+	model.Parent=folder
+	local stem=makePart(model,"StemHit",color,Enum.PartType.Block)
+	local tip=makePart(model,"TipHit",color,Enum.PartType.Ball)
+	return {model=model,part=tip,stem=stem,tip=tip,
+		shaftAdornment=adorn(decor,anchor,"LineHandleAdornment",name.."_Shaft",color),
+		tipAdornment=adorn(decor,anchor,"ConeHandleAdornment",name.."_Tip",color)}
 end
 
-local function newRotationGrip(folder: Folder, name: string, color: Color3)
-	local model = Instance.new("Model")
-	model.Name = name
-	model.Parent = folder
-	local part = makePart(model, "Knob", color, Enum.PartType.Ball)
-	local highlight = Instance.new("Highlight")
-	highlight.Name = "AxisHighlight"
-	highlight.Adornee = model
-	highlight.FillColor = color
-	highlight.FillTransparency = 0
-	highlight.OutlineTransparency = 1
-	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	highlight.Parent = model
-	return { model = model, part = part, highlight = highlight }
+local function newSphere(folder:Folder,decor:Instance,anchor:BasePart,
+	name:string,color:Color3)
+	local model=Instance.new("Model")
+	model.Name=name
+	model.Parent=folder
+	local p=makePart(model,"SphereHit",color,Enum.PartType.Ball)
+	return {model=model,part=p,
+		marker=adorn(decor,anchor,"SphereHandleAdornment",name.."_Sphere",color)}
 end
 
-local function placeArrow(grip, face: Vector3, direction: Vector3, unit: number)
-	-- The arrow's length scales with camera distance; diameter remains delicate.
-	local shaftLength = unit * 3.0
-	local shaftDiameter = unit * 0.12
-	local tipLength = unit * 0.95
-	local tipDiameter = unit * 0.62
-	local begin = face + direction * (unit * 2.0)
-	local stemCenter = begin + direction * (shaftLength / 2)
-	local tipCenter = begin + direction * (shaftLength + tipLength / 2)
-	-- Native cylinder runs on local X.
-	grip.stem.Size = Vector3.new(shaftLength, shaftDiameter, shaftDiameter)
-	grip.stem.CFrame = CFrame.lookAt(stemCenter, stemCenter + direction)
-		* CFrame.Angles(0, math.pi / 2, 0)
-	-- ReplicatedStorage.Cone is modeled pointing along local +Y.
-	grip.tip.Size = Vector3.new(tipDiameter, tipLength, tipDiameter)
-	grip.tip.CFrame = CFrame.lookAt(tipCenter, tipCenter + direction)
-		* CFrame.Angles(-math.pi / 2, 0, 0)
+local function newRotationGrip(folder:Folder,decor:Instance,anchor:BasePart,
+	name:string,color:Color3)
+	local model=Instance.new("Model")
+	model.Name=name
+	model.Parent=folder
+	local p=makePart(model,"KnobHit",color,Enum.PartType.Ball)
+	return {model=model,part=p,
+		marker=adorn(decor,anchor,"SphereHandleAdornment",name.."_Knob",color)}
+end
+
+local function placeArrow(grip,face:Vector3,direction:Vector3,unit:number)
+	local shaftLength=unit*3
+	local shaftDiameter=unit*0.12
+	local tipLength=unit*0.95
+	local tipDiameter=unit*0.62
+	local begin=face+direction*(unit*2)
+	local endShaft=begin+direction*shaftLength
+	local stemCenter=(begin+endShaft)*0.5
+	local tipCenter=endShaft+direction*(tipLength*0.5)
+	grip.stem.Size=Vector3.new(shaftDiameter,shaftDiameter,shaftLength)
+	grip.stem.CFrame=CFrame.lookAt(stemCenter,stemCenter+direction)
+	grip.tip.Size=Vector3.new(tipDiameter,tipLength,tipDiameter)
+	grip.tip.CFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
+		*CFrame.Angles(-math.pi/2,0,0)
+	grip.shaftAdornment.CFrame=CFrame.lookAt(begin,endShaft)
+	grip.shaftAdornment.Length=shaftLength
+	grip.shaftAdornment.Thickness=2
+	grip.tipAdornment.CFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
+		*CFrame.Angles(-math.pi/2,0,0)
+	grip.tipAdornment.Radius=tipDiameter*0.5
+	grip.tipAdornment.Height=tipLength
 end
 
 local function newMeasurement(playerGui: PlayerGui)
@@ -226,9 +210,24 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	local folder = Instance.new("Folder")
 	folder.Name = "FORM_TransformGrips"
 	folder.Parent = workspace
+	local decorations=Instance.new("Folder")
+	decorations.Name="FORM_TransformAdornments"
+	decorations.Parent=playerGui
+	local anchor=Instance.new("Part")
+	anchor.Name="FORM_GizmoAdornmentOrigin"
+	anchor.Anchored=true
+	anchor.CanCollide=false
+	anchor.CanTouch=false
+	anchor.CanQuery=false
+	anchor.CastShadow=false
+	anchor.Transparency=1
+	anchor.Size=Vector3.one*0.05
+	anchor.CFrame=CFrame.identity
+	anchor.Parent=workspace
 	local measurement, measurementText = newMeasurement(playerGui)
 	local self = setmetatable({
 		document = document, onChange = onChange, folder = folder,
+		decorations=decorations,anchor=anchor,
 		grips = {}, lookup = {}, connections = {},
 		mode = "Move", hidden = false, component = nil, index = nil,
 		dragStart = nil, dragChanged = false, hovered = nil, visualFrame = nil, visualSize = nil,
@@ -236,10 +235,11 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	}, TransformGizmo)
 
 	for _, spec in ipairs(MOVE_AXES) do
-		local arrow = newArrow(folder, "Move_" .. spec.axis, spec.color)
+		local arrow = newArrow(folder,decorations,anchor,"Move_"..spec.axis,spec.color)
 		local grip = {
 			model = arrow.model, part = arrow.part, stem = arrow.stem, tip = arrow.tip,
-			highlight = arrow.highlight, baseColor = spec.color, hoverAlpha = 0,
+			shaftAdornment=arrow.shaftAdornment,tipAdornment=arrow.tipAdornment,
+			baseColor=spec.color,hoverAlpha=0,
 			normal = spec.normal, axis = spec.axis, mode = "Move",
 		}
 		table.insert(self.grips, grip)
@@ -247,20 +247,20 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		self.lookup[grip.tip] = grip
 	end
 	for _, spec in ipairs(AXES) do
-		local sphere = newSphere(folder, "Scale_" .. spec.name, spec.color)
+		local sphere = newSphere(folder,decorations,anchor,"Scale_"..spec.name,spec.color)
 		local grip = {
 			model = sphere.model, part = sphere.part,
-			highlight = sphere.highlight, baseColor = spec.color, hoverAlpha = 0,
+			marker=sphere.marker,baseColor=spec.color,hoverAlpha=0,
 			normal = spec.normal, axis = spec.axis, mode = "Scale",
 		}
 		table.insert(self.grips, grip)
 		self.lookup[grip.part] = grip
 	end
 	for _, spec in ipairs(ROTATIONS) do
-		local control = newRotationGrip(folder, "Rotate_" .. spec.axis, spec.color)
+		local control = newRotationGrip(folder,decorations,anchor,"Rotate_"..spec.axis,spec.color)
 		local grip = {
 			model = control.model, part = control.part,
-			highlight = control.highlight, baseColor = spec.color, hoverAlpha = 0, normal = spec.normal,
+			marker=control.marker,baseColor=spec.color,hoverAlpha=0,normal=spec.normal,
 			radial = spec.radial, axis = spec.axis, mode = "Rotate",
 		}
 		table.insert(self.grips, grip)
@@ -454,13 +454,21 @@ function TransformGizmo:refresh(dt: number?)
 		local hoverTarget = if grip == self.hovered then 1 else 0
 		local hoverBlend = if dt then 1 - math.exp(-18 * dt) else 1
 		grip.hoverAlpha += (hoverTarget - grip.hoverAlpha) * hoverBlend
-		grip.highlight.FillColor = grip.baseColor:Lerp(Color3.new(1, 1, 1), grip.hoverAlpha * 0.38)
-		local visible = node ~= nil and not self.hidden and grip.mode == self.mode
-		grip.highlight.Enabled = visible
-		for _, part in ipairs(if grip.mode == "Move"
-			then { grip.stem, grip.tip } else { grip.part }) do
-			part.Transparency = if visible then 0 else 1
-			part.CanQuery = visible
+		local tint=grip.baseColor:Lerp(Color3.new(1,1,1),grip.hoverAlpha*0.38)
+		local visible=node~=nil and not self.hidden and grip.mode==self.mode
+		for _,part in ipairs(if grip.mode=="Move" then {grip.stem,grip.tip}
+			else {grip.part}) do
+			part.Transparency=1
+			part.CanQuery=visible
+		end
+		if grip.mode=="Move" then
+			grip.shaftAdornment.Color3=tint
+			grip.tipAdornment.Color3=tint
+			grip.shaftAdornment.Visible=visible
+			grip.tipAdornment.Visible=visible
+		else
+			grip.marker.Color3=tint
+			grip.marker.Visible=visible
 		end
 		if visible and node then
 			local unit = visualScale(cf.Position)
@@ -473,9 +481,13 @@ function TransformGizmo:refresh(dt: number?)
 				grip.part.Position = cf:PointToWorldSpace(
 					grip.normal * (getAxis(size, grip.axis) / 2 + unit * 0.75))
 				grip.part.Size = Vector3.one * unit * (1.35 + 0.18 * grip.hoverAlpha)
+				grip.marker.CFrame=CFrame.new(grip.part.Position)
+				grip.marker.Radius=grip.part.Size.X*0.5
 			else
 				grip.part.Position = cf:PointToWorldSpace(grip.radial * (unit * 6))
 				grip.part.Size = Vector3.one * unit * (1 + 0.14 * grip.hoverAlpha)
+				grip.marker.CFrame=CFrame.new(grip.part.Position)
+				grip.marker.Radius=grip.part.Size.X*0.5
 			end
 		end
 	end
@@ -484,6 +496,8 @@ end
 function TransformGizmo:destroy()
 	for _, connection in ipairs(self.connections) do connection:Disconnect() end
 	self.folder:Destroy()
+	self.decorations:Destroy()
+	self.anchor:Destroy()
 	self.measurement:Destroy()
 end
 
