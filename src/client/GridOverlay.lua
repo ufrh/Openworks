@@ -1,9 +1,6 @@
 --!strict
 -- FORM debug grid: visual 0.1-stud spacing; editing snap remains 0.05.
 -- A single non-queryable pivot allows LineHandleAdornments to render in 3D.
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Quantize = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Quantize)
-
 local GridOverlay = {}
 GridOverlay.__index = GridOverlay
 
