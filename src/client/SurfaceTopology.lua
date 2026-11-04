@@ -305,7 +305,9 @@ function SurfaceTopology.closestEdge(topology,worldHit:Vector3,worldNormal:Vecto
 		local worldPixels=2*distance*math.tan(math.rad(camera.FieldOfView)*0.5)
 			/math.max(camera.ViewportSize.Y,1)
 		local tolerance=math.clamp(worldPixels*(maxPixels or 22)*1.65,0.05,0.25)
-		if (worldHit-closest).Magnitude>math.max(0.12,tolerance*1.8) then continue end
+		-- The cursor can land on an adjoining face while its projected
+		-- target is an upright crease. Trust screen proximity and the
+		-- camera occlusion check, not the arbitrary raycast hit distance.
 		if not cameraVisible(topology,camera,edge,closest,math.max(0.055,tolerance)) then
 			continue
 		end
