@@ -39,18 +39,20 @@ local function generatedSaw(width: number, height: number, length: number, cf: C
 		}) do
 			editable:AddTriangle(vertices[face[1]], vertices[face[2]], vertices[face[3]])
 		end
-		return AssetService:CreateMeshPartAsync(Content.fromObject(editable), {})
+		local mesh = AssetService:CreateMeshPartAsync(Content.fromObject(editable), {})
+		mesh.Name = "FORM_DisposableMeshSaw"
+		mesh.CFrame = cf
+		mesh.Anchored = true
+		mesh.CanCollide = false
+		mesh.CanTouch = false
+		mesh.CanQuery = false
+		return mesh
 	end)
 	if not ok or not meshPart then
+		if typeof(meshPart) == "Instance" then meshPart:Destroy() end
 		editable:Destroy()
 		error(tostring(meshPart), 0)
 	end
-	meshPart.Name = "FORM_DisposableMeshSaw"
-	meshPart.CFrame = cf
-	meshPart.Anchored = true
-	meshPart.CanCollide = false
-	meshPart.CanTouch = false
-	meshPart.CanQuery = false
 	return meshPart, editable
 end
 
