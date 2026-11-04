@@ -61,7 +61,7 @@ function Fabricator.geometryKey(component): string
 			end
 		end
 	end
-	return table.concat(pieces, ";")
+	return "FORM_BEVEL_CLIP_V2;"..table.concat(pieces, ";")
 end
 
 local function combine(source: BasePart, cutter: BasePart, mode: string): (boolean, any)
@@ -101,8 +101,12 @@ end
 local function compileUnlocked(component): (BasePart, string)
 	local node = component.nodes[1]
 	local current = Compiler.nativePart(node)
-	local meshCuts, nativeFallbacks, joinedCorners = 0, 0, 0
-	local finishedFiles = {}
+	local meshCuts, nativeFallbacks, trimmedCorners = 0, 0, 0
+	local fileSpecs={}
+	for _,operation in ipairs(component.operations or {}) do
+		local spec=BevelJunction.spec(node,operation)
+		if spec then table.insert(fileSpecs,spec) end
+	end
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled == false then continue end
 		if op.kind == "SketchExtrude" or op.kind == "File"
@@ -110,8 +114,10 @@ local function compileUnlocked(component): (BasePart, string)
 			local function createTool()
 				if op.kind == "File" then return FileCutter.create(node,op) end
 				if op.kind == "FileMesh" then
+					local spec=BevelJunction.spec(node,op)
+					local clipPlanes=BevelJunction.planesFor(spec,fileSpecs)
 					return GeometryCutter.file(op.a,op.b,op.normalA,op.normalB,op.width,
-						op.interior,op.taperA,op.taperB)
+						op.interior,op.taperA,op.taperB,clipPlanes)
 				end
 				if op.kind == "InsetFace" then
 					local margin=0.04
@@ -175,47 +181,16 @@ local function compileUnlocked(component): (BasePart, string)
 		end
 		current.Anchored = true
 
-		-- Reconcile actual SHARED bevel geometry whenever a File operation
-		-- meets another File operation. The new inside wedge cannot simply
-		-- be unioned over an already removed top/bottom chamfer: doing so
-		-- refills the corner with the rectangular block seen in Studio.
-		--
-		-- Unlike the old automatic miter, this continuation is derived
-		-- from the exact two authored bevel planes, their shared wall, and
-		-- the endpoint of their edges. It only spans the new inner wedge.
-		if op.kind == "FileMesh" or op.kind == "File" then
-			local currentSpec = BevelJunction.spec(node,op)
-			if currentSpec then
-				for _,previous in ipairs(finishedFiles) do
-					local junction=BevelJunction.plan(previous,currentSpec)
-					if not junction then continue end
-					if joinedCorners>=64 then
-						current:Destroy()
-						error("Too many interacting bevel corners in one workpiece",0)
-					end
-					local profile,travel=BevelJunction.clipProfile(junction)
-					local generated,tool,release=pcall(GeometryCutter.prism,profile,travel)
-					if not generated then
-						current:Destroy()
-						error("Bevel junction cutter failed: "..tostring(tool),0)
-					end
-					local success,result=combine(current,tool,"Remove")
-					release()
-					if not success then
-						current:Destroy()
-						error("Bevel corner intersection failed: "..tostring(result),0)
-					end
-					current:Destroy()
-					current=result
-					current.Anchored=true
-					joinedCorners+=1
-				end
-				table.insert(finishedFiles,currentSpec)
-			end
+		-- No secondary Boolean junction patch. An inside File's volume
+		-- was already clipped against all connected exterior bevel planes
+		-- BEFORE union, so it cannot refill an existing chamfer.
+		if op.kind=="FileMesh" and op.interior==true then
+			local spec=BevelJunction.spec(node,op)
+			trimmedCorners+=#BevelJunction.planesFor(spec,fileSpecs)
 		end
 	end
-	return current, string.format("%d features (%d mesh saws, %d fallback, %d joined corners)",
-		#(component.operations or {}), meshCuts, nativeFallbacks, joinedCorners)
+	return current, string.format("%d features (%d mesh saws, %d fallback, %d clipped junctions)",
+		#(component.operations or {}), meshCuts, nativeFallbacks, trimmedCorners)
 end
 
 -- Bound peak temporary EditableMesh use: only one manufacturing replay
