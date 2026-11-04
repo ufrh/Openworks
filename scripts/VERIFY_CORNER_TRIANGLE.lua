@@ -1,81 +1,77 @@
 --!strict
--- Studio Command Bar: verify a 90-degree L-corner forms a proper shared
--- 45-degree miter seam for flat AND segmented rounded File profiles.
--- The source faces are checked here; Roblox CSG still needs visual testing.
+-- Studio Command Bar regression: one EXACT diagonal seam shared by the
+-- two real File cutters. No CornerTriangle.faces() / third cutter exists.
+-- Runs pure geometry without GeometryService; visually test CSG separately.
 local root=game:GetService("ReplicatedStorage"):WaitForChild("Openworks"):WaitForChild("FORM")
-local Miter=require(root.CornerTriangle)
+local Junction=require(root.CornerTriangle)
 local Cutter=require(root.GeometryCutter)
 local X,Y,Z=Vector3.xAxis,Vector3.yAxis,Vector3.zAxis
 local p=Vector3.new(0,1,0)
-local function file(last:Vector3,normal:Vector3,width:number,segments:number)
-	return {a=p,b=last,n1=Y,n2=normal,width=width,segments=segments}
+
+local function spec(edgeB:Vector3,wall:Vector3,count:number,width:number)
+	return {a=p,b=edgeB,n1=Y,n2=wall,segments=count,width=width}
 end
-local function key(v:Vector3):string
-	return string.format("%d:%d:%d",math.round(v.X*1e5),
-		math.round(v.Y*1e5),math.round(v.Z*1e5))
+local function near(a:Vector3,b:Vector3):boolean
+	return (a-b).Magnitude<0.00001
 end
-local function check(segments:number)
-	local left=file(p+Z*2,X,0.2,segments)
-	local right=file(p+X*2,Z,0.2,segments)
-	local miter=Miter.between(left,right)
-	assert(miter,"Concave 90-degree corner not recognized")
-	local faces,why=Miter.faces(miter)
-	assert(faces,tostring(why))
-	assert(#faces==4+2*segments,"Expected two triangular top faces, two side caps and two miter strips per segment")
-	-- Top MUST be a triangle with the seam vertex at its midpoint:
-	-- old implementation cut a square into the L corner.
-	local top=faces[1].polygon
-	local secondTop=faces[2].polygon
-	assert(#top==3 and #secondTop==3,"Miter cap must be two triangles")
-	local expected={
-		p, p-X*0.2, p-Z*0.2, p-(X+Z)*0.1,
-	}
-	for _,point in ipairs(expected) do
-		local found=false
-		for _,face in ipairs({top,secondTop}) do
-			for _,vertex in ipairs(face) do
-				if (point-vertex).Magnitude<0.00002 then found=true break end
-			end
+for count=1,12 do
+	local left=spec(p+Z*2,X,count,0.24)
+	local right=spec(p+X*2,Z,count,0.24)
+	local joint=Junction.between(left,right)
+	assert(joint,"Concave 90-degree corner not paired")
+	local leftEnd,rightEnd=Junction.miterEnds(joint,left,right)
+	assert(leftEnd.atStart and rightEnd.atStart,"Expected matching start caps")
+	assert(near(leftEnd.corner,rightEnd.corner))
+	assert(near(leftEnd.normal,rightEnd.normal))
+	local leftFaces,why=Cutter.fileSurfaceFaces(left.a,left.b,left.n1,left.n2,
+		left.width,left.segments,leftEnd)
+	assert(leftFaces,tostring(why))
+	local rightFaces,reason=Cutter.fileSurfaceFaces(right.a,right.b,right.n1,right.n2,
+		right.width,right.segments,rightEnd)
+	assert(rightFaces,tostring(reason))
+	assert(#leftFaces==count and #rightFaces==count,
+		"Round segment strip count mismatch")
+	-- Every matching strip uses the SAME miter seam vertices.
+	for i=1,count do
+		local leftStart=leftFaces[i].polygon
+		local rightStart=rightFaces[i].polygon
+		assert(near(leftStart[1],rightStart[1]) and near(leftStart[4],rightStart[4]),
+			"Separate or doubled center seam at segment "..i)
+		for _,v in ipairs({leftStart[1],leftStart[4]}) do
+			assert(math.abs((v-p):Dot(leftEnd.normal))<0.00001,
+				"Miter vertex is not on the common diagonal plane")
 		end
-		assert(found,"Corner top is not the expected triangular miter cap")
-	end
-	local incidence={}
-	local seamSegments=0
-	for _,face in ipairs(faces) do
-		-- Each rounded strip is an actual plane; a twisted quad can
-		-- generate giant diagonal triangles after MeshPart conversion.
-		local verts=face.polygon
-		local base=verts[1]
-		local normal=(verts[2]-base):Cross(verts[3]-base).Unit
-		for _,v in ipairs(verts) do
-			assert(math.abs((v-base):Dot(normal))<1e-5,
-				"Rounded miter facet is twisted/nonplanar")
-		end
-		for i,a in ipairs(face.polygon) do
-			local b=face.polygon[i%#face.polygon+1]
-			local ka,kb=key(a),key(b)
-			local k=if ka<kb then ka.."|"..kb else kb.."|"..ka
-			if not incidence[k] then incidence[k]={} end
-			table.insert(incidence[k],if ka<kb then 1 else -1)
+		for _,surface in ipairs({leftFaces[i],rightFaces[i]}) do
+			local v=surface.polygon
+			local n=(v[2]-v[1]):Cross(v[3]-v[1])
+			assert(n.Magnitude>0.000001,"Collapsed File facet")
+			assert(math.abs((v[4]-v[1]):Dot(n.Unit))<0.00001,
+				"File facet became twisted")
 		end
 	end
-	for _,edge in pairs(incidence) do
-		assert(#edge==2 and edge[1]==-edge[2],
-			"Miter has an exposed, nonmanifold or inverted edge")
+	-- Reversed source edge orientation uses the same END-cap miter.
+	local reversedLeft={a=left.b,b=left.a,n1=left.n1,n2=left.n2,
+		width=left.width,segments=count}
+	local reversedRight={a=right.b,b=right.a,n1=right.n1,n2=right.n2,
+		width=right.width,segments=count}
+	local reversedJoint=Junction.between(reversedLeft,reversedRight)
+	assert(reversedJoint,"Reversed source edges not paired")
+	local la,rb=Junction.miterEnds(reversedJoint,reversedLeft,reversedRight)
+	assert(la.atEnd and rb.atEnd,"Expected matching end caps")
+	local lf=Cutter.fileSurfaceFaces(reversedLeft.a,reversedLeft.b,Y,X,0.24,count,la)
+	local rf=Cutter.fileSurfaceFaces(reversedRight.a,reversedRight.b,Y,Z,0.24,count,rb)
+	assert(lf and rf)
+	for i=1,count do
+		assert(near(lf[i].polygon[2],rf[i].polygon[2])
+			and near(lf[i].polygon[3],rf[i].polygon[3]),
+			"Reversed end-cap seam is not shared")
 	end
-	local round,why=Cutter.roundedSurfaces(p,p+Z*2,Y,X,0.2,
-		math.max(segments,2))
-	assert(round and #round==math.max(segments,2),tostring(why))
-	return #faces
 end
 
-for _,count in ipairs({1,2,3,4,6,8,12}) do
-	print(string.format("FORM miter: %d segments -> %d watertight facets",count,check(count)))
-end
-assert(Miter.between(file(p-Z*2,X,0.2,1),file(p+X*2,Z,0.2,1))==nil,
-	"Convex/outward-facing corner must not be mitered")
-assert(Miter.between(file(p+Z*2,X,0.2,1),file(p+X*2,Z,0.3,1))==nil,
-	"Unequal bevel widths cannot form this shared miter")
-assert(Miter.between(file(p+Z*2,X,0.2,2),file(p+X*2,Z,0.2,4))==nil,
-	"Mismatched rounding segments cannot form a shared miter")
-print("FORM: straight/rounded 90-degree miter regression passed")
+assert(Junction.between(spec(p-Z*2,X,1,0.24),spec(p+X*2,Z,1,0.24))==nil,
+	"Convex-facing edges must not miter")
+assert(Junction.between(spec(p+Z*2,X,1,0.24),spec(p+X*2,Z,1,0.26))==nil,
+	"Unequal widths must not miter")
+assert(Junction.between(spec(p+Z*2,X,3,0.24),spec(p+X*2,Z,4,0.24))==nil,
+	"Mismatched segments must not miter")
+print("FORM: 1-12 segments have ONE shared diagonal seam (both edge orientations)")
