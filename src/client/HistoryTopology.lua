@@ -291,8 +291,10 @@ function HistoryTopology.build(part:BasePart,component)
 			local loop=kerfLoop(op.a,op.b,op.normal,op.width)
 			if loop then pocket(loop,op.normal,op.depth,op.through==true,"groove") end
 		elseif kind=="File" or kind=="FileMesh" then
-			local spec=BevelJunction.spec(node,op)
-			if spec then table.insert(completedBevels,spec) end
+			if not (kind=="FileMesh" and op.interior==true) then
+				local spec=BevelJunction.spec(node,op)
+				if spec then table.insert(completedBevels,spec) end
+			end
 		end
 	end
 	-- Link pocket/bore lip edges to their actual containing planar face.
@@ -316,17 +318,12 @@ function HistoryTopology.build(part:BasePart,component)
 	-- Exactly the same clipped bevel geometry as Fabricator. Never
 	-- reconstruct a guessed bevel corner after the Boolean: the new
 	-- exposed corner faces come from the source polyhedron itself.
-	for _,spec in ipairs(completedBevels) do
-		if not spec.interior then continue end
-		for _,plane in ipairs(BevelJunction.planesFor(spec,completedBevels)) do
-			table.insert(bevelJunctions,plane)
-		end
-	end
+
 	local newBevelFaces={}
 	for _,spec in ipairs(completedBevels) do
 		local old=edgeMap[edgeKey(point(spec.a),point(spec.b))]
 		if old then old.retired=true end
-		local planes=BevelJunction.planesFor(spec,completedBevels)
+		local planes={}
 		local solidFaces,why=GeometryCutter.fileFaces(spec.a,spec.b,
 			spec.n1,spec.n2,spec.width,spec.interior,planes)
 		if not solidFaces then
