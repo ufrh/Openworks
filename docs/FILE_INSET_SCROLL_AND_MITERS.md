@@ -1,3 +1,5 @@
+> **2026-11-04 concave-corner fix:** The boxed triangular caps in L-shaped notches came from constant-width bevel cutters terminating directly at a concave vertical vertex. For newly filed top/bottom edges, FORM now flags such endpoints from the authored sketch profile and tapers the triangular cutting volume toward the actual corner vertex; it does NOT run an automatic miter operation. The edge screen picker now checks both adjacent faces for visibility and no longer requires the initial material raycast to land at the exact edge. Critically, the validation no longer rejects a valid **vertical** edge merely because its height is shorter than the selected bevel width; actual adjacent face widths are checked in the editor. Existing File history entries do not magically gain endpoint taper metadata—undo/reapply those File features to test the new behavior. Tapered cutter lofts remain experimental until tested in Roblox Studio.
+
 # FORM — Edge File stability and vertical-edge targeting
 
 Updated: 2026-11-04. Branch: `dev`.
