@@ -10,7 +10,7 @@ function BevelJunction.spec(node,op)
 	if op.enabled==false then return nil end
 	if op.kind=="FileMesh" then
 		return {a=op.a,b=op.b,n1=op.normalA.Unit,n2=op.normalB.Unit,
-			width=op.width,interior=op.interior==true,id=op.id}
+			width=op.width,interior=op.interior==true,segments=op.segments or 1,id=op.id}
 	end
 	if op.kind~="File" or node.kind~="Block" then return nil end
 	local hx,hy,hz=node.size.X/2,node.size.Y/2,node.size.Z/2
@@ -29,7 +29,7 @@ function BevelJunction.spec(node,op)
 		n2=-Vector3.zAxis
 	else return nil end
 	return {a=a,b=b,n1=Vector3.yAxis,n2=n2,
-		width=op.width,interior=false,id=op.id}
+		width=op.width,interior=false,segments=op.segments or 1,id=op.id}
 end
 
 local function unit(v:Vector3):Vector3? 
