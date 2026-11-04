@@ -257,52 +257,45 @@ local function closestOnSegment(p: Vector3,a: Vector3,b: Vector3): (number,Vecto
 	return (p-q).Magnitude,q
 end
 
-local function surfaceEdgeVisible(topology,edge,q:Vector3):boolean
-	if not topology.history then return true end
-	if edge.curved or #edge.faces~=2 then return false end
-	local fa,fb=topology.faces[edge.faces[1]],topology.faces[edge.faces[2]]
-	if not fa or not fb then return false end
-	local normal=fa.normal+fb.normal
-	if normal.Magnitude<0.1 then return false end
-	normal=topology.part.CFrame:VectorToWorldSpace(normal.Unit)
+local function cameraVisible(topology, camera:Camera, point:Vector3, tolerance:number):boolean
+	local vector=point-camera.CFrame.Position
+	if vector.Magnitude<0.01 then return false end
 	local params=RaycastParams.new()
 	params.FilterType=Enum.RaycastFilterType.Include
 	params.FilterDescendantsInstances={topology.part}
-	local ray=workspace:Raycast(q+normal*0.13,-normal*0.24,params)
-	return ray~=nil and ray.Instance==topology.part
-		and (ray.Position-q).Magnitude<0.03
+	local hit=workspace:Raycast(camera.CFrame.Position,vector.Unit*(vector.Magnitude+0.10),params)
+	return hit~=nil and (hit.Position-point).Magnitude<=tolerance
 end
 
-function SurfaceTopology.closestEdge(topology, worldHit: Vector3, worldNormal: Vector3,
-	camera: Camera, mouse: Vector2, maxPixels: number?)
-	local candidate,bestPixels=nil,maxPixels or 18
+function SurfaceTopology.closestEdge(topology,worldHit:Vector3,worldNormal:Vector3,
+	camera:Camera,mouse:Vector2,maxPixels:number?)
+	local best,bestPixels=nil,maxPixels or 22
 	for _,edge in ipairs(topology.edges) do
+		if edge.curved or #edge.faces~=2 then continue end
 		local a=topology.part.CFrame:PointToWorldSpace(edge.a)
 		local b=topology.part.CFrame:PointToWorldSpace(edge.b)
-		-- Cheap world-space proximity first: parts with hundreds of drilled
-		-- faces must not screen-project every unrelated edge each frame.
-		local worldDistance,worldClosest=closestOnSegment(worldHit,a,b)
-		if worldDistance>0.25 then continue end
-		local ap,onScreenA=camera:WorldToViewportPoint(a)
-		local bp,onScreenB=camera:WorldToViewportPoint(b)
-		if onScreenA or onScreenB then
-			local delta=Vector2.new(bp.X-ap.X,bp.Y-ap.Y)
-			local t=math.clamp((mouse-Vector2.new(ap.X,ap.Y)):Dot(delta)/
-				math.max(delta:Dot(delta),1e-8),0,1)
-			local screenDistance=(mouse-(Vector2.new(ap.X,ap.Y)+delta*t)).Magnitude
-			if screenDistance<bestPixels then
-				local q=worldClosest
-				-- Face-adjacency check avoids selecting edges behind
-				-- unrelated surfaces.
-				if (q-worldHit).Magnitude<0.25
-					and surfaceEdgeVisible(topology,edge,q) then
-					bestPixels=screenDistance
-					candidate=edge
-				end
-			end
+		local pa,va=camera:WorldToViewportPoint(a)
+		local pb,vb=camera:WorldToViewportPoint(b)
+		if not va and not vb then continue end
+		local start=Vector2.new(pa.X,pa.Y)
+		local delta=Vector2.new(pb.X,pb.Y)-start
+		local squared=delta:Dot(delta)
+		if squared<0.01 then continue end
+		local t=math.clamp((mouse-start):Dot(delta)/squared,0,1)
+		local distancePixels=(mouse-start-delta*t).Magnitude
+		if distancePixels>=bestPixels then continue end
+		local closest=a+(b-a)*t
+		local distance=(camera.CFrame.Position-closest).Magnitude
+		local worldPixels=2*distance*math.tan(math.rad(camera.FieldOfView)*0.5)
+			/math.max(camera.ViewportSize.Y,1)
+		local tolerance=math.clamp(worldPixels*(maxPixels or 22)*1.65,0.05,0.25)
+		if (worldHit-closest).Magnitude>tolerance then continue end
+		if not cameraVisible(topology,camera,closest,math.max(0.035,tolerance*0.7)) then
+			continue
 		end
+		best,bestPixels=edge,distancePixels
 	end
-	return candidate
+	return best
 end
 
 local function containsTriangle(p:Vector3,a:Vector3,b:Vector3,c:Vector3):boolean
