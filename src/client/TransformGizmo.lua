@@ -372,7 +372,7 @@ function TransformGizmo:refresh(dt: number?)
 	local size = if node then node.size else nil
 	if node and targetFrame then
 		-- Exponential smoothing is frame-rate independent. Source node stays snapped.
-		local alpha = if dt then 1 - math.exp(-26 * dt) else 1
+		local alpha = if dt then 1 - math.exp(-26 * dt) else (if self.visualFrame then 0 else 1)
 		self.visualFrame = if self.visualFrame then self.visualFrame:Lerp(targetFrame, alpha) else targetFrame
 		self.visualSize = if self.visualSize then self.visualSize:Lerp(node.size, alpha) else node.size
 		cf = self.visualFrame
