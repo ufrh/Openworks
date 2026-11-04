@@ -197,6 +197,25 @@ function Document:addOperation(component, kind: string, data)
 		end
 		operation={kind="DrillFace",origin=origin,normal=normal.Unit,
 			diameter=diameter,depth=depth,through=data.through~=false}
+	elseif kind == "GrooveFace" then
+		local a,b,n=data.a,data.b,data.normal
+		local width,depth=data.width,data.depth
+		if typeof(a)~="Vector3" or typeof(b)~="Vector3"
+			or typeof(n)~="Vector3" or n.Magnitude<0.9
+			or typeof(width)~="number" or typeof(depth)~="number"
+			or not Quantize.isFinite(width) or not Quantize.isFinite(depth) then
+			return false,"Invalid selected groove plane"
+		end
+		width,depth=Quantize.snap(width,1/280),Quantize.snap(depth,1/280)
+		if width<5/280 or depth<5/280 or depth>Quantize.MaxSize
+			or width>Quantize.MaxSize or (a-b).Magnitude<Quantize.MinSize then
+			return false,"Groove path or dimensions are invalid"
+		end
+		if math.abs((b-a):Dot(n.Unit))>0.008 then
+			return false,"Groove points must lie on the same planar face"
+		end
+		operation={kind="GrooveFace",a=a,b=b,normal=n.Unit,
+			width=width,depth=depth,through=data.through==true}
 	elseif kind == "Saw" or kind == "Groove" then
 		local kerf = Quantize.snap(data.kerf, 1 / 280)
 		local x1, z1 = Quantize.snap(data.x1 + node.size.X * 0.5, Quantize.Grid),
