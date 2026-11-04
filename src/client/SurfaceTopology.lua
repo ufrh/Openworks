@@ -270,7 +270,7 @@ local function surfaceEdgeVisible(topology,edge,q:Vector3):boolean
 	params.FilterDescendantsInstances={topology.part}
 	local ray=workspace:Raycast(q+normal*0.13,-normal*0.24,params)
 	return ray~=nil and ray.Instance==topology.part
-		and (ray.Position-q).Magnitude<0.065
+		and (ray.Position-q).Magnitude<0.03
 end
 
 function SurfaceTopology.closestEdge(topology, worldHit: Vector3, worldNormal: Vector3,
@@ -279,6 +279,10 @@ function SurfaceTopology.closestEdge(topology, worldHit: Vector3, worldNormal: V
 	for _,edge in ipairs(topology.edges) do
 		local a=topology.part.CFrame:PointToWorldSpace(edge.a)
 		local b=topology.part.CFrame:PointToWorldSpace(edge.b)
+		-- Cheap world-space proximity first: parts with hundreds of drilled
+		-- faces must not screen-project every unrelated edge each frame.
+		local worldDistance,worldClosest=closestOnSegment(worldHit,a,b)
+		if worldDistance>0.25 then continue end
 		local ap,onScreenA=camera:WorldToViewportPoint(a)
 		local bp,onScreenB=camera:WorldToViewportPoint(b)
 		if onScreenA or onScreenB then
@@ -287,7 +291,7 @@ function SurfaceTopology.closestEdge(topology, worldHit: Vector3, worldNormal: V
 				math.max(delta:Dot(delta),1e-8),0,1)
 			local screenDistance=(mouse-(Vector2.new(ap.X,ap.Y)+delta*t)).Magnitude
 			if screenDistance<bestPixels then
-				local _,q=closestOnSegment(worldHit,a,b)
+				local q=worldClosest
 				-- Face-adjacency check avoids selecting edges behind
 				-- unrelated surfaces.
 				if (q-worldHit).Magnitude<0.25
