@@ -51,7 +51,7 @@ local function button(parent: Instance, title: string, rect: UDim2, pos: UDim2, 
 	return b
 end
 
-local function newVisual(folder: Folder, name: string): Part
+local function newVisual(folder: Instance, name: string): Part
 	local part = Instance.new("Part")
 	part.Name = name
 	part.Anchored = true
@@ -400,7 +400,7 @@ local function placeWall(part: Part, a: Vector3, b: Vector3, bottom: number, top
 	local edge = b - a
 	local height = math.abs(top - bottom)
 	if edge.Magnitude < 0.0001 or height < 0.0001 then part.Transparency = 1 return end
-	local center = (a+b)/2
+	local center = (a+b)/2 + cf.UpVector * ((bottom - top) * 0.5)
 	local localFrame = CFrame.lookAt(center, center + edge) * CFrame.Angles(0, math.pi / 2, 0)
 	part.Shape = Enum.PartType.Block
 	part.Color = color
