@@ -131,4 +131,23 @@ function BevelJunction.clipProfile(plan):({Vector3},Vector3)
 	return profile,plan.intoVoid*(plan.span+eps*2)
 end
 
+-- Exposed extension of the OUTSIDE chamfer over the newly added inside
+-- wedge. Its flat triangular surface bridges the old bevel to the
+-- vertical inside chamfer; further adjacent planes split the triangle
+-- into a proper shared corner wedge.
+function BevelJunction.surfacePolygon(plan):({Vector3},Vector3)
+	local outer=plan.outer
+	local wall,cap=plan.shared,plan.unshared
+	local dot=wall:Dot(cap)
+	local onWall=(wall*dot-cap).Unit
+	local onCap=(cap*dot-wall).Unit
+	local corner=plan.corner
+	local wallPoint=corner+onWall*outer.width
+	local capPoint=corner+onCap*outer.width
+	local reach=plan.span
+	local beyondWall=wallPoint+(wallPoint-capPoint)*(reach/outer.width)
+	local alongWall=wallPoint+plan.intoVoid*reach
+	return {wallPoint,alongWall,beyondWall},(outer.n1+outer.n2).Unit
+end
+
 return BevelJunction
