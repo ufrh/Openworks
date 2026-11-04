@@ -252,8 +252,27 @@ function HistoryTopology.build(part:BasePart,component)
 		elseif kind=="GrooveFace" then
 			local loop=kerfLoop(op.a,op.b,op.normal,op.width)
 			if loop then pocket(loop,op.normal,op.depth,op.through==true,"groove") end
-		elseif kind=="FileMesh" then
-			local a,b,n1,n2,w=op.a,op.b,op.normalA,op.normalB,op.width
+		elseif kind=="File" or kind=="FileMesh" then
+			local a,b,n1,n2,w
+			if kind=="FileMesh" then
+				a,b,n1,n2,w=op.a,op.b,op.normalA,op.normalB,op.width
+			else
+				w=op.width
+				n1=Vector3.yAxis
+				if op.edge=="X+" then
+					n2=Vector3.xAxis
+					a,b=Vector3.new(half.X,half.Y,-half.Z),Vector3.new(half.X,half.Y,half.Z)
+				elseif op.edge=="X-" then
+					n2=-Vector3.xAxis
+					a,b=Vector3.new(-half.X,half.Y,-half.Z),Vector3.new(-half.X,half.Y,half.Z)
+				elseif op.edge=="Z+" then
+					n2=Vector3.zAxis
+					a,b=Vector3.new(-half.X,half.Y,half.Z),Vector3.new(half.X,half.Y,half.Z)
+				else
+					n2=-Vector3.zAxis
+					a,b=Vector3.new(-half.X,half.Y,-half.Z),Vector3.new(half.X,half.Y,-half.Z)
+				end
+			end
 			local normals=n1+n2
 			if normals.Magnitude>0.01 then
 				addFace({a-n1*w,b-n1*w,b-n2*w,a-n2*w},
