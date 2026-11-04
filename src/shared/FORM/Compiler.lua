@@ -33,6 +33,12 @@ function Compiler.nativePart(node): Part
 		then Enum.PartType.Cylinder else Enum.PartType.Block
 	part.Size = Compiler.partSize(node)
 	part.CFrame = if node.kind == "Cylinder" then CYLINDER_FRAME else CFrame.new()
+	-- CSG bakes source face colors into MeshPart results. Build all geometry
+	-- in neutral white, and tint the final display object only in Preview.
+	part.Color = Color3.new(1, 1, 1)
+	part.Material = Enum.Material.SmoothPlastic
+	part.Transparency = 0
+	part.Reflectance = 0
 	part.Anchored = true
 	return part
 end
