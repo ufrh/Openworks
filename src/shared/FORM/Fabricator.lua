@@ -56,7 +56,7 @@ end
 
 -- Returns a material-local solid and a status summary. Intermediate source
 -- solids, cutters, and EditableMeshes are all disposed deterministically.
-function Fabricator.compile(component): (BasePart, string)
+local function compileUnlocked(component): (BasePart, string)
 	local node = component.nodes[1]
 	local current = Compiler.nativePart(node)
 	local meshCuts, nativeFallbacks = 0, 0
@@ -111,6 +111,18 @@ function Fabricator.compile(component): (BasePart, string)
 	end
 	return current, string.format("%d features (%d mesh saws, %d fallback)",
 		#(component.operations or {}), meshCuts, nativeFallbacks)
+end
+
+-- Bound peak temporary EditableMesh use: only one manufacturing replay
+-- allocates cutter meshes at a time. Always release on success or error.
+local working = false
+function Fabricator.compile(component): (BasePart, string)
+	while working do task.wait() end
+	working = true
+	local ok, result, summary = pcall(compileUnlocked, component)
+	working = false
+	if not ok then error(result, 0) end
+	return result, summary
 end
 
 return Fabricator
