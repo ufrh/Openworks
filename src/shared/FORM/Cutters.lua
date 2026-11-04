@@ -60,6 +60,25 @@ end
 -- Returns the cutter and a release callback; release after CSG has finished.
 -- Calling release is safe on success OR error, and frees EditableMesh budget.
 function Cutters.create(node, operation, preferMesh: boolean?): (BasePart, () -> (), string)
+	if operation.kind == "DrillFace" then
+		local outward=operation.normal.Unit
+		local margin=0.04
+		local through=operation.through~=false
+		local depth=if through then node.size.Magnitude*2+margin*2
+			else operation.depth+margin
+		local center=operation.origin-outward*(depth/2-margin)
+		local part=Instance.new("Part")
+		part.Name="FORM_OrientedDrillCutter"
+		part.Shape=Enum.PartType.Cylinder
+		part.Size=Vector3.new(depth,operation.diameter,operation.diameter)
+		part.CFrame=CFrame.lookAt(center,center-outward)*CFrame.Angles(0,math.pi/2,0)
+		part.Color=Color3.new(1,1,1)
+		part.Anchored=true
+		part.CanCollide=false
+		part.CanTouch=false
+		part.CanQuery=false
+		return part,function() part:Destroy() end,"native"
+	end
 	if operation.kind == "Drill" then
 		local part = Instance.new("Part")
 		part.Name = "FORM_DrillCutter"
