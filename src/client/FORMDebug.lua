@@ -198,7 +198,7 @@ function Debug.start()
 				local description
 				if operation.kind == "SketchExtrude" then
 					description = "SKETCH " .. string.upper(operation.mode) .. " (" .. #operation.points .. "p)"
-				elseif operation.kind == "Drill" then
+				elseif operation.kind == "Drill" or operation.kind == "DrillFace" then
 					description = string.format("DRILL Ø%.0f%s", operation.diameter * 280,
 						if operation.through == false then " BLIND" else "")
 				elseif operation.kind == "Inset" then
@@ -729,8 +729,9 @@ function Debug.start()
 		local node = component.nodes[1]
 		local pose = Compiler.pose(node)
 		local normal = pose:VectorToObjectSpace(hit.Normal)
-		if activeTool ~= "File" and activeTool ~= "Inset"
-			and normal.Y < 0.72 then return nil end
+		if activeTool == "Groove" or activeTool == "Kerf" then
+			if normal.Y < 0.72 then return nil end
+		end
 		local localPoint = pose:PointToObjectSpace(hit.Position)
 		local x = Quantize.snap(localPoint.X, Quantize.Grid)
 		local z = Quantize.snap(localPoint.Z, Quantize.Grid)
@@ -746,8 +747,16 @@ function Debug.start()
 			local diameter = millimeters(diameterInput, "Diameter")
 			local depth = millimeters(drillDepthInput, "Drill depth")
 			if not diameter or not depth then toolVisualizer:hide() return end
-			toolVisualizer:drill(pose, node, target.x, target.z,
-				diameter, depth, drillThrough)
+			local topology=surfacePicker:get(target.id,preview:getModel(target.id))
+			if not topology or topology.part~=target.hit.Instance then
+				toolVisualizer:hide() return
+			end
+			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
+			if not face then toolVisualizer:hide() return end
+			local origin=pose:PointToObjectSpace(target.hit.Position)
+			local worldNormal=topology.part.CFrame:VectorToWorldSpace(face.normal)
+			toolVisualizer:drillFace(pose,origin,
+				pose:VectorToObjectSpace(worldNormal),diameter,depth,drillThrough,node.size.Magnitude)
 		elseif activeTool == "Inset" then
 			local margin = millimeters(insetMarginInput, "Inset border")
 			local depth = millimeters(insetDepthInput, "Inset depth")
@@ -827,11 +836,19 @@ function Debug.start()
 		local kind = activeTool
 		local data = nil
 		if kind == "Drill" then
-			local diameter, errorA = millimeters(diameterInput, "Diameter")
-			local depth, errorB = millimeters(drillDepthInput, "Drill depth")
+			local diameter,errorA=millimeters(diameterInput,"Diameter")
+			local depth,errorB=millimeters(drillDepthInput,"Drill depth")
 			if not diameter or not depth then message(errorA or errorB) return end
-			data = { x = x, z = z, diameter = diameter,
-				depth = depth, through = drillThrough }
+			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id))
+			if not topology then message(why or "Surface indexing in progress") return end
+			if topology.part~=target.hit.Instance then message("Surface selection changed") return end
+			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
+			if not face then message("Select a visible manufactured face") return end
+			local worldNormal=topology.part.CFrame:VectorToWorldSpace(face.normal)
+			data={origin=pose:PointToObjectSpace(target.hit.Position),
+				normal=pose:VectorToObjectSpace(worldNormal),
+				diameter=diameter,depth=depth,through=drillThrough}
+			kind="DrillFace"
 		elseif kind == "Inset" then
 			local margin,errorA=millimeters(insetMarginInput,"Inset border")
 			local depth,errorB=millimeters(insetDepthInput,"Inset depth")
