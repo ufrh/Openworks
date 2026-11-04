@@ -208,7 +208,7 @@ function Debug.start()
 					description = string.format("FILE %s %.0fmm", operation.edge, operation.width * 280)
 				elseif operation.kind == "FileMesh" then
 					description = string.format("%s %.0fmm",
-						if operation.interior then "FILE INNER" else "FILE EDGE",
+						if operation.interior then "FILE INNER (PAUSED)" else "FILE EDGE",
 						operation.width*280)
 				elseif operation.kind == "InsetFace" then
 					description = string.format("INSET FACE %.0fmm",operation.margin*280)
