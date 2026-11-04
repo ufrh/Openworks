@@ -136,6 +136,22 @@ function Visualizer:drill(pose: CFrame, node, x: number, z: number,
 	self.ring.Visible = true
 end
 
+function Visualizer:drillFace(pose:CFrame,origin:Vector3,normal:Vector3,
+	diameter:number,depth:number,through:boolean,maxDepth:number)
+	local outward=pose:VectorToWorldSpace(normal).Unit
+	local start=pose:PointToWorldSpace(origin)
+	local penetration=if through then maxDepth*2+0.08 else depth+0.04
+	local center=start-outward*(penetration/2-0.04)
+	self:volume(CFrame.lookAt(center,center-outward)*CFrame.Angles(0,math.pi/2,0),
+		Vector3.new(penetration,diameter,diameter),Enum.PartType.Cylinder,
+		string.format("Ø %.0f mm · %s",diameter*280,
+			if through then "THROUGH" else string.format("%.0f mm",depth*280)),CYAN)
+	self.ringAnchor.CFrame=CFrame.lookAt(start+outward*0.018,start-outward)
+	self.ring.Radius=diameter/2
+	self.ring.InnerRadius=math.max(0,diameter/2-math.clamp(diameter*0.08,0.005,0.02))
+	self.ring.Visible=true
+end
+
 function Visualizer:inset(pose: CFrame, node, margin: number, depth: number)
 	local width = node.size.X - margin * 2
 	local length = node.size.Z - margin * 2
