@@ -302,6 +302,7 @@ function Debug.start()
 		transformGizmo:setHidden(true)
 		toolStatus.Text = "Tool: SKETCH"
 		sketchEditor:start(component)
+		transformGizmo:setHidden(true)
 	end, "New Body Sketch", function()
 		if not sketchEditor then message("Sketch workspace is not initialized") return end
 		activeTool = nil
@@ -309,6 +310,7 @@ function Debug.start()
 		transformGizmo:setHidden(true)
 		toolStatus.Text = "Tool: NEW BODY"
 		sketchEditor:start(nil)
+		transformGizmo:setHidden(true)
 	end)
 	pair("Exit Tool", function() setTool(nil) end, "Undo Last Cut", function()
 		local component = selectedComponent()
