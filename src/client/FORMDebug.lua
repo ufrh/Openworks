@@ -6,6 +6,8 @@ local UserInputService = game:GetService("UserInputService")
 
 local FORM = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Document = require(FORM.Document)
+local Compiler = require(FORM.Compiler)
+local Quantize = require(FORM.Quantize)
 local Preview = require(script.Parent.Preview)
 local BlenderCamera = require(script.Parent.BlenderCamera)
 local GridOverlay = require(script.Parent.GridOverlay)
@@ -30,6 +32,10 @@ function Debug.start()
 	local selectedId: number? = nil
 	local nodeIndex = 1
 	local cameraController: any = nil
+	local activeTool: string? = nil
+	local sawFirst = nil
+	local meshSaw = true
+	local historyInfo: TextLabel? = nil
 
 	local grid = GridOverlay.new(playerGui)
 
@@ -162,12 +168,17 @@ function Debug.start()
 		local component = selectedComponent()
 		local node = selectedNode()
 		info.Text = if component then ("Selection: " .. component.name) else "Selection: none"
-		nodeInfo.Text = if node then ("Primitive: " .. node.kind) else "Primitive: none"
+		nodeInfo.Text = if node then ("Material: " .. node.kind) else "Material: none"
+		if historyInfo then
+			historyInfo.Text = if component
+				then ("Fabrication: " .. #component.operations .. " cut(s)")
+				else "Fabrication: no material selected"
+		end
 		for _, binding in ipairs(textFields) do
 			local box = binding.box
 			local value = nil
 			if node then
-				local property = node[binding.field]
+				local property = if binding.field == "position" then Document.minCorner(node) else node[binding.field]
 				if binding.axis ~= " " then
 					value = property[binding.axis]
 				elseif (binding.field == "bore" and node.kind == "HoleBlock") or (binding.field == "wall" and node.kind == "Tube") then
@@ -232,11 +243,64 @@ function Debug.start()
 		if cameraController then cameraController:frameSelected() end
 	end
 	pair("Block", function() create("Block") end, "Cylinder", function() create("Cylinder") end)
-	pair("Tube", function() create("Tube") end, "Hole Block", function() create("HoleBlock") end)
+	line("Material corner starts on grid lines.", 22)
+	line("FABRICATION TOOLS // TOP FACE")
+	local toolStatus = line("Tool: none")
+	historyInfo = line("Fabrication: 0 cuts")
+	local function setTool(kind: string?)
+		activeTool = kind
+		sawFirst = nil
+		if kind then
+			transformGizmo:setHidden(true)
+			toolStatus.Text = "Tool: " .. string.upper(kind)
+			message(if kind == "Drill" then "Drill: click top surface" else "Saw: click start, then end on top surface")
+		else
+			transformGizmo:setMode("Move")
+			toolStatus.Text = "Tool: none"
+			message("Fabrication tool cleared")
+		end
+	end
+	pair("Drill", function() setTool("Drill") end, "Saw", function() setTool("Saw") end)
+	pair("Exit Tool", function() setTool(nil) end, "Undo Last Cut", function()
+		local component = selectedComponent()
+		if not component then message("Select a material first") return end
+		sawFirst = nil
+		local ok, reason = document:undoOperation(component)
+		if ok then changed(component) message("Last fabrication cut removed")
+		else message(reason) end
+	end)
+	local function toolNumberRow(caption: string, initial: string)
+		local container = row(30)
+		make("TextLabel", {
+			BackgroundTransparency = 1, Font = Enum.Font.Code,
+			Text = caption, TextSize = 12, TextColor3 = Color3.fromRGB(184, 195, 200),
+			TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(0.65, 0, 1, 0),
+		}, container)
+		local input = make("TextBox", {
+			BackgroundColor3 = Color3.fromRGB(45, 51, 56),
+			BorderSizePixel = 0, ClearTextOnFocus = false,
+			Font = Enum.Font.Code, TextSize = 13, Text = initial,
+			TextColor3 = Color3.fromRGB(235, 238, 240),
+			Position = UDim2.new(0.65, 0, 0, 1), Size = UDim2.new(0.35, -4, 1, -2),
+		}, container)
+		make("UICorner", { CornerRadius = UDim.new(0, 3) }, input)
+		return input
+	end
+	local diameterInput = toolNumberRow("Drill diameter (mm)", "56")
+	local kerfInput = toolNumberRow("Saw kerf (mm)", "14")
+	local meshRow = row(29)
+	local meshButton = button(meshRow, "EditableMesh saw: ON (native fallback)", 0, 1, function()
+		meshSaw = not meshSaw
+		meshButton.Text = "EditableMesh saw: " .. (if meshSaw then "ON" else "OFF")
+	end)
+	line("Click material twice to define saw path.", 24)
 
 	line("3D TRANSFORM HANDLES")
 	local transformStatus = line("Mode: MOVE (G)")
 	local function setTransformMode(mode: string)
+		activeTool = nil
+		sawFirst = nil
+		toolStatus.Text = "Tool: none"
 		transformGizmo:setMode(mode)
 		transformStatus.Text = "Mode: " .. string.upper(mode)
 	end
@@ -260,8 +324,8 @@ function Debug.start()
 		end
 	end)
 
-	line("PARAMETRIC PRIMITIVE EDITOR")
-	line("NUMERIC PRIMITIVE EDITOR // 0.05 / 15deg")
+	line("MATERIAL ENVELOPE EDITOR")
+	line("Boundary snap 0.05 / rotation 15°")
 	local function editRow(label: string, field: string, axes)
 		local container = row(32)
 		make("TextLabel", {
@@ -311,11 +375,9 @@ function Debug.start()
 			end)
 		end
 	end
-	editRow("POS", "position", { "X", "Y", "Z" })
+	editRow("MIN", "position", { "X", "Y", "Z" })
 	editRow("SIZE", "size", { "X", "Y", "Z" })
 	editRow("ROT", "rotation", { "X", "Y", "Z" })
-	editRow("HOLE", "bore", { " " })
-	editRow("WALL", "wall", { " " })
 
 	local deleteRow = row(29)
 	button(deleteRow, "Delete Component", 0, 1, function()
@@ -407,12 +469,58 @@ function Debug.start()
 		local model = hit.Instance:FindFirstAncestorOfClass("Model")
 		local id = if model then model:GetAttribute("FORMComponentId") else nil
 		if typeof(id) == "number" and document.components[id] then
-			selectComponent(id)
+			local component = document.components[id]
+			if id ~= selectedId then selectComponent(id) sawFirst = nil end
+			if not activeTool then return end
+			-- Fabrication is intentionally defined on the upper local face,
+			-- using the selected material's uncut coordinate system.
+			local node = component.nodes[1]
+			local pose = Compiler.pose(node)
+			local normal = pose:VectorToObjectSpace(hit.Normal)
+			if normal.Y < 0.72 then
+				message("Drill and saw currently operate on the upper face")
+				return
+			end
+			local localPoint = pose:PointToObjectSpace(hit.Position)
+			local x = Quantize.snap(localPoint.X, Quantize.Grid)
+			local z = Quantize.snap(localPoint.Z, Quantize.Grid)
+			if activeTool == "Drill" then
+				local mm = tonumber(diameterInput.Text)
+				if not mm or not Quantize.isFinite(mm) or mm <= 0 then
+					message("Enter a positive drill diameter in mm")
+					return
+				end
+				local ok, reason = document:addOperation(component, "Drill", {
+					x = x, z = z, diameter = mm / 280,
+				})
+				if ok then changed(component) message("Drilled " .. tostring(mm) .. " mm through-hole")
+				else message(reason) end
+			elseif activeTool == "Saw" then
+				if not sawFirst then
+					sawFirst = { id = id, x = x, z = z }
+					message("Saw start chosen. Click endpoint on same upper face")
+					return
+				end
+				local mm = tonumber(kerfInput.Text)
+				if not mm or not Quantize.isFinite(mm) or mm <= 0 then
+					message("Enter a positive saw kerf in mm")
+					return
+				end
+				local ok, reason = document:addOperation(component, "Saw", {
+					x1 = sawFirst.x, z1 = sawFirst.z, x2 = x, z2 = z,
+					kerf = mm / 280, useMesh = meshSaw,
+				})
+				if ok then
+					sawFirst = nil
+					changed(component)
+					message("Saw cut recorded; compiling material")
+				else message(reason) end
+			end
 		end
 	end)
 
 	refresh()
-	message("Fixed-origin workspace. Direct shapes; CSG only inside special templates.")
+	message("Boundary-aligned workpieces. Drill click; saw click start/end. Cut history editable.")
 end
 
 return Debug
