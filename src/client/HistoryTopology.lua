@@ -320,50 +320,56 @@ function HistoryTopology.build(part:BasePart,component)
 	-- reconstruct a guessed bevel corner after the Boolean: the new
 	-- exposed corner faces come from the source polyhedron itself.
 
+	-- Pair File features before building their topology, exactly like
+	-- Fabricator. Both profiles terminate on ONE miter plane and reuse
+	-- the real projected cutter vertices; there is no third corner mesh.
+	local miterBySpec={}
+	local earlier={}
+	local pairedCorners={}
+	for _,spec in ipairs(completedBevels) do
+		for _,previous in ipairs(earlier) do
+			local junction=CornerTriangle.between(previous,spec)
+			if not junction then continue end
+			local cornerKey=key(point(junction.corner))
+			if pairedCorners[cornerKey] or miterBySpec[previous] or miterBySpec[spec] then
+				continue
+			end
+			local firstEnd,secondEnd=CornerTriangle.miterEnds(junction,previous,spec)
+			miterBySpec[previous]=firstEnd
+			miterBySpec[spec]=secondEnd
+			pairedCorners[cornerKey]=true
+			break
+		end
+		table.insert(earlier,spec)
+	end
+
 	local newBevelFaces={}
 	for _,spec in ipairs(completedBevels) do
 		local old=edgeMap[edgeKey(point(spec.a),point(spec.b))]
 		if old then old.retired=true end
-		local segments=spec.segments or 1
-		if segments>1 then
-			local strips,why=GeometryCutter.roundedSurfaces(
-				spec.a,spec.b,spec.n1,spec.n2,spec.width,segments)
-			if not strips then
-				warn("FORM round surface topology unavailable: "..tostring(why))
-				continue
-			end
-			for _,surface in ipairs(strips) do
-				local face=addFace(surface.polygon,surface.normal,"file_round")
-				if face then table.insert(newBevelFaces,face) end
-			end
-		else
-			local solidFaces,why=GeometryCutter.fileFaces(spec.a,spec.b,
-				spec.n1,spec.n2,spec.width,false,{})
-			if not solidFaces then
-				warn("FORM bevel surface topology unavailable: "..tostring(why))
-				continue
-			end
-			local diagonal=(spec.n1+spec.n2).Unit
-			for _,surface in ipairs(solidFaces) do
-				if surface.normal:Dot(diagonal)>=-0.96 then continue end
-				local polygon={}
-				for i=#surface.polygon,1,-1 do
-					table.insert(polygon,surface.polygon[i])
-				end
-				local face=addFace(polygon,-surface.normal,"file_chamfer")
-				if face then table.insert(newBevelFaces,face) end
-			end
+		local strips,why=GeometryCutter.fileSurfaceFaces(
+			spec.a,spec.b,spec.n1,spec.n2,spec.width,
+			spec.segments or 1,miterBySpec[spec])
+		if not strips then
+			warn("FORM File surface topology unavailable: "..tostring(why))
+			continue
+		end
+		for _,surface in ipairs(strips) do
+			local face=addFace(surface.polygon,surface.normal,
+				if (spec.segments or 1)>1 then "file_round" else "file_chamfer")
+			if face then table.insert(newBevelFaces,face) end
 		end
 	end
 
-	-- Attach trim segments to the real adjacent planar faces. The original
-	-- source edge is no longer selectable; new bevel edges gain their own
-	-- normal pair, including when a top wedge meets a vertical chamfer.
+	-- Original sharp edges are retired. The longitudinal trim lines
+	-- belong to the source faces; the matching miter-cap lines are
+	-- automatically shared by both fillets through edgeKey equality.
 	for _,bevelFace in ipairs(newBevelFaces) do
 		for _,edge in ipairs(bevelFace.edges) do
 			if #edge.faces>=2 then continue end
 			for _,candidate in ipairs(faces) do
-				if candidate==bevelFace or candidate.normal:Dot(bevelFace.normal)>0.985 then
+				if candidate==bevelFace
+					or candidate.normal:Dot(bevelFace.normal)>0.995 then
 					continue
 				end
 				local normal=candidate.normal
@@ -379,49 +385,7 @@ function HistoryTopology.build(part:BasePart,component)
 			end
 		end
 	end
-	-- The little top triangle at the concave intersection is generated
-	-- from the identical pair of exterior File features as Fabricator.
-	-- It is an actual sloped face; the old squared corner is not a face.
-	local cornerDone={}
-	for i,op in ipairs(completedBevels) do
-		local candidate=if op.interior then nil else op
-		if not candidate then continue end
-		for j=1,i-1 do
-			local prior=completedBevels[j]
-			local corner=prior and CornerTriangle.between(prior,candidate)
-			if not corner then continue end
-			local cornerKey=key(point(corner.corner))
-			if cornerDone[cornerKey] then continue end
-			cornerDone[cornerKey]=true
-			local chipFaces=CornerTriangle.faces(corner)
-			if not chipFaces then continue end
-			-- Both exterior profiles meet along the same diagonal seam.
-			-- Register every resulting miter strip, not a fake single
-			-- triangular face, so edge selection follows its segmentation.
-			for _,surface in ipairs(chipFaces) do
-				if not surface.exposed then continue end
-				local displayed=addFace(surface.polygon,-surface.normal,"file_corner_miter")
-				if displayed then
-					for _,edge in ipairs(displayed.edges) do
-						if #edge.faces>=2 then continue end
-						for _,otherFace in ipairs(faces) do
-							if otherFace==displayed then continue end
-							local n=otherFace.normal
-							local origin=otherFace.polygon[1]
-							if math.abs((edge.a-origin):Dot(n))<0.008
-								and math.abs((edge.b-origin):Dot(n))<0.008 then
-								if not table.find(edge.faces,otherFace.id) then
-									table.insert(edge.faces,otherFace.id)
-									table.insert(otherFace.edges,edge)
-								end
-								break
-							end
-						end
-					end
-				end
-			end
-		end
-	end
+
 	-- Edges that have been replaced by chamfers are not selectable
 	-- again. Keep the new bevel trim lines (shared with real neighboring
 	-- faces) and expose the same joined-corner set used by Fabricator.
