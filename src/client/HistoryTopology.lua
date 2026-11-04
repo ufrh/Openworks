@@ -324,43 +324,34 @@ function HistoryTopology.build(part:BasePart,component)
 	for _,spec in ipairs(completedBevels) do
 		local old=edgeMap[edgeKey(point(spec.a),point(spec.b))]
 		if old then old.retired=true end
-		local planes={}
-		local solidFaces,why=GeometryCutter.fileFaces(spec.a,spec.b,
-			spec.n1,spec.n2,spec.width,spec.interior,planes)
-		if not solidFaces then
-			warn("FORM bevel surface topology unavailable: "..tostring(why))
-			continue
-		end
-		local diagonal=(spec.n1+spec.n2).Unit
-		for _,surface in ipairs(solidFaces) do
-			-- The CSG subtractive cutter's inner diagonal normal points
-			-- INTO the remaining material. Its resulting manufactured
-			-- bevel face points the other way. For additive interior
-			-- wedges the source surface already points outward.
-			local slopeDot=surface.normal:Dot(diagonal)
-			local exposed=if spec.interior then slopeDot>0.96 else slopeDot < -0.96
-			local junction=false
-			if spec.interior then
-				for _,plane in ipairs(planes) do
-					if surface.normal:Dot(plane.normal)>0.96 then
-						exposed=true
-						junction=true
-						break
-					end
-				end
+		local segments=spec.segments or 1
+		if segments>1 then
+			local strips,why=GeometryCutter.roundedSurfaces(
+				spec.a,spec.b,spec.n1,spec.n2,spec.width,segments)
+			if not strips then
+				warn("FORM round surface topology unavailable: "..tostring(why))
+				continue
 			end
-			if not exposed then continue end
-			local surfaceNormal=if spec.interior then surface.normal else -surface.normal
-			local polygon=if spec.interior then surface.polygon else {}
-			if not spec.interior then
+			for _,surface in ipairs(strips) do
+				local face=addFace(surface.polygon,surface.normal,"file_round")
+				if face then table.insert(newBevelFaces,face) end
+			end
+		else
+			local solidFaces,why=GeometryCutter.fileFaces(spec.a,spec.b,
+				spec.n1,spec.n2,spec.width,false,{})
+			if not solidFaces then
+				warn("FORM bevel surface topology unavailable: "..tostring(why))
+				continue
+			end
+			local diagonal=(spec.n1+spec.n2).Unit
+			for _,surface in ipairs(solidFaces) do
+				if surface.normal:Dot(diagonal)>=-0.96 then continue end
+				local polygon={}
 				for i=#surface.polygon,1,-1 do
 					table.insert(polygon,surface.polygon[i])
 				end
-			end
-			local face=addFace(polygon,surfaceNormal,
-				if junction then "file_junction" else "file_chamfer")
-			if face then
-				table.insert(newBevelFaces,face)
+				local face=addFace(polygon,-surface.normal,"file_chamfer")
+				if face then table.insert(newBevelFaces,face) end
 			end
 		end
 	end
