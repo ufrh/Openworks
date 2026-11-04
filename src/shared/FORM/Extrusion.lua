@@ -46,23 +46,42 @@ function Extrusion.create(node, operation): (MeshPart, () -> ())
 			table.insert(bottom, editable:AddVertex(Vector3.new(x, minY - center.Y, z)))
 			table.insert(top, editable:AddVertex(Vector3.new(x, maxY - center.Y, z)))
 		end
-		-- The triangulator returns CCW points in X/Z. X cross Z points -Y.
-		for _, triangle in ipairs(triangles) do
-			local a, b, c = triangle[1], triangle[2], triangle[3]
-			editable:AddTriangle(top[a], top[c], top[b]) -- +Y top
-			editable:AddTriangle(bottom[a], bottom[b], bottom[c]) -- -Y bottom
+		-- Keep each face's appearance explicit. Roblox reuses corner normals and
+		-- color IDs by default; shared cap/side normals produced dark, smoothed
+		-- shading on the intentionally sharp edges of extruded sketches.
+		local white = editable:AddColor(Color3.new(1, 1, 1), 1)
+		local up = editable:AddNormal(Vector3.yAxis)
+		local down = editable:AddNormal(-Vector3.yAxis)
+		local function triangle(a: number, b: number, c: number, normalId: number)
+			local faceId = editable:AddTriangle(a, b, c)
+			editable:SetFaceNormals(faceId, { normalId, normalId, normalId })
+			editable:SetFaceColors(faceId, { white, white, white })
+		end
+		-- Positive winding in X/Z has a -Y normal in Roblox world space.
+		for _, indices in ipairs(triangles) do
+			local a, b, c = indices[1], indices[2], indices[3]
+			triangle(top[a], top[c], top[b], up)
+			triangle(bottom[a], bottom[b], bottom[c], down)
 		end
 		for i = 1, #points do
 			local nextIndex = i % #points + 1
-			-- Outward facing side wall for CCW X/Z profiles.
-			editable:AddTriangle(bottom[i], top[i], top[nextIndex])
-			editable:AddTriangle(bottom[i], top[nextIndex], bottom[nextIndex])
+			local direction = points[nextIndex] - points[i]
+			local outward = Vector3.new(direction.Y, 0, -direction.X).Unit
+			local sideNormal = editable:AddNormal(outward)
+			-- Both triangles on each side share the same hard/flat normal.
+			triangle(bottom[i], top[i], top[nextIndex], sideNormal)
+			triangle(bottom[i], top[nextIndex], bottom[nextIndex], sideNormal)
 		end
 		meshPart = AssetService:CreateMeshPartAsync(Content.fromObject(editable), {
 			CollisionFidelity = Enum.CollisionFidelity.Hull,
 		})
 		if not meshPart then error("EditableMesh conversion returned no MeshPart") end
 		meshPart.Name = "FORM_DisposableProfileExtrusion"
+		meshPart.Color = Color3.new(1, 1, 1)
+		meshPart.Material = Enum.Material.SmoothPlastic
+		meshPart.TextureID = ""
+		meshPart.Transparency = 0
+		meshPart.Reflectance = 0
 		meshPart.Anchored = true
 		meshPart.CanCollide = false
 		meshPart.CanTouch = false
