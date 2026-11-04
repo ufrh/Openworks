@@ -2,6 +2,7 @@
 -- Build watertight CSG cutters from arbitrary plane loops. Face/edge tools
 -- use current compiled geometry; an EditableMesh is never retained in history.
 local AssetService = game:GetService("AssetService")
+local BevelJunction = require(script.Parent.BevelJunction)
 local GeometryCutter = {}
 
 -- Ear-clips arbitrary simple planar cutter contours. This lets a face inset
@@ -206,23 +207,107 @@ local function bevelPlan(edgeA:Vector3,edgeB:Vector3,
 	return {profile=profile,travel=along+axis*edgeExtension*2},nil
 end
 
+-- Turn one convex clipped bevel solid into ONE watertight disposable
+-- MeshPart. The exact same face polygons are consumed by HistoryTopology.
+-- This is never CSG readback, so no CreateEditableMeshAsync is required.
+function GeometryCutter.convexSolid(faces):(MeshPart,()->())
+	local vertices={}
+	local minB=Vector3.new(math.huge,math.huge,math.huge)
+	local maxB=Vector3.new(-math.huge,-math.huge,-math.huge)
+	for _,face in ipairs(faces) do
+		for _,p in ipairs(face.polygon) do
+			table.insert(vertices,p)
+			minB=Vector3.new(math.min(minB.X,p.X),math.min(minB.Y,p.Y),math.min(minB.Z,p.Z))
+			maxB=Vector3.new(math.max(maxB.X,p.X),math.max(maxB.Y,p.Y),math.max(maxB.Z,p.Z))
+		end
+	end
+	if #faces<4 or #vertices<12 then error("Clipped bevel has no solid volume",0) end
+	local center=(minB+maxB)*0.5
+	local editable:EditableMesh?=nil
+	local part:MeshPart?=nil
+	local success,failure=pcall(function()
+		editable=AssetService:CreateEditableMesh()
+		if not editable then error("Cannot allocate bevel EditableMesh") end
+		local ids={}
+		local function vertexId(p:Vector3):number
+			local key=string.format("%d:%d:%d",math.round(p.X*1e6),
+				math.round(p.Y*1e6),math.round(p.Z*1e6))
+			if not ids[key] then ids[key]=editable:AddVertex(p-center) end
+			return ids[key]
+		end
+		local white=editable:AddColor(Color3.new(1,1,1),1)
+		for _,face in ipairs(faces) do
+			local loop=face.polygon
+			if #loop<3 then continue end
+			local normal=editable:AddNormal(face.normal.Unit)
+			for i=2,#loop-1 do
+				local p,q,r=loop[1],loop[i],loop[i+1]
+				if (q-p):Cross(r-p).Magnitude>1e-8 then
+					local f=editable:AddTriangle(vertexId(p),vertexId(q),vertexId(r))
+					editable:SetFaceNormals(f,{normal,normal,normal})
+					editable:SetFaceColors(f,{white,white,white})
+				end
+			end
+		end
+		part=AssetService:CreateMeshPartAsync(Content.fromObject(editable),{
+			CollisionFidelity=Enum.CollisionFidelity.Hull,
+		})
+		if not part then error("Bevel mesh conversion returned no MeshPart") end
+		part.Name="FORM_ClippedInsideBevel"
+		part.CFrame=CFrame.new(center)
+		part.Color=Color3.new(1,1,1)
+		part.Material=Enum.Material.SmoothPlastic
+		part.TextureID=""
+		part.Anchored=true
+		part.CanCollide=false
+		part.CanTouch=false
+		part.CanQuery=false
+	end)
+	if not success or not part or not editable then
+		if part then part:Destroy() end
+		if editable then editable:Destroy() end
+		error("Clipped bevel creation failed: "..tostring(failure),0)
+	end
+	local disposed=false
+	return part,function()
+		if disposed then return end
+		disposed=true
+		part:Destroy()
+		editable:Destroy()
+	end
+end
+
 function GeometryCutter.validateFile(edgeA:Vector3,edgeB:Vector3,
 	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?):(boolean,string?)
 	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
 	return plan~=nil,why
 end
 
+-- Shared, read-only bevel face geometry used for fabrication AND picking.
+-- All neighboring exterior chamfer planes clip the inside wedge BEFORE
+-- UnionAsync. This cannot refill already-cut top and bottom bevels.
+function GeometryCutter.fileFaces(edgeA:Vector3,edgeB:Vector3,
+	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?,
+	planes)
+	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
+	if not plan then return nil,why end
+	local base=BevelJunction.prismFaces(plan.profile,plan.travel)
+	return BevelJunction.clipFaces(base,if interior then (planes or {}) else {})
+end
+
 function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
 	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?,
-	_taperA:boolean?,_taperB:boolean?)
-	-- Retain optional parameters for backward-compatible history replay,
-	-- but DO NOT run the previous tapered loft: it introduced malformed
-	-- wedges and visible rectangular notches on concave corners.
+	_taperA:boolean?,_taperB:boolean?,planes)
+	if interior and planes and #planes>0 then
+		local faces,why=GeometryCutter.fileFaces(
+			edgeA,edgeB,outwardA,outwardB,width,true,planes)
+		if not faces then error(why or "Invalid joined bevel geometry",0) end
+		return GeometryCutter.convexSolid(faces)
+	end
 	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
 	if not plan then error(why or "Invalid bevel geometry",0) end
 	return GeometryCutter.prism(plan.profile,plan.travel)
 end
-
 
 
 return GeometryCutter
