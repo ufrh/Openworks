@@ -472,6 +472,12 @@ function SketchEditor:render()
 	if self.closed then
 		local bottom, top = extrusionRange(node, self.mode,
 			Quantize.snap(self.depthMM / MM_PER_STUD, Quantize.Grid), self.through)
+		if self.standalone then
+			-- New-body preview is exactly floor Y=0 to the chosen height.
+			-- The compiler's tiny CSG overlap margin is not a design dimension.
+			bottom = node.size.Y / 2
+			top = bottom + Quantize.snap(self.depthMM / MM_PER_STUD, Quantize.Grid)
+		end
 		for i, p in ipairs(self.points) do
 			local q = self.points[i % #self.points + 1]
 			local aw,bw = worldAt(p,top),worldAt(q,top)
