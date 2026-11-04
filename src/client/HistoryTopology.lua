@@ -318,6 +318,133 @@ function HistoryTopology.build(part:BasePart,component)
 			end
 		end
 	end
+	-- Reconcile the SAME FILE junctions used by the CSG compiler, then
+	-- rebuild the actual bevel boundary graph. A new additive inside wedge
+	-- must shorten where an existing outside bevel plane cuts across it.
+	-- Source sharp edges are retired; trim lines and joined-corner edges
+	-- replace them in the next hover/click selection pass.
+	for i,spec in ipairs(completedBevels) do
+		for j=1,i-1 do
+			local plan=BevelJunction.plan(completedBevels[j],spec)
+			if plan then table.insert(bevelJunctions,plan) end
+		end
+	end
+
+	local function clipContour(poly:{Vector3},planePoint:Vector3,planeNormal:Vector3):{Vector3}
+		local result={}
+		for i,a in ipairs(poly) do
+			local b=poly[i%#poly+1]
+			local da=(a-planePoint):Dot(planeNormal)-0.002
+			local db=(b-planePoint):Dot(planeNormal)-0.002
+			local insideA,insideB=da<=0,db<=0
+			if insideA then table.insert(result,a) end
+			if insideA~=insideB then
+				local t=math.clamp(da/(da-db),0,1)
+				table.insert(result,a+(b-a)*t)
+			end
+		end
+		-- Avoid zero-length edges at exactly coplanar intersections.
+		local clean={}
+		for _,v in ipairs(result) do
+			if #clean==0 or (clean[#clean]-v).Magnitude>EPS then
+				table.insert(clean,v)
+			end
+		end
+		if #clean>=2 and (clean[1]-clean[#clean]).Magnitude<EPS then
+			table.remove(clean)
+		end
+		return clean
+	end
+
+	local faceByFile={}
+	local function addAdjacent(edge,face)
+		if not edge or not face or table.find(edge.faces,face.id) then return end
+		table.insert(edge.faces,face.id)
+		if not table.find(face.edges,edge) then table.insert(face.edges,edge) end
+	end
+
+	for _,spec in ipairs(completedBevels) do
+		local a,b,n1,n2,w=spec.a,spec.b,spec.n1,spec.n2,spec.width
+		local old=edgeMap[edgeKey(point(a),point(b))]
+		if old then old.retired=true end
+		local normalSum=n1+n2
+		local dot=n1:Dot(n2)
+		if normalSum.Magnitude<0.01 or math.abs(dot)>0.84 then continue end
+		local d1=(n1*dot-n2).Unit
+		local d2=(n2*dot-n1).Unit
+		local sign=if spec.interior then -1 else 1
+		local contour={
+			a+d1*w*sign,b+d1*w*sign,
+			b+d2*w*sign,a+d2*w*sign,
+		}
+		if spec.interior then
+			for _,junction in ipairs(bevelJunctions) do
+				if junction.inner~=spec then continue end
+				local o=junction.outer
+				local nd=o.n1:Dot(o.n2)
+				local tangent=(o.n1*nd-o.n2).Unit
+				local bevelPlanePoint=o.a+tangent*o.width
+				local bevelPlaneNormal=(o.n1+o.n2).Unit
+				contour=clipContour(contour,bevelPlanePoint,bevelPlaneNormal)
+				if #contour<3 then break end
+			end
+		end
+		if #contour<3 then continue end
+		local face=addFace(contour,normalSum.Unit,"file_chamfer")
+		if not face then continue end
+		faceByFile[spec]=face
+		-- The chamfer's two long boundary lines lie on the original
+		-- adjacent faces. Attach them there; never leave them as one-face
+		-- decoration while the obsolete sharp edge remains selectable.
+		for _,edge in ipairs(face.edges) do
+			for _,rawNormal in ipairs({n1,n2}) do
+				local wanted=direction(rawNormal)
+				local origin=point(a)
+				if math.abs((edge.a-origin):Dot(wanted))>0.008
+					or math.abs((edge.b-origin):Dot(wanted))>0.008 then
+					continue
+				end
+				local found=nil
+				if old then
+					for _,fid in ipairs(old.faces) do
+						local f=faces[fid]
+						if f and f~=face and f.normal:Dot(wanted)>0.97 then
+							found=f break
+						end
+					end
+				end
+				if not found then
+					for _,f in ipairs(faces) do
+						if f~=face and f.normal:Dot(wanted)>0.97 and
+							math.abs((edge.a-f.polygon[1]):Dot(f.normal))<0.008 then
+							found=f
+						end
+					end
+				end
+				addAdjacent(edge,found)
+			end
+		end
+	end
+
+	-- When the interior bevel is capped by an exterior bevel plane, the
+	-- resulting V-shaped trim edge is adjacent to BOTH new bevel surfaces.
+	-- Generate its selection adjacency from those actual shared planes.
+	for _,junction in ipairs(bevelJunctions) do
+		local innerFace=faceByFile[junction.inner]
+		local outerFace=faceByFile[junction.outer]
+		if not innerFace or not outerFace then continue end
+		local outside=junction.outer
+		local dot=outside.n1:Dot(outside.n2)
+		local surfacePoint=point(outside.a+(outside.n1*dot-outside.n2).Unit*outside.width)
+		local surfaceNormal=direction((outside.n1+outside.n2).Unit)
+		for _,edge in ipairs(innerFace.edges) do
+			if math.abs((edge.a-surfacePoint):Dot(surfaceNormal))<0.013
+				and math.abs((edge.b-surfacePoint):Dot(surfaceNormal))<0.013 then
+				addAdjacent(edge,outerFace)
+			end
+		end
+	end
+
 	-- Flat perimeter bevels taper at the endpoints of *concave*
 	-- vertical corners. Without this the cutter retains a full-width
 	-- rectangular endcap, creating the boxed triangle at the notch top
