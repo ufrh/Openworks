@@ -393,10 +393,10 @@ function HistoryTopology.build(part:BasePart,component)
 	-- It is an actual sloped face; the old squared corner is not a face.
 	local cornerDone={}
 	for i,op in ipairs(completedBevels) do
-		local candidate=CornerTriangle.fileSpec(node,op)
+		local candidate=if op.interior then nil else op
 		if not candidate then continue end
 		for j=1,i-1 do
-			local prior=CornerTriangle.fileSpec(node,completedBevels[j])
+			local prior=completedBevels[j]
 			local corner=prior and CornerTriangle.between(prior,candidate)
 			if not corner then continue end
 			local cornerKey=key(point(corner.corner))
