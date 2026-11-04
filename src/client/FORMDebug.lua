@@ -206,7 +206,9 @@ function Debug.start()
 				elseif operation.kind == "File" then
 					description = string.format("FILE %s %.0fmm", operation.edge, operation.width * 280)
 				elseif operation.kind == "FileMesh" then
-					description = string.format("FILE EDGE %.0fmm",operation.width*280)
+					description = string.format("%s %.0fmm",
+						if operation.interior then "FILE INNER" else "FILE EDGE",
+						operation.width*280)
 				elseif operation.kind == "InsetFace" then
 					description = string.format("INSET FACE %.0fmm",operation.margin*280)
 				elseif operation.kind == "Groove" then
@@ -768,7 +770,12 @@ function Debug.start()
 			local edge=topology.closestEdge(topology,target.hit.Position,target.hit.Normal,
 				camera,mouse,24)
 			if not edge or #edge.faces~=2 then toolVisualizer:hide() return end
-			toolVisualizer:meshEdge(topology.part,edge,width)
+			local f1,f2=topology.faces[edge.faces[1]],topology.faces[edge.faces[2]]
+			local inside=(string.find(f1.tag or "","_floor")~=nil
+				and string.find(f2.tag or "","_wall")~=nil)
+				or (string.find(f2.tag or "","_floor")~=nil
+				and string.find(f1.tag or "","_wall")~=nil)
+			toolVisualizer:meshEdge(topology.part,edge,width,inside)
 		elseif activeTool == "Groove" or activeTool == "Kerf" then
 			if not sawFirst or sawFirst.id~=target.id then
 				toolVisualizer:hide() return
@@ -884,8 +891,17 @@ function Debug.start()
 				topology.faces[edge.faces[1]].normal))
 			local normalB=pose:VectorToObjectSpace(topology.part.CFrame:VectorToWorldSpace(
 				topology.faces[edge.faces[2]].normal))
+			-- On a recess floor/wall corner, the solid occupies the
+			-- re-entrant side. An exterior wedge would sit in empty space.
+			local f1=topology.faces[edge.faces[1]]
+			local f2=topology.faces[edge.faces[2]]
+			local interior=(string.find(f1.tag or "","_floor")~=nil
+				and string.find(f2.tag or "","_wall")~=nil)
+				or (string.find(f2.tag or "","_floor")~=nil
+				and string.find(f1.tag or "","_wall")~=nil)
 			kind="FileMesh"
-			data={a=a,b=b,normalA=normalA,normalB=normalB,width=width}
+			data={a=a,b=b,normalA=normalA,normalB=normalB,
+				width=width,interior=interior}
 		elseif kind == "Groove" or kind == "Kerf" then
 			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology then message(why or "Surface indexing in progress") return end
