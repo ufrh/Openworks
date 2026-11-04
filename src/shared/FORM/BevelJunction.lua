@@ -76,11 +76,18 @@ function BevelJunction.plan(first,second)
 	end
 	if not shared or not unshared then return nil end
 	if math.abs(shared:Dot(unshared))>0.2 then return nil end
-	-- The lateral axis runs *out of* the old perimeter into the missing
-	-- corner, exactly where the additive interior wedge was introduced.
-	local intoVoid=(corner-otherOuter).Unit
+	-- The wedge lies between the two INSIDE WALL rays leaving the
+	-- concave corner. Continue ALONG the existing perimeter edge, not
+	-- backwards beyond its endpoint (which cuts the wrong solid arm).
+	local intoVoid=(otherOuter-corner).Unit
 	if math.abs(intoVoid:Dot(unshared))>0.12 then return nil end
 	if math.abs(intoVoid:Dot(innerAxis.Unit))>0.12 then return nil end
+	-- The perimeter ray must point toward the OTHER exposed wall normal.
+	-- Without this test an outer edge from the opposite side of the
+	-- corner could be paired and produce an unrelated CSG gouge.
+	local otherInner=if shared:Dot(inner.n1)>NORMAL_DOT then inner.n2.Unit
+		else inner.n1.Unit
+	if intoVoid:Dot(otherInner)<0.86 then return nil end
 	local remainingInner=if (corner-inner.a).Magnitude<(corner-inner.b).Magnitude
 		then inner.b else inner.a
 	local innerSpan=(remainingInner-corner).Magnitude
