@@ -137,8 +137,18 @@ function SurfaceTopology.extract(part: BasePart)
 				table.insert(face.triangles,t)
 				for _,n in ipairs(adjacency[t]) do
 					if not faceByTriangle[n] then
-						faceByTriangle[n]=fid
-						table.insert(queue,n)
+						-- Check against the seed plane, not just the
+						-- preceding triangle: otherwise a curved surface
+						-- can slowly chain into a fake planar CAD face.
+						local neighbor=triangles[n]
+						local seed=triangles[i]
+						local seedOrigin=vertices[seed.v[1]]
+						local neighborOrigin=vertices[neighbor.v[1]]
+						if neighbor.normal:Dot(seed.normal)>COPLANAR
+							and math.abs((neighborOrigin-seedOrigin):Dot(seed.normal))<0.002 then
+							faceByTriangle[n]=fid
+							table.insert(queue,n)
+						end
 					end
 				end
 			end
