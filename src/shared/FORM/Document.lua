@@ -280,7 +280,8 @@ function Document:addOperation(component, kind: string, data)
 			or (b-a).Magnitude < 0.01 or n1.Magnitude<0.9 or n2.Magnitude<0.9 then
 			return false, "Invalid edge filing geometry"
 		end
-		operation={kind="FileMesh",a=a,b=b,normalA=n1.Unit,normalB=n2.Unit,width=width}
+		operation={kind="FileMesh",a=a,b=b,normalA=n1.Unit,normalB=n2.Unit,
+			width=width,interior=data.interior==true}
 	elseif kind == "InsetFace" then
 		local points=data.points
 		local normal=data.normal
