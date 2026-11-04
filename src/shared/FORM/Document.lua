@@ -3,6 +3,7 @@
 -- A component's origin is the minimum local corner of its uncut envelope,
 -- while BasePart positioning continues to use the calculated center.
 local Quantize = require(script.Parent.Quantize)
+local SketchProfile = require(script.Parent.SketchProfile)
 
 local Document = {}
 Document.__index = Document
@@ -177,6 +178,33 @@ function Document:addOperation(component, kind: string, data)
 			kind = "Saw", x1 = x1, z1 = z1, x2 = x2, z2 = z2,
 			kerf = kerf, useMesh = data.useMesh == true,
 		}
+	elseif kind == "SketchExtrude" then
+		local mode = data.mode
+		if mode ~= "Add" and mode ~= "Remove" and mode ~= "Intersect" then
+			return false, "Choose Add, Remove or Intersect"
+		end
+		local depth = Quantize.snap(data.depth, Quantize.Grid)
+		if not Quantize.isFinite(depth) or depth < Quantize.MinSize
+			or depth > Quantize.MaxSize then
+			return false, "Extrusion depth must be 0.05 to 128 studs"
+		end
+		local snappedPoints = {}
+		for _, point in ipairs(data.points or {}) do
+			if typeof(point) ~= "Vector2" then
+				return false, "Sketch point must be Vector2"
+			end
+			table.insert(snappedPoints, Vector2.new(
+				Quantize.snap(point.X + node.size.X * 0.5, Quantize.Grid),
+				Quantize.snap(point.Y + node.size.Z * 0.5, Quantize.Grid)
+			))
+		end
+		local points, _, sketchError = SketchProfile.prepare(snappedPoints)
+		if not points then return false, sketchError end
+		operation = {
+			kind = "SketchExtrude", mode = mode,
+			depth = depth, through = data.through == true,
+			points = points,
+		}
 	else
 		return false, "Unknown fabrication tool"
 	end
@@ -211,7 +239,9 @@ function Document.snapshot(component)
 	local nodes, operations = {}, {}
 	for _, node in ipairs(component.nodes) do table.insert(nodes, table.clone(node)) end
 	for _, operation in ipairs(component.operations) do
-		table.insert(operations, table.clone(operation))
+		local copy = table.clone(operation)
+		if operation.points then copy.points = table.clone(operation.points) end
+		table.insert(operations, copy)
 	end
 	return {
 		id = component.id, name = component.name,
