@@ -1,61 +1,46 @@
-# FORM — Phase 1 construction sandbox
+# FORM Phase 1 — Parametric primitive editor
 
-The `dev` branch contains a local, temporary CAD-style construction harness. It is not yet a saveable or replicated game system.
+## Correct construction model
 
-## Workspace invariants
+FORM is a **primitive-based engineering editor**, not a freeform Boolean modeler. A component contains one editable parametric primitive. The user cannot add Boolean operands or run Union/Subtract in the construction interface.
 
-- **World-space workspace origin: `Vector3.zero`.** The 0.05-stud debug grid is fixed on the X/Z plane at Y=0 and never follows camera movement.
-- **Camera orbit pivot is locked to `(0,0,0)`.** Orbit and FOV/dolly hybrid zoom change the view, never the workspace or the orbit center.
-- Camera F/Home framing commands can change zoom to fit content but **cannot change the pivot**. Panning is intentionally disabled.
-- All new primitives spawn centered at the origin with **0.05 × 0.05 × 0.05 stud** envelopes.
-- Tube and Hole Block openings are inactive until their outer envelope can contain a valid opening.
+- **Block and Cylinder** are ordinary native Roblox Parts. Translation, rotation, and resizing update their `CFrame` and `Size` directly, without CSG or replacement.
+- **Tube and Hole Block** are named parametric templates. Their internal cylindrical voids are manufactured using `GeometryService:SubtractAsync` only when the template dimensions or its bore/wall parameter changes enough to require it.
+- Tubes and hole blocks start as solid 0.05 × 0.05 × 0.05-stud envelopes; their internal opening becomes valid only after dimensions allow it.
+- **Moving and rotating any primitive, including a CSG-manufactured special primitive, must not trigger a Boolean operation.**
+- While resizing an existing special primitive, its **single visible solid** updates immediately. Its internal cut is manufactured once after mouse release. A tiny amount of temporary cut distortion may occur during stretching, until the final parametric rebuild.
+- The old subtract/add editor controls, operand stacks, and duplicate ghost previews have been removed.
 
-## Camera
+This architecture is extendable with later *named primitives* such as Curved L, rounded corner, brackets, etc. Such templates define their own parameters and internal manufacturing, rather than exposing unrestricted Boolean editing.
 
-| Input | Behavior |
-| --- | --- |
-| RMB drag | Orbit fixed world origin |
-| MMB drag | Alternate orbit |
-| Ctrl+MMB drag | Zoom |
-| Mouse wheel | Smooth hybrid FOV + dolly zoom |
-| Drag the upper-right 3D view gizmo | Orbit |
-| Click a gizmo axis / Numpad 1,3,7 | Standard cardinal view |
-| Ctrl+Numpad 1,3,7 | Opposite cardinal view |
-| Numpad 5 | Orthographic toggle where supported |
-| Drag **ZOOM · DRAG UP/DOWN** button | Hybrid zoom |
-| F / Numpad Period | Zoom to include selection, without moving the origin |
-| Home | Zoom to include all components, without moving the origin |
+## Camera and grid
 
-The camera smooths its orbit angles, zoom distance and FOV independently and computes its final CFrame looking at `Vector3.zero` on each frame. Native orthographic view support depends on the Roblox client; unavailable clients remain in perspective, rather than using an extreme-distance approximation.
+- The workspace/grid and orbit target are fixed at world (0,0,0); no pan.
+- RMB/MMB drag: orbit; Ctrl+MMB or mouse wheel: smooth hybrid FOV + dolly zoom.
+- Top-right orientation gizmo can be dragged for orbit, clicked for axis views, or its lower Zoom button dragged vertically.
+- Numpad cardinal views and F/Home zoom-to-fit retain the fixed origin.
+- Adornment grid lines are 0.05 studs apart over a fixed 6×6-stud patch.
 
-## Editing
+## Transform UI and test
 
-1. In Roblox Studio, connect Rojo to `localhost:34872` using `START_OPENWORKS.bat`, and enter **Play**.
-2. Spawn a Block in the temporary `FORM // DEBUG 01` panel. It appears centered on the origin.
-3. Press **G** to move, **S** to resize, or **R** to rotate (or use the panel buttons). The manipulators are custom screen-projected GUI lines/rings and compact colored X/Y/Z controls, **not** Roblox Handles/ArcHandles.
-4. Drag an axis control. Screen-space control dimensions scale with part magnification and are clamped to a small, usable size. Position and dimensions snap to **0.05 studs**; rotation snaps to **15 degrees**.
-5. The authoritative parametric node updates **during the drag**. A translucent live source preview reflects each update immediately, with source color distinguishing additive and subtractive geometry. The compiled CSG result is rebuilt asynchronously with coalesced requests (roughly every 0.11 seconds while dragging), and compiled again on release. CSG can lag behind the source ghost during expensive operations; full Boolean cuts cannot be guaranteed every display frame.
-6. Expand a Block to a useful dimension, add **- Cylinder**, then resize/position/rotate that subtractive source node and check the live Boolean result.
-7. Original source nodes remain editable after compilation. Numeric POS/SIZE/ROT and bore/wall fields remain available.
+1. Sync `dev`, connect Rojo at localhost:34872, and enter Studio Play.
+2. Spawn **Block** (0.05 studs per axis). Select **S** for face resize: there are separate handles on **Left, Right, Top, Bottom, Front and Back**. Drag Top outward: only the top face should move; the bottom stays anchored. Drag Bottom: only the bottom should move.
+3. Use **G** to move, **R** to rotate. The previous stock Roblox handles and arc handles are restored, with a smaller interaction proxy.
+4. Check that ordinary Block/Cylinder resizing, moving, and rotating changes the single visible solid immediately with **no visible duplicate/trailing ghost and no CSG rebuilding**.
+5. Spawn **Hole Block**, resize until it supports an opening, and set its **HOLE** diameter. CSG should run to manufacture that internal hole. Subsequent **G/R** movements should transform the same geometry without any rebuild.
+6. Resize the Hole Block again: the current solid follows the drag instantly, then FORM remanufactures the exact inner hole on release.
+7. For tubes and cylinders, X and Z represent a linked radial diameter, rather than independent rectangular face dimensions.
 
-## Code boundaries
+## Source
 
-- `src/shared/FORM/Quantize.lua`: 0.05 stud and 15-degree snapping.
-- `src/shared/FORM/Document.lua`: pure parametric state and atomic transform validation.
-- `src/shared/FORM/Compiler.lua`: CSG compilation with GeometryService.
-- `src/client/Preview.lua`: live ghost plus throttled, revision-aware CSG compilation.
-- `src/client/FORMDebug.lua`: temporary inputs and selected-node bridge.
-- `src/client/BlenderCamera.lua`: fixed-origin camera with smooth hybrid zoom.
-- `src/client/GridOverlay.lua`: fixed nonphysical 0.05-stud adornment grid.
-- `src/client/ViewGizmo.lua`: draggable 3D ViewportFrame orientation and zoom control.
-- `src/client/TransformGizmo.lua`: custom projected handles/rings, no stock Roblox handles.
+- `src/shared/FORM/Document.lua`: one parametric primitive per component, 0.05 stud and 15° precision.
+- `src/shared/FORM/Compiler.lua`: only manufactures internal cuts for special templates.
+- `src/client/Preview.lua`: one visible instance; native property updates and size-change-triggered template manufacture.
+- `src/client/TransformGizmo.lua`: restored Roblox handles with all six face grips, opposite-face anchored scaling.
+- `src/client/FORMDebug.lua`: primitive creation and numeric editing; no unrestricted Boolean tools.
 
-## Known limitations
+## Limits
 
-- This branch is **not verified in a running Roblox Studio session** by the code author; verify UI hit testing and transform behavior in Play mode.
-- Roblox GeometryService may not resolve features as small as 0.05 studs. The grid snap precision does not guarantee CSG fidelity.
-- No save/load, server compilation, validation, persistence, multiplayer replication, shipped assemblies, constraints, or FORGE integration yet.
-- The 6×6-stud debug grid is a fixed visual patch, not an infinite world.
-- Temporary 2D projected transform handles prioritize cleanliness and accessibility over full CAD affordances such as free-plane transform and pivot editing.
-
-Roblox reference: https://create.roblox.com/docs/reference/engine/classes/GeometryService
+- GeometryService can fail on very small features; a 0.05-stud grid does not guarantee a 0.05-stud watertight hole.
+- This is local and unsaved. Server shipping, multiplayer, constraints, and FORGE integration are not implemented.
+- GitHub source verification is not a Roblox Studio runtime test. Verify all six faces and inspect Output if a special template cannot manufacture a cut.

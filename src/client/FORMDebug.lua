@@ -162,7 +162,7 @@ function Debug.start()
 		local component = selectedComponent()
 		local node = selectedNode()
 		info.Text = if component then ("Selection: " .. component.name) else "Selection: none"
-		nodeInfo.Text = if node then (string.format("Node %d/%d: %s [%s]", nodeIndex, #component.nodes, node.kind, node.operation)) else "Node: none"
+		nodeInfo.Text = if node then ("Primitive: " .. node.kind) else "Primitive: none"
 		for _, binding in ipairs(textFields) do
 			local box = binding.box
 			local value = nil
@@ -210,7 +210,7 @@ function Debug.start()
 		if phase == "begin" then
 			preview:beginLive(component, index)
 		elseif phase == "update" then
-			-- Update source ghost immediately; CSG compiles in throttled snapshots.
+			-- Update the existing solid immediately; no duplicate ghost.
 			preview:updateLive(component, index)
 			refresh()
 		elseif phase == "finish" then
@@ -260,28 +260,8 @@ function Debug.start()
 		end
 	end)
 
-	line("EDIT SELECTED COMPONENT")
-	local function add(kind: string, operation: string)
-		local component = selectedComponent()
-		if not component then message("Select a component first") return end
-
-		local base = component.nodes[1].position
-		-- New additive and subtractive nodes also begin as 0.05-stud cells.
-		local node = document:addNode(component, operation, kind, base)
-		nodeIndex = #component.nodes
-		changed(component)
-	end
-	pair("+ Block", function() add("Block", "Add") end, "+ Cylinder", function() add("Cylinder", "Add") end)
-	pair("- Block", function() add("Block", "Subtract") end, "- Cylinder", function() add("Cylinder", "Subtract") end)
-	pair("< Prev Node", function()
-		local component = selectedComponent()
-		if component then nodeIndex = math.max(1, nodeIndex - 1) refresh() end
-	end, "Next Node >", function()
-		local component = selectedComponent()
-		if component then nodeIndex = math.min(#component.nodes, nodeIndex + 1) refresh() end
-	end)
-
-	line("NUMERIC NODE EDITOR // SNAP 0.05 / 15deg")
+	line("PARAMETRIC PRIMITIVE EDITOR")
+	line("NUMERIC PRIMITIVE EDITOR // 0.05 / 15deg")
 	local function editRow(label: string, field: string, axes)
 		local container = row(32)
 		make("TextLabel", {
@@ -337,14 +317,8 @@ function Debug.start()
 	editRow("HOLE", "bore", { " " })
 	editRow("WALL", "wall", { " " })
 
-	pair("Delete Node", function()
-		local component = selectedComponent()
-		if not component then message("No selection") return end
-		local ok, reason = document:deleteNode(component, nodeIndex)
-		if not ok then message(reason) return end
-		nodeIndex = math.min(nodeIndex, #component.nodes)
-		changed(component)
-	end, "Delete Component", function()
+	local deleteRow = row(29)
+	button(deleteRow, "Delete Component", 0, 1, function()
 		local component = selectedComponent()
 		if not component then message("No selection") return end
 		preview:remove(component.id)
@@ -438,7 +412,7 @@ function Debug.start()
 	end)
 
 	refresh()
-	message("Workspace locked at origin. G/S/R: custom live transform handles.")
+	message("Fixed-origin workspace. Direct shapes; CSG only inside special templates.")
 end
 
 return Debug

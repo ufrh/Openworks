@@ -39,39 +39,30 @@ function Document.new()
 	return setmetatable({ components = {}, order = {}, nextComponent = 0, nextNode = 0 }, Document)
 end
 
-function Document:addNode(component, operation: string, kind: string, position: Vector3?)
+-- Components contain one editable, named parametric primitive, never a user
+-- authored union/subtraction tree. CSG is an implementation detail of templates.
+function Document:create(kind: string, position: Vector3)
 	assert(KINDS[kind], "Unknown FORM primitive: " .. tostring(kind))
-	assert(operation == "Add" or operation == "Subtract", "Unknown CSG operation")
-	assert(operation == "Add" or #component.nodes > 0, "The first node must be additive")
-
+	self.nextComponent += 1
 	self.nextNode += 1
+	local id = self.nextComponent
 	local node = {
 		id = self.nextNode,
 		kind = kind,
-		operation = operation,
-		position = Quantize.vector(position or Vector3.new(0, 3, 0), Quantize.Grid),
+		position = Quantize.vector(position, Quantize.Grid),
 		size = defaultSize(kind),
 		rotation = Vector3.zero,
 		bore = Quantize.MinSize,
 		wall = Quantize.MinSize,
 	}
-	table.insert(component.nodes, node)
-	component.revision += 1
-	return node
-end
-
-function Document:create(kind: string, position: Vector3)
-	self.nextComponent += 1
-	local id = self.nextComponent
 	local component = {
 		id = id,
 		name = kind .. " " .. id,
-		nodes = {},
-		revision = 0,
+		nodes = { node }, -- retained as internal schema, not a Boolean editor
+		revision = 1,
 	}
 	self.components[id] = component
 	table.insert(self.order, id)
-	self:addNode(component, "Add", kind, position)
 	return component
 end
 
@@ -130,11 +121,14 @@ end
 
 -- Atomic transform editing for viewport manipulators. A single drag step is one
 -- parametric revision; validation happens before any source definition is changed.
-function Document:applyTransform(component, index: number, position: Vector3?, size: Vector3?, rotation: Vector3?)
+function Document:applyTransform(component, index: number, position: Vector3?, size: Vector3?, rotation: Vector3?, preserveFaceAnchor: boolean?)
 	local node = component.nodes[index]
 	if not node then return false, "No node selected" end
 
-	local newPosition = Quantize.vector(position or node.position, Quantize.Grid)
+	-- A 0.05-stud face extension shifts its center only 0.025 studs.
+	-- Rotated face normals likewise need exact world coordinates.
+	local newPosition = if preserveFaceAnchor then (position or node.position)
+		else Quantize.vector(position or node.position, Quantize.Grid)
 	local newSize = Quantize.vector(size or node.size, Quantize.Grid)
 	local inputRotation = rotation or node.rotation
 	local newRotation = Vector3.new(
@@ -179,14 +173,6 @@ function Document:applyTransform(component, index: number, position: Vector3?, s
 	if previousPosition ~= newPosition or previousSize ~= newSize or previousRotation ~= newRotation then
 		component.revision += 1
 	end
-	return true, nil
-end
-
-function Document:deleteNode(component, index: number)
-	if index <= 1 then return false, "Keep the first additive node; delete the component instead" end
-	if not component.nodes[index] then return false, "No node at that index" end
-	table.remove(component.nodes, index)
-	component.revision += 1
 	return true, nil
 end
 

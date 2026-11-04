@@ -1,28 +1,26 @@
 # OPENWORKS
 
-An open-ended Roblox engineering/manufacturing sandbox.
+An open-ended Roblox mechanical engineering and manufacturing sandbox.
 
-**Development:** `dev` contains a locally editable, parametric FORM construction prototype. The previous workbench, saw/file, and fabrication prototype remain preserved on the `archive/pre-foundation-reset-2026-11-03` branch.
+Active development branch: `dev`. The obsolete workbench/saw/file system is preserved at `archive/pre-foundation-reset-2026-11-03`.
 
-## Current construction slice
+## FORM prototype
 
-- CSG-backed Block, Cylinder, Tube, and Hole Block components with editable Add/Subtract source nodes.
-- All primitive envelopes start at **0.05 × 0.05 × 0.05 studs**.
-- Fixed construction workspace/grid and camera orbit pivot at **(0,0,0)**.
-- Smooth camera with **RMB/MMB orbit**, blended FOV/dolly wheel zoom and a draggable zoom control. No pan.
-- Custom, camera-responsive X/Y/Z Move/Scale/Rotate manipulators instead of oversized built-in Roblox handles.
-- During gizmo dragging, source nodes and a translucent preview update immediately; actual GeometryService compilation is coalesced asynchronously and finalized at release.
-- Temporary debug UI; final Duotone interface has not been built.
+FORM is a **parametric primitive editor**, not an arbitrary Union/Subtract modeling tool. Every primitive begins at 0.05 × 0.05 × 0.05 studs.
 
-[Phase 1 controls, instructions, limitations](docs/FORM_PHASE1.md)
+- Native **Block** and **Cylinder** update CFrame/Size directly when moved, rotated, or resized.
+- Special **Tube** and **Hole Block** types are individually parameterized; CSG is used *internally* only to manufacture their void when their shape changes.
+- A modified special primitive is remanufactured after a resize or bore/wall change, **not** on every translation or rotation.
+- The construction workspace, 0.05-stud debug grid, and orbit target are fixed at (0,0,0).
+- Smooth hybrid FOV/dolly camera: RMB/MMB orbit, wheel zoom, and ViewportFrame view/zoom controls.
+- Restored six-face Roblox resize handles, move handles, and rotate arcs. Opposite faces stay anchored during per-face resize.
+- One visible solid per component: no neon ghost and no extra, trailing CSG preview.
+- Temporary debug UI; final Duotone interface is postponed.
 
-## Development workflow
+See [FORM Phase 1 instructions](docs/FORM_PHASE1.md).
 
-1. Open the configured OPENWORKS Roblox place in Studio.
-2. Run `START_OPENWORKS.bat` on Windows, select the `dev` branch, and connect Rojo to `localhost:34872`.
-3. Press Play to use the FORM construction harness.
-4. Use `STOP_OPENWORKS.bat` when finished.
+## Local development
 
-Rojo mappings: `src/shared` → ReplicatedStorage/Openworks; `src/server` → ServerScriptService/Openworks; `src/client` → StarterPlayerScripts/Openworks.
+Run `START_OPENWORKS.bat` with `dev`, connect the Studio Rojo plugin to localhost:34872, and press Play. Use `STOP_OPENWORKS.bat` when finished. Rojo maps src/shared, src/client, and src/server into the Roblox place.
 
-This source has been committed, but the most recent camera and gizmo changes require a real Studio playtest. No save/load, shipping, network replication, physics assembly or FORGE integration is included.
+Recent changes are source-verified but not yet Studio-runtime tested. Save/load, mechanical physics, multiplayer/shipping, and FORGE integration are not yet implemented.
