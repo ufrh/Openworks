@@ -10,7 +10,7 @@ local Fabricator = {}
 local OPTIONS = { SplitApart = false }
 
 function Fabricator.requiresCompile(component): boolean
-	return Compiler.requiresBoolean(component.nodes[1]) or #(component.operations or {}) > 0
+	return #(component.operations or {}) > 0
 end
 
 function Fabricator.geometryKey(component): string
@@ -42,7 +42,7 @@ end
 -- solids, cutters, and EditableMeshes are all disposed deterministically.
 function Fabricator.compile(component): (BasePart, string)
 	local node = component.nodes[1]
-	local current = Compiler.compileTemplate(node)
+	local current = Compiler.nativePart(node)
 	local meshCuts, nativeFallbacks = 0, 0
 	for _, op in ipairs(component.operations or {}) do
 		local preferMesh = op.kind == "Saw" and op.useMesh == true
