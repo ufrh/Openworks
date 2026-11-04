@@ -8,8 +8,11 @@ Document.__index = Document
 local KINDS = { Block = true, Cylinder = true, Tube = true, HoleBlock = true }
 local AXES = { X = true, Y = true, Z = true }
 
-local function defaultSize(_kind: string): Vector3
-	-- All spawned primitive envelopes start as a single 0.05-stud cell.
+local function defaultSize(kind: string): Vector3
+	-- A drilled block must start with enough material for a visible, manufacturable bore.
+	if kind == "HoleBlock" then
+		return Vector3.new(1, 0.25, 1)
+	end
 	return Vector3.new(Quantize.MinSize, Quantize.MinSize, Quantize.MinSize)
 end
 
@@ -52,7 +55,7 @@ function Document:create(kind: string, position: Vector3)
 		position = Quantize.vector(position, Quantize.Grid),
 		size = defaultSize(kind),
 		rotation = Vector3.zero,
-		bore = Quantize.MinSize,
+		bore = if kind == "HoleBlock" then 0.5 else Quantize.MinSize,
 		wall = Quantize.MinSize,
 	}
 	local component = {
