@@ -40,7 +40,7 @@ local function putAxis(v: Vector3, axis: string, n: number): Vector3
 	return Vector3.new(v.X, v.Y, n)
 end
 
-local function rayFor(point: Vector2): (Vector3, Vector3)?
+local function rayFor(point: Vector2): (Vector3?, Vector3?)
 	local camera = workspace.CurrentCamera
 	if not camera then return nil end
 	local ray = camera:ViewportPointToRay(point.X, point.Y)
@@ -131,7 +131,18 @@ function TransformGizmo.new(_playerGui: PlayerGui, document, onChange)
 
 	for _, spec in ipairs(AXES) do
 		local part, highlight = newGrip(folder, "Face_" .. spec.name, spec.color)
-		local grip = { part = part, highlight = highlight, normal = spec.normal,
+		local stem = Instance.new("Part")
+		stem.Name = "AxisStem_" .. spec.name
+		stem.Shape = Enum.PartType.Cylinder
+		stem.Anchored = true
+		stem.CanCollide = false
+		stem.CanTouch = false
+		stem.CanQuery = false
+		stem.CastShadow = false
+		stem.Material = Enum.Material.SmoothPlastic
+		stem.Color = spec.color
+		stem.Parent = folder
+		local grip = { part = part, highlight = highlight, stem = stem, normal = spec.normal,
 			axis = spec.axis, mode = "Face" }
 		table.insert(self.grips, grip)
 		self.lookup[part] = grip
@@ -292,6 +303,7 @@ function TransformGizmo:refresh()
 		grip.part.Transparency = if visible then 0 else 1
 		grip.part.CanQuery = visible
 		grip.highlight.Enabled = visible
+		if grip.stem then grip.stem.Transparency = if visible then 0.15 else 1 end
 		if visible and node then
 			local cf = frame(node)
 			local unit = visualScale(node.position)
@@ -304,6 +316,14 @@ function TransformGizmo:refresh()
 			end
 			grip.part.Position = cf:PointToWorldSpace(offset)
 			grip.part.Size = Vector3.one * unit
+			if grip.stem then
+				local direction = cf:VectorToWorldSpace(grip.normal)
+				local face = cf:PointToWorldSpace(grip.normal * (getAxis(node.size, grip.axis) / 2))
+				local length = unit * 1.35
+				grip.stem.Size = Vector3.new(length, unit * 0.18, unit * 0.18)
+				grip.stem.CFrame = CFrame.lookAt(face + direction * length / 2,
+					face + direction * length) * CFrame.Angles(0, math.pi / 2, 0)
+			end
 		end
 	end
 end
