@@ -6,6 +6,7 @@ local GeometryService = game:GetService("GeometryService")
 local Compiler = require(script.Parent.Compiler)
 local Cutters = require(script.Parent.Cutters)
 local Extrusion = require(script.Parent.Extrusion)
+local FileCutter = require(script.Parent.FileCutter)
 
 local Fabricator = {}
 local OPTIONS = { SplitApart = false }
@@ -22,10 +23,16 @@ function Fabricator.geometryKey(component): string
 	for _, op in ipairs(component.operations or {}) do
 		table.insert(pieces, if op.enabled == false then "disabled" else "enabled")
 		if op.kind == "Drill" then
-			table.insert(pieces, string.format("D|%.4f|%.4f|%.4f", op.x, op.z, op.diameter))
-		elseif op.kind == "Saw" then
-			table.insert(pieces, string.format("S|%.4f|%.4f|%.4f|%.4f|%.4f|%s",
-				op.x1, op.z1, op.x2, op.z2, op.kerf, tostring(op.useMesh)))
+			table.insert(pieces, string.format("D|%.6f|%.6f|%.6f|%.6f|%s",
+				op.x, op.z, op.diameter, op.depth or 0, tostring(op.through ~= false)))
+		elseif op.kind == "Saw" or op.kind == "Groove" then
+			table.insert(pieces, string.format("%s|%.6f|%.6f|%.6f|%.6f|%.6f|%.6f|%s|%s",
+				op.kind, op.x1, op.z1, op.x2, op.z2, op.kerf,
+				op.depth or 0, tostring(op.useMesh), tostring(op.through)))
+		elseif op.kind == "Inset" then
+			table.insert(pieces, string.format("I|%.6f|%.6f", op.margin, op.depth))
+		elseif op.kind == "File" then
+			table.insert(pieces, string.format("F|%s|%.6f", op.edge, op.width))
 		elseif op.kind == "SketchExtrude" then
 			table.insert(pieces, string.format("E|%s|%.4f|%s",
 				op.mode, op.depth, tostring(op.through)))
@@ -77,17 +84,19 @@ local function compileUnlocked(component): (BasePart, string)
 	local meshCuts, nativeFallbacks = 0, 0
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled == false then continue end
-		if op.kind == "SketchExtrude" then
-			local generated, cutter, release = pcall(Extrusion.create, node, op)
+		if op.kind == "SketchExtrude" or op.kind == "File" then
+			local creator = if op.kind == "File" then FileCutter.create else Extrusion.create
+			local generated, cutter, release = pcall(creator, node, op)
 			if not generated then
 				current:Destroy()
 				error("Sketch extrusion " .. tostring(op.id) .. ": " .. tostring(cutter), 0)
 			end
-			local success, result = combine(current, cutter, op.mode)
+			local mode = if op.kind == "File" then "Remove" else op.mode
+			local success, result = combine(current, cutter, mode)
 			release()
 			if not success then
 				current:Destroy()
-				error("Sketch " .. tostring(op.mode) .. " failed: " .. tostring(result), 0)
+				error("Fabrication " .. tostring(mode) .. " failed: " .. tostring(result), 0)
 			end
 			current:Destroy()
 			current = result
