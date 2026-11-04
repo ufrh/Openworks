@@ -8,24 +8,27 @@ Document.__index = Document
 local KINDS = { Block = true, Cylinder = true, Tube = true, HoleBlock = true }
 local AXES = { X = true, Y = true, Z = true }
 
-local function defaultSize(kind: string): Vector3
-	if kind == "Cylinder" then return Vector3.new(2, 3, 2) end
-	if kind == "Tube" then return Vector3.new(2, 3, 2) end
-	return Vector3.new(4, 2, 4)
+local function defaultSize(_kind: string): Vector3
+	-- All spawned primitive envelopes start as a single 0.05-stud cell.
+	return Vector3.new(Quantize.MinSize, Quantize.MinSize, Quantize.MinSize)
 end
 
 local function validNode(node)
 	if node.kind == "Tube" then
 		local diameter = node.size.X
-		if diameter < Quantize.MinSize * 3 then
-			return false, "Tube diameter must be at least 0.15 studs"
+		-- Tiny primitives begin solid. Only validate bore clearance once it can exist.
+		if node.wall < Quantize.MinSize then
+			return false, "Tube wall must be at least 0.05 studs"
 		end
-		if node.wall < Quantize.MinSize or node.wall * 2 + Quantize.MinSize > diameter + 0.00001 then
+		if diameter >= Quantize.MinSize * 3 and node.wall * 2 + Quantize.MinSize > diameter + 0.00001 then
 			return false, "Tube wall leaves less than 0.05 studs of opening"
 		end
 	elseif node.kind == "HoleBlock" then
 		local limit = math.min(node.size.X, node.size.Z)
-		if node.bore < Quantize.MinSize or node.bore + Quantize.MinSize * 2 > limit + 0.00001 then
+		if node.bore < Quantize.MinSize then
+			return false, "Hole diameter must be at least 0.05 studs"
+		end
+		if limit >= Quantize.MinSize * 3 and node.bore + Quantize.MinSize * 2 > limit + 0.00001 then
 			return false, "Hole needs 0.05 studs of material on each side"
 		end
 	end
@@ -49,8 +52,8 @@ function Document:addNode(component, operation: string, kind: string, position: 
 		position = Quantize.vector(position or Vector3.new(0, 3, 0), Quantize.Grid),
 		size = defaultSize(kind),
 		rotation = Vector3.zero,
-		bore = 1,
-		wall = 0.25,
+		bore = Quantize.MinSize,
+		wall = Quantize.MinSize,
 	}
 	table.insert(component.nodes, node)
 	component.revision += 1

@@ -3,7 +3,8 @@
 ## Working slice
 
 - Each newly created component retains editable parametric nodes rather than permanently replacing its source with a union.
-- Primitives: Block, Cylinder (Y-axis), Tube, Hole Block.
+- Primitives: Block, Cylinder (Y-axis), Tube, Hole Block; **every primitive spawns with a 0.05 x 0.05 x 0.05 stud envelope**.
+- Tube and Hole Block are solid when their 0.05-stud bodies cannot physically accommodate the hole; after you enlarge them sufficiently their parametric bores become active.
 - A node is **Add** or **Subtract**. The first node must be additive. Additional node operations compile in list order using GeometryService.
 - Numeric transforms: Position (X/Y/Z), Size (X/Y/Z), Rotation (X/Y/Z); tube wall and hole bore where relevant.
 - Positions and dimensions snap to 0.05 studs. Rotation snaps to 15 degrees. Minimum allowed size is 0.05 studs.
@@ -15,16 +16,17 @@
 
 1. Open the configured OPENWORKS place and start Rojo with `START_OPENWORKS.bat`. Connect Studio to port 34872.
 2. Enter **Play**. The temporary `FORM // DEBUG 01` panel appears.
-3. Click **Block** and select it (or select it by clicking the solid).
-4. Click **- Cylinder**. You should see a centered vertical cylindrical cut through the block.
-5. Navigate to the cutter using **Next Node >**, then change its **SIZE X** (diameter; Z stays equal). Press Enter or unfocus the box to recompile.
-6. Edit **POS**, **SIZE**, **ROT** of any selected node. Use **< Prev Node** to edit the original block.
-7. Try **Tube** and **Hole Block** as fresh components.
-8. Use Blender-style controls: **MMB drag orbit**, **Shift+MMB drag pan**, **Ctrl+MMB drag dolly**, **wheel zoom**; optionally **Alt+LMB drag** to orbit.
+3. Click **Block**. A tiny 0.05 x 0.05 x 0.05 component appears and the camera frames it automatically.
+4. Enlarge the original block using the numeric SIZE fields (for example, X=2, Y=1, Z=2).
+5. Click **- Cylinder**. It also begins at 0.05 studs. On the cutter, enlarge SIZE X (diameter) to about 0.5 and SIZE Y (height) to about 2, then the result should be a vertical cylindrical cut. CSG may not resolve every feature as small as 0.05 studs.
+6. Navigate between editable source nodes with **< Prev Node** / **Next Node >**, and test live recompilation.
+7. Edit **POS**, **SIZE**, **ROT** of any selected node. Try **Tube** and **Hole Block** as new components; enlarge their X/Z dimensions enough for an opening.
+8. Use Blender-style controls: **MMB drag orbit** or **RMB drag orbit**, **Shift+MMB drag pan**, **Ctrl+MMB drag dolly**, **wheel zoom**; optionally **Alt+LMB drag** to orbit.
 9. Use **Numpad 1/3/7** for Front/Right/Top orthographic views; **Ctrl+Numpad 1/3/7** for Back/Left/Bottom. **Numpad 5** toggles orthographic/perspective.
 10. Use **Numpad 2/4/6/8** to orbit 15 degrees, **Numpad 9** to flip to the opposite view; **Shift+Numpad 4/6** rolls the camera, **Ctrl+Numpad 2/4/6/8** pans.
-11. Press **F** or **Numpad .** to frame the selection; **Home** frames all components. The top-right clickable axis gizmo provides the same six cardinal views without a numpad.
-12. Drag the mouse while orbiting and verify the cursor remains locked in place until the button is released. Test orbit, pan, zoom, click selection, reset to top view, then orbit again.
+11. Press **F** or **Numpad .** to frame the selection; **Home** frames all components. The top-right 3D ViewportFrame gizmo can be **dragged with left mouse** to orbit freely, or clicked on its axes for cardinal views without a numpad.
+12. Drag the mouse while orbiting with RMB/MMB and confirm the pointer locks until release. Test orbit, pan, zoom, object selection, clicking a gizmo axis, dragging the gizmo, and orienting again.
+13. Inspect the construction grid: it uses client-only LineHandleAdornments, not 3D grid Parts. Visible lines are **0.05 studs apart** across a 6x6 stud patch centered near your camera focus, with stronger lines at 0.5-stud intervals.
 
 The panel and scene grid are intentionally plain. The viewport preview is only a debug harness, not final Duotone.
 
@@ -46,7 +48,9 @@ The panel and scene grid are intentionally plain. The viewport preview is only a
 - `src/shared/FORM/Document.lua`: pure parametric state model.
 - `src/shared/FORM/Compiler.lua`: CSG operations via `GeometryService:UnionAsync` and `SubtractAsync`.
 - `src/client/Preview.lua`: async revision-aware preview management.
-- `src/client/FORMDebug.lua`: temporary editor controls, selection hooks, and view gizmo.
+- `src/client/FORMDebug.lua`: temporary editor controls and selection.
+- `src/client/ViewGizmo.lua`: interactive 3D orientation widget in a ViewportFrame.
+- `src/client/GridOverlay.lua`: 0.05-stud debug grid using LineHandleAdornments with a single invisible anchor.
 - `src/client/BlenderCamera.lua`: independent Blender-style viewport controller.
 - `src/client/init.client.lua`: starts the harness.
 

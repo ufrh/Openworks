@@ -9,9 +9,9 @@ BlenderCamera.__index = BlenderCamera
 
 local RENDER_NAME = "FORM_BlenderViewportCamera"
 local FOV = 60
-local MIN_DISTANCE = 0.25
+local MIN_DISTANCE = 0.75
 local MAX_DISTANCE = 2000
-local MIN_ORTHO_HEIGHT = 0.1
+local MIN_ORTHO_HEIGHT = 0.06
 local MAX_ORTHO_HEIGHT = 2000
 local ORBIT_SENSITIVITY = 0.007
 local SNAP_ANGLE = math.rad(15)
@@ -41,7 +41,7 @@ local function mouseDragMode(): string
 end
 
 local function boundsRadius(size: Vector3): number
-	return math.max(0.5, size.Magnitude / 2)
+	return math.max(0.042, size.Magnitude / 2)
 end
 
 function BlenderCamera.new(getSelectedBounds, getSceneBounds)
@@ -74,8 +74,11 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	connect(UserInputService.InputBegan, function(input, processed)
 		local kind = input.UserInputType
 		if kind == Enum.UserInputType.MouseButton3
+			or kind == Enum.UserInputType.MouseButton2
 			or (kind == Enum.UserInputType.MouseButton1 and isAltDown()) then
-			if processed or UserInputService:GetFocusedTextBox() then return end
+			-- Roblox's default camera can mark RMB/MMB processed; navigation still owns them.
+			if UserInputService:GetFocusedTextBox() then return end
+			if processed and kind == Enum.UserInputType.MouseButton1 then return end
 			self.dragging = true
 			self.dragButton = kind
 			self.savedMouseBehavior = UserInputService.MouseBehavior
@@ -171,11 +174,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			if delta.Magnitude > 0 then
 				local mode = mouseDragMode()
 				if mode == "Orbit" then
-					self.yaw -= delta.X * ORBIT_SENSITIVITY
-					self.pitch = math.clamp(self.pitch + delta.Y * ORBIT_SENSITIVITY, -POLE_LIMIT, POLE_LIMIT)
-					self.roll = 0
-					if self.autoOrthographic then self:setProjection(false) end
-					self.axisView = nil
+					self:orbitDelta(delta)
 				elseif mode == "Pan" then
 					self:panPixels(delta.X, delta.Y)
 				else
@@ -229,6 +228,19 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	end)
 
 	return self
+end
+
+-- Exposed for the draggable ViewportFrame orientation gizmo.
+function BlenderCamera:orbitDelta(delta: Vector2)
+	self.yaw -= delta.X * ORBIT_SENSITIVITY
+	self.pitch = math.clamp(self.pitch + delta.Y * ORBIT_SENSITIVITY, -POLE_LIMIT, POLE_LIMIT)
+	self.roll = 0
+	if self.autoOrthographic then self:setProjection(false) end
+	self.axisView = nil
+end
+
+function BlenderCamera:getFocusTarget(): Vector3
+	return self.target
 end
 
 function BlenderCamera:viewLabel(): string

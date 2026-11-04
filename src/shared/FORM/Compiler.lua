@@ -63,10 +63,14 @@ local function build(node): BasePart
 	elseif node.kind == "Tube" then
 		local outer = makeCylinder(node.size.X, node.size.Y, frame)
 		local innerDiameter = node.size.X - 2 * node.wall
+		if innerDiameter < 0.04999 then return outer end
 		local cutter = makeCylinder(innerDiameter, node.size.Y + 0.4, frame)
 		return boolean("Subtract", outer, cutter)
 	elseif node.kind == "HoleBlock" then
 		local outer = makeBlock(node.size, frame)
+		if math.min(node.size.X, node.size.Z) < node.bore + 0.09999 then
+			return outer
+		end
 		local cutter = makeCylinder(node.bore, node.size.Y + 0.4, frame)
 		return boolean("Subtract", outer, cutter)
 	end
