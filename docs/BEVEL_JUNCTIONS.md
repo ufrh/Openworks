@@ -1,60 +1,48 @@
-# FORM — Interior Corner Investigation (Exterior File Only)
+# Tiny triangular cap at an L-shaped concave corner
 
-Status: **experimental interior edge filing suspended**. Branch: `dev`.
+Status: source implemented on `dev`; Roblox Studio CSG visual test pending.
 
-## Why this was rolled back
+## Exactly what this addresses
 
-Several attempts to correct the rectangular endcap where two ordinary
-perimeter bevels meet at a concave L-shaped corner produced worse geometry.
-The feature that created a vertical *interior edge bevel* used an additive
-wedge, which sometimes refilled material already removed by exterior
-perimeter bevels. Experimental end tapers, post-CSG junction cuts, and
-preclipped additive polyhedra also failed Studio visual testing.
+Two **ordinary exterior top perimeter File operations** meet at the inside
+vertex of an L-shaped workpiece. A small square-ended cap can remain there.
+Instead of re-enabling vertical inside filing or a general bevel miter,
+FORM now generates one **small four-point corner cut** that leaves a
+triangular slope at that vertex.
 
-## Current safe prototype behavior
+`CornerTriangle.lua` accepts ONLY two exterior File features whose:
+- endpoints coincide at one corner;
+- outward top normals both point up;
+- wall normals are perpendicular;
+- edge rays point along each other's outward wall normals, identifying a
+  concave notch rather than a convex outside block corner.
 
-- The **File** tool can select normal exterior straight edges (top, bottom,
-  vertical) and use the established subtractive triangular cutter.
-- The **inside/concave** File option is disabled in the hover/click editor,
-  rejected in Document:addOperation and excluded from Fabricator CSG replay.
-- Existing FileMesh operations with `interior=true` remain in the history
-  for reversibility but are marked `FILE INNER (PAUSED)` and ignored by
-  compilation and surface picking. They are not silently deleted.
-- No corner miter, preclip, additive wedge or secondary junction Boolean
-  is currently applied.
-- Fabricator's geometry cache key has been bumped so preview recompiles.
-  This does not modify the original parametric history.
+The four points are the original top corner, the corner moved inward by
+each existing bevel width along each adjoining wall, and the corner
+moved down by the smaller bevel width. They define a bounded tetrahedral
+chip of the **existing solid**. There is no additive wedge and no
+repeated patch per edge. Once the second File is compiled, the original
+normal exterior filing results remain unchanged except at that one corner.
 
-## The one issue to solve next
+The face picker derives the corresponding small triangular surface from
+the same four points. Existing vertical interior File history stays
+paused and is not included in compilation or feature picking.
 
-File *two ordinary external perimeter edges* that terminate at the **same
-concave corner** of a simple L-shaped workpiece. Inspect the little
-rectangular/triangular cap at their common endpoint.
+## Acceptance test
 
-The correct solution must be generated from **their shared convex bevel
-surfaces**. At a concave polygon vertex, the cutter termination is not a
-standard outside cube corner. Future development should:
+1. Create a new L-shaped sketch body.
+2. File *only* the two top outer perimeter edges meeting at the concave
+   notch corner.
+3. Inspect their shared cap: it should be a **single triangular slope**,
+   without a square post or a long gouge down either edge.
+4. Check the FORM fabrication summary for `1 corner triangles`.
+5. File a normal convex outside block corner: the count should remain
+   `0 corner triangles`.
+6. Confirm that interior vertical edge filing is still unavailable.
 
-1. Identify the exact two authored perimeter features and common endpoint.
-2. Construct their intended new boundary intersection in the original
-   workpiece plane, then solve the resulting corner face analytically.
-3. Have both new bevels share that endpoint/face **within the same
-   manufacturing feature** rather than running independent post-CSG patches.
-4. Update the feature-history topology and preview from exactly the same
-   final face/edge definitions.
-5. Validate geometrically with numerical tests and check the actual Roblox
-   CSG result on a simple L-profile before extending further.
+A Studio Command Bar math check is included at
+`scripts/VERIFY_CORNER_TRIANGLE.lua` for matching/narrowness rules.
+It does **not** certify the appearance of Roblox's resulting CSG mesh.
 
-Avoid re-enabling interior vertical filing as a workaround. This is a
-separate task from forming a coherent junction between ordinary perimeter
-bevels.
-
-## Studio test
-
-Start with a fresh L-shaped body, file **only its two ordinary upper
-perimeter edges** leading into the concave corner. Confirm the File tool
-does not offer the vertical inside edge and that the previous massive
-additive block is gone. The small endpoint corner cap may remain; that
-is the known outstanding defect.
-
-This rollback is source-verified, not executed live in Roblox Studio.
+If the exact corner is not resolved, the next step is inspecting the
+actual CSG geometry, not introducing any more generalized bevel systems.
