@@ -55,22 +55,10 @@ local function triangulate(profile:{Vector3},travel:Vector3):{{number}}
 	return triangles
 end
 
-function GeometryCutter.prism(profile: {Vector3}, travel: Vector3, miter): (MeshPart, () -> ())
-	if #profile < 3 or #profile > 128 or travel.Magnitude < 0.0001 then
-		error("Invalid geometry cutter profile", 0)
-	end
-	-- Ensure cap winding agrees with the extrusion direction.
-	local winding = (profile[2]-profile[1]):Cross(profile[3]-profile[1]):Dot(travel)
-	if math.abs(winding) < 1e-9 then error("Cutter profile is degenerate",0) end
-	if winding < 0 then
-		local reversed={}
-		for i=#profile,1,-1 do table.insert(reversed,profile[i]) end
-		profile=reversed
-	end
-	local capTriangles=triangulate(profile,travel)
-	-- Each corner profile is trimmed along the EDGE AXIS to one shared
-	-- 45-degree seam plane. Unlike a third corner cutter, this creates
-	-- no overlapping end caps or extra CSG Boolean operation.
+-- Project every vertex along the edge axis to the same miter plane.
+-- Both adjacent File operations use the IDENTICAL shared plane, not a
+-- separately constructed corner patch.
+function GeometryCutter.projectRings(profile:{Vector3},travel:Vector3,miter)
 	local lower,upper={},{}
 	local direction=travel.Unit
 	for _,p in ipairs(profile) do
@@ -98,6 +86,23 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3, miter): (Mesh
 			end
 		end
 	end
+	return lower,upper
+end
+
+function GeometryCutter.prism(profile: {Vector3}, travel: Vector3, miter): (MeshPart, () -> ())
+	if #profile < 3 or #profile > 128 or travel.Magnitude < 0.0001 then
+		error("Invalid geometry cutter profile", 0)
+	end
+	-- Ensure cap winding agrees with the extrusion direction.
+	local winding = (profile[2]-profile[1]):Cross(profile[3]-profile[1]):Dot(travel)
+	if math.abs(winding) < 1e-9 then error("Cutter profile is degenerate",0) end
+	if winding < 0 then
+		local reversed={}
+		for i=#profile,1,-1 do table.insert(reversed,profile[i]) end
+		profile=reversed
+	end
+	local capTriangles=triangulate(profile,travel)
+	local lower,upper=GeometryCutter.projectRings(profile,travel,miter)
 	local editable: EditableMesh? = nil
 	local part: MeshPart? = nil
 	local ok, failure = pcall(function()
@@ -404,6 +409,43 @@ function GeometryCutter.fileFaces(edgeA:Vector3,edgeB:Vector3,
 	if not plan then return nil,why end
 	local base=BevelJunction.prismFaces(plan.profile,plan.travel)
 	return BevelJunction.clipFaces(base,if interior then (planes or {}) else {})
+end
+
+-- Expose precisely the SAME miter-trimmed edge strips used by the
+-- cutter mesh. HistoryTopology calls this so a single shared seam is
+-- visible and selectable, rather than inventing a third corner surface.
+function GeometryCutter.fileSurfaceFaces(edgeA:Vector3,edgeB:Vector3,
+	n1:Vector3,n2:Vector3,width:number,segments:number,miter)
+	local plan,why=bevelPlan(edgeA,edgeB,n1,n2,width,false)
+	if not plan then return nil,why end
+	local profile,travel
+	if segments==1 then
+		profile,travel=plan.profile,plan.travel
+	else
+		if math.abs(n1.Unit:Dot(n2.Unit))>0.12 then
+			return nil,"Rounded File requires perpendicular faces"
+		end
+		profile,travel=roundedFileProfile(edgeA,edgeB,n1.Unit,n2.Unit,width,segments)
+	end
+	local lower,upper=GeometryCutter.projectRings(profile,travel,miter)
+	local facets={}
+	for i=2,#profile-1 do
+		local polygon={lower[i],upper[i],upper[i+1],lower[i+1]}
+		local n=(polygon[2]-polygon[1]):Cross(polygon[3]-polygon[1])
+		if n.Magnitude>1e-8 then
+			-- Cutter normals face the removed volume; the manufactured
+			-- fillet face points in the opposite direction.
+			local normal=n.Unit
+			if normal:Dot(n1+n2)<0 then
+				local reversed={}
+				for j=#polygon,1,-1 do table.insert(reversed,polygon[j]) end
+				polygon=reversed
+				normal=-normal
+			end
+			table.insert(facets,{polygon=polygon,normal=normal})
+		end
+	end
+	return facets,nil
 end
 
 function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
