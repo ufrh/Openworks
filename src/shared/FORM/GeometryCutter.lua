@@ -277,6 +277,39 @@ function GeometryCutter.convexSolid(faces):(MeshPart,()->())
 	end
 end
 
+-- Segment count is an explicit fabrication feature, not display LOD.
+-- 1 = the historical straight chamfer. 2..12 = quarter-circle profile
+-- between the same face offsets, with one planar strip per segment.
+local function roundedFileProfile(edgeA:Vector3,edgeB:Vector3,
+	n1:Vector3,n2:Vector3,width:number,segments:number)
+	local axis=(edgeB-edgeA).Unit
+	local delta=n1:Dot(n2)
+	if math.abs(delta)>0.12 then
+		error("Rounded File currently supports perpendicular planar faces",0)
+	end
+	-- The rounded surface is a real circle of radius 'width' tangent
+	-- to the two original planes. Its center is one radius inside both.
+	local center=edgeA-(n1+n2)*width
+	local epsilon=math.clamp(width*0.065,0.002,0.006)
+	local length=(edgeB-edgeA).Magnitude
+	local extension=math.min(epsilon,length*0.02)
+	local start=edgeA-axis*extension
+	local shift=start-edgeA
+	local profile={start+(n1+n2).Unit*epsilon}
+	-- Arc from wall 2 to wall 1, all contained in the original wedge.
+	-- Both endpoint offsets have a tiny exterior overlap for CSG.
+	for i=0,segments do
+		local t=(i/segments)*math.pi*0.5
+		local normal=n1*math.cos(t)+n2*math.sin(t)
+		local p=center+normal*width+shift
+		if i==0 or i==segments then
+			p+=normal*epsilon
+		end
+		table.insert(profile,p)
+	end
+	return profile,(edgeB-edgeA)+axis*(extension*2)
+end
+
 function GeometryCutter.validateFile(edgeA:Vector3,edgeB:Vector3,
 	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?):(boolean,string?)
 	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
@@ -297,16 +330,20 @@ end
 
 function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
 	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?,
-	_taperA:boolean?,_taperB:boolean?,planes)
-	if interior and planes and #planes>0 then
-		local faces,why=GeometryCutter.fileFaces(
-			edgeA,edgeB,outwardA,outwardB,width,true,planes)
-		if not faces then error(why or "Invalid joined bevel geometry",0) end
-		return GeometryCutter.convexSolid(faces)
+	_taperA:boolean?,_taperB:boolean?,_planes,segments:number?)
+	local count=segments or 1
+	if count~=math.floor(count) or count<1 or count>12 then
+		error("File segments must be between 1 and 12",0)
 	end
 	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
 	if not plan then error(why or "Invalid bevel geometry",0) end
-	return GeometryCutter.prism(plan.profile,plan.travel)
+	if interior then
+		error("Interior edge filing remains paused",0)
+	end
+	if count==1 then return GeometryCutter.prism(plan.profile,plan.travel) end
+	local profile,travel=roundedFileProfile(edgeA,edgeB,
+		outwardA.Unit,outwardB.Unit,width,count)
+	return GeometryCutter.prism(profile,travel)
 end
 
 
