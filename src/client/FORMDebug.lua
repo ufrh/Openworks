@@ -751,16 +751,32 @@ function Debug.start()
 		elseif activeTool == "Inset" then
 			local margin = millimeters(insetMarginInput, "Inset border")
 			local depth = millimeters(insetDepthInput, "Inset depth")
-			if not margin or not depth or node.kind ~= "Block"
-				or margin * 2 >= math.min(node.size.X, node.size.Z) then
+			if not margin or not depth then toolVisualizer:hide() return end
+			local topology = surfacePicker:get(target.id,preview:getModel(target.id))
+			if not topology or topology.part ~= target.hit.Instance then
 				toolVisualizer:hide() return
 			end
-			toolVisualizer:inset(pose, node, margin, depth)
+			local face = topology.faceAt(topology,target.hit.Position,target.hit.Normal)
+			if not face then
+				toolVisualizer:hide() return
+			end
+			local inset = FaceTools.inset(face,margin)
+			if not inset then toolVisualizer:hide() return end
+			toolVisualizer:meshFace(topology.part,inset,margin,depth)
 		elseif activeTool == "File" then
 			local width = millimeters(fileWidthInput, "File width")
-			local edge = nearestTopEdge(node, target.point)
-			if not edge or not width then toolVisualizer:hide() return end
-			toolVisualizer:file(pose, node, edge, width)
+			if not width then toolVisualizer:hide() return end
+			local topology = surfacePicker:get(target.id,preview:getModel(target.id))
+			if not topology or topology.part ~= target.hit.Instance then
+				toolVisualizer:hide() return
+			end
+			local mouse=UserInputService:GetMouseLocation()
+			local camera=workspace.CurrentCamera
+			if not camera then toolVisualizer:hide() return end
+			local edge=topology.closestEdge(topology,target.hit.Position,target.hit.Normal,
+				camera,mouse,24)
+			if not edge or #edge.faces~=2 then toolVisualizer:hide() return end
+			toolVisualizer:meshEdge(topology.part,edge,width)
 		elseif activeTool == "Groove" or activeTool == "Kerf" then
 			if sawFirst and sawFirst.id == target.id then
 				local box = if activeTool == "Groove" then grooveWidthInput else kerfInput
@@ -817,16 +833,47 @@ function Debug.start()
 			data = { x = x, z = z, diameter = diameter,
 				depth = depth, through = drillThrough }
 		elseif kind == "Inset" then
-			local margin, errorA = millimeters(insetMarginInput, "Inset border")
-			local depth, errorB = millimeters(insetDepthInput, "Inset depth")
+			local margin,errorA=millimeters(insetMarginInput,"Inset border")
+			local depth,errorB=millimeters(insetDepthInput,"Inset depth")
 			if not margin or not depth then message(errorA or errorB) return end
-			data = { margin = margin, depth = depth }
+			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id))
+			if not topology then message(why or "Compiling face topology") return end
+			if topology.part~=target.hit.Instance then message("Face selection is out of date") return end
+			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
+			if not face then message("No planar manufactured face under pointer") return end
+			local points,reason=FaceTools.inset(face,margin)
+			if not points then message(reason or "Face cannot be inset") return end
+			local localPoints={}
+			for _,point in ipairs(points) do
+				local world=topology.part.CFrame:PointToWorldSpace(point)
+				table.insert(localPoints,pose:PointToObjectSpace(world))
+			end
+			local worldNormal=topology.part.CFrame:VectorToWorldSpace(face.normal)
+			kind="InsetFace"
+			data={points=localPoints,normal=pose:VectorToObjectSpace(worldNormal),
+				margin=margin,depth=depth}
 		elseif kind == "File" then
-			local width, reason = millimeters(fileWidthInput, "File width")
-			if not width then message(reason) return end
-			local edge = nearestTopEdge(node, target.point)
-			if not edge then message("Move closer to an upper stock perimeter edge") return end
-			data = { edge = edge, width = width }
+			local width,why=millimeters(fileWidthInput,"File width")
+			if not width then message(why) return end
+			local topology,reason=surfacePicker:get(target.id,preview:getModel(target.id))
+			if not topology then message(reason or "Compiling edge topology") return end
+			if topology.part~=target.hit.Instance then message("Edge selection is out of date") return end
+			local camera=workspace.CurrentCamera
+			if not camera then return end
+			local edge=topology.closestEdge(topology,target.hit.Position,target.hit.Normal,
+				camera,UserInputService:GetMouseLocation(),24)
+			if not edge or #edge.faces~=2 then
+				message("Hover a visible hard edge of the manufactured solid")
+				return
+			end
+			local a=pose:PointToObjectSpace(topology.part.CFrame:PointToWorldSpace(edge.a))
+			local b=pose:PointToObjectSpace(topology.part.CFrame:PointToWorldSpace(edge.b))
+			local normalA=pose:VectorToObjectSpace(topology.part.CFrame:VectorToWorldSpace(
+				topology.faces[edge.faces[1]].normal))
+			local normalB=pose:VectorToObjectSpace(topology.part.CFrame:VectorToWorldSpace(
+				topology.faces[edge.faces[2]].normal))
+			kind="FileMesh"
+			data={a=a,b=b,normalA=normalA,normalB=normalB,width=width}
 		elseif kind == "Groove" or kind == "Kerf" then
 			if not sawFirst then
 				sawFirst = { id = target.id, x = x, z = z }
