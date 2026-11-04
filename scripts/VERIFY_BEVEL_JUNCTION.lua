@@ -1,51 +1,61 @@
 --!strict
--- FORM bevel-junction numeric smoke test.
--- Execute in Roblox Studio Command Bar (server or client) after Rojo sync.
--- This tests pure junction geometry; CSG runtime results still need a
--- visual playtest using File on a real L-shaped workpiece.
+-- Studio Command Bar numeric check for FORM inside-bevel clipping.
+-- Run after Rojo sync. This tests face construction and manifold closure,
+-- NOT GeometryService Boolean runtime (which still needs a playtest).
 local FORM=game:GetService("ReplicatedStorage"):WaitForChild("Openworks"):WaitForChild("FORM")
 local BevelJunction=require(FORM.BevelJunction)
+local GeometryCutter=require(FORM.GeometryCutter)
 
 local X,Y,Z=Vector3.xAxis,Vector3.yAxis,Vector3.zAxis
 local inner={
 	a=Vector3.new(0,-1,0),b=Vector3.new(0,1,0),
-	n1=X,n2=Z,width=0.20,interior=true,
+	n1=X,n2=Z,width=0.20,interior=true,id=10,
 }
-local function outer(y:number,axis:Vector3,wall:Vector3)
-	return {
-		a=Vector3.new(0,y,0),b=Vector3.new(0,y,0)+axis*2,
-		n1=if y>0 then Y else -Y,n2=wall,width=0.12,interior=false,
-	}
-end
-local cases={
-	outer(1,Z,X),
+local outside={
+	{a=Vector3.new(0,1,0),b=Vector3.new(0,1,2),
+		n1=Y,n2=X,width=0.12,interior=false,id=20},
 	{a=Vector3.new(0,1,0),b=Vector3.new(2,1,0),
-		n1=Y,n2=Z,width=0.12,interior=false},
-	outer(-1,Z,X),
+		n1=Y,n2=Z,width=0.12,interior=false,id=21},
+	{a=Vector3.new(0,-1,0),b=Vector3.new(0,-1,2),
+		n1=-Y,n2=X,width=0.12,interior=false,id=22},
 	{a=Vector3.new(0,-1,0),b=Vector3.new(2,-1,0),
-		n1=-Y,n2=Z,width=0.12,interior=false},
+		n1=-Y,n2=Z,width=0.12,interior=false,id=23},
 }
-for index,exterior in ipairs(cases) do
-	local plan=BevelJunction.plan(inner,exterior)
-	assert(plan,"L-notch bevel junction #"..index.." not recognized")
-	assert(plan.intoVoid:Dot(if index%2==1 then Z else X)>0.99,
-		"Junction transitioned BACKWARD along the solid perimeter")
-	local surface,normal=BevelJunction.surfacePolygon(plan)
-	assert(#surface==3 and normal.Magnitude>0.99)
-	assert((surface[1]-surface[2]).Magnitude>0.04)
-	local profile,travel=BevelJunction.clipProfile(plan)
-	assert(#profile==4 and travel.Magnitude>=inner.width)
-	for _,point in ipairs(surface) do
-		assert(math.abs((point-surface[1]):Dot(normal))<1e-5,
-			"Corner wedge must lie on the original exterior bevel plane")
+local planes=BevelJunction.planesFor(inner,outside)
+assert(#planes==4,"Expected four top/bottom bevel-plane intersections")
+local faces,reason=GeometryCutter.fileFaces(inner.a,inner.b,inner.n1,
+	inner.n2,inner.width,true,planes)
+assert(faces and #faces>=6,tostring(reason))
+local edgeCounts={}
+local function k(p:Vector3)
+	return string.format("%d,%d,%d",math.round(p.X*100000),
+		math.round(p.Y*100000),math.round(p.Z*100000))
+end
+for _,face in ipairs(faces) do
+	assert(#face.polygon>=3)
+	for i,p in ipairs(face.polygon) do
+		for _,plane in ipairs(planes) do
+			assert((p-plane.planePoint):Dot(plane.normal)<0.0001,
+				"Clipped bevel refills an existing exterior chamfer")
+		end
+		local q=face.polygon[i%#face.polygon+1]
+		local a,b=k(p),k(q)
+		local key=if a<b then a.."|"..b else b.."|"..a
+		edgeCounts[key]=(edgeCounts[key] or 0)+1
 	end
+end
+for edge,count in pairs(edgeCounts) do
+	assert(count==2,"Clipped bevel has an open or nonmanifold edge: "..edge)
 end
 local backwards={
 	a=Vector3.new(0,1,0),b=Vector3.new(0,1,-2),
-	n1=Y,n2=X,width=0.12,interior=false,
+	n1=Y,n2=X,width=0.12,interior=false,id=99,
 }
-assert(BevelJunction.plan(inner,backwards)==nil,
-	"Opposite-arm false junction must never cut the workpiece")
-assert(BevelJunction.plan(cases[1],cases[2])==nil,
-	"Two exterior bevels cannot form an additive junction")
-print("FORM BevelJunction: 6 analytic smoke checks passed")
+assert(BevelJunction.pair(inner,backwards)==nil,
+	"An exterior edge pointing away from the notch cannot form a junction")
+assert(BevelJunction.pair(outside[1],outside[2])==nil,
+	"Two exterior bevels cannot be clipped as an inside junction")
+local noPlanes=GeometryCutter.fileFaces(inner.a,inner.b,inner.n1,
+	inner.n2,inner.width,true,{})
+assert(noPlanes and #noPlanes==5,"Unconnected bevel should stay triangular prism")
+print(string.format("FORM convex bevel: 4 clipping planes, %d watertight faces, %d edges",#faces,#edgeCounts))
