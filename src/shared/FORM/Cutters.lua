@@ -60,6 +60,23 @@ end
 -- Returns the cutter and a release callback; release after CSG has finished.
 -- Calling release is safe on success OR error, and frees EditableMesh budget.
 function Cutters.create(node, operation, preferMesh: boolean?): (BasePart, () -> (), string)
+	if operation.kind == "GrooveFace" then
+		local a,b=operation.a,operation.b
+		local outward=operation.normal.Unit
+		local along=b-a
+		if along.Magnitude<0.005 then error("Groove direction undefined") end
+		local forward=along.Unit
+		local right=outward:Cross(forward).Unit
+		local back=right:Cross(outward).Unit
+		local margin=0.04
+		local height=if operation.through then node.size.Magnitude*2+margin*2
+			else operation.depth+margin
+		local center=(a+b)/2-outward*(height/2-margin)
+		local part=nativeCut(operation.width/2,height,along.Magnitude+operation.width,
+			CFrame.fromMatrix(center,right,outward,back))
+		part.Name="FORM_PlanarGrooveCutter"
+		return part,function() part:Destroy() end,"native"
+	end
 	if operation.kind == "DrillFace" then
 		local outward=operation.normal.Unit
 		local margin=0.04
