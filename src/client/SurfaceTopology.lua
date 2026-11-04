@@ -172,6 +172,55 @@ function SurfaceTopology.extract(part: BasePart)
 			table.insert(edges,edge)
 			for _,f in ipairs(adjacent) do table.insert(faces[f].edges,edge) end
 		end
+		-- Collapse collinear tessellation fragments into full mechanical
+		-- edges when they share exactly the same adjacent CAD faces.
+		-- An edge from a CSG mesh can otherwise be only one tiny triangle
+		-- side instead of the full shaft/housing perimeter.
+		local changed=true
+		while changed and #edges<=1500 do
+			changed=false
+			local endpoints={}
+			for index,edge in ipairs(edges) do
+				for _,p in ipairs({edge.a,edge.b}) do
+					local key=rounded(p)
+					if not endpoints[key] then endpoints[key]={} end
+					table.insert(endpoints[key],index)
+				end
+			end
+			for _,indices in pairs(endpoints) do
+				if #indices~=2 then continue end
+				local ai,bi=indices[1],indices[2]
+				local a,b=edges[ai],edges[bi]
+				if not a or not b or #a.faces~=2 or #b.faces~=2 then continue end
+				if not (table.find(b.faces,a.faces[1]) and
+					table.find(b.faces,a.faces[2])) then continue end
+				local shared
+				if (a.a-b.a).Magnitude<EPS or (a.a-b.b).Magnitude<EPS then shared=a.a
+				elseif (a.b-b.a).Magnitude<EPS or (a.b-b.b).Magnitude<EPS then shared=a.b end
+				if not shared then continue end
+				local oa=if (a.a-shared).Magnitude<EPS then a.b else a.a
+				local ob=if (b.a-shared).Magnitude<EPS then b.b else b.a
+				local v1,v2=oa-shared,ob-shared
+				if v1.Magnitude<EPS or v2.Magnitude<EPS or
+					v1.Unit:Dot(v2.Unit)>-0.9995 then continue end
+				local merged={a=oa,b=ob,faces=a.faces}
+				local hi,lo=math.max(ai,bi),math.min(ai,bi)
+				table.remove(edges,hi)
+				table.remove(edges,lo)
+				table.insert(edges,merged)
+				changed=true
+				break
+			end
+		end
+		for _,face in ipairs(faces) do
+			table.clear(face.edges)
+			table.clear(face.vertices)
+		end
+		for _,edge in ipairs(edges) do
+			for _,fid in ipairs(edge.faces) do
+				table.insert(faces[fid].edges,edge)
+			end
+		end
 		for _, face in ipairs(faces) do
 			local boundary={}
 			for _,edge in ipairs(face.edges) do
