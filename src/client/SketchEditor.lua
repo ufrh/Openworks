@@ -102,7 +102,7 @@ function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onSt
 		camera = cameraController, onCommit = onCommit, onStatus = onStatus,
 		onExit = onExit, gui = gui, panel = panel, visuals = visuals,
 		lines = {}, dots = {}, gridParts = {}, connections = {},
-		active = false, component = nil, points = {}, closed = false,
+		active = false, component = nil, standalone = false, points = {}, closed = false,
 		mode = "Remove", through = true, depthMM = 56,
 		cursor = nil, count = count, subtitle = subtitle,
 	}, SketchEditor)
@@ -117,8 +117,10 @@ function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onSt
 		modeButtons[mode] = b
 	end
 	self.modeButtons = modeButtons
+	self.modeTitle = modeTitle
 
 	local depthTitle = text(panel, "EXTRUSION DEPTH   (mm)", 157, 11)
+	self.depthTitle = depthTitle
 	depthTitle.TextColor3 = Color3.fromRGB(167, 184, 191)
 	local depthBox = make("TextBox", {
 		Position = UDim2.fromOffset(14, 180),
@@ -214,22 +216,39 @@ end
 
 function SketchEditor:start(component)
 	if self.active then self:stop() end
-	self.component = component
+	self.standalone = component == nil
+	if self.standalone then
+		-- Local sketch coordinates coincide with world X/Z. Its top face is
+		-- precisely Y = 0, so it projects onto the permanent construction grid.
+		self.component = {
+			nodes = {{
+				position = Vector3.new(0, -0.025, 0),
+				size = Vector3.new(6, 0.05, 6),
+				rotation = Vector3.zero,
+			}},
+		}
+		self.mode, self.through = "Add", false
+	else
+		self.component = component
+	end
 	self.active = true
 	self.closed = false
 	self.points = {}
 	self.cursor = nil
 	self.gui.Enabled = true
 	self.camera:setView("Top")
-	self.camera:frameSelected()
+	if not self.standalone then self.camera:frameSelected() end
 	self:updateControls()
-	self.onStatus("Sketch active. Click vertices on the top construction plane.")
+	self.onStatus(if self.standalone
+		then "New body sketch: draw a closed outline directly on the world grid"
+		else "Sketch active: click vertices on the selected workpiece's top face")
 end
 
 function SketchEditor:stop()
 	if not self.active then return end
 	self.active = false
 	self.component = nil
+	self.standalone = false
 	self.points = {}
 	self.cursor = nil
 	self.closed = false
@@ -290,16 +309,21 @@ function SketchEditor:updateControls()
 	self.count.Text = string.format("%d vertices  ·  %s", #self.points,
 		if self.closed then "CLOSED PROFILE" else "OPEN PROFILE")
 	self.count.TextColor3 = if self.closed then COLORS[self.mode] else Color3.fromRGB(215, 228, 234)
+	self.modeTitle.Text = if self.standalone then "NEW BODY  /  CONSTRUCTION PROFILE" else "BOOLEAN OPERATION"
+	self.depthTitle.Text = if self.standalone then "BODY HEIGHT   (mm)" else "EXTRUSION DEPTH   (mm)"
 	for mode, b in pairs(self.modeButtons) do
+		b.Visible = not self.standalone
 		b.BackgroundColor3 = if self.mode == mode then COLORS[mode]
 			else Color3.fromRGB(57, 66, 76)
 		b.TextColor3 = if self.mode == mode then Color3.fromRGB(20, 28, 33)
 			else Color3.fromRGB(236, 245, 248)
 	end
 	self.throughButton.Text = "THROUGH: " .. (if self.through then "ON" else "OFF")
-	self.throughButton.Visible = self.mode == "Remove"
+	self.throughButton.Visible = not self.standalone and self.mode == "Remove"
 	self.depthBox.Text = string.format("%.1f", self.depthMM)
-	self.depthBox.TextEditable = not (self.mode == "Intersect" or (self.mode == "Remove" and self.through))
+	self.depthBox.TextEditable = self.standalone
+		or not (self.mode == "Intersect" or (self.mode == "Remove" and self.through))
+	self.commitButton.Text = if self.standalone then "CREATE NEW BODY" else "EXTRUDE / COMMIT"
 	self.commitButton.BackgroundColor3 = if self.closed then COLORS[self.mode]
 		else Color3.fromRGB(68, 78, 86)
 	self.commitButton.TextColor3 = if self.closed then Color3.fromRGB(19, 27, 31)
@@ -318,7 +342,7 @@ function SketchEditor:commit()
 		return
 	end
 	local points = table.clone(self.points)
-	local component = self.component
+	local component = if self.standalone then nil else self.component
 	local success, reason = self.onCommit(component, {
 		points = points, mode = self.mode, depth = depth, through = self.through,
 	})
@@ -364,8 +388,8 @@ function SketchEditor:render()
 	self.cursor = if self.closed or self:isOverUI(mouse) then nil else self:projectMouse(mouse)
 	if self.cursor then
 		self.subtitle.Text = string.format("Grid 0.10  |  Snap 0.05  |  X %.2f  Z %.2f",
-			self.cursor.X + node.size.X / 2,
-			self.cursor.Y + node.size.Z / 2)
+			self.cursor.X + (if self.standalone then 0 else node.size.X / 2),
+			self.cursor.Y + (if self.standalone then 0 else node.size.Z / 2))
 	else
 		self.subtitle.Text = "Click the top construction plane  ·  Snap 0.05"
 	end
@@ -391,6 +415,7 @@ function SketchEditor:render()
 			i % 5 == 0,
 		})
 	end
+	if self.standalone then table.clear(gridSegments) end
 	for i, entry in ipairs(gridSegments) do
 		if not self.gridParts[i] then
 			self.gridParts[i] = newVisual(self.visuals, "SketchGrid_" .. i)
