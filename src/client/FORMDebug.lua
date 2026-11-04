@@ -301,7 +301,7 @@ function Debug.start()
 	end
 	pair("Block", function() create("Block") end, "Cylinder", function() create("Cylinder") end)
 	line("Material corner starts on grid lines.", 22)
-	line("FABRICATION TOOLS // TOP FACE")
+	line("FABRICATION TOOLS // MANUFACTURED SURFACES")
 	local toolStatus = line("Tool: none")
 	historyInfo = line("Fabrication: 0 cuts")
 	local function setTool(kind: string?)
@@ -313,11 +313,11 @@ function Debug.start()
 			transformGizmo:setHidden(true)
 			toolStatus.Text = "Tool: " .. string.upper(kind)
 			local guidance = {
-				Drill = "Drill: hover for depth preview; wheel adjusts diameter; click to bore",
-				Inset = "Inset: hover top face and click to make a rectangular pocket",
-				File = "File: hover near a top stock edge and click to chamfer it",
-				Groove = "Groove: click start then end to cut a channel",
-				Kerf = "Kerf: click start then end for a through slot",
+				Drill = "Drill: hover a face, wheel to change diameter, click to bore",
+				Inset = "Inset: hover a planar manufactured face; wheel sets border width; click",
+				File = "File: hover a sharp edge; wheel sets chamfer width; click to commit",
+				Groove = "Groove: click two points on the same planar face",
+				Kerf = "Kerf: click two points on the same planar face",
 			}
 			message(guidance[kind] or "Choose a fabrication operation")
 		else
@@ -398,16 +398,16 @@ function Debug.start()
 				else "Drill: BLIND (click to toggle)"
 		end
 	end)
-	line("Wheel: diameter ±2mm   Shift+Wheel: ±10mm", 20)
+	line("Wheel: DRILL 2 / FILE 1 / INSET 2 mm   ·   SHIFT = coarse", 20)
 	line("POCKET  /  GROOVE  /  EDGE")
-	local insetMarginInput = toolNumberRow("Inset border (mm)", "28")
+	local insetMarginInput = toolNumberRow("Inset border (mm)  [wheel]", "28")
 	local insetDepthInput = toolNumberRow("Inset depth (mm)", "28")
 	local grooveWidthInput = toolNumberRow("Groove width (mm)", "28")
 	local grooveDepthInput = toolNumberRow("Groove depth (mm)", "28")
-	local fileWidthInput = toolNumberRow("File chamfer (mm)", "14")
+	local fileWidthInput = toolNumberRow("File chamfer (mm)  [wheel]", "14")
 	local kerfInput = toolNumberRow("Through kerf (mm)", "14")
 
-	line("Groove/Kerf: click start, then end on top face.", 24)
+	line("Groove/Kerf: click start and end on the same face.", 24)
 
 	line("3D TRANSFORM HANDLES")
 	local transformStatus = line("Mode: MOVE (G)")
@@ -662,18 +662,42 @@ function Debug.start()
 	)
 
 
-	-- The mouse wheel is handed to an active precision drill, otherwise it
-	-- retains the BlenderCamera dolly/FOV zoom behavior.
-	cameraController:setWheelHandler(function(steps: number): boolean
-		if activeTool ~= "Drill" or UserInputService:GetFocusedTextBox() then return false end
-		local current = tonumber(diameterInput.Text) or 56
-		local shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+	-- Active fabrication tools use the scroll wheel for the dimension under
+	-- the cursor, not camera zoom. The input field stays authoritative, so
+	-- typed values and wheel edits share the exact same CSG history path.
+	-- Ctrl+MMB remains available for camera zoom while using a tool.
+	local dimensionTools={
+		Drill={ box=diameterInput, step=2, coarse=10, default=56 },
+		File={ box=fileWidthInput, step=1, coarse=5, default=14 },
+		Inset={ box=insetMarginInput, step=2, coarse=10, default=28 },
+	}
+	cameraController:setWheelHandler(function(steps:number):boolean
+		local entry=dimensionTools[activeTool]
+		if not entry or UserInputService:GetFocusedTextBox() then return false end
+		local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
 			or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-		local increment = if shift then 10 else 2
-		local node = selectedNode()
-		local cap = if node then math.max(5, math.min(node.size.X, node.size.Z) * 280) else 2000
-		local nextMM = math.clamp(math.round(current + steps * increment), 5, cap)
-		diameterInput.Text = string.format("%.0f", nextMM)
+		local increment=if shift then entry.coarse else entry.step
+		local current=tonumber(entry.box.Text)
+		if not current or current~=current then current=entry.default end
+		local node=selectedNode()
+		-- Bounds only protect the numeric UI from absurd dimensions.
+		-- The actual face/edge geometry validator applies stricter limits
+		-- before committing File or Inset.
+		local limit=35840
+		if node then
+			local major=math.max(node.size.X,node.size.Y,node.size.Z)*280
+			if activeTool=="Drill" then
+				limit=math.max(5,math.min(major*2,35840))
+			elseif activeTool=="File" then
+				limit=math.max(5,math.min(major*0.5,35840))
+			else
+				limit=math.max(5,math.min(major*0.45,35840))
+			end
+		end
+		local nextMM=math.clamp(math.round(current+steps*increment),5,limit)
+		entry.box.Text=string.format("%.0f",nextMM)
+		toolStatus.Text=string.format("Tool: %s · %d mm",
+			string.upper(activeTool),nextMM)
 		return true
 	end)
 
