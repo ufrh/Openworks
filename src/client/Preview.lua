@@ -1,6 +1,6 @@
 --!strict
--- One visible primitive per component. Native shapes update immediately;
--- special parametric cutters compile ONLY when shape dimensions change.
+-- One visible primitive per component. Native solids update immediately;
+-- material-cut histories compile asynchronously when geometry changes.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Compiler = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Compiler)
@@ -119,8 +119,7 @@ function Preview:updateGeometry(component)
 	local requiresCut = Fabricator.requiresCompile(component)
 	local state = self.states[component.id]
 
-	-- Native blocks/cylinders and special templates before a valid hole
-	-- exists are regular Parts. Never compile or reconstruct them on edits.
+	-- Uncut workpieces remain native Parts, avoiding gratuitous CSG calls.
 	if not requiresCut then
 		local part: BasePart
 		if state and state.part:IsA("Part") and not state.boolean
@@ -173,17 +172,15 @@ function Preview:queueManufacture(component)
 		while job.pending and not job.cancelled do
 			local snapshot = job.pending
 			job.pending = nil
-			local source = snapshot.nodes[1]
 			local expectedKey = Fabricator.geometryKey(snapshot)
 			if not Fabricator.requiresCompile(snapshot) then continue end
 			self.onStatus("Manufacturing " .. snapshot.name .. "...")
 			local ok, output, summary = pcall(Fabricator.compile, snapshot)
 			if not ok then
-				self.onStatus("Primitive CSG failed: " .. tostring(output))
+				self.onStatus("Fabrication CSG failed: " .. tostring(output))
 				continue
 			end
 
-			local current = component.nodes[1]
 			if job.cancelled or job.pending
 				or self.dragging[id]
 				or not Fabricator.requiresCompile(component)
