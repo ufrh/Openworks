@@ -15,8 +15,51 @@ local function edgeKey(a: number, b: number): string
 	return if a < b then tostring(a)..":"..tostring(b) else tostring(b)..":"..tostring(a)
 end
 
+local function nativeBlock(part:Part)
+	local h=part.Size/2
+	local vertices={
+		Vector3.new(-h.X,-h.Y,-h.Z),Vector3.new(h.X,-h.Y,-h.Z),
+		Vector3.new(h.X,h.Y,-h.Z),Vector3.new(-h.X,h.Y,-h.Z),
+		Vector3.new(-h.X,-h.Y,h.Z),Vector3.new(h.X,-h.Y,h.Z),
+		Vector3.new(h.X,h.Y,h.Z),Vector3.new(-h.X,h.Y,h.Z),
+	}
+	-- These are the six actual planar faces of this uncut native Part.
+	local specs={
+		{normal=Vector3.yAxis,ring={4,3,7,8}},
+		{normal=-Vector3.yAxis,ring={1,5,6,2}},
+		{normal=Vector3.xAxis,ring={2,6,7,3}},
+		{normal=-Vector3.xAxis,ring={1,4,8,5}},
+		{normal=Vector3.zAxis,ring={5,8,7,6}},
+		{normal=-Vector3.zAxis,ring={1,2,3,4}},
+	}
+	local faces,edges,triangles={}, {}, {}
+	local shared={}
+	for fi,spec in ipairs(specs) do
+		local face={id=fi,normal=spec.normal,edges={},triangles={},vertices={}}
+		table.insert(faces,face)
+		for _,v in ipairs(spec.ring) do table.insert(face.vertices,vertices[v]) end
+		table.insert(triangles,{v={spec.ring[1],spec.ring[2],spec.ring[3]},
+			normal=spec.normal})
+		table.insert(face.triangles,#triangles)
+		for i=1,4 do
+			local a,b=spec.ring[i],spec.ring[i%4+1]
+			local key=edgeKey(a,b)
+			if not shared[key] then
+				shared[key]={a=vertices[a],b=vertices[b],faces={}}
+				table.insert(edges,shared[key])
+			end
+			table.insert(shared[key].faces,fi)
+			table.insert(face.edges,shared[key])
+		end
+	end
+	return {vertices=vertices,triangles=triangles,faces=faces,edges=edges,part=part,revision=part}
+end
+
 function SurfaceTopology.extract(part: BasePart)
-	if not part:IsA("MeshPart") then return nil, "Current solid is not a readable MeshPart" end
+	if part:IsA("Part") and part.Shape==Enum.PartType.Block then
+		return nativeBlock(part)
+	end
+	if not part:IsA("MeshPart") then return nil, "Surface selection requires a block or readable compiled MeshPart" end
 	local ok, mesh = pcall(function()
 		return AssetService:CreateEditableMeshAsync((part :: MeshPart).MeshContent, {FixedSize = true})
 	end)
