@@ -796,7 +796,8 @@ function Debug.start()
 			end
 		end
 		return {a=a,b=b,normalA=n1,normalB=n2,
-			width=width,interior=interior},nil
+			width=width,interior=interior,
+			taperA=edge.taperA==true,taperB=edge.taperB==true},nil
 	end
 
 	RunService.RenderStepped:Connect(function()
@@ -849,7 +850,8 @@ function Debug.start()
 			if not plan then toolVisualizer:hide() return end
 			toolVisualizer:meshEdge(topology.part,edge,width,plan.interior,
 				topology.faces[edge.faces[1]].normal,
-				topology.faces[edge.faces[2]].normal)
+				topology.faces[edge.faces[2]].normal,
+				plan.taperA,plan.taperB)
 		elseif activeTool == "Groove" or activeTool == "Kerf" then
 			if not sawFirst or sawFirst.id~=target.id then
 				toolVisualizer:hide() return
