@@ -1,3 +1,5 @@
+> **Superseded:** Runtime CSG MeshContent readback produced `Failed to load mesh`. The live picker now reconstructs surfaces from FORM's feature history. See [HISTORY_SURFACE_PICKING.md](HISTORY_SURFACE_PICKING.md) for the current implementation and test steps.
+
 # FORM Compiled Surface Selection — First Pass
 
 **Branch:** `dev`  
