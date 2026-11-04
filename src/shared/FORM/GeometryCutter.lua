@@ -48,8 +48,8 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, (
 		end
 		for i=1,#low do
 			local j=i%#low+1
-			triangle(low[i],high[i],high[j])
-			triangle(low[i],high[j],low[j])
+			triangle(low[i],high[j],high[i])
+			triangle(low[i],low[j],high[j])
 		end
 		part=AssetService:CreateMeshPartAsync(Content.fromObject(editable),{
 			CollisionFidelity=Enum.CollisionFidelity.Hull,
