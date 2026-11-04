@@ -1,3 +1,5 @@
+> **Update (2026-11-04):** The previous stock-envelope File/Inset and top-face-only Drill/Groove controls have been replaced by the compiled-surface selection implementation. See [COMPILED_SURFACE_SELECTION.md](COMPILED_SURFACE_SELECTION.md) for the current UI behavior and limitations. Legacy feature kinds remain supported for older documents.
+
 # FORM Precision Fabrication — Preview / Tool Pass
 
 Branch: `dev` • Updated 2026-11-04.
