@@ -8,6 +8,14 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3): (MeshPart, (
 	if #profile < 3 or #profile > 128 or travel.Magnitude < 0.0001 then
 		error("Invalid geometry cutter profile", 0)
 	end
+	-- Ensure cap winding agrees with the extrusion direction.
+	local winding = (profile[2]-profile[1]):Cross(profile[3]-profile[1]):Dot(travel)
+	if math.abs(winding) < 1e-9 then error("Cutter profile is degenerate",0) end
+	if winding < 0 then
+		local reversed={}
+		for i=#profile,1,-1 do table.insert(reversed,profile[i]) end
+		profile=reversed
+	end
 	local editable: EditableMesh? = nil
 	local part: MeshPart? = nil
 	local ok, failure = pcall(function()
