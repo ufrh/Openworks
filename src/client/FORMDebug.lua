@@ -748,6 +748,27 @@ function Debug.start()
 				and (string.find(f1.tag or "","_wall")~=nil))
 		local ok,why=GeometryCutter.validateFile(a,b,n1,n2,width,interior)
 		if not ok then return nil,why end
+		-- A bevel cannot be wider than either of its adjacent physical
+		-- faces. Especially important for shallow recesses: cutting right
+		-- through the opposite wall creates the huge triangular shards
+		-- that CSG produces with overlarge, overlapping cutters.
+		local dot=f1.normal:Dot(f2.normal)
+		local sign=if interior then -1 else 1
+		local mid=(edge.a+edge.b)/2
+		for _,side in ipairs({
+			{face=f1,dir=(f1.normal*dot-f2.normal).Unit*sign},
+			{face=f2,dir=(f2.normal*dot-f1.normal).Unit*sign},
+		}) do
+			if side.face.polygon then
+				local available=0
+				for _,vertex in ipairs(side.face.polygon) do
+					available=math.max(available,(vertex-mid):Dot(side.dir))
+				end
+				if available+0.002<width then
+					return nil,"Chamfer width exceeds the neighboring face"
+				end
+			end
+		end
 		return {a=a,b=b,normalA=n1,normalB=n2,
 			width=width,interior=interior},nil
 	end
