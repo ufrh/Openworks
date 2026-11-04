@@ -553,9 +553,16 @@ function Debug.start()
 			if width < Quantize.MinSize or length < Quantize.MinSize then
 				return false, "New body sketch is smaller than the minimum workpiece"
 			end
-			local body = document:create("Block", Vector3.new(minX, 0, minZ))
+			-- Give the temporary intersection block a little lateral overlap.
+			-- Coplanar sketch/bounds walls can create unreliable CSG seams;
+			-- this extra stock gets discarded by IntersectAsync, leaving the
+			-- authored sketch dimensions completely unchanged.
+			local margin = Quantize.Grid * 2
+			local body = document:create("Block", Vector3.new(minX - margin, 0, minZ - margin))
 			for _, axisInfo in ipairs({
-				{ "X", width }, { "Y", data.depth }, { "Z", length },
+				{ "X", width + 2 * margin },
+				{ "Y", data.depth },
+				{ "Z", length + 2 * margin },
 			}) do
 				local ok, reason = document:editNode(body, 1, "size", axisInfo[1], axisInfo[2])
 				if not ok then
