@@ -751,6 +751,40 @@ function Debug.start()
 			point = localPoint, x = x, z = z, hit = hit }
 	end
 
+	-- Edge tools use screen-space segments, not a face raycast. This lets
+	-- the player select an entire vertical/re-entrant edge even if the mouse
+	-- is over empty background or its neighboring top face.
+	local function fileEdgeTarget()
+		if activeTool~="File" or (sketchEditor and sketchEditor.active)
+			or UserInputService:GetFocusedTextBox() or cameraController.dragging then
+			return nil
+		end
+		local camera=workspace.CurrentCamera
+		if not camera then return nil end
+		local mouse=UserInputService:GetMouseLocation()
+		if mouse.X<345 and mouse.Y<615 then return nil end
+		if mouse.X>camera.ViewportSize.X-340 and mouse.Y>225 and mouse.Y<610 then
+			return nil
+		end
+		if viewGizmo:containsPoint(mouse) or transformGizmo:capturesPoint(mouse) then
+			return nil
+		end
+		local best,bestDistance=nil,math.huge
+		for id,component in pairs(document.components) do
+			local state=preview.states[id]
+			if not state or state.key~=Fabricator.geometryKey(component) then continue end
+			local topology=surfacePicker:get(id,preview:getModel(id),component)
+			if not topology then continue end
+			local edge,distance=topology.closestEdge(topology,camera,mouse,18)
+			if edge and distance and distance<bestDistance then
+				bestDistance=distance
+				best={id=id,component=component,node=component.nodes[1],
+					pose=Compiler.pose(component.nodes[1]),topology=topology,edge=edge}
+			end
+		end
+		return best
+	end
+
 	-- Derive a single validated filing operation from a current, visible
 	-- manufactured edge. Hover and click use identical face normals and
 	-- inside/outer classification, so a preview cannot promise another cut.
@@ -797,10 +831,39 @@ function Debug.start()
 		end
 		return {a=a,b=b,normalA=n1,normalB=n2,
 			width=width,interior=interior,
-			taperA=edge.taperA==true,taperB=edge.taperB==true},nil
+			taperA=false,taperB=false},nil
 	end
 
 	RunService.RenderStepped:Connect(function()
+		if activeTool=="File" then
+			local selection=fileEdgeTarget()
+			local width=millimeters(fileWidthInput,"File width")
+			if not selection or not width then toolVisualizer:hide() return end
+			local plan=bevelData(selection.topology,selection.edge,selection.pose,width)
+			if not plan then toolVisualizer:hide() return end
+			local edge=selection.edge
+			toolVisualizer:meshEdge(selection.topology.part,edge,width,plan.interior,
+				selection.topology.faces[edge.faces[1]].normal,
+				selection.topology.faces[edge.faces[2]].normal)
+			return
+		end
+		if activeTool=="File" then
+			local selection=fileEdgeTarget()
+			if not selection then
+				message("Hover a visible straight edge of a manufactured body")
+				return
+			end
+			local width,why=millimeters(fileWidthInput,"File width")
+			if not width then message(why) return end
+			local data,reason=bevelData(selection.topology,selection.edge,selection.pose,width)
+			if not data then message(reason or "Unable to file that edge") return end
+			if selection.id~=selectedId then selectComponent(selection.id) end
+			local ok,errorMessage=document:addOperation(selection.component,"FileMesh",data)
+			if not ok then message(errorMessage or "Unable to file edge") return end
+			changed(selection.component)
+			message("File edge recorded; compiling CSG")
+			return
+		end
 		local target = fabricationHit()
 		if not target then toolVisualizer:hide() return end
 		local node, pose = target.node, target.pose
@@ -833,25 +896,6 @@ function Debug.start()
 			local inset = FaceTools.inset(face,margin)
 			if not inset then toolVisualizer:hide() return end
 			toolVisualizer:meshFace(topology.part,inset,margin,depth)
-		elseif activeTool == "File" then
-			local width = millimeters(fileWidthInput, "File width")
-			if not width then toolVisualizer:hide() return end
-			local topology = surfacePicker:get(target.id,preview:getModel(target.id),target.component)
-			if not topology or topology.part ~= target.hit.Instance then
-				toolVisualizer:hide() return
-			end
-			local mouse=UserInputService:GetMouseLocation()
-			local camera=workspace.CurrentCamera
-			if not camera then toolVisualizer:hide() return end
-			local edge=topology.closestEdge(topology,target.hit.Position,target.hit.Normal,
-				camera,mouse,24)
-			if not edge or #edge.faces~=2 then toolVisualizer:hide() return end
-			local plan=bevelData(topology,edge,pose,width)
-			if not plan then toolVisualizer:hide() return end
-			toolVisualizer:meshEdge(topology.part,edge,width,plan.interior,
-				topology.faces[edge.faces[1]].normal,
-				topology.faces[edge.faces[2]].normal,
-				plan.taperA,plan.taperB)
 		elseif activeTool == "Groove" or activeTool == "Kerf" then
 			if not sawFirst or sawFirst.id~=target.id then
 				toolVisualizer:hide() return
@@ -947,24 +991,6 @@ function Debug.start()
 			kind="InsetFace"
 			data={points=localPoints,normal=pose:VectorToObjectSpace(worldNormal),
 				margin=margin,depth=depth}
-		elseif kind == "File" then
-			local width,why=millimeters(fileWidthInput,"File width")
-			if not width then message(why) return end
-			local topology,reason=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
-			if not topology then message(reason or "Compiling edge topology") return end
-			if topology.part~=target.hit.Instance then message("Edge selection is out of date") return end
-			local camera=workspace.CurrentCamera
-			if not camera then return end
-			local edge=topology.closestEdge(topology,target.hit.Position,target.hit.Normal,
-				camera,UserInputService:GetMouseLocation(),24)
-			if not edge or #edge.faces~=2 then
-				message("Hover a visible hard edge of the manufactured solid")
-				return
-			end
-			local plan,why=bevelData(topology,edge,pose,width)
-			if not plan then message(why or "Selected edge cannot be filed") return end
-			kind="FileMesh"
-			data=plan
 		elseif kind == "Groove" or kind == "Kerf" then
 			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
 			if not topology then message(why or "Surface indexing in progress") return end
