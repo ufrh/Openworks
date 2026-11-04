@@ -40,7 +40,6 @@ function Debug.start()
 	local cameraController: any = nil
 	local activeTool: string? = nil
 	local sawFirst = nil
-	local meshSaw = true
 	local historyInfo: any = nil
 	local historyRows = {}
 	local sketchEditor: any = nil
@@ -404,12 +403,7 @@ function Debug.start()
 	local grooveDepthInput = toolNumberRow("Groove depth (mm)", "28")
 	local fileWidthInput = toolNumberRow("File chamfer (mm)", "14")
 	local kerfInput = toolNumberRow("Through kerf (mm)", "14")
-	local meshRow = row(29)
-	local meshButton: any
-	meshButton = button(meshRow, "EditableMesh kerf: ON (native fallback)", 0, 1, function()
-		meshSaw = not meshSaw
-		meshButton.Text = "EditableMesh kerf: " .. (if meshSaw then "ON" else "OFF")
-	end)
+
 	line("Groove/Kerf: click start, then end on top face.", 24)
 
 	line("3D TRANSFORM HANDLES")
@@ -688,26 +682,6 @@ function Debug.start()
 		return mm / 280, nil
 	end
 
-	local function nearestTopEdge(node, localPoint: Vector3): (string?, number)
-		if node.kind ~= "Block" then return nil, math.huge end
-		local hx, hz = node.size.X / 2, node.size.Z / 2
-		local edge = "X+"
-		local distance = math.abs(localPoint.X - hx)
-		local candidates: { { name: string, distance: number } } = {
-			{ name = "X-", distance = math.abs(localPoint.X + hx) },
-			{ name = "Z+", distance = math.abs(localPoint.Z - hz) },
-			{ name = "Z-", distance = math.abs(localPoint.Z + hz) },
-		}
-		for _, candidate in ipairs(candidates) do
-			if candidate.distance < distance then
-				edge, distance = candidate.name, candidate.distance
-			end
-		end
-		if distance > math.min(0.18, math.min(node.size.X, node.size.Z) * 0.40) then
-			return nil, distance
-		end
-		return edge, distance
-	end
 
 	-- Only ever raycast the actual manufactured geometry. Tool indicators
 	-- are CanQuery=false so the ghost itself cannot steal the mouse.
