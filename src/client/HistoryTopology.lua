@@ -297,68 +297,7 @@ function HistoryTopology.build(part:BasePart,component)
 			if loop then pocket(loop,op.normal,op.depth,op.through==true,"groove") end
 		elseif kind=="File" or kind=="FileMesh" then
 			local spec=BevelJunction.spec(node,op)
-			if spec then
-				local a,b,n1,n2,w=spec.a,spec.b,spec.n1,spec.n2,spec.width
-				local oldEdge=edgeMap[edgeKey(point(a),point(b))]
-				if oldEdge then oldEdge.retired=true end
-				local pairDot=n1:Dot(n2)
-				local normals=n1+n2
-				if normals.Magnitude>0.01 and math.abs(pairDot)<0.84 then
-					-- New surface replaces the two old joined faces. The
-					-- original sharp edge is retired; the two bevel trim
-					-- lines are now shared with their respective real faces.
-					local d1=(n1*pairDot-n2).Unit
-					local d2=(n2*pairDot-n1).Unit
-					local sign=if spec.interior then -1 else 1
-					local a1,b1=a+d1*w*sign,b+d1*w*sign
-					local a2,b2=a+d2*w*sign,b+d2*w*sign
-					local bevelFace=addFace({a1,b1,b2,a2},normals.Unit,"file_chamfer")
-					if bevelFace then
-						local function linkTrim(rawA:Vector3,rawB:Vector3,neighbor:Vector3)
-							local trim=edgeMap[edgeKey(point(rawA),point(rawB))]
-							if not trim then return end
-							local desired=direction(neighbor)
-							local candidate=nil
-							-- Original adjacent faces are authoritative if
-							-- still present. This also works when a second
-							-- File targets a prior chamfer's new trim line.
-							if oldEdge then
-								for _,fid in ipairs(oldEdge.faces) do
-									local face=faces[fid]
-									if face and face.id~=bevelFace.id and
-										face.normal:Dot(desired)>0.97 then
-										candidate=face break
-									end
-								end
-							end
-							if not candidate then
-								for _,face in ipairs(faces) do
-									if face.id~=bevelFace.id and
-										face.normal:Dot(desired)>0.97 and
-										math.abs((point(rawA)-face.polygon[1]):Dot(face.normal))<0.008 then
-										candidate=face
-									end
-								end
-							end
-							if candidate then
-								if not table.find(trim.faces,candidate.id) then
-									table.insert(trim.faces,candidate.id)
-								end
-								if not table.find(candidate.edges,trim) then
-									table.insert(candidate.edges,trim)
-								end
-							end
-						end
-						linkTrim(a1,b1,n1)
-						linkTrim(a2,b2,n2)
-					end
-				end
-				for _,prior in ipairs(completedBevels) do
-					local plan=BevelJunction.plan(prior,spec)
-					if plan then table.insert(bevelJunctions,plan) end
-				end
-				table.insert(completedBevels,spec)
-			end
+			if spec then table.insert(completedBevels,spec) end
 		end
 	end
 	-- Link pocket/bore lip edges to their actual containing planar face.
