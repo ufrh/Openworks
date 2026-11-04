@@ -823,6 +823,10 @@ function Debug.start()
 		if target.id ~= selectedId then selectComponent(target.id) sawFirst = nil end
 		if not activeTool then return end
 		local component, node = target.component, target.node
+		-- Click handlers share the same local manufacturing frame as hover.
+		-- 'pose' was scoped only inside RenderStepped, causing the nil
+		-- PointToObjectSpace crash on every face-based operation.
+		local pose = target.pose
 		local x, z = target.x, target.z
 		local kind = activeTool
 		local data = nil
