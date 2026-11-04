@@ -27,11 +27,18 @@ local function check(segments:number)
 	local top=faces[1].polygon
 	local secondTop=faces[2].polygon
 	assert(#top==3 and #secondTop==3,"Miter cap must be two triangles")
-	local upperPoint=top[3]
-	local leftPoint=top[2]
-	local rightPoint=secondTop[3]
-	assert((upperPoint-(leftPoint+rightPoint)*0.5).Magnitude<0.00002,
-		"Miter top seam must bisect the two face profiles")
+	local expected={
+		p, p-X*0.2, p-Z*0.2, p-(X+Z)*0.1,
+	}
+	for _,point in ipairs(expected) do
+		local found=false
+		for _,face in ipairs({top,secondTop}) do
+			for _,vertex in ipairs(face) do
+				if (point-vertex).Magnitude<0.00002 then found=true break end
+			end
+		end
+		assert(found,"Corner top is not the expected triangular miter cap")
+	end
 	local incidence={}
 	local seamSegments=0
 	for _,face in ipairs(faces) do
