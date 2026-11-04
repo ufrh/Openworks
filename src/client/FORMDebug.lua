@@ -677,17 +677,22 @@ function Debug.start()
 	local function nearestTopEdge(node, localPoint: Vector3): (string?, number)
 		if node.kind ~= "Block" then return nil, math.huge end
 		local hx, hz = node.size.X / 2, node.size.Z / 2
-		local edge, distance = nil, math.huge
-		for _, option in ipairs({
-			{ "X+", math.abs(localPoint.X - hx) },
-			{ "X-", math.abs(localPoint.X + hx) },
-			{ "Z+", math.abs(localPoint.Z - hz) },
-			{ "Z-", math.abs(localPoint.Z + hz) },
-		}) do
-			if option[2] < distance then edge, distance = option[1], option[2] end
+		local edge = "X+"
+		local distance = math.abs(localPoint.X - hx)
+		local candidates: { { name: string, distance: number } } = {
+			{ name = "X-", distance = math.abs(localPoint.X + hx) },
+			{ name = "Z+", distance = math.abs(localPoint.Z - hz) },
+			{ name = "Z-", distance = math.abs(localPoint.Z + hz) },
+		}
+		for _, candidate in ipairs(candidates) do
+			if candidate.distance < distance then
+				edge, distance = candidate.name, candidate.distance
+			end
 		end
-		return if distance <= math.min(0.18, math.min(node.size.X, node.size.Z) * 0.40)
-			then edge else nil, distance
+		if distance > math.min(0.18, math.min(node.size.X, node.size.Z) * 0.40) then
+			return nil, distance
+		end
+		return edge, distance
 	end
 
 	-- Only ever raycast the actual manufactured geometry. Tool indicators
@@ -846,7 +851,7 @@ function Debug.start()
 	end)
 
 	refresh()
-	message("Surface sketches now support polygon extrusion (Add / Remove / Intersect).")
+	message("Precision fabrication ready: Sketch, Saw, Drill, Inset, Groove, File.")
 end
 
 return Debug
