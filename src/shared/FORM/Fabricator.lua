@@ -210,8 +210,8 @@ local function compileUnlocked(component): (BasePart, string)
 			end
 		end
 	end
-	return current, string.format("%d features (%d mesh saws, %d fallback, %d paused inside files)",
-		#(component.operations or {}), meshCuts, nativeFallbacks, pausedInsideFiles)
+	return current, string.format("%d features (%d saws, %d fallback, %d corner triangles, %d paused inside)",
+		#(component.operations or {}), meshCuts, nativeFallbacks, triangularCorners, pausedInsideFiles)
 end
 
 -- Bound peak temporary EditableMesh use: only one manufacturing replay
