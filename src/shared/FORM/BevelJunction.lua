@@ -217,6 +217,39 @@ function BevelJunction.clipFaces(baseFaces,planes)
 			table.insert(output,{polygon=poly,normal=normal})
 		end
 	end
+	-- Fail closed: a clipping operation must produce a watertight
+	-- convex solid. Never send a torn or inverted mesh into Roblox CSG,
+	-- where it can turn into the giant wedges seen in earlier tests.
+	local counts={}
+	local volume6=0
+	local function positionKey(p:Vector3):string
+		return string.format("%d,%d,%d",math.round(p.X*100000),
+			math.round(p.Y*100000),math.round(p.Z*100000))
+	end
+	for _,surface in ipairs(output) do
+		local poly=surface.polygon
+		if #poly<3 then return nil,"Clipping produced an open bevel polygon" end
+		for index,p in ipairs(poly) do
+			local q=poly[index%#poly+1]
+			if (q-p).Magnitude<1e-5 then
+				return nil,"Clipping produced a zero-length bevel edge"
+			end
+			local ka,kb=positionKey(p),positionKey(q)
+			local key=if ka<kb then ka.."|"..kb else kb.."|"..ka
+			counts[key]=(counts[key] or 0)+1
+		end
+		for i=2,#poly-1 do
+			volume6+=poly[1]:Dot(poly[i]:Cross(poly[i+1]))
+		end
+	end
+	for _,count in pairs(counts) do
+		if count~=2 then
+			return nil,"Clipped bevel is nonmanifold; refusing CSG"
+		end
+	end
+	if math.abs(volume6)<1e-7 then
+		return nil,"Clipped bevel has no usable solid volume"
+	end
 	return output,nil
 end
 
