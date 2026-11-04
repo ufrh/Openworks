@@ -10,6 +10,29 @@ local function key(p:Vector3):string
 end
 
 function FaceTools.boundary(face): ({Vector3}?,string?)
+	-- HistoryTopology owns the logical polygon of each manufactured face.
+	-- Do NOT rebuild it from face.edges: cutout lips and neighboring faces
+	-- share those edges, and treating all of them as a single ring can jump
+	-- between disconnected loops or accidentally use the stock perimeter.
+	if face.polygon then
+		if #face.polygon < 3 or #face.polygon > 128 then
+			return nil, "Face boundary is too complex"
+		end
+		local points={}
+		for i,p in ipairs(face.polygon) do
+			if typeof(p) ~= "Vector3" then return nil,"Invalid surface vertex" end
+			local prev=face.polygon[(i-2)%#face.polygon+1]
+			local nextP=face.polygon[i%#face.polygon+1]
+			local u,v=p-prev,nextP-p
+			if u.Magnitude>EPS and v.Magnitude>EPS
+				and u.Unit:Dot(v.Unit)<0.9995 then
+				table.insert(points,p)
+			end
+		end
+		if #points<3 then return nil,"Degenerate planar boundary" end
+		return points,nil
+	end
+	-- Compatibility with native/mesh-triangle selections.
 	local links,locations,count={},{},0
 	for _,edge in ipairs(face.edges) do
 		local a,b=key(edge.a),key(edge.b)
@@ -21,14 +44,12 @@ function FaceTools.boundary(face): ({Vector3}?,string?)
 		count+=1
 	end
 	if count<3 or count>128 then return nil,"Face boundary is too complex" end
-	local start=next(links)
-	if not start then return nil,"Face has no exposed boundary" end
+	local first=next(links)
+	if not first then return nil,"Face has no exposed boundary" end
 	for _,neighbors in pairs(links) do
-		if #neighbors~=2 then return nil,"Non-manifold or branched face boundary" end
+		if #neighbors~=2 then return nil,"Face has multiple or branched boundary loops" end
 	end
-	local points={}
-	local previous,current=nil,start
-	local seen={}
+	local points,previous,current,seen={},nil,first,{}
 	repeat
 		if seen[current] then return nil,"Face boundary loops intersect" end
 		seen[current]=true
@@ -36,12 +57,10 @@ function FaceTools.boundary(face): ({Vector3}?,string?)
 		local neighbors=links[current]
 		local following=if neighbors[1]==previous then neighbors[2] else neighbors[1]
 		previous,current=current,following
-	until current==start or #points>count
-	if current~=start or #points~=count then
-		return nil,"Inset requires one closed loop without holes"
+	until current==first or #points>count
+	if current~=first or #points~=count then
+		return nil,"Inset requires a single closed face boundary"
 	end
-	-- CSG tessellation can split long straight edges into several
-	-- collinear subsegments. Remove those intermediate vertices.
 	local simplified={}
 	for i,p in ipairs(points) do
 		local prev=points[(i-2)%#points+1]
