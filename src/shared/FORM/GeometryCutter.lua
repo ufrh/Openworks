@@ -151,110 +151,6 @@ end
 -- This method expects an authored straight edge shared by exactly two
 -- planar faces. It refuses inconsistent frames and extreme angles rather
 -- than creating the huge malformed cutter triangles seen in the prototype.
--- Taper a triangular chamfer cutter along a straight edge. A full-width
--- triangle ending at a concave contour vertex leaves a square-cut notch
--- cap on both the top and bottom surfaces. This loft reduces the width
--- near those vertices instead of applying a second destructive corner cut.
-local function taperedBevelPrism(profile:{Vector3},travel:Vector3,
-	taperA:boolean,taperB:boolean,width:number,edgeA:Vector3):(MeshPart,()->())
-	if #profile~=3 then error("Chamfer loft requires triangular profile",0) end
-	local length=travel.Magnitude
-	if length<0.06 then error("Chamfer edge too short",0) end
-	local axis=travel.Unit
-	local inset=math.min(width*1.05,length*0.35)
-	if taperA and taperB and length<width*2.4 then
-		error("Edge is too short to taper both chamfer ends safely",0)
-	end
-	local stages={{t=0,scale=if taperA then 0.12 else 1}}
-	if taperA then table.insert(stages,{t=inset,scale=1}) end
-	if taperB then table.insert(stages,{t=length-inset,scale=1}) end
-	table.insert(stages,{t=length,scale=if taperB then 0.12 else 1})
-	-- Collapse around the original physical edge, not the centroid
-	-- of the removed wedge. This prevents a triangular stub at the
-	-- concave junction where multiple chamfers meet.
-	local extension=math.min(math.clamp(width*0.07,0.002,0.006),
-		(edgeA-(edgeA+travel)).Magnitude*0.02)
-	local anchor=edgeA-axis*extension
-	local worldPoints={}
-	for _,stage in ipairs(stages) do
-		for _,point in ipairs(profile) do
-			table.insert(worldPoints,anchor+axis*stage.t+(point-anchor)*stage.scale)
-		end
-	end
-	local min=Vector3.new(math.huge,math.huge,math.huge)
-	local max=Vector3.new(-math.huge,-math.huge,-math.huge)
-	for _,p in ipairs(worldPoints) do
-		min=Vector3.new(math.min(min.X,p.X),math.min(min.Y,p.Y),math.min(min.Z,p.Z))
-		max=Vector3.new(math.max(max.X,p.X),math.max(max.Y,p.Y),math.max(max.Z,p.Z))
-	end
-	local center=(min+max)/2
-	local mesh:EditableMesh?=nil
-	local part:MeshPart?=nil
-	local ok,why=pcall(function()
-		mesh=AssetService:CreateEditableMesh()
-		if not mesh then error("EditableMesh allocation unavailable") end
-		local ids={}
-		for _,p in ipairs(worldPoints) do
-			table.insert(ids,mesh:AddVertex(p-center))
-		end
-		local color=mesh:AddColor(Color3.new(1,1,1),1)
-		local midpoint=Vector3.zero
-		for _,p in ipairs(worldPoints) do midpoint+=p end
-		midpoint/= #worldPoints
-		local function triangle(i:number,j:number,k:number)
-			local p,q,r=worldPoints[i],worldPoints[j],worldPoints[k]
-			local n=(q-p):Cross(r-p)
-			if n.Magnitude<1e-9 then error("Degenerate chamfer loft triangle") end
-			-- Both caps and sidewalls face outward from the loft's center.
-			if n:Dot((p+q+r)/3-midpoint)<0 then
-				j,k=k,j
-				n=-n
-			end
-			local normal=mesh:AddNormal(n.Unit)
-			local face=mesh:AddTriangle(ids[i],ids[j],ids[k])
-			mesh:SetFaceNormals(face,{normal,normal,normal})
-			mesh:SetFaceColors(face,{color,color,color})
-		end
-		triangle(1,2,3)
-		for i=1,#stages-1 do
-			local a=(i-1)*3
-			local b=i*3
-			for j=1,3 do
-				local next=j%3+1
-				triangle(a+j,a+next,b+next)
-				triangle(a+j,b+next,b+j)
-			end
-		end
-		local last=(#stages-1)*3
-		triangle(last+1,last+2,last+3)
-		part=AssetService:CreateMeshPartAsync(Content.fromObject(mesh),{
-			CollisionFidelity=Enum.CollisionFidelity.Hull,
-		})
-		if not part then error("Could not convert chamfer loft") end
-		part.Name="FORM_TaperedFileCutter"
-		part.CFrame=CFrame.new(center)
-		part.Color=Color3.new(1,1,1)
-		part.Material=Enum.Material.SmoothPlastic
-		part.TextureID=""
-		part.Anchored=true
-		part.CanCollide=false
-		part.CanTouch=false
-		part.CanQuery=false
-	end)
-	if not ok or not mesh or not part then
-		if part then part:Destroy() end
-		if mesh then mesh:Destroy() end
-		error("Tapered bevel failed: "..tostring(why),0)
-	end
-	local disposed=false
-	return part,function()
-		if disposed then return end
-		disposed=true
-		part:Destroy()
-		mesh:Destroy()
-	end
-end
-
 local function bevelPlan(edgeA:Vector3,edgeB:Vector3,
 	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?)
 	if typeof(edgeA)~="Vector3" or typeof(edgeB)~="Vector3"
@@ -318,12 +214,12 @@ end
 
 function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
 	outwardA:Vector3,outwardB:Vector3,width:number,interior:boolean?,
-	taperA:boolean?,taperB:boolean?)
+	_taperA:boolean?,_taperB:boolean?)
+	-- Retain optional parameters for backward-compatible history replay,
+	-- but DO NOT run the previous tapered loft: it introduced malformed
+	-- wedges and visible rectangular notches on concave corners.
 	local plan,why=bevelPlan(edgeA,edgeB,outwardA,outwardB,width,interior)
 	if not plan then error(why or "Invalid bevel geometry",0) end
-	if taperA or taperB then
-		return taperedBevelPrism(plan.profile,plan.travel,taperA==true,taperB==true,width,edgeA)
-	end
 	return GeometryCutter.prism(plan.profile,plan.travel)
 end
 
