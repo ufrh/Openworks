@@ -8,6 +8,7 @@ local Cutters = require(script.Parent.Cutters)
 local Extrusion = require(script.Parent.Extrusion)
 local FileCutter = require(script.Parent.FileCutter)
 local GeometryCutter = require(script.Parent.GeometryCutter)
+local CornerTriangle = require(script.Parent.CornerTriangle)
 
 local Fabricator = {}
 local OPTIONS = { SplitApart = false }
@@ -60,7 +61,7 @@ function Fabricator.geometryKey(component): string
 			end
 		end
 	end
-	return "FORM_EXTERIOR_FILE_ONLY_V3;"..table.concat(pieces, ";")
+	return "FORM_CORNER_TRIANGLE_V4;"..table.concat(pieces, ";")
 end
 
 local function combine(source: BasePart, cutter: BasePart, mode: string): (boolean, any)
@@ -100,7 +101,9 @@ end
 local function compileUnlocked(component): (BasePart, string)
 	local node = component.nodes[1]
 	local current = Compiler.nativePart(node)
-	local meshCuts, nativeFallbacks, pausedInsideFiles = 0, 0, 0
+	local meshCuts, nativeFallbacks, pausedInsideFiles, triangularCorners = 0, 0, 0, 0
+	local exteriorFiles={}
+	local completedCorners={}
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled == false then continue end
 		-- Keep historical interior File entries for possible later repair,
