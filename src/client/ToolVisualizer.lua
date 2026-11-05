@@ -54,9 +54,16 @@ function Visualizer.new(playerGui:PlayerGui)
 	end
 	local box=adorn("BoxHandleAdornment","RemovalVolume",anchor,folder)
 
+	-- A dedicated attachment keeps the badge at the actual tool point.
+	-- An absolute-world vector used as a StudsOffset on an origin Part
+	-- could appear detached from the hit location at certain camera views.
+	local labelPoint=Instance.new("Attachment")
+	labelPoint.Name="FORM_DimensionPoint"
+	labelPoint.Position=Vector3.zero
+	labelPoint.Parent=anchor
 	local label=Instance.new("BillboardGui")
 	label.Name="ToolDimensionBadge"
-	label.Adornee=anchor
+	label.Adornee=labelPoint
 	label.AlwaysOnTop=true
 	label.Size=UDim2.fromOffset(196,26)
 	label.Enabled=false
@@ -74,7 +81,7 @@ function Visualizer.new(playerGui:PlayerGui)
 	corner.Parent=display
 	return setmetatable({root=folder,anchor=anchor,lines=lines,lineCount=0,
 		box=box,
-		label=label,display=display},Visualizer)
+		label=label,labelPoint=labelPoint,display=display,animation=nil},Visualizer)
 end
 
 function Visualizer:hide()
@@ -93,7 +100,8 @@ end
 function Visualizer:caption(position:Vector3,text:string)
 	-- BillboardGui follows the one shared anchor through world offset,
 	-- allowing all tool guides to remain nonphysical Adornments.
-	self.label.StudsOffsetWorldSpace=position+Vector3.new(0,0.32,0)
+	self.labelPoint.Position=position+Vector3.new(0,0.14,0)
+	self.label.StudsOffsetWorldSpace=Vector3.zero
 	self.display.Text=text
 	self.label.Enabled=true
 end
@@ -136,42 +144,74 @@ function Visualizer:volume(frame:CFrame,size:Vector3,shape:Enum.PartType,
 	self:caption(frame.Position,caption)
 end
 
--- Drill is a wireframe cylinder: a thin ring at the entrance, a
--- second ring at the requested depth and longitudinal depth rails.
--- Both rings lie perpendicular to the true WORLD drilling normal.
+-- The idle drill cursor is only a face-aligned ring. The whole bore
+-- is revealed during drilling animation so it never leaves long wireframe
+-- shafts hanging off the workpiece when hovering.
 local CIRCLE_SEGMENTS=40
-function Visualizer:drillWireframe(origin:Vector3,normal:Vector3,
-	diameter:number,penetration:number,through:boolean)
-	self:hide()
+local function drillBasis(normal:Vector3)
 	local axis=normal.Unit
-	local guide=if math.abs(axis.Y)<0.9 then Vector3.yAxis else Vector3.xAxis
-	local u=axis:Cross(guide).Unit
-	local v=axis:Cross(u).Unit
-	local radius=diameter/2
-	-- Lift only the entrance ring slightly above the surface to prevent
-	-- Z fighting. The depth ring remains at its physically correct depth.
-	local entrance=origin+axis*0.007
-	local exit=origin-axis*penetration
-	local function circle(center:Vector3,color:Color3,thickness:number)
-		for i=0,CIRCLE_SEGMENTS-1 do
-			local t1=i*math.pi*2/CIRCLE_SEGMENTS
-			local t2=(i+1)*math.pi*2/CIRCLE_SEGMENTS
-			local a=center+(u*math.cos(t1)+v*math.sin(t1))*radius
-			local b=center+(u*math.cos(t2)+v*math.sin(t2))*radius
-			self:guide(a,b,color,thickness)
+	local reference=if math.abs(axis.Y)<0.9 then Vector3.yAxis else Vector3.xAxis
+	local tangent=axis:Cross(reference).Unit
+	return tangent,axis:Cross(tangent).Unit
+end
+
+local function throughSpan(origin:Vector3,normal:Vector3,
+	stockSize:Vector3?,fallback:number):number
+	if not stockSize then return fallback end
+	local inward=-normal.Unit
+	local half=stockSize/2
+	local result=math.huge
+	for _,axis in ipairs({"X","Y","Z"}) do
+		local d=inward[axis]
+		if math.abs(d)>1e-6 then
+			local limit=if d>0 then half[axis] else -half[axis]
+			local distance=(limit-origin[axis])/d
+			if distance>0.001 then result=math.min(result,distance) end
 		end
 	end
-	circle(entrance,CYAN,2.1)
-	circle(exit,CYAN:Lerp(AMBER,0.28),1.1)
-	for i=0,3 do
-		local angle=i*math.pi/2
-		local radial=(u*math.cos(angle)+v*math.sin(angle))*radius
-		self:guide(entrance+radial,exit+radial,CYAN,1.2)
+	return if result<math.huge then result else fallback
+end
+
+function Visualizer:drillWireframe(origin:Vector3,normal:Vector3,
+	diameter:number,penetration:number,through:boolean,progress:number?)
+	self:hide()
+	if normal.Magnitude<0.001 or diameter<=0 then return end
+	local axis=normal.Unit
+	local u,v=drillBasis(axis)
+	local radius=diameter*0.5
+	local surface=origin+axis*0.007
+	local function circle(center:Vector3,color:Color3,thickness:number)
+		for i=0,CIRCLE_SEGMENTS-1 do
+			local a=i*2*math.pi/CIRCLE_SEGMENTS
+			local b=(i+1)*2*math.pi/CIRCLE_SEGMENTS
+			self:guide(center+(u*math.cos(a)+v*math.sin(a))*radius,
+				center+(u*math.cos(b)+v*math.sin(b))*radius,color,thickness)
+		end
 	end
-	self:guide(entrance,exit,CYAN,0.85)
-	self:caption(entrance,string.format("DRILL Ø %.0f mm · %s",
-		diameter*280,if through then "THROUGH" else
-			string.format("%.0f mm DEEP",penetration*280)))
+	circle(surface,CYAN,1.65)
+	if progress~=nil then
+		local amount=math.clamp(progress,0,1)
+		local feed=origin-axis*(penetration*amount)
+		circle(feed,CYAN:Lerp(AMBER,0.35),1.3)
+		-- The four rails show drilling depth only during the action.
+		for i=0,3 do
+			local angle=i*math.pi/2
+			local radial=(u*math.cos(angle)+v*math.sin(angle))*radius
+			self:guide(surface+radial,feed+radial,CYAN,0.85)
+		end
+		-- Two short revolving flutes make the feed/spin visible without
+		-- adding any physics tool or interfering with hover raycasts.
+		local rotation=amount*math.pi*12
+		for _,phi in ipairs({rotation,rotation+math.pi}) do
+			local radial=u*math.cos(phi)+v*math.sin(phi)
+			self:guide(feed+radial*radius*0.15,feed+radial*radius*0.85,
+				AMBER,2.0)
+		end
+	end
+	local status=if through then "THROUGH"
+		else string.format("%.0f mm DEEP",penetration*280)
+	self:caption(surface,string.format("Ø %.0f mm · %s%s",
+		diameter*280,status,if progress then "  ·  DRILLING" else ""))
 end
 
 function Visualizer:drill(pose:CFrame,node,x:number,z:number,
@@ -185,29 +225,11 @@ function Visualizer:drillFace(pose:CFrame,origin:Vector3,normal:Vector3,
 	diameter:number,depth:number,through:boolean,maxDepth:number,stockSize:Vector3?)
 	local outward=pose:VectorToWorldSpace(normal).Unit
 	local start=pose:PointToWorldSpace(origin)
-	local penetration=depth
-	if through then
-		penetration=maxDepth
-		if stockSize then
-			-- Show the drilled span INSIDE the workpiece, not the giant
-			-- overhanging Boolean cutter. Ray/axis-aligned stock-box exit
-			-- gives the correct depth for its outer planar surfaces.
-			local direction=-normal.Unit
-			local half=stockSize/2
-			local distance=math.huge
-			for _,axis in ipairs({"X","Y","Z"}) do
-				local d=direction[axis]
-				if math.abs(d)>1e-6 then
-					local edge=if d>0 then half[axis] else -half[axis]
-					local t=(edge-origin[axis])/d
-					if t>0.001 then distance=math.min(distance,t) end
-				end
-			end
-			if distance<math.huge then penetration=distance end
-		end
-	end
+	local penetration=if through then throughSpan(origin,normal,stockSize,maxDepth)
+		else depth
 	self:drillWireframe(start,outward,diameter,penetration,through)
 end
+
 
 function Visualizer:inset(pose:CFrame,node,margin:number,depth:number)
 	local width=node.size.X-margin*2
