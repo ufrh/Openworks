@@ -309,7 +309,148 @@ function Visualizer:file(pose:CFrame,node,edge:string,width:number)
 	self:caption((worldA+worldB)/2,string.format("FILE %s · %.0f mm",edge,width*280))
 end
 
+-- Transient client-only fabrication animation. The actual document
+-- operation is already committed; these frames depict tool travel while
+-- the asynchronous CSG result is being generated. No physics or meshes.
+function Visualizer:isAnimating():boolean
+	return self.animation~=nil
+end
+
+function Visualizer:stopAnimation()
+	self.animation=nil
+	self:hide()
+end
+
+function Visualizer:animateDrill(pose:CFrame,origin:Vector3,normal:Vector3,
+	diameter:number,depth:number,through:boolean,stockSize:Vector3)
+	local worldOrigin=pose:PointToWorldSpace(origin)
+	local worldNormal=pose:VectorToWorldSpace(normal).Unit
+	local penetration=if through then throughSpan(origin,normal,stockSize,stockSize.Magnitude)
+		else depth
+	self.animation={kind="Drill",elapsed=0,duration=0.85,
+		origin=worldOrigin,normal=worldNormal,diameter=diameter,
+		penetration=penetration,through=through}
+end
+
+function Visualizer:animateFile(pose:CFrame,operation)
+	self.animation={kind="File",elapsed=0,duration=0.90,
+		a=pose:PointToWorldSpace(operation.a),
+		b=pose:PointToWorldSpace(operation.b),
+		n1=pose:VectorToWorldSpace(operation.normalA).Unit,
+		n2=pose:VectorToWorldSpace(operation.normalB).Unit,
+		width=operation.width,segments=operation.segments or 1}
+end
+
+function Visualizer:animateInset(pose:CFrame,points:{Vector3},
+	normal:Vector3,depth:number)
+	local loop={}
+	for _,point in ipairs(points) do
+		table.insert(loop,pose:PointToWorldSpace(point))
+	end
+	self.animation={kind="Inset",elapsed=0,duration=0.65,
+		loop=loop,normal=pose:VectorToWorldSpace(normal).Unit,depth=depth}
+end
+
+function Visualizer:animateSketch(pose:CFrame,node,operation)
+	local loop={}
+	for _,point in ipairs(operation.points or {}) do
+		table.insert(loop,pose:PointToWorldSpace(Vector3.new(
+			point.X,node.size.Y/2,point.Y)))
+	end
+	if #loop<3 then return end
+	self.animation={kind="Sketch",elapsed=0,duration=0.80,
+		loop=loop,mode=operation.mode,
+		depth=operation.depth}
+end
+
+function Visualizer:update(dt:number):boolean
+	local effect=self.animation
+	if not effect then return false end
+	effect.elapsed+=math.max(0,dt)
+	local t=math.clamp(effect.elapsed/effect.duration,0,1)
+	-- Every effect recreates only its visible adornments from the pool.
+	-- No additional Parts, Tweens or render connections are allocated.
+	if effect.kind=="Drill" then
+		local feed=1-(1-t)^3
+		self:drillWireframe(effect.origin,effect.normal,
+			effect.diameter,effect.penetration,effect.through,feed)
+	elseif effect.kind=="File" then
+		self:hide()
+		local axis=effect.b-effect.a
+		if axis.Magnitude>0.001 then
+			local direction=axis.Unit
+			local width=effect.width
+			local n1,n2=effect.n1,effect.n2
+			self:guide(effect.a,effect.b,CYAN,1.15)
+			-- Four back-and-forth passes across the full selected edge.
+			local cycle=(t*4)%1
+			local moving=if math.floor(t*4)%2==0 then cycle else 1-cycle
+			local position=effect.a+axis*moving
+			local previous=nil
+			local segments=if effect.segments==1 then 1 else effect.segments
+			for i=0,segments do
+				local p
+				if segments==1 then
+					p=position-n1*width
+				else
+					local theta=i/segments*math.pi*0.5
+					p=position-(n1+n2)*width+
+						(n1*math.cos(theta)+n2*math.sin(theta))*width
+				end
+				if previous then self:guide(previous,p,AMBER,2.6) end
+				previous=p
+				if segments==1 and i==0 then
+					self:guide(position-n1*width,position-n2*width,AMBER,2.6)
+				end
+			end
+			self:guide(position-direction*math.min(width*0.6,axis.Magnitude*0.12),
+				position+direction*math.min(width*0.6,axis.Magnitude*0.12),AMBER,3)
+			self:caption(position,string.format("FILING · %d SEG · %d%%",
+				effect.segments,math.round(t*100)))
+		end
+	elseif effect.kind=="Inset" then
+		self:hide()
+		local amount=1-(1-t)^2
+		local offset=-effect.normal*effect.depth*amount
+		local center=Vector3.zero
+		for i,a in ipairs(effect.loop) do
+			local b=effect.loop[i%#effect.loop+1]
+			self:guide(a+offset,b+offset,AMBER,1.9)
+			center+=a
+		end
+		if #effect.loop>0 then
+			self:caption(center/#effect.loop+offset,
+				string.format("INSET · %.0f mm · %d%%",
+					effect.depth*280,math.round(t*100)))
+		end
+	elseif effect.kind=="Sketch" then
+		self:hide()
+		local count=#effect.loop
+		local completed=t*count
+		local middle=Vector3.zero
+		for i,a in ipairs(effect.loop) do
+			local b=effect.loop[i%count+1]
+			local portion=math.clamp(completed-(i-1),0,1)
+			if portion>0 then
+				self:guide(a,a:Lerp(b,portion),AMBER,2)
+			end
+			middle+=a
+		end
+		self:caption(middle/count,string.format("%s PROFILE · %d%%",
+			if effect.mode=="Remove" then "SAW" else "EXTRUDE",
+			math.round(t*100)))
+	end
+	if t>=1 then
+		self.animation=nil
+		-- Prevent a one-frame ghost after completion; normal hover resumes
+		-- next RenderStepped without leaving a stale progress badge.
+		self:hide()
+	end
+	return true
+end
+
 function Visualizer:destroy()
+	self.animation=nil
 	self.root:Destroy()
 	self.label:Destroy()
 	self.anchor:Destroy()
