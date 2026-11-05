@@ -53,15 +53,6 @@ function Visualizer.new(playerGui:PlayerGui)
 		table.insert(lines,adorn("LineHandleAdornment","Guide_"..i,anchor,folder))
 	end
 	local box=adorn("BoxHandleAdornment","RemovalVolume",anchor,folder)
-	local cylinder=adorn("CylinderHandleAdornment","CylindricalRemoval",anchor,folder)
-	local perimeter=adorn("CylinderHandleAdornment","DrillPerimeter",anchor,folder)
-	perimeter.Height=0.004
-	perimeter.Angle=360
-	perimeter.Color3=CYAN
-	perimeter.Transparency=0
-	local marker=adorn("SphereHandleAdornment","ToolCenter",anchor,folder)
-	marker.Radius=0.014
-	marker.Transparency=0.1
 
 	local label=Instance.new("BillboardGui")
 	label.Name="ToolDimensionBadge"
@@ -82,7 +73,7 @@ function Visualizer.new(playerGui:PlayerGui)
 	corner.CornerRadius=UDim.new(0,5)
 	corner.Parent=display
 	return setmetatable({root=folder,anchor=anchor,lines=lines,lineCount=0,
-		box=box,cylinder=cylinder,perimeter=perimeter,marker=marker,
+		box=box,
 		label=label,display=display},Visualizer)
 end
 
@@ -90,9 +81,6 @@ function Visualizer:hide()
 	for _,line in ipairs(self.lines) do line.Visible=false end
 	self.lineCount=0
 	self.box.Visible=false
-	self.cylinder.Visible=false
-	self.perimeter.Visible=false
-	self.marker.Visible=false
 	self.label.Enabled=false
 end
 
@@ -127,23 +115,15 @@ function Visualizer:volume(frame:CFrame,size:Vector3,shape:Enum.PartType,
 	caption:string,color:Color3?)
 	self:hide()
 	local tint=color or AMBER
-	if shape==Enum.PartType.Cylinder then
-		-- CylinderHandleAdornment's axis is local Y; incoming cylinder
-		-- frame is from a Roblox Part whose long axis is local X.
-		self.cylinder.CFrame=frame*CFrame.Angles(0,0,math.pi/2)
-		self.cylinder.Radius=math.max(size.Y,size.Z)*0.5
-		self.cylinder.Height=size.X
-		self.cylinder.Angle=360
-		self.cylinder.Color3=tint
-		self.cylinder.Transparency=0.82
-		self.cylinder.Visible=true
-	else
+	-- Tool volume overlays are wireframe-only. Cylinder guides are
+	-- drawn by drillWireframe() with actual circles perpendicular to the
+	-- drilling axis; a filled CylinderHandleAdornment is never used.
+	if shape==Enum.PartType.Block then
 		self.box.CFrame=frame
 		self.box.Size=size
 		self.box.Color3=tint
-		self.box.Transparency=0.86
+		self.box.Transparency=0.96
 		self.box.Visible=true
-		-- Twelve crisp boundaries are more legible than filled Parts.
 		local corners=boxCorners(frame,size)
 		for _,pair in ipairs({
 			{1,2},{3,4},{5,6},{7,8},
@@ -156,41 +136,57 @@ function Visualizer:volume(frame:CFrame,size:Vector3,shape:Enum.PartType,
 	self:caption(frame.Position,caption)
 end
 
+-- Drill is a wireframe cylinder: a thin ring at the entrance, a
+-- second ring at the requested depth and longitudinal depth rails.
+-- Both rings lie perpendicular to the true WORLD drilling normal.
+local CIRCLE_SEGMENTS=40
+function Visualizer:drillWireframe(origin:Vector3,normal:Vector3,
+	diameter:number,penetration:number,through:boolean)
+	self:hide()
+	local axis=normal.Unit
+	local guide=if math.abs(axis.Y)<0.9 then Vector3.yAxis else Vector3.xAxis
+	local u=axis:Cross(guide).Unit
+	local v=axis:Cross(u).Unit
+	local radius=diameter/2
+	-- Lift only the entrance ring slightly above the surface to prevent
+	-- Z fighting. The depth ring remains at its physically correct depth.
+	local entrance=origin+axis*0.007
+	local exit=origin-axis*penetration
+	local function circle(center:Vector3,color:Color3,thickness:number)
+		for i=0,CIRCLE_SEGMENTS-1 do
+			local t1=i*math.pi*2/CIRCLE_SEGMENTS
+			local t2=(i+1)*math.pi*2/CIRCLE_SEGMENTS
+			local a=center+(u*math.cos(t1)+v*math.sin(t1))*radius
+			local b=center+(u*math.cos(t2)+v*math.sin(t2))*radius
+			self:guide(a,b,color,thickness)
+		end
+	end
+	circle(entrance,CYAN,2.1)
+	circle(exit,CYAN:Lerp(AMBER,0.28),1.1)
+	for i=0,3 do
+		local angle=i*math.pi/2
+		local radial=(u*math.cos(angle)+v*math.sin(angle))*radius
+		self:guide(entrance+radial,exit+radial,CYAN,1.2)
+	end
+	self:guide(entrance,exit,CYAN,0.85)
+	self:caption(entrance,string.format("DRILL Ø %.0f mm · %s",
+		diameter*280,if through then "THROUGH" else
+			string.format("%.0f mm DEEP",penetration*280)))
+end
+
 function Visualizer:drill(pose:CFrame,node,x:number,z:number,
 	diameter:number,depth:number,through:boolean)
-	local top=node.size.Y/2
-	local penetration=if through then node.size.Y+0.08
-		else math.min(depth,node.size.Y)+0.04
-	local centerY=if through then 0 else top-penetration/2+0.04
-	self:volume(pose*CFrame.new(x,centerY,z)*CFrame.Angles(0,0,math.pi/2),
-		Vector3.new(penetration,diameter,diameter),Enum.PartType.Cylinder,
-		string.format("Ø %.0f mm  ·  %s",diameter*280,
-			if through then "THROUGH" else string.format("%.0f mm",depth*280)),CYAN)
-	local topPoint=pose:PointToWorldSpace(Vector3.new(x,top+0.02,z))
-	self.perimeter.CFrame=pose*CFrame.new(x,top+0.02,z)
-	self.perimeter.Radius=diameter/2
-	self.perimeter.InnerRadius=math.max(0,diameter/2-math.clamp(diameter*0.08,0.005,0.02))
-	self.perimeter.Visible=true
-	self:caption(topPoint,self.display.Text)
+	local origin=pose:PointToWorldSpace(Vector3.new(x,node.size.Y/2,z))
+	local penetration=if through then node.size.Y else math.min(depth,node.size.Y)
+	self:drillWireframe(origin,pose.UpVector,diameter,penetration,through)
 end
 
 function Visualizer:drillFace(pose:CFrame,origin:Vector3,normal:Vector3,
 	diameter:number,depth:number,through:boolean,maxDepth:number)
 	local outward=pose:VectorToWorldSpace(normal).Unit
 	local start=pose:PointToWorldSpace(origin)
-	local penetration=if through then maxDepth*2+0.08 else depth+0.04
-	local center=start-outward*(penetration/2-0.04)
-	self:volume(CFrame.lookAt(center,center-outward)*CFrame.Angles(0,math.pi/2,0),
-		Vector3.new(penetration,diameter,diameter),Enum.PartType.Cylinder,
-		string.format("Ø %.0f mm · %s",diameter*280,
-			if through then "THROUGH" else string.format("%.0f mm",depth*280)),CYAN)
-	-- Ring local Y axis follows the outward face normal.
-	self.perimeter.CFrame=CFrame.lookAt(start+outward*0.018,start-outward)
-		*CFrame.Angles(math.pi/2,0,0)
-	self.perimeter.Radius=diameter/2
-	self.perimeter.InnerRadius=math.max(0,diameter/2-math.clamp(diameter*0.08,0.005,0.02))
-	self.perimeter.Visible=true
-	self:caption(start,self.display.Text)
+	local penetration=if through then maxDepth*2 else depth
+	self:drillWireframe(start,outward,diameter,penetration,through)
 end
 
 function Visualizer:inset(pose:CFrame,node,margin:number,depth:number)
@@ -201,32 +197,6 @@ function Visualizer:inset(pose:CFrame,node,margin:number,depth:number)
 	self:volume(pose*CFrame.new(0,node.size.Y/2-penetration/2+0.04,0),
 		Vector3.new(width,penetration,length),Enum.PartType.Block,
 		string.format("INSET %.0f mm · DEPTH %.0f mm",margin*280,depth*280))
-end
-
-function Visualizer:grooveFace(pose:CFrame,a:Vector3,b:Vector3,
-	normal:Vector3,width:number,depth:number,through:boolean,maxDepth:number)
-	local forward=b-a
-	if forward.Magnitude<0.02 then self:hide() return end
-	local outward=normal.Unit
-	local right=outward:Cross(forward.Unit).Unit
-	local back=right:Cross(outward).Unit
-	local penetration=if through then maxDepth*2+0.08 else depth+0.04
-	local center=(a+b)/2-outward*(penetration/2-0.04)
-	self:volume(pose*CFrame.fromMatrix(center,right,outward,back),
-		Vector3.new(width,penetration,forward.Magnitude+width),Enum.PartType.Block,
-		string.format("%s %.0f × %.0f mm",
-			if through then "KERF" else "GROOVE",width*280,depth*280))
-end
-
-function Visualizer:groove(pose:CFrame,node,a:Vector2,b:Vector2,width:number,depth:number)
-	local vector=Vector3.new(b.X-a.X,0,b.Y-a.Y)
-	if vector.Magnitude<0.02 then self:hide() return end
-	local penetration=math.min(depth,node.size.Y)+0.04
-	local center=Vector3.new((a.X+b.X)/2,node.size.Y/2-penetration/2+0.04,
-		(a.Y+b.Y)/2)
-	self:volume(pose*CFrame.lookAt(center,center+vector),
-		Vector3.new(width,penetration,vector.Magnitude+width),Enum.PartType.Block,
-		string.format("GROOVE %.0f × %.0f mm",width*280,depth*280))
 end
 
 function Visualizer:meshEdge(part:BasePart,edge,width:number,
