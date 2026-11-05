@@ -1,54 +1,68 @@
-# FORM — Drill wireframe and tool cleanup
+# FORM — Drill preview and fabrication animations
 
 Updated: 2026-11-05. Branch `dev`.
 
-## Drill preview
+## Corrected idle Drill preview
 
-The drill visualizer now uses **only line adornments**. It no longer
-creates a translucent cylinder or uses a CylinderHandleAdornment for
-its entrance circle.
+The idle cursor is intentionally **one thin circular outline** on the
+selected manufactured face—no giant through-hole shaft or filled cylinder.
+Its circle basis is constructed from the selected face's real world-space
+normal, so it follows top, side and rotated faces.
 
-- One thin **40-segment circular outline** at the intended drilling
-  position, in the plane perpendicular to the selected face's
-  **world-space normal**.
-- Another circle at the planned hole depth, four longitudinal
-  wireframe guides, and a faint center/depth axis.
-- The ring's basis vectors come from the face normal; rotating the
-  workpiece or drilling an upright/side face must not turn the circle
-  sideways.
-- For a blind hole, the back circle follows the selected depth. For
-  a through-hole, the display uses the uncut stock's oriented bounding
-  box to show the approximate span through the material, rather than
-  the oversized CSG cutter used internally.
-- Wheel diameter sizing and the through/blind toggle are unchanged.
+The dimension badge is now attached to a dedicated `Attachment` at the
+actual world-space drill point. The old badge positioned an absolute
+world coordinate through `StudsOffsetWorldSpace`, which could appear
+detached from the workpiece depending on camera/adornee placement.
 
-Every guide is a pooled LineHandleAdornment with an invisible
-non-queryable anchor. No visible Parts are created or raycasted.
+The old long cyan beam was caused or amplified by showing an entire
+through-hole guide while hovering. Those depth rails are now shown **only
+while the drilling animation runs**. Through-hole feed distance is
+calculated to the exit of the stock's axis-aligned **local** box, never
+the grossly oversized Boolean drill cutter. For complex previously
+manufactured bodies, the visible bottom guide is only approximate.
 
-## Removed editor tools
+## Operation animations (adornments only)
 
-**Groove** and **Straight Kerf** were removed from the fabrication
-toolbar, their width/depth fields, hover previews, and click handling.
-The underlying historical operation data and cutter support are
-retained for old documents and replay compatibility; no new
-Groove/Kerf can be created from the debug editor.
+The client-only `ToolVisualizer` owns a single short animation state,
+updated through the existing `FORMDebug` RenderStepped callback. All
+frames recycle the existing pooled `LineHandleAdornment` instances.
 
-**Saw (Profile)** remains, because the user requested removal of the
-separate straight Groove/Kerf tools, not removal of arbitrary-profile
-sawing.
+- **Drill:** ~0.85 s, drilling rings move along the inward face normal;
+  four short depth rails and two rotating flute lines show feed and spin.
+- **File:** ~0.90 s, four back-and-forth scraper passes across the
+  selected manufactured edge, honoring its segment count and width.
+- **Inset:** ~0.65 s, the polygon border descends to its chosen depth.
+- **Sketch / Saw profile:** ~0.80 s, the authored path is traced in order
+  after successful commit.
 
-## Studio acceptance
+These are **visual effects**, not a new physics tool system. The validated
+document operation is committed once through the existing
+`Document:addOperation` path and the existing asynchronous
+`Preview:render` call continues to compile the final solid. Input is
+guarded against repeated clicks during animation; changing tool or
+component cancels just the remaining visual effect, never the already
+committed feature.
 
-1. Hover Drill on the top face: circle lies flat on the face, never
-   standing upright.
-2. Hover Drill on a vertical side face: ring lies in that vertical
-   plane, aligned to the face normal.
-3. Rotate the workpiece and hover again. Ring orientation follows it.
-4. Switch blind/through and adjust diameter with mouse wheel. Confirm
-   the wireframe cylinders update without a filled body.
-5. Verify both Groove and Straight Kerf buttons/fields are gone.
-6. Create a normal New Body Sketch, Saw, Drill, Inset, and File
-   operation. No fabrication path should have changed.
+## Studio acceptance checks
 
-Source checks only; no Roblox Studio playtest was available from
-this conversation.
+1. Select Drill and hover over the top of a new Block. Exactly one
+   thin circular outline and a badge should follow the pointer, with no
+   long floating rod and no detached label.
+2. Hover over a vertical side face. The circle should rotate into
+   that surface's plane. Orbit and rotate the stock to confirm.
+3. Click Drill: the animated feed and rotating flute lines should
+   briefly appear, then vanish without lingering artifacts.
+4. Drill blind versus through: the former animates the entered depth,
+   the latter uses the stock exit distance.
+5. Set File to 1 segment and click a normal exterior edge. Observe
+   four scraping passes. Repeat with 4 or 8 segments.
+6. Perform Inset, Saw (Profile), and Sketch Extrude; observe their
+   transient path/depth effects. Verify fabrication history contains
+   only one entry per click.
+7. Change tool or select a different body mid-animation; remaining
+   animation guides should disappear. The committed feature must stay.
+8. Verify Groove and Straight Kerf are still absent from the editor,
+   while historical features still replay.
+
+No Roblox Studio runtime is available in this chat. These changes passed
+source checks but **must be visually tested in Studio**.
