@@ -874,7 +874,7 @@ function Debug.start()
 			local origin=pose:PointToObjectSpace(target.hit.Position)
 			local worldNormal=topology.part.CFrame:VectorToWorldSpace(face.normal)
 			toolVisualizer:drillFace(pose,origin,
-				pose:VectorToObjectSpace(worldNormal),diameter,depth,drillThrough,node.size.Magnitude)
+				pose:VectorToObjectSpace(worldNormal),diameter,depth,drillThrough,node.size.Magnitude,node.size)
 		elseif activeTool == "Inset" then
 			local margin = millimeters(insetMarginInput, "Inset border")
 			local depth = millimeters(insetDepthInput, "Inset depth")
