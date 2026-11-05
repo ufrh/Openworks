@@ -40,7 +40,6 @@ function Debug.start()
 	local nodeIndex = 1
 	local cameraController: any = nil
 	local activeTool: string? = nil
-	local sawFirst = nil
 	local historyInfo: any = nil
 	local historyRows = {}
 	local sketchEditor: any = nil
@@ -307,7 +306,6 @@ function Debug.start()
 	local function setTool(kind: string?)
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool = kind
-		sawFirst = nil
 		toolVisualizer:hide()
 		if kind then
 			transformGizmo:setHidden(true)
@@ -316,8 +314,6 @@ function Debug.start()
 				Drill = "Drill: hover a face, wheel to change diameter, click to bore",
 				Inset = "Inset: hover a planar manufactured face; wheel sets border width; click",
 				File = "File: width via wheel, 1 flat segment or 2-12 rounded segments",
-				Groove = "Groove: click two points on the same planar face",
-				Kerf = "Kerf: click two points on the same planar face",
 			}
 			message(guidance[kind] or "Choose a fabrication operation")
 		else
@@ -330,7 +326,7 @@ function Debug.start()
 		local component = selectedComponent()
 		if not component then message("Select a workpiece before using Saw") return end
 		if not sketchEditor then message("Sketch workspace unavailable") return end
-		activeTool, sawFirst = nil, nil
+		activeTool = nil
 		toolVisualizer:hide()
 		toolStatus.Text = "Tool: SAW"
 		sketchEditor:start(component, "Saw")
@@ -338,14 +334,11 @@ function Debug.start()
 	end)
 	pair("Inset / Pocket", function() setTool("Inset") end,
 		"File Edge", function() setTool("File") end)
-	pair("Groove", function() setTool("Groove") end,
-		"Straight Kerf", function() setTool("Kerf") end)
 	pair("Sketch / Extrude", function()
 		local component = selectedComponent()
 		if not component then message("Create or select a workpiece first") return end
 		if not sketchEditor then message("Sketch workspace is not initialized") return end
 		activeTool = nil
-		sawFirst = nil
 		toolVisualizer:hide()
 		transformGizmo:setHidden(true)
 		toolStatus.Text = "Tool: SKETCH"
@@ -354,7 +347,6 @@ function Debug.start()
 	end, "New Body Sketch", function()
 		if not sketchEditor then message("Sketch workspace is not initialized") return end
 		activeTool = nil
-		sawFirst = nil
 		toolVisualizer:hide()
 		transformGizmo:setHidden(true)
 		toolStatus.Text = "Tool: NEW BODY"
@@ -364,7 +356,6 @@ function Debug.start()
 	pair("Exit Tool", function() setTool(nil) end, "Undo Last Cut", function()
 		local component = selectedComponent()
 		if not component then message("Select a material first") return end
-		sawFirst = nil
 		local ok, reason = document:undoOperation(component)
 		if ok then changed(component) message("Last fabrication cut removed")
 		else message(reason) end
@@ -400,17 +391,13 @@ function Debug.start()
 	end)
 	line("Wheel: Drill 2 | File 1 | Inset 2 mm", 20)
 	line("Shift+Wheel: coarse · Alt+Wheel: File segments", 20)
-	line("POCKET  /  GROOVE  /  EDGE")
+	line("POCKET  /  FILE EDGE")
 	local insetMarginInput = toolNumberRow("Inset border (mm)  [wheel]", "28")
 	local insetDepthInput = toolNumberRow("Inset depth (mm)", "28")
-	local grooveWidthInput = toolNumberRow("Groove width (mm)", "28")
-	local grooveDepthInput = toolNumberRow("Groove depth (mm)", "28")
 	local fileWidthInput = toolNumberRow("File chamfer (mm)  [wheel]", "14")
 	local fileSegmentsInput = toolNumberRow("File segments (1–12)", "1")
-	local kerfInput = toolNumberRow("Through kerf (mm)", "14")
 
 	line("File: 1 flat / 2–12 rounded; inside File paused.", 24)
-	line("Groove/Kerf: two points on the same face.", 24)
 
 	line("3D TRANSFORM HANDLES")
 	local transformStatus = line("Mode: MOVE (G)")
@@ -418,7 +405,6 @@ function Debug.start()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		toolVisualizer:hide()
 		activeTool = nil
-		sawFirst = nil
 		toolStatus.Text = "Tool: none"
 		transformGizmo:setMode(mode)
 		transformStatus.Text = "Mode: " .. string.upper(mode)
@@ -904,30 +890,7 @@ function Debug.start()
 			local inset = FaceTools.inset(face,margin)
 			if not inset then toolVisualizer:hide() return end
 			toolVisualizer:meshFace(topology.part,inset,margin,depth)
-		elseif activeTool == "Groove" or activeTool == "Kerf" then
-			if not sawFirst or sawFirst.id~=target.id then
-				toolVisualizer:hide() return
-			end
-			local topology=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
-			if not topology or topology.part~=target.hit.Instance then
-				toolVisualizer:hide() return
-			end
-			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
-			if not face then toolVisualizer:hide() return end
-			local worldNormal=topology.part.CFrame:VectorToWorldSpace(face.normal)
-			local localNormal=pose:VectorToObjectSpace(worldNormal)
-			local endPoint=pose:PointToObjectSpace(target.hit.Position)
-			if localNormal:Dot(sawFirst.normal)<0.99
-				or math.abs((endPoint-sawFirst.point):Dot(sawFirst.normal))>0.008 then
-				toolVisualizer:hide() return
-			end
-			local box=if activeTool=="Groove" then grooveWidthInput else kerfInput
-			local width=millimeters(box,"Cut width")
-			local depth=if activeTool=="Groove"
-				then millimeters(grooveDepthInput,"Groove depth") else node.size.Y
-			if not width or not depth then toolVisualizer:hide() return end
-			toolVisualizer:grooveFace(pose,sawFirst.point,endPoint,
-				sawFirst.normal,width,depth,activeTool=="Kerf",node.size.Magnitude)
+
 		end
 	end)
 
@@ -974,7 +937,7 @@ function Debug.start()
 			if typeof(id) == "number" and document.components[id] then selectComponent(id) end
 			return
 		end
-		if target.id ~= selectedId then selectComponent(target.id) sawFirst = nil end
+		if target.id ~= selectedId then selectComponent(target.id) end
 		if not activeTool then return end
 		local component, node = target.component, target.node
 		-- Click handlers share the same local manufacturing frame as hover.
@@ -1018,47 +981,18 @@ function Debug.start()
 			kind="InsetFace"
 			data={points=localPoints,normal=pose:VectorToObjectSpace(worldNormal),
 				margin=margin,depth=depth}
-		elseif kind == "Groove" or kind == "Kerf" then
-			local topology,why=surfacePicker:get(target.id,preview:getModel(target.id),target.component)
-			if not topology then message(why or "Surface indexing in progress") return end
-			if topology.part~=target.hit.Instance then message("Surface selection changed") return end
-			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
-			if not face then message("Cut path requires a planar manufactured face") return end
-			local normal=pose:VectorToObjectSpace(
-				topology.part.CFrame:VectorToWorldSpace(face.normal))
-			local point=pose:PointToObjectSpace(target.hit.Position)
-			if not sawFirst then
-				sawFirst={id=target.id,point=point,normal=normal}
-				message("Start placed; click another point on the same planar face")
-				return
-			end
-			if sawFirst.id~=target.id or normal:Dot(sawFirst.normal)<0.99
-				or math.abs((point-sawFirst.point):Dot(sawFirst.normal))>0.008 then
-				message("Both cut endpoints must lie on the same planar face")
-				return
-			end
-			local box=if kind=="Groove" then grooveWidthInput else kerfInput
-			local width,errorA=millimeters(box,"Cut width")
-			local depth,errorB=node.size.Y,nil
-			if kind=="Groove" then
-				depth,errorB=millimeters(grooveDepthInput,"Groove depth")
-			end
-			if not width or not depth then message(errorA or errorB) return end
-			data={a=sawFirst.point,b=point,normal=sawFirst.normal,
-				width=width,depth=depth,through=kind=="Kerf"}
-			kind="GrooveFace"
+
 		else
 			return
 		end
 		local ok, reason = document:addOperation(component, kind, data)
 		if not ok then message(reason or "Unable to apply fabrication") return end
-		if kind == "Saw" or kind == "Groove" or kind == "GrooveFace" then sawFirst = nil end
 		changed(component)
 		message(kind .. " operation recorded; compiling CSG")
 	end)
 
 	refresh()
-	message("Precision fabrication ready: Sketch, Saw, Drill, Inset, Groove, File.")
+	message("Precision fabrication ready: Sketch, Saw, Drill, Inset, File.")
 end
 
 return Debug
