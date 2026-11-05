@@ -261,6 +261,7 @@ function Debug.start()
 	end)
 
 	local function selectComponent(id: number?)
+		if id~=selectedId then toolVisualizer:stopAnimation() end
 		selectedId = id
 		local component = selectedComponent()
 		nodeIndex = if component then #component.nodes else 1
@@ -268,6 +269,7 @@ function Debug.start()
 	end
 
 	local function changed(component)
+		toolVisualizer:stopAnimation()
 		preview:render(component)
 		refresh()
 	end
@@ -304,6 +306,7 @@ function Debug.start()
 	local toolStatus = line("Tool: none")
 	historyInfo = line("Fabrication: 0 cuts")
 	local function setTool(kind: string?)
+		toolVisualizer:stopAnimation()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool = kind
 		toolVisualizer:hide()
@@ -418,6 +421,7 @@ function Debug.start()
 		end)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
+		if toolVisualizer:isAnimating() then return end
 		if sketchEditor and sketchEditor.active then return end
 		if processed or UserInputService:GetFocusedTextBox() then return end
 		if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
@@ -592,7 +596,11 @@ function Debug.start()
 		function(component, data)
 			if component then
 				local ok, reason = document:addOperation(component, "SketchExtrude", data)
-				if ok then changed(component) end
+				if ok then
+					changed(component)
+					toolVisualizer:animateSketch(Compiler.pose(component.nodes[1]),
+						component.nodes[1],data)
+				end
 				return ok, reason
 			end
 			-- Standalone sketch: construct a snapped bounding workpiece, then
@@ -640,6 +648,8 @@ function Debug.start()
 			end
 			selectComponent(body.id)
 			changed(body)
+			toolVisualizer:animateSketch(Compiler.pose(body.nodes[1]),body.nodes[1],
+				{points=localPoints,mode="Intersect",depth=data.depth})
 			return true, nil
 		end,
 		message,
@@ -842,7 +852,8 @@ function Debug.start()
 			taperA=false,taperB=false},nil
 	end
 
-	RunService.RenderStepped:Connect(function()
+	RunService.RenderStepped:Connect(function(dt)
+		if toolVisualizer:update(dt) then return end
 		if activeTool=="File" then
 			local selection=fileEdgeTarget()
 			local width=millimeters(fileWidthInput,"File width")
@@ -915,7 +926,8 @@ function Debug.start()
 			local ok,err=document:addOperation(selection.component,"FileMesh",data)
 			if not ok then message(err or "Unable to file edge") return end
 			changed(selection.component)
-			message("File edge recorded; compiling CSG")
+			toolVisualizer:animateFile(selection.pose,data)
+			message("Filing edge · compiling CSG")
 			return
 		end
 		local target = fabricationHit()
@@ -988,6 +1000,12 @@ function Debug.start()
 		local ok, reason = document:addOperation(component, kind, data)
 		if not ok then message(reason or "Unable to apply fabrication") return end
 		changed(component)
+		if kind=="DrillFace" then
+			toolVisualizer:animateDrill(pose,data.origin,data.normal,
+				data.diameter,data.depth,data.through,node.size)
+		elseif kind=="InsetFace" then
+			toolVisualizer:animateInset(pose,data.points,data.normal,data.depth)
+		end
 		message(kind .. " operation recorded; compiling CSG")
 	end)
 
