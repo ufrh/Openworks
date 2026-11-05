@@ -182,10 +182,30 @@ function Visualizer:drill(pose:CFrame,node,x:number,z:number,
 end
 
 function Visualizer:drillFace(pose:CFrame,origin:Vector3,normal:Vector3,
-	diameter:number,depth:number,through:boolean,maxDepth:number)
+	diameter:number,depth:number,through:boolean,maxDepth:number,stockSize:Vector3?)
 	local outward=pose:VectorToWorldSpace(normal).Unit
 	local start=pose:PointToWorldSpace(origin)
-	local penetration=if through then maxDepth*2 else depth
+	local penetration=depth
+	if through then
+		penetration=maxDepth
+		if stockSize then
+			-- Show the drilled span INSIDE the workpiece, not the giant
+			-- overhanging Boolean cutter. Ray/axis-aligned stock-box exit
+			-- gives the correct depth for its outer planar surfaces.
+			local direction=-normal.Unit
+			local half=stockSize/2
+			local distance=math.huge
+			for _,axis in ipairs({"X","Y","Z"}) do
+				local d=direction[axis]
+				if math.abs(d)>1e-6 then
+					local edge=if d>0 then half[axis] else -half[axis]
+					local t=(edge-origin[axis])/d
+					if t>0.001 then distance=math.min(distance,t) end
+				end
+			end
+			if distance<math.huge then penetration=distance end
+		end
+	end
 	self:drillWireframe(start,outward,diameter,penetration,through)
 end
 
