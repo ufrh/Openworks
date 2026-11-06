@@ -293,6 +293,23 @@ function Document:addOperation(component, kind: string, data)
 		operation={kind="FileMesh",a=a,b=b,normalA=n1.Unit,normalB=n2.Unit,
 			width=width,interior=false,segments=segments,
 			taperA=false,taperB=false}
+	elseif kind == "SmoothInside" then
+		local a,b,n1,n2=data.a,data.b,data.normalA,data.normalB
+		local radius=data.radius
+		local segments=data.segments or 8
+		if typeof(a)~="Vector3" or typeof(b)~="Vector3"
+			or typeof(n1)~="Vector3" or typeof(n2)~="Vector3"
+			or typeof(radius)~="number" or not Quantize.isFinite(radius)
+			or (b-a).Magnitude<0.05 or radius<5/280 or radius>Quantize.MaxSize
+			or n1.Magnitude<0.9 or n2.Magnitude<0.9
+			or math.abs(n1.Unit:Dot(n2.Unit))>0.12
+			or typeof(segments)~="number" or segments~=math.floor(segments)
+			or segments<2 or segments>12 then
+			return false,"Smooth needs a straight interior 90-degree edge, 2-12 segments"
+		end
+		operation={kind="SmoothInside",a=a,b=b,normalA=n1.Unit,
+			normalB=n2.Unit,radius=Quantize.snap(radius,1/280),
+			segments=segments}
 	elseif kind == "InsetFace" then
 		local points=data.points
 		local normal=data.normal
