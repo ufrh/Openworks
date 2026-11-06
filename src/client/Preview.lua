@@ -83,7 +83,7 @@ function Preview:ensure(component)
 	return model
 end
 
-function Preview:replace(component, part: BasePart, key: string, madeWithCSG: boolean, measuredVolume:number?)
+function Preview:replace(component, part: BasePart, key: string, madeWithCSG: boolean, measuredVolume:number?, exactVolume:boolean?)
 	local id = component.id
 	local model = self:ensure(component)
 	local previous = self.states[id]
@@ -102,12 +102,14 @@ function Preview:replace(component, part: BasePart, key: string, madeWithCSG: bo
 		boolean = madeWithCSG,
 		materialVolume=measuredVolume or MaterialVolume.primitive(
 			component.nodes[1].kind,component.nodes[1].size),
+		exactVolume=if madeWithCSG then exactVolume==true else true,
 		targetFrame = targetFrame, targetSize = targetSize,
 		smoothing = false,
 		dragging = self.dragging[id] == true,
 	}
 	if madeWithCSG or not Fabricator.requiresCompile(component) then
 		component.materialVolume=self.states[id].materialVolume
+		component.volumeExact=self.states[id].exactVolume
 		self.accepted[id]=Document.snapshot(component)
 	end
 	self.onRendered(id, model)
@@ -134,6 +136,7 @@ function Preview:updateGeometry(component)
 			state.key = key
 			state.materialVolume=MaterialVolume.primitive(node.kind,node.size)
 			component.materialVolume=state.materialVolume
+			component.volumeExact=true
 			self.accepted[component.id]=Document.snapshot(component)
 		else
 			part = Compiler.nativePart(node)
@@ -205,8 +208,23 @@ function Preview:queueManufacture(component)
 				for _,feature in ipairs(snapshot.operations) do
 					if feature.enabled~=false then hasFeatures=true break end
 				end
-				local material=if hasFeatures then MaterialVolume.fromPart(output)
-					else MaterialVolume.primitive(snapshot.nodes[1].kind,snapshot.nodes[1].size)
+				local material,exact
+				if hasFeatures then
+					material,exact=MaterialVolume.fromPartAsync(output)
+				else
+					material=MaterialVolume.primitive(snapshot.nodes[1].kind,snapshot.nodes[1].size)
+					exact=true
+				end
+				-- Mesh readback yields. Ignore results superseded while
+				-- it was calculating volume; never rollback newer edits.
+				if job.cancelled or job.pending or self.dragging[id] or
+					expectedKey~=Fabricator.geometryKey(component) then
+					output:Destroy()
+					if not job.cancelled and not job.pending then
+						job.pending=Document.snapshot(component)
+					end
+					continue
+				end
 				if not MaterialVolume.within(material) then
 					output:Destroy()
 					local lastGood=self.accepted[id]
@@ -219,8 +237,9 @@ function Preview:queueManufacture(component)
 						self.onStatus("Component material exceeds the numeric volume budget")
 					end
 				else
-					self:replace(component, output, expectedKey, true,material)
-					self.onStatus(snapshot.name.." · "..MaterialVolume.display(material)..
+					self:replace(component, output, expectedKey, true,material,exact)
+					self.onStatus(snapshot.name.." · "..(if exact then "" else "est. ")..
+						MaterialVolume.display(material)..
 						" / "..MaterialVolume.display(Quantize.MaxComponentVolume))
 				end
 			end
