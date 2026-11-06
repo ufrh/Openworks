@@ -89,6 +89,7 @@ function Document:create(kind: string, minimumCorner: Vector3, name: string?, sp
 		id = self.nextComponent, name = if typeof(name)=="string" and name:match("%S")
 			then string.sub(name,1,64) else kind .. " " .. self.nextComponent,
 		nodes = { node }, operations = {}, notes = "", revision = 1,
+		materialVolume=MaterialVolume.primitive(kind,size),volumeExact=true,
 	}
 	self.components[component.id] = component
 	table.insert(self.order, component.id)
@@ -488,6 +489,7 @@ function Document:restoreSnapshot(component,snapshot)
 	component.operations=copy.operations
 	component.notes=copy.notes
 	component.materialVolume=copy.materialVolume
+	component.volumeExact=copy.volumeExact
 	component.revision+=1
 	return true
 end
@@ -505,6 +507,7 @@ function Document.snapshot(component)
 		revision = component.revision, nodes = nodes, operations = operations,
 		notes = component.notes or "",
 		materialVolume=component.materialVolume,
+		volumeExact=component.volumeExact,
 	}
 end
 
