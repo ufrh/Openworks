@@ -16,7 +16,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-INSTANT-MOVE-ROTATE.13"
+TransformGizmo.Revision = "GIZMO-COMPACT-EDGES.14"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -195,15 +195,17 @@ end
 
 local function placeArrow(grip,center:Vector3,direction:Vector3,
 	extent:number,unit:number)
-	local shaftLength=math.max(extent+unit*4.1,unit*6)
-	local tipLength=unit*1.35
-	local headWidth=unit*0.9
+	-- Same length on X/Y/Z, just beyond the largest stock face.
+	-- Keep the outward tip accessible while reducing screen clutter.
+	local shaftLength=math.max(extent+unit*1.8,unit*4.5)
+	local tipLength=unit*1.05
+	local headWidth=unit*0.7
 	local shaftEnd=center+direction*shaftLength
 	local tipCenter=shaftEnd+direction*(tipLength*0.5)
 	-- Roblox cylinders extend along local X. LookAt local -Z points
 	-- along the axis; this explicit Y rotation puts local X on -Z.
 	local stemCenter=center+direction*(shaftLength*0.5)
-	grip.stem.Size=Vector3.new(shaftLength,unit*0.13,unit*0.13)
+	grip.stem.Size=Vector3.new(shaftLength,unit*0.10,unit*0.10)
 	grip.stem.CFrame=CFrame.lookAt(stemCenter,stemCenter+direction)
 		*CFrame.Angles(0,math.pi/2,0)
 	grip.tip.Size=Vector3.new(headWidth,tipLength,headWidth)
