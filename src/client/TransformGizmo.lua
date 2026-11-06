@@ -16,7 +16,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-CURSOR-CENTER.7"
+TransformGizmo.Revision = "GIZMO-UNIFORM-SNAP.8"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -656,7 +656,8 @@ function TransformGizmo:refresh(dt:number?)
 		local unit=visualScale(cf.Position)
 		if grip.mode=="Move" then
 			local direction=cf:VectorToWorldSpace(grip.normal)
-			placeArrow(grip,cf.Position,direction,getAxis(size,grip.axis)/2,unit)
+			placeArrow(grip,cf.Position,direction,
+				math.max(size.X,size.Y,size.Z)*0.5,unit)
 		elseif grip.mode=="Scale" then
 			grip.part.CFrame=cf*CFrame.new(
 				grip.normal*(getAxis(size,grip.axis)/2+unit*1.5))
