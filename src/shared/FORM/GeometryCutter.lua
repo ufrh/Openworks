@@ -490,8 +490,8 @@ local function interiorProfile(a:Vector3,b:Vector3,n1:Vector3,n2:Vector3,
 		if i==count then p+=n2*epsilon-n1*epsilon end
 		table.insert(profile,p)
 	end
-	if (profile[2]-profile[1]):Cross(profile[#profile]-profile[1])
-		:Dot(b-a)<0 then
+	local winding=(profile[2]-profile[1]):Cross(profile[#profile]-profile[1])
+	if winding:Dot(b-a)<0 then
 		local reversed={}
 		for i=#profile,1,-1 do table.insert(reversed,profile[i]) end
 		profile=reversed
