@@ -13,7 +13,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-WORLD-WIRE.2"
+TransformGizmo.Revision = "GIZMO-STUDIO-HANDLES.3"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -103,8 +103,9 @@ local function visualScale(position: Vector3): number
 	return math.clamp(worldPerPixel * 8, 0.025, 0.34)
 end
 
--- Visible grips are adornments. Invisible Parts remain raycast targets,
--- preserving the existing reliable move/scale/rotate drag calculations.
+-- Move and scale are solid, highlighted, local-only Parts. Rotation
+-- uses Roblox's own native ArcHandles, which supplies visible circular
+-- XYZ axes and reliable MouseDrag events in PlayerGui.
 local function makePart(parent:Instance,name:string,color:Color3,shape:Enum.PartType):Part
 	local p=Instance.new("Part")
 	p.Name=name
@@ -114,146 +115,75 @@ local function makePart(parent:Instance,name:string,color:Color3,shape:Enum.Part
 	p.CanTouch=false
 	p.CanQuery=true
 	p.CastShadow=false
+	p.Material=Enum.Material.SmoothPlastic
 	p.Transparency=1
 	p.Color=color
 	p.Parent=parent
 	return p
 end
 
-local function adorn(parent:Instance,anchor:BasePart,
-	class:string,name:string,color:Color3)
-	local a=Instance.new(class)
-	a.Name=name
-	a.Adornee=anchor
-	a.AlwaysOnTop=false
-	a.Color3=color
-	a.Transparency=0.04
-	a.Visible=false
-	a.Parent=parent
-	return a
+local function highlight(model:Model,color:Color3):Highlight
+	local h=Instance.new("Highlight")
+	h.Name="HandleHighlight"
+	h.Adornee=model
+	h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+	h.FillColor=color
+	h.FillTransparency=0.72
+	h.OutlineColor=color:Lerp(Color3.new(1,1,1),0.25)
+	h.OutlineTransparency=0.12
+	h.Enabled=false
+	h.Parent=model
+	return h
 end
 
--- Move shafts and heads are one world-space wireframe, with no local
--- cone orientation assumptions. The invisible Parts are click targets only.
-local function newArrow(folder:Folder,decor:Instance,anchor:BasePart,
-	name:string,color:Color3)
+local function newArrow(folder:Folder,name:string,color:Color3)
 	local model=Instance.new("Model")
 	model.Name=name
 	model.Parent=folder
-	local stem=makePart(model,"StemHit",color,Enum.PartType.Block)
-	local tip=makePart(model,"TipHit",color,Enum.PartType.Ball)
-	local drawing=adorn(decor,anchor,"WireframeHandleAdornment",
-		name.."_Arrow",color)
-	drawing.AlwaysOnTop=true
-	drawing.ZIndex=2
-	drawing.Thickness=2.6
-	drawing.CFrame=CFrame.identity
-	drawing.Scale=Vector3.one
-	return {model=model,part=tip,stem=stem,tip=tip,arrow=drawing}
+	local stem=makePart(model,"Shaft",color,Enum.PartType.Cylinder)
+	-- WedgePart is a genuinely solid pointed head (not an Adornment).
+	-- Its local -Z axis faces outward and its tip is visible from the side.
+	local tip=Instance.new("WedgePart")
+	tip.Name="Arrowhead"
+	tip.Anchored=true
+	tip.CanCollide=false
+	tip.CanTouch=false
+	tip.CanQuery=true
+	tip.CastShadow=false
+	tip.Material=Enum.Material.SmoothPlastic
+	tip.Color=color
+	tip.Transparency=1
+	tip.Parent=model
+	return {model=model,part=tip,stem=stem,tip=tip,
+		highlight=highlight(model,color)}
 end
 
-local function newSphere(folder:Folder,decor:Instance,anchor:BasePart,
-	name:string,color:Color3)
+local function newScale(folder:Folder,name:string,color:Color3)
 	local model=Instance.new("Model")
 	model.Name=name
 	model.Parent=folder
-	local p=makePart(model,"SphereHit",color,Enum.PartType.Ball)
-	return {model=model,part=p,
-		marker=adorn(decor,anchor,"SphereHandleAdornment",name.."_Sphere",color)}
-end
-
--- A genuine wireframe ring is visible and selectable all around its
--- circumference. Rotation still uses the original planeRadial drag math.
-local function ringPath(normal:Vector3,radial:Vector3)
-	local across=normal:Cross(radial).Unit
-	local points={}
-	for i=0,RING_SAMPLES-1 do
-		local angle=i*math.pi*2/RING_SAMPLES
-		table.insert(points,radial*math.cos(angle)+across*math.sin(angle))
-	end
-	return points
-end
-
-local function newRotationGrip(folder:Folder,decor:Instance,anchor:BasePart,
-	name:string,color:Color3,normal:Vector3,radial:Vector3)
-	local model=Instance.new("Model")
-	model.Name=name
-	model.Parent=folder
-	-- Existing invisible knob target remains as a fallback; whole ring
-	-- circumference is targeted with the exact displayed world points.
-	local p=makePart(model,"RingHit",color,Enum.PartType.Ball)
-	local ring=adorn(decor,anchor,"WireframeHandleAdornment",name.."_Ring",color)
-	ring.AlwaysOnTop=true
-	ring.ZIndex=3
-	ring.Thickness=2.8
-	ring.CFrame=CFrame.identity
-	ring.Scale=Vector3.one
-	return {model=model,part=p,ring=ring,path=ringPath(normal,radial)}
+	local block=makePart(model,"ScaleCube",color,Enum.PartType.Block)
+	return {model=model,part=block,highlight=highlight(model,color)}
 end
 
 local function placeArrow(grip,center:Vector3,direction:Vector3,
-	extent:number,unit:number,highlighted:boolean)
-	-- Draw the visible shaft FROM the actual world-space pivot.
-	-- Define the arrowhead in world coordinates; every spoke terminates
-	-- at a tip farther OUTWARD along the selected X/Y/Z axis.
-	local shaftLength=math.max(extent+unit*4.5,unit*6)
-	local tipLength=unit*1.25
-	local headRadius=unit*0.65
+	extent:number,unit:number)
+	local shaftLength=math.max(extent+unit*4.1,unit*6)
+	local tipLength=unit*1.35
+	local headWidth=unit*0.9
 	local shaftEnd=center+direction*shaftLength
-	local tipPoint=shaftEnd+direction*tipLength
-	local reference=if math.abs(direction.Y)<0.9 then Vector3.yAxis
-		else Vector3.xAxis
-	local u=direction:Cross(reference).Unit
-	local v=direction:Cross(u).Unit
-	local drawing=grip.arrow
-	drawing:Clear()
-	drawing.Color3=if highlighted then grip.baseColor:Lerp(Color3.new(1,1,1),0.32)
-		else grip.baseColor
-	drawing.Thickness=if highlighted then 3.5 else 2.6
-	drawing:AddLine(center,shaftEnd)
-	-- Six-sided cone wireframe: circular base and spokes to the one
-	-- outward tip, making reversed/sideways cone heads impossible.
-	local corners={}
-	for i=0,5 do
-		local angle=i*math.pi/3
-		table.insert(corners,shaftEnd+
-			(u*math.cos(angle)+v*math.sin(angle))*headRadius)
-	end
-	for i,point in ipairs(corners) do
-		drawing:AddLine(point,tipPoint)
-		drawing:AddLine(point,corners[i%#corners+1])
-	end
-	-- Invisible click targets stay OUTSIDE the component.
-	local hitStart=center+direction*(extent+unit*0.5)
-	local hitLength=math.max((shaftEnd-hitStart):Dot(direction),unit*0.7)
-	local hitCenter=hitStart+direction*(hitLength*0.5)
-	grip.stem.Size=Vector3.new(unit*0.4,unit*0.4,hitLength)
-	grip.stem.CFrame=CFrame.lookAt(hitCenter,hitCenter+direction)
-	grip.tip.Position=tipPoint
-	grip.tip.Size=Vector3.one*unit*1.1
-	-- Expose exact endpoints for smoke tests and future gizmo overlays.
+	local tipCenter=shaftEnd+direction*(tipLength*0.5)
+	-- Roblox cylinders extend along local X. LookAt local -Z points
+	-- along the axis; this explicit Y rotation puts local X on -Z.
+	local stemCenter=center+direction*(shaftLength*0.5)
+	grip.stem.Size=Vector3.new(shaftLength,unit*0.24,unit*0.24)
+	grip.stem.CFrame=CFrame.lookAt(stemCenter,stemCenter+direction)
+		*CFrame.Angles(0,math.pi/2,0)
+	grip.tip.Size=Vector3.new(headWidth,headWidth,tipLength)
+	grip.tip.CFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
 	grip.shaftStart=center
 	grip.shaftEnd=shaftEnd
-	grip.arrowTip=tipPoint
-end
-
-local function ringRadius(size:Vector3,normal:Vector3,unit:number,axis:string)
-	local perpendicular=Vector3.new(
-		if math.abs(normal.X)>0.5 then 0 else size.X/2,
-		if math.abs(normal.Y)>0.5 then 0 else size.Y/2,
-		if math.abs(normal.Z)>0.5 then 0 else size.Z/2)
-	local halfDiagonal=perpendicular.Magnitude
-	-- Different offsets make the three rings individually legible.
-	local extra=if axis=="X" then 2.5 elseif axis=="Y" then 3.5 else 4.5
-	return halfDiagonal+unit*extra
-end
-
-local function screenSegmentDistance(point:Vector2,a:Vector2,b:Vector2)
-	local segment=b-a
-	local squared=segment:Dot(segment)
-	if squared<0.0001 then return math.huge end
-	local t=math.clamp((point-a):Dot(segment)/squared,0,1)
-	return (point-(a+segment*t)).Magnitude
+	grip.arrowTip=shaftEnd+direction*tipLength
 end
 
 local function newMeasurement(playerGui: PlayerGui)
@@ -285,64 +215,63 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	local folder = Instance.new("Folder")
 	folder.Name = "FORM_TransformGrips"
 	folder.Parent = workspace
-	local decorations=Instance.new("Folder")
-	decorations.Name="FORM_TransformAdornments"
-	decorations.Parent=playerGui
-	local anchor=Instance.new("Part")
-	anchor.Name="FORM_GizmoAdornmentOrigin"
-	anchor.Anchored=true
-	anchor.CanCollide=false
-	anchor.CanTouch=false
-	anchor.CanQuery=false
-	anchor.CastShadow=false
-	anchor.Transparency=1
-	anchor.Size=Vector3.one*0.05
-	anchor.CFrame=CFrame.identity
-	anchor.Parent=workspace
+	local rotationAnchor=Instance.new("Part")
+	rotationAnchor.Name="FORM_StudioRotatePivot"
+	rotationAnchor.Size=Vector3.one
+	rotationAnchor.Anchored=true
+	rotationAnchor.Transparency=1
+	rotationAnchor.CanCollide=false
+	rotationAnchor.CanTouch=false
+	rotationAnchor.CanQuery=false
+	rotationAnchor.CastShadow=false
+	rotationAnchor.Parent=folder
+	local rotationArcs=Instance.new("ArcHandles")
+	rotationArcs.Name="FORM_StudioRotationAxes"
+	rotationArcs.Adornee=rotationAnchor
+	rotationArcs.Axes=Axes.new(Enum.Axis.X,Enum.Axis.Y,Enum.Axis.Z)
+	rotationArcs.Color3=Color3.new(1,1,1)
+	rotationArcs.Transparency=0
+	rotationArcs.Visible=false
+	rotationArcs.Parent=playerGui
 	local measurement, measurementText = newMeasurement(playerGui)
 	local self = setmetatable({
 		document = document, onChange = onChange, folder = folder,
-		decorations=decorations,anchor=anchor,
+		rotationAnchor=rotationAnchor,rotationArcs=rotationArcs,
 		grips = {}, lookup = {}, connections = {},
 		mode = "Move", hidden = false, component = nil, index = nil,
 		dragStart = nil, dragChanged = false, hovered = nil, visualFrame = nil, visualSize = nil,
 		measurement = measurement, measurementText = measurementText,
 	}, TransformGizmo)
 
-	for _, spec in ipairs(MOVE_AXES) do
-		local arrow = newArrow(folder,decorations,anchor,"Move_"..spec.axis,spec.color)
-		local grip = {
-			model = arrow.model, part = arrow.part, stem = arrow.stem, tip = arrow.tip,
-			arrow=arrow.arrow,baseColor=spec.color,hoverAlpha=0,
-			normal = spec.normal, axis = spec.axis, mode = "Move",
+	for _,spec in ipairs(MOVE_AXES) do
+		local arrow=newArrow(folder,"Move_"..spec.axis,spec.color)
+		local grip={
+			model=arrow.model,part=arrow.part,stem=arrow.stem,tip=arrow.tip,
+			highlight=arrow.highlight,baseColor=spec.color,hoverAlpha=0,
+			normal=spec.normal,axis=spec.axis,mode="Move",
 		}
-		table.insert(self.grips, grip)
-		self.lookup[grip.stem] = grip
-		self.lookup[grip.tip] = grip
+		table.insert(self.grips,grip)
+		self.lookup[grip.stem]=grip
+		self.lookup[grip.tip]=grip
 	end
-	for _, spec in ipairs(AXES) do
-		local sphere = newSphere(folder,decorations,anchor,"Scale_"..spec.name,spec.color)
-		local grip = {
-			model = sphere.model, part = sphere.part,
-			marker=sphere.marker,baseColor=spec.color,hoverAlpha=0,
-			normal = spec.normal, axis = spec.axis, mode = "Scale",
+	for _,spec in ipairs(AXES) do
+		local scale=newScale(folder,"Scale_"..spec.name,spec.color)
+		local grip={
+			model=scale.model,part=scale.part,
+			highlight=scale.highlight,baseColor=spec.color,hoverAlpha=0,
+			normal=spec.normal,axis=spec.axis,mode="Scale",
 		}
-		table.insert(self.grips, grip)
-		self.lookup[grip.part] = grip
+		table.insert(self.grips,grip)
+		self.lookup[grip.part]=grip
 	end
-	for _, spec in ipairs(ROTATIONS) do
-		local control = newRotationGrip(folder,decorations,anchor,
-			"Rotate_"..spec.axis,spec.color,spec.normal,spec.radial)
-		local grip = {
-			model = control.model, part = control.part,
-			ring=control.ring,ringPath=control.path,baseColor=spec.color,
-			hoverAlpha=0,normal=spec.normal,
-			radial=spec.radial,axis=spec.axis,mode="Rotate",ringRadius=0,
-			ringFrame=CFrame.identity,ringHighlighted=false,ringWorldPath={},
-			ringRenderedFrame=nil,ringRenderedRadius=nil,
+	self.rotationGrips={}
+	for _,spec in ipairs(ROTATIONS) do
+		local grip={
+			part=rotationAnchor,baseColor=spec.color,hoverAlpha=0,
+			normal=spec.normal,radial=spec.radial,axis=spec.axis,mode="Rotate",
 		}
-		table.insert(self.grips, grip)
-		self.lookup[grip.part] = grip
+		self.rotationGrips[spec.axis]=grip
+		table.insert(self.grips,grip)
 	end
 
 	local function connect(signal, fn)
