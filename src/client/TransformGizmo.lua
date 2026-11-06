@@ -196,7 +196,10 @@ local function placeArrow(grip,center:Vector3,direction:Vector3,extent:number,un
 	grip.tip.CFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
 	-- ConeHandleAdornment is built along local -Z, exactly like a
 	-- lookAt frame. The old -90° X rotation incorrectly tipped it away.
-	local directionFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
+	-- The cone adornment's origin is its base, so place that base
+	-- exactly at the shaft endpoint. The hit sphere remains at its
+	-- midpoint along the protruding arrowhead.
+	local directionFrame=CFrame.lookAt(endShaft,endShaft+direction)
 	grip.shaftAdornment.CFrame=CFrame.lookAt(begin,endShaft)
 	grip.shaftAdornment.Length=shaftLength
 	grip.shaftAdornment.Thickness=2.5
