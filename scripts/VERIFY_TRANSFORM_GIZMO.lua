@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-NEON-RINGS.12",
+assert(Gizmo.Revision=="GIZMO-INSTANT-MOVE-ROTATE.13",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
@@ -63,29 +63,24 @@ local success,reason=pcall(function()
 	assert(gizmo.centerMarker:FindFirstChild("CenterCircle")
 		and not gizmo.centerMarker:FindFirstChild("CenterSquare"),
 		"Move pivot should have a circle only, no square")
+	-- Scale is not an available transform mode or selectable gizmo.
 	gizmo:setMode("Scale")
-	local scales=0
+	assert(gizmo.mode=="Move","Scale mode must be rejected")
 	for _,grip in ipairs(gizmo.grips) do
-		if grip.mode=="Scale" then
-			scales+=1
-			assert(grip.part.Shape==Enum.PartType.Block
-				and grip.highlight.Enabled)
-			assert(grip.highlight.FillTransparency==0 and
-				grip.highlight.OutlineTransparency==1)
-			assert(grip.border:IsA("SelectionBox") and grip.border.Visible)
-			assert((grip.part.Position-node.position):Dot(grip.normal)>
-				node.size[grip.axis]*0.5,"Scale handle overlaps stock")
-		end
+		assert(grip.mode~="Scale","Scale grips must not exist")
 	end
-	for _,grip in ipairs(gizmo.grips) do
-		if grip.mode~="Scale" then continue end
-		local pos,visible=camera:WorldToViewportPoint(grip.part.Position)
-		if visible then
-			assert(gizmo._pick(Vector2.new(pos.X,pos.Y))~=nil,
-				"Visible scale cubes must be selectable")
-		end
-	end
-		assert(scales==6,"Need six Scale grips")
+	-- Transforms must exactly match node state with no interpolation.
+	node.position=Vector3.new(0.4,0.6,0.2)
+	node.rotation=Vector3.new(15,30,45)
+	gizmo:refresh(0.001)
+	assert((gizmo.visualFrame.Position-node.position).Magnitude<1e-6,
+		"Gizmo transform must not ease after moving a node")
+	assert((gizmo.visualFrame.RightVector-
+		CFrame.fromOrientation(math.rad(15),math.rad(30),math.rad(45)).RightVector).Magnitude<1e-5,
+		"Gizmo must immediately track node orientation")
+	node.position=Vector3.zero
+	node.rotation=Vector3.zero
+	gizmo:refresh()
 	gizmo:setMode("Rotate")
 	local rings=0
 	local radii={}
@@ -102,20 +97,26 @@ local success,reason=pcall(function()
 			assert(#grip.segments==48 and #grip.ringPoints==48,
 				"Rotation ring must have 48 geometric segments")
 			for i,p in ipairs(grip.segments) do
-				assert(p.Shape==Enum.PartType.Cylinder and p.CanQuery
+				assert(p.Shape==Enum.PartType.Cylinder
 					and p.Material==Enum.Material.Neon
 					and p.Color==grip.baseColor,
 					"Ring segments must be real selectable cylinder Parts")
 				assert(not p.CanCollide and not p.CanTouch,
 					"Visual gizmo must not affect physics")
-				assert(p.Transparency<0.1 and p.Size.X>0,
-					"Custom rotation ring is not visible")
+				assert(p.Size.X>0,"Ring must have a geometric segment")
+				if grip.ringGap[i] then
+					assert(p.Transparency==1 and not p.CanQuery,
+						"Overlapping rear ring arc must be hidden and unpickable")
+				else
+					assert(p.Transparency<0.1 and p.CanQuery,
+						"Visible ring arc must remain pickable")
+				end
 				local world=grip.ringPoints[i]
 				local axis=gizmo.visualFrame:VectorToWorldSpace(grip.normal)
 				assert(math.abs((world-node.position):Dot(axis))<0.0001,
 					"Rotation ring is not in the correct axis plane")
 				local point,onScreen=camera:WorldToViewportPoint(world)
-				if onScreen and gizmo._pick(Vector2.new(point.X,point.Y)) then
+				if not grip.ringGap[i] and onScreen and gizmo._pick(Vector2.new(point.X,point.Y)) then
 					picked=true
 				end
 			end
@@ -123,6 +124,14 @@ local success,reason=pcall(function()
 		end
 	end
 	assert(rings==3 and picked,"Missing or unselectable XYZ rotation rings")
+	assert(gizmo.rotationGrips.X.ringGap~=nil)
+	local gaps=0
+	for _,ring in pairs(gizmo.rotationGrips) do
+		for _,hidden in ipairs(ring.ringGap) do
+			if hidden then gaps+=1 end
+		end
+	end
+	assert(gaps>0,"Rotation ring crossing gaps not generated")
 	assert(firstRadius and firstRadius>0)
 	assert(math.abs(radii.X-radii.Y)<1e-5
 		and math.abs(radii.Y-radii.Z)<1e-5,
