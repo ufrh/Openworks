@@ -130,6 +130,8 @@ local function adorn(parent:Instance,anchor:BasePart,
 	return a
 end
 
+-- Move shafts and heads are one world-space wireframe, with no local
+-- cone orientation assumptions. The invisible Parts are click targets only.
 local function newArrow(folder:Folder,decor:Instance,anchor:BasePart,
 	name:string,color:Color3)
 	local model=Instance.new("Model")
@@ -137,14 +139,13 @@ local function newArrow(folder:Folder,decor:Instance,anchor:BasePart,
 	model.Parent=folder
 	local stem=makePart(model,"StemHit",color,Enum.PartType.Block)
 	local tip=makePart(model,"TipHit",color,Enum.PartType.Ball)
-	local shaft=adorn(decor,anchor,"LineHandleAdornment",name.."_Shaft",color)
-	local head=adorn(decor,anchor,"ConeHandleAdornment",name.."_Tip",color)
-	-- The stems start inside the selected component. Render them above
-	-- the solid so all three axes visibly converge at its center.
-	shaft.AlwaysOnTop=true
-	head.AlwaysOnTop=true
-	return {model=model,part=tip,stem=stem,tip=tip,
-		shaftAdornment=shaft,tipAdornment=head}
+	local drawing=adorn(decor,anchor,"WireframeHandleAdornment",
+		name.."_Arrow",color)
+	drawing.AlwaysOnTop=true
+	drawing.Thickness=2.6
+	drawing.CFrame=CFrame.identity
+	drawing.Scale=Vector3.one
+	return {model=model,part=tip,stem=stem,tip=tip,arrow=drawing}
 end
 
 local function newSphere(folder:Folder,decor:Instance,anchor:BasePart,
@@ -174,49 +175,61 @@ local function newRotationGrip(folder:Folder,decor:Instance,anchor:BasePart,
 	local model=Instance.new("Model")
 	model.Name=name
 	model.Parent=folder
-	-- Keep the old invisible hit sphere as a fallback for clients where
-	-- the pointer overlaps the small ring orientation handle.
+	-- Existing invisible knob target remains as a fallback; whole ring
+	-- circumference is targeted with the exact displayed world points.
 	local p=makePart(model,"RingHit",color,Enum.PartType.Ball)
 	local ring=adorn(decor,anchor,"WireframeHandleAdornment",name.."_Ring",color)
 	ring.AlwaysOnTop=true
-	ring.Thickness=2.5
-	local path=ringPath(normal,radial)
-	ring:AddPath(path,true)
-	return {model=model,part=p,ring=ring,path=path}
+	ring.Thickness=2.8
+	ring.CFrame=CFrame.identity
+	ring.Scale=Vector3.one
+	return {model=model,part=p,ring=ring,path=ringPath(normal,radial)}
 end
 
-local function placeArrow(grip,center:Vector3,direction:Vector3,extent:number,unit:number)
-	-- All three colored stems originate at the SAME object pivot.
-	-- Only the arrow tip protrudes past the body's positive-axis face.
+local function placeArrow(grip,center:Vector3,direction:Vector3,
+	extent:number,unit:number,highlighted:boolean)
+	-- Draw the visible shaft FROM the actual world-space pivot.
+	-- Define the arrowhead in world coordinates; every spoke terminates
+	-- at a tip farther OUTWARD along the selected X/Y/Z axis.
 	local shaftLength=math.max(extent+unit*4.5,unit*6)
-	local shaftDiameter=unit*0.12
-	local tipLength=unit*1.15
-	local tipDiameter=unit*0.75
-	local begin=center
-	local endShaft=begin+direction*shaftLength
-	local tipCenter=endShaft+direction*(tipLength*0.5)
-	-- Draw the whole shaft from the center, but keep its invisible
-	-- mouse hit proxy outside the solid. Clicking the object itself
-	-- should not accidentally start an axis drag.
-	local hitStart=begin+direction*(extent+unit*0.45)
-	local hitLength=math.max((endShaft-hitStart):Dot(direction),unit*0.7)
+	local tipLength=unit*1.25
+	local headRadius=unit*0.65
+	local shaftEnd=center+direction*shaftLength
+	local tipPoint=shaftEnd+direction*tipLength
+	local reference=if math.abs(direction.Y)<0.9 then Vector3.yAxis
+		else Vector3.xAxis
+	local u=direction:Cross(reference).Unit
+	local v=direction:Cross(u).Unit
+	local drawing=grip.arrow
+	drawing:Clear()
+	drawing.Color3=if highlighted then grip.baseColor:Lerp(Color3.new(1,1,1),0.32)
+		else grip.baseColor
+	drawing.Thickness=if highlighted then 3.5 else 2.6
+	drawing:AddLine(center,shaftEnd)
+	-- Six-sided cone wireframe: circular base and spokes to the one
+	-- outward tip, making reversed/sideways cone heads impossible.
+	local corners={}
+	for i=0,5 do
+		local angle=i*math.pi/3
+		table.insert(corners,shaftEnd+
+			(u*math.cos(angle)+v*math.sin(angle))*headRadius)
+	end
+	for i,point in ipairs(corners) do
+		drawing:AddLine(point,tipPoint)
+		drawing:AddLine(point,corners[i%#corners+1])
+	end
+	-- Invisible click targets stay OUTSIDE the component.
+	local hitStart=center+direction*(extent+unit*0.5)
+	local hitLength=math.max((shaftEnd-hitStart):Dot(direction),unit*0.7)
 	local hitCenter=hitStart+direction*(hitLength*0.5)
-	grip.stem.Size=Vector3.new(shaftDiameter*2,shaftDiameter*2,hitLength)
+	grip.stem.Size=Vector3.new(unit*0.4,unit*0.4,hitLength)
 	grip.stem.CFrame=CFrame.lookAt(hitCenter,hitCenter+direction)
-	grip.tip.Size=Vector3.new(tipDiameter,tipLength,tipDiameter)
-	grip.tip.CFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
-	-- ConeHandleAdornment is built along local -Z, exactly like a
-	-- lookAt frame. The old -90° X rotation incorrectly tipped it away.
-	-- The cone adornment's origin is its base, so place that base
-	-- exactly at the shaft endpoint. The hit sphere remains at its
-	-- midpoint along the protruding arrowhead.
-	local directionFrame=CFrame.lookAt(endShaft,endShaft+direction)
-	grip.shaftAdornment.CFrame=CFrame.lookAt(begin,endShaft)
-	grip.shaftAdornment.Length=shaftLength
-	grip.shaftAdornment.Thickness=2.5
-	grip.tipAdornment.CFrame=directionFrame
-	grip.tipAdornment.Radius=tipDiameter*0.5
-	grip.tipAdornment.Height=tipLength
+	grip.tip.Position=tipPoint
+	grip.tip.Size=Vector3.one*unit*1.1
+	-- Expose exact endpoints for smoke tests and future gizmo overlays.
+	grip.shaftStart=center
+	grip.shaftEnd=shaftEnd
+	grip.arrowTip=tipPoint
 end
 
 local function ringRadius(size:Vector3,normal:Vector3,unit:number,axis:string)
@@ -295,8 +308,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		local arrow = newArrow(folder,decorations,anchor,"Move_"..spec.axis,spec.color)
 		local grip = {
 			model = arrow.model, part = arrow.part, stem = arrow.stem, tip = arrow.tip,
-			shaftAdornment=arrow.shaftAdornment,tipAdornment=arrow.tipAdornment,
-			baseColor=spec.color,hoverAlpha=0,
+			arrow=arrow.arrow,baseColor=spec.color,hoverAlpha=0,
 			normal = spec.normal, axis = spec.axis, mode = "Move",
 		}
 		table.insert(self.grips, grip)
@@ -321,7 +333,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			ring=control.ring,ringPath=control.path,baseColor=spec.color,
 			hoverAlpha=0,normal=spec.normal,
 			radial=spec.radial,axis=spec.axis,mode="Rotate",ringRadius=0,
-			ringFrame=CFrame.identity,ringHighlighted=false,
+			ringFrame=CFrame.identity,ringHighlighted=false,ringWorldPath={},
 		}
 		table.insert(self.grips, grip)
 		self.lookup[grip.part] = grip
@@ -354,9 +366,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			local firstPoint=nil
 			local lastVisible=false
 			local firstVisible=false
-			for _,localPoint in ipairs(grip.ringPath) do
-				local world=grip.ringFrame:PointToWorldSpace(
-					localPoint*grip.ringRadius)
+			for _,world in ipairs(grip.ringWorldPath) do
 				local projection,visible=camera:WorldToViewportPoint(world)
 				local screen=Vector2.new(projection.X,projection.Y)
 				if lastPoint and visible and lastVisible then
@@ -558,22 +568,9 @@ function TransformGizmo:refresh(dt: number?)
 			part.CanQuery=visible
 		end
 		if grip.mode=="Move" then
-			grip.shaftAdornment.Color3=tint
-			grip.tipAdornment.Color3=tint
-			grip.shaftAdornment.Visible=visible
-			grip.tipAdornment.Visible=visible
+			grip.arrow.Visible=visible
 		elseif grip.mode=="Rotate" then
 			grip.ring.Visible=visible
-			-- WireframeHandleAdornment applies color and thickness when
-			-- drawing lines, so redraw only when hover state changes.
-			local highlighted=grip==self.hovered
-			if highlighted~=grip.ringHighlighted then
-				grip.ringHighlighted=highlighted
-				grip.ring:Clear()
-				grip.ring.Color3=if highlighted then tint else grip.baseColor
-				grip.ring.Thickness=if highlighted then 4 else 2.5
-				grip.ring:AddPath(grip.ringPath,true)
-			end
 		else
 			grip.marker.Color3=tint
 			grip.marker.Visible=visible
@@ -583,7 +580,7 @@ function TransformGizmo:refresh(dt: number?)
 			if grip.mode == "Move" then
 				local direction=cf:VectorToWorldSpace(grip.normal)
 				placeArrow(grip,cf.Position,direction,
-					getAxis(size,grip.axis)/2,unit)
+					getAxis(size,grip.axis)/2,unit,grip==self.hovered)
 			elseif grip.mode == "Scale" then
 				grip.part.Position = cf:PointToWorldSpace(
 					grip.normal*(getAxis(size,grip.axis)/2+unit*3))
@@ -594,8 +591,18 @@ function TransformGizmo:refresh(dt: number?)
 				local radius=ringRadius(size,grip.normal,unit,grip.axis)
 				grip.ringFrame=cf
 				grip.ringRadius=radius
-				grip.ring.CFrame=cf
-				grip.ring.Scale=Vector3.one*radius
+				-- Render precisely the SAME world-space points that are
+				-- used for projected mouse hit testing. No scaling/CFrame
+				-- ambiguity in WireframeHandleAdornment paths.
+				local points={}
+				for _,localPoint in ipairs(grip.ringPath) do
+					table.insert(points,cf:PointToWorldSpace(localPoint*radius))
+				end
+				grip.ringWorldPath=points
+				grip.ring:Clear()
+				grip.ring.Color3=if grip==self.hovered then tint else grip.baseColor
+				grip.ring.Thickness=if grip==self.hovered then 4 else 2.8
+				grip.ring:AddPath(points,true)
 				grip.part.Position=cf:PointToWorldSpace(grip.radial*radius)
 				grip.part.Size=Vector3.one*unit*1.75
 			end
