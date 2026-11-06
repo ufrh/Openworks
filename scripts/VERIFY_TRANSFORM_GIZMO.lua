@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-UNIFORM-CONE.5",
+assert(Gizmo.Revision=="GIZMO-CLEAN-TIPS.6",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
@@ -31,10 +31,8 @@ local success,reason=pcall(function()
 			assert(grip.highlight.FillTransparency==0 and
 				grip.highlight.OutlineTransparency==1,
 				"Move highlight must be opaque fill only")
-			assert(grip.stemBorder:IsA("SelectionBox") and
-				grip.tipBorder:IsA("SelectionBox") and
-				grip.stemBorder.Visible and grip.tipBorder.Visible,
-				"Move boundaries must be adornment outlines")
+			assert(grip.stemBorder==nil and grip.tipBorder==nil,
+				"Move cone must not have square SelectionBox outlines")
 			assert(grip.stem.Transparency==0 and grip.tip.Transparency==0)
 			assert((grip.shaftStart-node.position).Magnitude<1e-5,
 				"Move shaft doesn't begin at the component pivot")
@@ -114,4 +112,4 @@ end)
 camera.CFrame=originalCamera
 gizmo:destroy()
 assert(success,tostring(reason))
-print("FORM: replicated Cone arrowheads, fill-only Highlights, adornment borders and equal XYZ rings verified")
+print("FORM: clean Cone arrowheads, fill-only Highlights, subtle outline and equal XYZ rings verified")
