@@ -136,9 +136,14 @@ local function newArrow(folder:Folder,decor:Instance,anchor:BasePart,
 	model.Parent=folder
 	local stem=makePart(model,"StemHit",color,Enum.PartType.Block)
 	local tip=makePart(model,"TipHit",color,Enum.PartType.Ball)
+	local shaft=adorn(decor,anchor,"LineHandleAdornment",name.."_Shaft",color)
+	local head=adorn(decor,anchor,"ConeHandleAdornment",name.."_Tip",color)
+	-- The stems start inside the selected component. Render them above
+	-- the solid so all three axes visibly converge at its center.
+	shaft.AlwaysOnTop=true
+	head.AlwaysOnTop=true
 	return {model=model,part=tip,stem=stem,tip=tip,
-		shaftAdornment=adorn(decor,anchor,"LineHandleAdornment",name.."_Shaft",color),
-		tipAdornment=adorn(decor,anchor,"ConeHandleAdornment",name.."_Tip",color)}
+		shaftAdornment=shaft,tipAdornment=head}
 end
 
 local function newSphere(folder:Folder,decor:Instance,anchor:BasePart,
