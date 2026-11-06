@@ -261,6 +261,13 @@ function HistoryTopology.build(part:BasePart,component)
 				addHole(topFace,loop)
 				profileCap(poly,raised,true,"extruded_top")
 				profileWalls(poly,half.Y,raised,true,"extruded_side")
+				-- The base of a raised wall meets the stock top at a
+				-- concave inside corner; these are SmoothInside candidates.
+				for i,a in ipairs(loop) do
+					local b=loop[i%#loop+1]
+					local edge=edgeMap[edgeKey(point(a),point(b))]
+					if edge then edge.interior=true end
+				end
 			elseif op.mode=="Remove" then
 				local low=if op.through then -half.Y else half.Y-op.depth
 				local loop={}
