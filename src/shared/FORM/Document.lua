@@ -50,7 +50,7 @@ end
 
 local function defaultSize(kind: string): Vector3
 	if kind == "Cylinder" then return Vector3.new(0.5, 0.4, 0.5) end
-	if kind == "RoundedL" then return Vector3.new(1,1,0.6) end
+	if kind == "RoundedL" then return Vector3.new(0.25,0.25,0.20) end
 	return Vector3.new(1, 0.4, 1)
 end
 
@@ -61,11 +61,22 @@ function Document.new()
 	}, Document)
 end
 
-function Document:create(kind: string, minimumCorner: Vector3)
+function Document:create(kind: string, minimumCorner: Vector3, name: string?, specifiedSize: Vector3?)
 	assert(KINDS[kind], "Unknown FORM material: " .. tostring(kind))
 	self.nextComponent += 1
 	self.nextNode += 1
-	local size = defaultSize(kind)
+	local size = specifiedSize or defaultSize(kind)
+	if typeof(size)~="Vector3" or not Quantize.isFinite(size.X)
+		or not Quantize.isFinite(size.Y) or not Quantize.isFinite(size.Z)
+		or math.min(size.X,size.Y,size.Z)<Quantize.MinSize-0.00001
+		or math.max(size.X,size.Y,size.Z)>Quantize.MaxSize
+		or size.X*size.Y*size.Z>Quantize.MaxComponentVolume+0.00001 then
+		return nil,"Component size exceeds the allowed 8 stud³ volume or size limits"
+	end
+	size=Quantize.vector(size,Quantize.Grid)
+	if size.X*size.Y*size.Z>Quantize.MaxComponentVolume+0.00001 then
+		return nil,"Component volume may not exceed 8 stud³"
+	end
 	local node = {
 		id = self.nextNode,
 		kind = kind,
@@ -74,7 +85,8 @@ function Document:create(kind: string, minimumCorner: Vector3)
 		rotation = Vector3.zero,
 	}
 	local component = {
-		id = self.nextComponent, name = kind .. " " .. self.nextComponent,
+		id = self.nextComponent, name = if typeof(name)=="string" and name:match("%S")
+			then string.sub(name,1,64) else kind .. " " .. self.nextComponent,
 		nodes = { node }, operations = {}, revision = 1,
 	}
 	self.components[component.id] = component
@@ -95,6 +107,9 @@ local function validateTransform(position: Vector3, size: Vector3, rotation: Vec
 	if math.min(size.X, size.Y, size.Z) < Quantize.MinSize - 0.00001
 		or math.max(size.X, size.Y, size.Z) > Quantize.MaxSize then
 		return false, "Size must be between 0.05 and 128 studs"
+	end
+	if size.X*size.Y*size.Z>Quantize.MaxComponentVolume+0.00001 then
+		return false,"Component volume limit: 8 stud³. Use multiple components for larger assemblies"
 	end
 	return true, nil
 end
