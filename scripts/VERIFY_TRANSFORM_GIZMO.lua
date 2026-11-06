@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-INSTANT-MOVE-ROTATE.13",
+assert(Gizmo.Revision=="GIZMO-COMPACT-EDGES.14",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
