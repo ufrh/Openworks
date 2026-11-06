@@ -211,6 +211,8 @@ function Debug.start()
 					description = string.format("INSET %.0fmm", operation.margin * 280)
 				elseif operation.kind == "File" then
 					description = string.format("FILE %s %.0fmm", operation.edge, operation.width * 280)
+				elseif operation.kind == "SmoothInside" then
+					description=string.format("SMOOTH INNER %.0fmm",operation.radius*280)
 				elseif operation.kind == "FileMesh" then
 					description = string.format("%s %.0fmm · %d seg",
 						if operation.interior then "FILE INNER (PAUSED)" else "FILE EDGE",
@@ -323,7 +325,8 @@ function Debug.start()
 			local guidance = {
 				Drill = "Drill: hover a face, wheel to change diameter, click to bore",
 				Inset = "Inset: hover a planar manufactured face; wheel sets border width; click",
-				File = "File: width via wheel, 1 flat segment or 2-12 rounded segments",
+				File = "File: select one exposed edge segment; width via wheel",
+				Smooth = "Smooth: select a concave interior edge; connected File edges are locked",
 			}
 			message(guidance[kind] or "Choose a fabrication operation")
 		else
@@ -344,6 +347,7 @@ function Debug.start()
 	end)
 	pair("Inset / Pocket", function() setTool("Inset") end,
 		"File Edge", function() setTool("File") end)
+	button(row(29), "Smooth Inside Edge", 0, 1, function() setTool("Smooth") end)
 	pair("Sketch / Extrude", function()
 		local component = selectedComponent()
 		if not component then message("Create or select a workpiece first") return end
@@ -406,8 +410,9 @@ function Debug.start()
 	local insetDepthInput = toolNumberRow("Inset depth (mm)", "28")
 	local fileWidthInput = toolNumberRow("File chamfer (mm)  [wheel]", "14")
 	local fileSegmentsInput = toolNumberRow("File segments (1–12)", "1")
+	local smoothRadiusInput = toolNumberRow("Inside smooth radius (mm)", "14")
 
-	line("File: 1 flat / 2–12 rounded; inside File paused.", 24)
+	line("File: convex only. Smooth: concave only; touching File locked.", 24)
 
 	line("3D TRANSFORM HANDLES")
 	local transformStatus = line("Mode: MOVE (G)")
@@ -769,7 +774,7 @@ function Debug.start()
 	-- the player select an entire vertical/re-entrant edge even if the mouse
 	-- is over empty background or its neighboring top face.
 	local function fileEdgeTarget()
-		if activeTool~="File" or (sketchEditor and sketchEditor.active)
+		if (activeTool~="File" and activeTool~="Smooth") or (sketchEditor and sketchEditor.active)
 			or UserInputService:GetFocusedTextBox() or cameraController.dragging then
 			return nil
 		end
@@ -789,13 +794,15 @@ function Debug.start()
 			if not state or state.key~=Fabricator.geometryKey(component) then continue end
 			local topology=surfacePicker:get(id,preview:getModel(id),component)
 			if not topology then continue end
+			topology.selectedComponent=component
 			local edge,distance=topology.closestEdge(topology,camera,mouse,18)
 			if edge and distance and distance<bestDistance then
 				local pose=Compiler.pose(component.nodes[1])
 				local partFrame=topology.part.CFrame
 				local localA=pose:PointToObjectSpace(partFrame:PointToWorldSpace(edge.a))
 				local localB=pose:PointToObjectSpace(partFrame:PointToWorldSpace(edge.b))
-				local width=(tonumber(fileWidthInput.Text) or 14)/280
+				local width=(tonumber(if activeTool=="Smooth" then smoothRadiusInput.Text
+					else fileWidthInput.Text) or 14)/280
 				local available=EdgeAvailability.segments(localA,localB,component,width)
 				-- The originating topology edge may be longer than the
 				-- actual exposed edge. Pick only the unblocked segment
@@ -854,8 +861,36 @@ function Debug.start()
 				and (string.find(f2.tag or "","_wall")~=nil))
 			or ((string.find(f2.tag or "","_floor")~=nil)
 				and (string.find(f1.tag or "","_wall")~=nil))
-		if interior then return nil,"Interior edge filing is paused" end
-		local ok,why=GeometryCutter.validateFile(a,b,n1,n2,width,false,segments)
+		local smoothing=activeTool=="Smooth"
+		if smoothing and not interior then
+			return nil,"Smooth works only on concave interior edges"
+		end
+		if not smoothing and interior then
+			return nil,"Use Smooth Inside Edge for concave edges"
+		end
+		-- Fillets and adjoining sharp-edge cuts cannot share a corner:
+		-- their CSG volumes would intersect and recreate jagged wedges.
+		local component=topology.selectedComponent
+		if component then
+			local function touches(p:Vector3,q:Vector3,r:Vector3,t:Vector3)
+				for _,v in ipairs({p,q}) do
+					if (v-r).Magnitude<0.008 or (v-t).Magnitude<0.008 then
+						return true
+					end
+				end
+				return false
+			end
+			for _,op in ipairs(component.operations or {}) do
+				if op.enabled==false then continue end
+				if op.kind=="SmoothInside" and touches(a,b,op.a,op.b) then
+					return nil,"This edge touches an already smoothed corner"
+				end
+				if smoothing and op.kind=="FileMesh" and touches(a,b,op.a,op.b) then
+					return nil,"Remove the adjacent File before smoothing this corner"
+				end
+			end
+		end
+		local ok,why=GeometryCutter.validateFile(a,b,n1,n2,width,smoothing,segments)
 		if not ok then return nil,why end
 		-- A bevel cannot be wider than either of its adjacent physical
 		-- faces. Especially important for shallow recesses: cutting right
@@ -879,7 +914,7 @@ function Debug.start()
 			end
 		end
 		return {a=a,b=b,normalA=n1,normalB=n2,
-			width=width,interior=interior,segments=segments,
+			width=width,radius=width,interior=interior,segments=segments,
 			taperA=false,taperB=false},nil
 	end
 
@@ -946,11 +981,12 @@ function Debug.start()
 			return
 		end
 		surfaceMeasurements:hide()
-		if activeTool=="File" then
+		if activeTool=="File" or activeTool=="Smooth" then
 			local selection=fileEdgeTarget()
-			local width=millimeters(fileWidthInput,"File width")
+			local width=millimeters(if activeTool=="Smooth" then smoothRadiusInput
+				else fileWidthInput, "Edge radius")
 			if not selection or not width then toolVisualizer:hide() return end
-			local segments=fileSegments()
+			local segments=if activeTool=="Smooth" then 8 else fileSegments()
 			if not segments then toolVisualizer:hide() return end
 			local plan=bevelData(selection.topology,selection.edge,selection.pose,width,segments)
 			if not plan then toolVisualizer:hide() return end
@@ -1002,24 +1038,27 @@ function Debug.start()
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
 			or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
-		if activeTool=="File" then
+		if activeTool=="File" or activeTool=="Smooth" then
 			local selection=fileEdgeTarget()
 			if not selection then
-				message("Hover a visible full-length edge to file")
+				message("Hover one accessible edge segment")
 				return
 			end
-			local width,why=millimeters(fileWidthInput,"File width")
+			local width,why=millimeters(if activeTool=="Smooth" then smoothRadiusInput
+				else fileWidthInput,"Edge radius")
 			if not width then message(why) return end
-			local segments=fileSegments()
+			local segments=if activeTool=="Smooth" then 8 else fileSegments()
 			if not segments then message("File segments must be a whole number from 1 to 12") return end
 			local data,reason=bevelData(selection.topology,selection.edge,selection.pose,width,segments)
 			if not data then message(reason or "Unable to file selected edge") return end
 			if selection.id~=selectedId then selectComponent(selection.id) end
-			local ok,err=document:addOperation(selection.component,"FileMesh",data)
-			if not ok then message(err or "Unable to file edge") return end
+			local kind=if activeTool=="Smooth" then "SmoothInside" else "FileMesh"
+			local ok,err=document:addOperation(selection.component,kind,data)
+			if not ok then message(err or "Unable to modify edge") return end
 			changed(selection.component)
-			toolVisualizer:animateFile(selection.pose,data)
-			message("Filing edge · compiling CSG")
+			if kind=="FileMesh" then toolVisualizer:animateFile(selection.pose,data) end
+			message(if kind=="SmoothInside" then "Smoothing interior edge · compiling CSG"
+				else "Filing exposed edge segment · compiling CSG")
 			return
 		end
 		local target = fabricationHit()
