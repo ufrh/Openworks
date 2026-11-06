@@ -23,14 +23,18 @@ local top={
 	}
 }
 local ok,problem=pcall(function()
-	assert(overlay:show(part,top),"Top face failed to render")
+	assert(overlay:show(part,top,Vector3.new(-0.5,5.5,-0.5)),"Top face failed to render")
 	assert(overlay.part==part and overlay.lineCount>=12)
 	assert(overlay.widthBadge.gui.Enabled and overlay.heightBadge.gui.Enabled)
 	local a=overlay.widthBadge.label.Text
 	local b=overlay.heightBadge.label.Text
-	assert((a=="840 mm" and b=="560 mm")
-		or (a=="560 mm" and b=="840 mm"),
-		"Surface labels don't match 2×3 studs in millimeters: "..a.." "..b)
+	assert(a:match("^X ") and b:match("^Y "),
+		"Surface cursor labels must report X and Y positions")
+	assert(tonumber(a:match("([%d%.]+)")) and tonumber(b:match("([%d%.]+)")),
+		"Surface cursor positions must report numeric millimeters")
+	assert(overlay:show(part,top,Vector3.new(0.5,5.5,0.5)))
+	assert(overlay.widthBadge.label.Text~=a or overlay.heightBadge.label.Text~=b,
+		"Surface measurements must update as pointer moves")
 	local before=overlay.guides[1].CFrame.Position
 	part.CFrame=CFrame.new(5,8,2)*CFrame.Angles(0,math.rad(20),0)
 	assert(overlay:show(part,top),"Rotated surface failed to render")
