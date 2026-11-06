@@ -43,23 +43,8 @@ function Preview.new(onStatus, onRendered)
 		onStatus = onStatus,
 		onRendered = onRendered,
 	}, Preview)
-	-- Only the rendering interpolates. Parametric source remains precisely snapped.
-	self.renderConnection = RunService.RenderStepped:Connect(function(dt)
-		local alpha = 1 - math.exp(-26 * dt)
-		for _, state in pairs(self.states) do
-			if state.smoothing and state.part and state.part.Parent then
-				state.part.CFrame = state.part.CFrame:Lerp(state.targetFrame, alpha)
-				state.part.Size = state.part.Size:Lerp(state.targetSize, alpha)
-				if not state.dragging and
-					(state.part.Position - state.targetFrame.Position).Magnitude < 0.0005 and
-					(state.part.Size - state.targetSize).Magnitude < 0.0005 then
-					state.part.CFrame = state.targetFrame
-					state.part.Size = state.targetSize
-					state.smoothing = false
-				end
-			end
-		end
-	end)
+	-- Transforms update immediately; no CFrame/Size easing.
+	self.renderConnection=nil
 	return self
 end
 
@@ -100,14 +85,7 @@ function Preview:replace(component, part: BasePart, key: string, madeWithCSG: bo
 	configure(part)
 	local targetFrame = Compiler.pose(component.nodes[1]) * localFrame
 	local targetSize = part.Size
-	if previous and previous.smoothing and previous.part and not madeWithCSG then
-		-- Native shapes can interpolate their dimensions. Resizing a CSG
-		-- MeshPart distorts its generated mesh and creates broken-looking faces.
-		part.CFrame = previous.part.CFrame
-		part.Size = previous.part.Size
-	else
-		part.CFrame = targetFrame
-	end
+	part.CFrame=targetFrame
 	if previous and previous.part then previous.part:Destroy() end
 	part.Parent = model
 	self.states[id] = {
@@ -117,7 +95,7 @@ function Preview:replace(component, part: BasePart, key: string, madeWithCSG: bo
 		kind = component.nodes[1].kind,
 		boolean = madeWithCSG,
 		targetFrame = targetFrame, targetSize = targetSize,
-		smoothing = not madeWithCSG and previous ~= nil and previous.smoothing or false,
+		smoothing = false,
 		dragging = self.dragging[id] == true,
 	}
 	self.onRendered(id, model)
@@ -224,7 +202,7 @@ end
 function Preview:beginLive(component, _index: number)
 	self.dragging[component.id] = true
 	local state = self.states[component.id]
-	if state then state.smoothing, state.dragging = true, true end
+	if state then state.smoothing, state.dragging = false, true end
 	-- No ghost meshes and no background Boolean builds during dragging.
 	self:updateGeometry(component)
 end
