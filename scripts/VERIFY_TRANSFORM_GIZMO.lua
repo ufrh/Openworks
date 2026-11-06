@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-UNIFORM-SNAP.8",
+assert(Gizmo.Revision=="GIZMO-LOCAL-ROTATION.9",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
@@ -51,9 +51,9 @@ local success,reason=pcall(function()
 		"Move arrow shafts must be exactly equal length")
 	assert(gizmo.centerMarker.Enabled and gizmo.centerOrigin.CFrame.Position==node.position,
 		"Camera-facing pivot marker must be at the selected center")
-	assert(gizmo.centerMarker:FindFirstChild("CenterSquare")
-		and gizmo.centerMarker.CenterSquare:FindFirstChild("CenterCircle"),
-		"Move pivot must display both center square and circle")
+	assert(gizmo.centerMarker:FindFirstChild("CenterCircle")
+		and not gizmo.centerMarker:FindFirstChild("CenterSquare"),
+		"Move pivot should have a circle only, no square")
 	gizmo:setMode("Scale")
 	local scales=0
 	for _,grip in ipairs(gizmo.grips) do
@@ -81,9 +81,8 @@ local success,reason=pcall(function()
 				"Rotation ring must have a visible highlight")
 			assert(grip.highlight.FillTransparency==0 and
 				grip.highlight.OutlineTransparency==1)
-			assert(grip.contour:IsA("WireframeHandleAdornment")
-				and grip.contour.Visible,
-				"Ring boundary should use one clean wireframe adornment")
+			assert(grip.contour==nil,
+				"Rotation rings must not have any outline adornment")
 			radii[grip.axis]=grip.ringRadius
 			assert(#grip.segments==48 and #grip.ringPoints==48,
 				"Rotation ring must have 48 geometric segments")
@@ -111,6 +110,43 @@ local success,reason=pcall(function()
 	assert(math.abs(radii.X-radii.Y)<1e-5
 		and math.abs(radii.Y-radii.Z)<1e-5,
 		"All three rotation axes must have the same radius")
+	-- Test composition around local axes after multiple preceding rotations.
+	-- These checks compare entire orientations rather than Euler fields,
+	-- which deliberately couple when the body is already rotated.
+	for _,initial in ipairs({
+		Vector3.new(30,45,15),
+		Vector3.new(75,120,255),
+		Vector3.new(210,35,140),
+	}) do
+		local basis=CFrame.fromOrientation(math.rad(initial.X),
+			math.rad(initial.Y),math.rad(initial.Z))
+		for _,spec in ipairs({
+			{axis=Vector3.xAxis},{axis=Vector3.yAxis},{axis=Vector3.zAxis}
+		}) do
+			local angle=math.rad(35)
+			local expected=basis*CFrame.fromAxisAngle(spec.axis,angle)
+			local rotated=Gizmo.rotateLocal(initial,spec.axis,angle)
+			local actual=CFrame.fromOrientation(math.rad(rotated.X),
+				math.rad(rotated.Y),math.rad(rotated.Z))
+			assert((expected.RightVector-actual.RightVector).Magnitude<1e-4
+				and (expected.UpVector-actual.UpVector).Magnitude<1e-4,
+				"Local axis rotation disagrees with composed orientation")
+		end
+	end
+	local chained=Vector3.zero
+	local expected=CFrame.identity
+	for _,step in ipairs({
+		{Vector3.xAxis,45},{Vector3.yAxis,45},{Vector3.zAxis,45},
+		{Vector3.xAxis,-30},
+	}) do
+		chained=Gizmo.rotateLocal(chained,step[1],math.rad(step[2]))
+		expected=expected*CFrame.fromAxisAngle(step[1],math.rad(step[2]))
+	end
+	local actual=CFrame.fromOrientation(math.rad(chained.X),
+		math.rad(chained.Y),math.rad(chained.Z))
+	assert((actual.RightVector-expected.RightVector).Magnitude<1e-4
+		and (actual.UpVector-expected.UpVector).Magnitude<1e-4,
+		"Successive X/Y/Z local rotations must preserve orientation")
 	-- The user requires camera-scaled visuals, unlike native ArcHandles.
 	camera.CFrame=CFrame.lookAt(Vector3.new(19,15,22),Vector3.zero)
 	gizmo:refresh()
