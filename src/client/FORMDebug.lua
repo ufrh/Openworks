@@ -335,6 +335,8 @@ function Debug.start()
 		if cameraController then cameraController:frameSelected() end
 	end
 	pair("Block", function() create("Block") end, "Cylinder", function() create("Cylinder") end)
+	button(row(29), "Rounded Inside L (Ramp)", 0, 1,
+		function() create("RoundedL") end)
 	line("Material corner starts on grid lines.", 22)
 	line("FABRICATION TOOLS // MANUFACTURED SURFACES")
 	local toolStatus = line("Tool: none")
