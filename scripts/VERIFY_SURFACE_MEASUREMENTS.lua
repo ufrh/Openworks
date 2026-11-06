@@ -32,16 +32,18 @@ local ok,problem=pcall(function()
 		"Surface cursor labels must report X and Y positions")
 	assert(tonumber(a:match("([%d%.]+)")) and tonumber(b:match("([%d%.]+)")),
 		"Surface cursor positions must report numeric millimeters")
-	-- 0.05 stud increment = 14 mm. A small pointer motion should
-	-- remain at the same snapped dimension, then advance by one grid step.
+	-- Pointer coordinates are continuous, including movements smaller
+	-- than FORM's construction snap increment. Ruler steps are visual.
 	assert(overlay:show(part,top,Vector3.new(-0.5,5.5,-0.5)))
 	local initialX=overlay.widthBadge.label.Text
 	local initialY=overlay.heightBadge.label.Text
-	assert(overlay:show(part,top,Vector3.new(-0.496,5.5,-0.496)))
-	assert(overlay.widthBadge.label.Text==initialX
-		and overlay.heightBadge.label.Text==initialY,
-		"Cursor measurements should remain stable within a snap cell")
-		assert(overlay:show(part,top,Vector3.new(0.5,5.5,0.5)))
+	local baselineGuides=overlay.lineCount
+	assert(baselineGuides>=30,"Missing graduated ruler tick marks")
+	assert(overlay:show(part,top,Vector3.new(-0.47,5.5,-0.47)))
+	assert(overlay.widthBadge.label.Text~=initialX
+		or overlay.heightBadge.label.Text~=initialY,
+		"Cursor measurement must not snap to the modeling grid")
+	assert(overlay:show(part,top,Vector3.new(0.5,5.5,0.5)))
 	assert(overlay.widthBadge.label.Text~=a or overlay.heightBadge.label.Text~=b,
 		"Surface measurements must update as pointer moves")
 	local before=overlay.guides[1].CFrame.Position
