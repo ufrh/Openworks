@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-CLEAN-TIPS.6",
+assert(Gizmo.Revision=="GIZMO-CURSOR-CENTER.7",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
@@ -34,6 +34,9 @@ local success,reason=pcall(function()
 			assert(grip.stemBorder==nil and grip.tipBorder==nil,
 				"Move cone must not have square SelectionBox outlines")
 			assert(grip.stem.Transparency==0 and grip.tip.Transparency==0)
+			assert(math.abs(grip.stem.Size.Y-grip.stem.Size.Z)<1e-6)
+			assert(grip.stem.Size.Y<0.05,
+				"Move cylinder shafts should stay thin near camera")
 			assert((grip.shaftStart-node.position).Magnitude<1e-5,
 				"Move shaft doesn't begin at the component pivot")
 			assert((grip.arrowTip-grip.shaftEnd):Dot(grip.normal)>0,
@@ -41,6 +44,11 @@ local success,reason=pcall(function()
 		end
 	end
 	assert(moves==3,"Need X/Y/Z Move arrows")
+	assert(gizmo.centerMarker.Enabled and gizmo.centerOrigin.CFrame.Position==node.position,
+		"Camera-facing pivot marker must be at the selected center")
+	assert(gizmo.centerMarker:FindFirstChild("CenterSquare")
+		and gizmo.centerMarker.CenterSquare:FindFirstChild("CenterCircle"),
+		"Move pivot must display both center square and circle")
 	gizmo:setMode("Scale")
 	local scales=0
 	for _,grip in ipairs(gizmo.grips) do
