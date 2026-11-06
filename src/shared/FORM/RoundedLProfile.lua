@@ -6,8 +6,8 @@ local RoundedLProfile={}
 RoundedLProfile.SEGMENTS=12
 function RoundedLProfile.parameters(node)
 	local width,height,depth=node.size.X,node.size.Y,node.size.Z
-	local wall=math.min(width,height)*0.22
-	local radius=math.min(width-wall,height-wall)*0.55
+	local wall=math.max(0.025,math.min(width,height)*0.10)
+	local radius=math.min(width-wall,height-wall)*0.92
 	return wall,radius
 end
 function RoundedLProfile.outline(node):{Vector2}
