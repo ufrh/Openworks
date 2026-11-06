@@ -897,13 +897,14 @@ function Debug.start()
 		-- their CSG volumes would intersect and recreate jagged wedges.
 		local component=topology.selectedComponent
 		if component then
+			local function closeToSegment(p:Vector3,a:Vector3,b:Vector3)
+				local d=b-a
+				local t=math.clamp((p-a):Dot(d)/math.max(d:Dot(d),1e-9),0,1)
+				return (p-(a+d*t)).Magnitude<0.008
+			end
 			local function touches(p:Vector3,q:Vector3,r:Vector3,t:Vector3)
-				for _,v in ipairs({p,q}) do
-					if (v-r).Magnitude<0.008 or (v-t).Magnitude<0.008 then
-						return true
-					end
-				end
-				return false
+				return closeToSegment(p,r,t) or closeToSegment(q,r,t)
+					or closeToSegment(r,p,q) or closeToSegment(t,p,q)
 			end
 			for _,op in ipairs(component.operations or {}) do
 				if op.enabled==false then continue end
