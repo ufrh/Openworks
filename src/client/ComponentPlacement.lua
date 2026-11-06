@@ -4,7 +4,9 @@
 local UserInputService=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
-local Quantize=require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Quantize)
+local FORM=ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
+local Quantize=require(FORM.Quantize)
+local MaterialVolume=require(FORM.MaterialVolume)
 local ComponentPlacement={}
 ComponentPlacement.__index=ComponentPlacement
 local MM=280
@@ -79,7 +81,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 	local xBox=textBox("X (mm)","84",149)
 	local yBox=textBox("Y (mm)","56",185)
 	local zBox=textBox("Z (mm)","84",221)
-	local feedback=label(form,"Max envelope: 8 stud³ · sizes in mm",
+	local feedback=label(form,"Material budget: 175,616,000 mm³ · sizes in mm",
 		UDim2.fromOffset(16,258),UDim2.fromOffset(300,20))
 	feedback.TextSize=11
 	local cancel=button(form,"Cancel",UDim2.fromOffset(16,291),
@@ -146,8 +148,8 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 		local size=Quantize.vector(Vector3.new(x,y,z)/MM,Quantize.Size)
 		if math.min(size.X,size.Y,size.Z)<Quantize.MinSize
 			or math.max(size.X,size.Y,size.Z)>Quantize.MaxSize
-			or size.X*size.Y*size.Z>Quantize.MaxComponentVolume then
-			feedback.Text="Volume cap: 8 stud³; minimum size: 14 mm"
+			or not MaterialVolume.within(MaterialVolume.primitive(selectedKind,size)) then
+			feedback.Text="Material exceeds "..MaterialVolume.display(Quantize.MaxComponentVolume)
 			return
 		end
 		if selectedKind=="Cylinder" and math.abs(size.X-size.Z)>1/MM then
@@ -189,7 +191,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 		self:close()
 		form.Visible=true
 		launch.Visible=false
-		feedback.Text="Max envelope: 8 stud³ · sizes in mm"
+		feedback.Text="Material budget: 175,616,000 mm³ · sizes in mm"
 	end
 	function self:setLaunchVisible(value:boolean)
 		self.showLaunch=value
