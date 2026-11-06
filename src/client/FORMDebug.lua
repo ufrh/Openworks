@@ -11,6 +11,7 @@ local Compiler = require(FORM.Compiler)
 local Fabricator = require(FORM.Fabricator)
 local GeometryCutter = require(FORM.GeometryCutter)
 local Quantize = require(FORM.Quantize)
+local MaterialVolume = require(FORM.MaterialVolume)
 local Preview = require(script.Parent.Preview)
 local BlenderCamera = require(script.Parent.BlenderCamera)
 local GridOverlay = require(script.Parent.GridOverlay)
@@ -44,6 +45,7 @@ function Debug.start()
 	local cameraController: any = nil
 	local activeTool: string? = nil
 	local historyInfo: any = nil
+	local volumeInfo:any=nil
 	local historyRows = {}
 	local sketchEditor: any = nil
 	local toolVisualizer = ToolVisualizer.new(playerGui)
@@ -192,6 +194,16 @@ function Debug.start()
 		local node = selectedNode()
 		info.Text = if component then ("Selection: " .. component.name) else "Selection: none"
 		nodeInfo.Text = if node then ("Material: " .. node.kind) else "Material: none"
+		if volumeInfo then
+			local used=if component then component.materialVolume else nil
+			if node and not Fabricator.requiresCompile(component) then
+				used=MaterialVolume.primitive(node.kind,node.size)
+			end
+			volumeInfo.Text=if not component then "Material volume: —"
+				elseif used then "Material: "..MaterialVolume.display(used)..
+					" / "..MaterialVolume.display(Quantize.MaxComponentVolume)
+				else "Material: calculating CSG…"
+		end
 		if notesBox and not notesBox:IsFocused() then
 			notesBox.Text=if component then component.notes or "" else ""
 		end
@@ -314,6 +326,14 @@ function Debug.start()
 	preview = Preview.new(message, function(id,model)
 		surfacePicker:request(id,model,document.components[id])
 		if id == selectedId then refresh() end
+	end,function(id,accepted,reason)
+		local component=document.components[id]
+		if not component then return end
+		if document:restoreSnapshot(component,accepted) then
+			preview:render(component)
+			refresh()
+		end
+		message(reason.." · reverted to last valid material")
 	end)
 
 	local function selectComponent(id: number?)
@@ -384,7 +404,9 @@ function Debug.start()
 			selected.notes=notesBox.Text
 		end
 	end)
-	line("Max component envelope: 8 stud³ · Scale: 1 mm",22)
+	volumeInfo=line("Material volume: —",26)
+	line("Material budget: "..MaterialVolume.display(Quantize.MaxComponentVolume),24)
+	line("Scale: 1 mm · hollow shapes use less material",22)
 	line("FABRICATION TOOLS // MANUFACTURED SURFACES")
 	local toolStatus = line("Tool: none")
 	historyInfo = line("Fabrication: 0 cuts")
