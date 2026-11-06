@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-CURSOR-CENTER.7",
+assert(Gizmo.Revision=="GIZMO-UNIFORM-SNAP.8",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
@@ -20,9 +20,11 @@ local success,reason=pcall(function()
 	camera.CFrame=CFrame.lookAt(Vector3.new(7,6,10),Vector3.zero)
 	gizmo:show(component,1)
 	local moves=0
+	local moveLengths={}
 	for _,grip in ipairs(gizmo.grips) do
 		if grip.mode=="Move" then
 			moves+=1
+			moveLengths[grip.axis]=grip.stem.Size.X
 			assert(grip.stem:IsA("Part")
 				and grip.stem.Shape==Enum.PartType.Cylinder)
 			assert(grip.tip:IsA("MeshPart") and grip.tip.Name=="Arrowhead",
@@ -44,6 +46,9 @@ local success,reason=pcall(function()
 		end
 	end
 	assert(moves==3,"Need X/Y/Z Move arrows")
+	assert(math.abs(moveLengths.X-moveLengths.Y)<1e-5
+		and math.abs(moveLengths.Y-moveLengths.Z)<1e-5,
+		"Move arrow shafts must be exactly equal length")
 	assert(gizmo.centerMarker.Enabled and gizmo.centerOrigin.CFrame.Position==node.position,
 		"Camera-facing pivot marker must be at the selected center")
 	assert(gizmo.centerMarker:FindFirstChild("CenterSquare")
