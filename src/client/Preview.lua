@@ -249,6 +249,17 @@ function Preview:queueManufacture(component)
 end
 
 function Preview:render(component)
+	-- Preserve a valid baseline even if the first rounded-L CSG is
+	-- still compiling when the user starts editing it.
+	if not self.accepted[component.id] and #component.operations==0 then
+		local primitive=MaterialVolume.primitive(
+			component.nodes[1].kind,component.nodes[1].size)
+		if MaterialVolume.within(primitive) then
+			component.materialVolume=primitive
+			component.volumeExact=true
+			self.accepted[component.id]=Document.snapshot(component)
+		end
+	end
 	local requiresManufacture = self:updateGeometry(component)
 	if requiresManufacture and not self.dragging[component.id] then
 		self:queueManufacture(component)
