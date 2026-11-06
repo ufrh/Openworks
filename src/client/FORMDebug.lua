@@ -343,19 +343,39 @@ function Debug.start()
 		end
 	end)
 
-	line("CREATE COMPONENT")
-	local function create(kind: string)
+	line("COMPONENT WORKSPACE")
+	button(row(29), "+ Create Component", 0, 1, function()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
-		-- Fresh geometry begins at the locked workspace origin.
-		local component = document:create(kind, Vector3.zero)
-		selectComponent(component.id)
-		changed(component)
-		if cameraController then cameraController:frameSelected() end
-	end
-	pair("Block", function() create("Block") end, "Cylinder", function() create("Cylinder") end)
-	button(row(29), "Rounded Inside L (Ramp)", 0, 1,
-		function() create("RoundedL") end)
-	line("Material corner starts on grid lines.", 22)
+		activeTool=nil
+		toolVisualizer:hide()
+		transformGizmo:setHidden(true)
+		if placementFlow then placementFlow:open() end
+	end)
+	local notesButton=button(row(29),"Notepad (component notes)",0,1,function() end)
+	local notesContainer=row(116)
+	notesContainer.Visible=false
+	notesBox=make("TextBox",{
+		Name="ComponentNotepad",
+		Text="",MultiLine=true,TextWrapped=true,
+		TextXAlignment=Enum.TextXAlignment.Left,
+		TextYAlignment=Enum.TextYAlignment.Top,
+		Font=Enum.Font.Code,TextSize=13,
+		TextColor3=Color3.fromRGB(242,247,249),
+		BackgroundColor3=Color3.fromRGB(40,49,55),
+		BorderSizePixel=0,ClearTextOnFocus=false,
+		Size=UDim2.fromScale(1,1),
+	},notesContainer)
+	make("UICorner",{CornerRadius=UDim.new(0,4)},notesBox)
+	notesButton.MouseButton1Click:Connect(function()
+		notesContainer.Visible=not notesContainer.Visible
+	end)
+	notesBox:GetPropertyChangedSignal("Text"):Connect(function()
+		local selected=selectedComponent()
+		if selected and notesBox:IsFocused() then
+			selected.notes=notesBox.Text
+		end
+	end)
+	line("Max component envelope: 8 stud³ · Scale: 1 mm",22)
 	line("FABRICATION TOOLS // MANUFACTURED SURFACES")
 	local toolStatus = line("Tool: none")
 	historyInfo = line("Fabrication: 0 cuts")
@@ -363,6 +383,7 @@ function Debug.start()
 		toolVisualizer:stopAnimation()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool = kind
+		if measurementTool then measurementTool:setActive(kind=="Measure") end
 		toolVisualizer:hide()
 		if kind then
 			transformGizmo:setHidden(true)
@@ -372,6 +393,7 @@ function Debug.start()
 				Inset = "Inset: hover a planar manufactured face; wheel sets border width; click",
 				File = "File: select one exposed edge segment; width via wheel",
 				Smooth = "Smooth: select a concave interior edge; connected File edges are locked",
+				Measure = "Measure: click a first point, then a second point; distance is in mm",
 			}
 			message(guidance[kind] or "Choose a fabrication operation")
 		else
@@ -393,6 +415,7 @@ function Debug.start()
 	pair("Inset / Pocket", function() setTool("Inset") end,
 		"File Edge", function() setTool("File") end)
 	button(row(29), "Smooth Inside Edge", 0, 1, function() setTool("Smooth") end)
+	button(row(29), "Measure Two Points", 0, 1, function() setTool("Measure") end)
 	pair("Sketch / Extrude", function()
 		local component = selectedComponent()
 		if not component then message("Create or select a workpiece first") return end
@@ -470,10 +493,11 @@ function Debug.start()
 		transformStatus.Text = "Mode: " .. string.upper(mode)
 	end
 	pair("Move [G]", function() setTransformMode("Move") end,
-		"Rotate [R]", function() setTransformMode("Rotate") end)
-	button(row(29), "Hide Handles", 0, 1, function()
+		"Scale [S]", function() setTransformMode("Scale") end)
+	pair("Rotate [R]", function() setTransformMode("Rotate") end,
+		"Hide Handles", function()
 		transformGizmo:setHidden(true)
-		transformStatus.Text = "Mode: HIDDEN (G/R)"
+		transformStatus.Text = "Mode: HIDDEN (G/S/R)"
 	end)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
@@ -483,7 +507,8 @@ function Debug.start()
 		if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 		if input.KeyCode == Enum.KeyCode.G then
 			setTransformMode("Move")
-
+		elseif input.KeyCode == Enum.KeyCode.S then
+			setTransformMode("Scale")
 		elseif input.KeyCode == Enum.KeyCode.R then
 			setTransformMode("Rotate")
 		end
