@@ -673,10 +673,10 @@ function Debug.start()
 	end, "Zoom All (Home)", function()
 		if not cameraController:frameAll() then message("No components to frame") end
 	end)
-	line("RMB / MMB drag: orbit origin", 24)
+	line("RMB / MMB drag: orbit component workspace", 24)
 	line("Ctrl+MMB / wheel: hybrid zoom", 24)
 	line("Numpad 1/3/7 views | 5 ortho", 24)
-	line("F / Home: zoom only (fixed origin)", 24)
+	line("F / Home: frame current workspace", 24)
 	line("Drag view gizmo; drag zoom control", 24)
 
 	local viewGizmo = ViewGizmo.new(gui, cameraController)
