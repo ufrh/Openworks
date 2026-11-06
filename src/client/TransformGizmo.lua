@@ -11,6 +11,9 @@ local Quantize = require(FORM.Quantize)
 
 local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
+-- Shown by the startup build badge, so Studio can distinguish a stale
+-- cached gizmo ModuleScript from a newly synced client entry script.
+TransformGizmo.Revision = "GIZMO-WORLD-WIRE.2"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
