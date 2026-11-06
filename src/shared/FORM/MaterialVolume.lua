@@ -46,7 +46,7 @@ function Volume.fromPart(solid:BasePart):number
 	local success,mass=pcall(function() return solid:GetMass() end)
 	solid.CustomPhysicalProperties=prior
 	if not success or type(mass)~="number" or not Quantize.isFinite(mass)
-		or mass<0 then
+		or mass<=1e-9 then
 		return math.huge
 	end
 	return mass
