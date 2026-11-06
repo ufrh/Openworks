@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-COMPACT-EDGES.14",
+assert(Gizmo.Revision=="GIZMO-SCALE-FULL-RINGS.15",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
@@ -63,12 +63,22 @@ local success,reason=pcall(function()
 	assert(gizmo.centerMarker:FindFirstChild("CenterCircle")
 		and not gizmo.centerMarker:FindFirstChild("CenterSquare"),
 		"Move pivot should have a circle only, no square")
-	-- Scale is not an available transform mode or selectable gizmo.
+	-- Six true face-scale controls are available and camera sized.
 	gizmo:setMode("Scale")
-	assert(gizmo.mode=="Move","Scale mode must be rejected")
+	assert(gizmo.mode=="Scale","Scale mode should be available")
+	local scales=0
 	for _,grip in ipairs(gizmo.grips) do
-		assert(grip.mode~="Scale","Scale grips must not exist")
+		if grip.mode=="Scale" then
+			scales+=1
+			assert(grip.part.Shape==Enum.PartType.Block and grip.highlight.Enabled)
+			assert(grip.part.CanQuery and grip.border.Visible,
+				"Scale grip must be visible and directly pickable")
+			assert((grip.part.Position-node.position):Dot(
+				gizmo.visualFrame:VectorToWorldSpace(grip.normal))>0,
+				"Scale handle should be outside its face")
+		end
 	end
+	assert(scales==6,"Scale needs six face handles")
 	-- Transforms must exactly match node state with no interpolation.
 	node.position=Vector3.new(0.4,0.6,0.2)
 	node.rotation=Vector3.new(15,30,45)
@@ -104,19 +114,14 @@ local success,reason=pcall(function()
 				assert(not p.CanCollide and not p.CanTouch,
 					"Visual gizmo must not affect physics")
 				assert(p.Size.X>0,"Ring must have a geometric segment")
-				if grip.ringGap[i] then
-					assert(p.Transparency==1 and not p.CanQuery,
-						"Overlapping rear ring arc must be hidden and unpickable")
-				else
-					assert(p.Transparency<0.1 and p.CanQuery,
-						"Visible ring arc must remain pickable")
-				end
+				assert(p.Transparency==0 and p.CanQuery,
+					"All 48 ring segments must remain visible and pickable")
 				local world=grip.ringPoints[i]
 				local axis=gizmo.visualFrame:VectorToWorldSpace(grip.normal)
 				assert(math.abs((world-node.position):Dot(axis))<0.0001,
 					"Rotation ring is not in the correct axis plane")
 				local point,onScreen=camera:WorldToViewportPoint(world)
-				if not grip.ringGap[i] and onScreen and gizmo._pick(Vector2.new(point.X,point.Y)) then
+				if onScreen and gizmo._pick(Vector2.new(point.X,point.Y)) then
 					picked=true
 				end
 			end
@@ -124,14 +129,6 @@ local success,reason=pcall(function()
 		end
 	end
 	assert(rings==3 and picked,"Missing or unselectable XYZ rotation rings")
-	assert(gizmo.rotationGrips.X.ringGap~=nil)
-	local gaps=0
-	for _,ring in pairs(gizmo.rotationGrips) do
-		for _,hidden in ipairs(ring.ringGap) do
-			if hidden then gaps+=1 end
-		end
-	end
-	assert(gaps>0,"Rotation ring crossing gaps not generated")
 	assert(firstRadius and firstRadius>0)
 	assert(math.abs(radii.X-radii.Y)<1e-5
 		and math.abs(radii.Y-radii.Z)<1e-5,
