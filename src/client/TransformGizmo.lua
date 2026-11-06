@@ -16,7 +16,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-PRECISE-PICK.11"
+TransformGizmo.Revision = "GIZMO-NEON-RINGS.12"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -240,17 +240,12 @@ local function newRotationRing(folder:Folder,name:string,color:Color3,anchor:Bas
 		segment.CanQuery=false
 		table.insert(segments,segment)
 	end
-	-- One Highlight adorns the entire ring model. Roblox limits
-	-- simultaneous Highlights, so attaching one to all 48 individual
-	-- cylinders would exhaust the render budget. The model Highlight
-	-- fills every segment with the exact axis color, with NO outline.
-	local ringHighlight=highlight(model,color)
-	ringHighlight.Name="RotationAxisHighlight"
-	ringHighlight.FillColor=color
-	ringHighlight.FillTransparency=0
-	ringHighlight.OutlineTransparency=1
-	return {model=model,segments=segments,part=segments[1],
-		highlight=ringHighlight}
+	-- Rotation is rendered by the actual Neon cylinder Parts.
+	-- No Highlight, adornment border, or overlapping glow model.
+	for _,segment in ipairs(segments) do
+		segment.Material=Enum.Material.Neon
+	end
+	return {model=model,segments=segments,part=segments[1]}
 end
 
 local function ringRadius(size:Vector3,unit:number):number
@@ -496,7 +491,6 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		local ring=newRotationRing(folder,"Rotate_"..spec.axis,spec.color,adornmentOrigin)
 		local grip={
 			model=ring.model,part=ring.part,segments=ring.segments,
-			highlight=ring.highlight,
 			baseColor=spec.color,hoverAlpha=0,
 			normal=spec.normal,radial=spec.radial,axis=spec.axis,
 			mode="Rotate",ringPoints={},ringRadius=0,ringFrame=nil,
@@ -739,12 +733,12 @@ function TransformGizmo:refresh(dt:number?)
 		local blend=if dt then 1-math.exp(-18*dt) else 1
 		grip.hoverAlpha+=(target-grip.hoverAlpha)*blend
 		local tint=grip.baseColor:Lerp(Color3.new(1,1,1),grip.hoverAlpha*0.38)
-		grip.highlight.Enabled=visible
-		-- Rotate stays at the axis's exact authored red/green/blue,
-		-- without the hover whitening used by Move and Scale.
-		grip.highlight.FillColor=if grip.mode=="Rotate" then grip.baseColor else tint
-		grip.highlight.FillTransparency=0
-		grip.highlight.OutlineTransparency=1
+		if grip.highlight then
+			grip.highlight.Enabled=visible
+			grip.highlight.FillColor=tint
+			grip.highlight.FillTransparency=0
+			grip.highlight.OutlineTransparency=1
+		end
 		if grip.mode=="Scale" then
 			grip.border.Visible=visible
 			grip.border.Color3=tint
@@ -752,7 +746,7 @@ function TransformGizmo:refresh(dt:number?)
 		local parts=if grip.mode=="Move" then {grip.stem,grip.tip}
 			elseif grip.mode=="Scale" then {grip.part} else grip.segments
 		for _,part in ipairs(parts) do
-			part.Transparency=if visible then (if grip.mode=="Rotate" then 0.04 else 0)
+			part.Transparency=if visible then 0
 				else 1
 			part.CanQuery=visible
 			part.Color=if grip.mode=="Rotate" then grip.baseColor else tint
