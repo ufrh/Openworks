@@ -1,8 +1,7 @@
 --!strict
--- Camera-adaptive center-origin XYZ move arrows, face-scale grips, and
--- three clickable wireframe rotation rings. Visible geometry is adornments.
--- Three center-origin move arrows, six offset scale spheres, and three
--- clickable wireframe rotation rings.
+-- Camera-scaled custom solid gizmos styled after Roblox Studio.
+-- Native Handles/ArcHandles are deliberately avoided: their fixed visual
+-- scale cannot follow the camera zoom needed by the FORM editor.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -13,7 +12,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-STUDIO-HANDLES.3"
+TransformGizmo.Revision = "GIZMO-SCALED-PARTS.4"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -25,8 +24,8 @@ local AXES = {
 }
 local MOVE_AXES = { AXES[1], AXES[3], AXES[5] }
 local MM_PER_STUD = 280 -- Roblox standard physical scale, 0.28 m per stud.
-local RING_SAMPLES = 72
-local RING_HIT_PIXELS = 16
+local RING_SAMPLES = 48
+local RING_HIT_PIXELS = 13
 local ROTATIONS = {
 	{ normal = Vector3.xAxis, radial = Vector3.yAxis, axis = "X", color = Color3.fromRGB(224, 88, 91) },
 	{ normal = Vector3.yAxis, radial = Vector3.zAxis, axis = "Y", color = Color3.fromRGB(99, 205, 122) },
@@ -103,9 +102,9 @@ local function visualScale(position: Vector3): number
 	return math.clamp(worldPerPixel * 8, 0.025, 0.34)
 end
 
--- Move and scale are solid, highlighted, local-only Parts. Rotation
--- uses Roblox's own native ArcHandles, which supplies visible circular
--- XYZ axes and reliable MouseDrag events in PlayerGui.
+-- Move, Scale and Rotate use colored, highlighted, anchored local Parts.
+-- They do not collide, are never part of the manufactured assembly,
+-- and are entirely resizeable with the camera.
 local function makePart(parent:Instance,name:string,color:Color3,shape:Enum.PartType):Part
 	local p=Instance.new("Part")
 	p.Name=name
@@ -186,6 +185,64 @@ local function placeArrow(grip,center:Vector3,direction:Vector3,
 	grip.arrowTip=shaftEnd+direction*tipLength
 end
 
+-- A ring is a local-only Model of small solid cylindrical segments.
+-- Native ArcHandles are unsuitable because they cannot be resized to
+-- the camera's zoom. We keep the existing Part raycast/planeRadial
+-- dragging and add screen-space circle picking for generous hit targets.
+local function newRotationRing(folder:Folder,name:string,color:Color3)
+	local model=Instance.new("Model")
+	model.Name=name
+	model.Parent=folder
+	local segments={}
+	for i=1,RING_SAMPLES do
+		local segment=makePart(model,"Arc_"..i,color,Enum.PartType.Cylinder)
+		segment.Transparency=1
+		segment.CanQuery=false
+		table.insert(segments,segment)
+	end
+	return {model=model,segments=segments,part=segments[1],
+		highlight=highlight(model,color)}
+end
+
+local function ringRadius(size:Vector3,axis:string,unit:number):number
+	local perpendicular=if axis=="X" then Vector2.new(size.Y,size.Z)
+		elseif axis=="Y" then Vector2.new(size.X,size.Z)
+		else Vector2.new(size.X,size.Y)
+	return perpendicular.Magnitude*0.5+unit*3.5
+end
+
+local function screenSegmentDistance(point:Vector2,a:Vector2,b:Vector2):number
+	local delta=b-a
+	local squared=delta:Dot(delta)
+	if squared<1e-5 then return math.huge end
+	local t=math.clamp((point-a):Dot(delta)/squared,0,1)
+	return (point-(a+delta*t)).Magnitude
+end
+
+local function layoutRing(grip,cf:CFrame,radius:number,thickness:number,
+	tint:Color3)
+	local axis=cf:VectorToWorldSpace(grip.normal).Unit
+	local u=cf:VectorToWorldSpace(grip.radial).Unit
+	local v=axis:Cross(u).Unit
+	local points={}
+	for i=0,RING_SAMPLES-1 do
+		local a=i*2*math.pi/RING_SAMPLES
+		table.insert(points,cf.Position+(u*math.cos(a)+v*math.sin(a))*radius)
+	end
+	grip.ringPoints=points
+	grip.ringRadius=radius
+	grip.ringFrame=cf
+	for i,part in ipairs(grip.segments) do
+		local a=points[i]
+		local b=points[i%RING_SAMPLES+1]
+		local tangent=b-a
+		-- Cylinder Parts use local X for the long axis.
+		part.CFrame=CFrame.lookAt((a+b)*0.5,b)*CFrame.Angles(0,math.pi/2,0)
+		part.Size=Vector3.new(tangent.Magnitude*1.025,thickness,thickness)
+		part.Color=tint
+	end
+end
+
 local function newMeasurement(playerGui: PlayerGui)
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "FORM_TransformMeasurement"
@@ -215,32 +272,10 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	local folder = Instance.new("Folder")
 	folder.Name = "FORM_TransformGrips"
 	folder.Parent = workspace
-	local rotationAnchor=Instance.new("Part")
-	rotationAnchor.Name="FORM_StudioRotatePivot"
-	rotationAnchor.Size=Vector3.one
-	rotationAnchor.Anchored=true
-	rotationAnchor.Transparency=1
-	rotationAnchor.CanCollide=false
-	rotationAnchor.CanTouch=false
-	rotationAnchor.CanQuery=false
-	rotationAnchor.CastShadow=false
-	rotationAnchor.Parent=folder
-	local rotationArcs={}
-	for _,spec in ipairs(ROTATIONS) do
-		local arcs=Instance.new("ArcHandles")
-		arcs.Name="FORM_StudioRotate_"..spec.axis
-		arcs.Adornee=rotationAnchor
-		arcs.Axes=Axes.new(Enum.Axis[spec.axis])
-		arcs.Color3=spec.color
-		arcs.Transparency=0
-		arcs.Visible=false
-		arcs.Parent=playerGui
-		rotationArcs[spec.axis]=arcs
-	end
 	local measurement, measurementText = newMeasurement(playerGui)
 	local self = setmetatable({
 		document = document, onChange = onChange, folder = folder,
-		rotationAnchor=rotationAnchor,rotationArcs=rotationArcs,
+		
 		grips = {}, lookup = {}, connections = {},
 		mode = "Move", hidden = false, component = nil, index = nil,
 		dragStart = nil, dragChanged = false, hovered = nil, visualFrame = nil, visualSize = nil,
@@ -270,12 +305,17 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	end
 	self.rotationGrips={}
 	for _,spec in ipairs(ROTATIONS) do
+		local ring=newRotationRing(folder,"Rotate_"..spec.axis,spec.color)
 		local grip={
-			part=rotationAnchor,baseColor=spec.color,hoverAlpha=0,
-			normal=spec.normal,radial=spec.radial,axis=spec.axis,mode="Rotate",
+			model=ring.model,part=ring.part,segments=ring.segments,
+			highlight=ring.highlight,baseColor=spec.color,hoverAlpha=0,
+			normal=spec.normal,radial=spec.radial,axis=spec.axis,
+			mode="Rotate",ringPoints={},ringRadius=0,ringFrame=nil,
+			ringThickness=0,
 		}
 		self.rotationGrips[spec.axis]=grip
 		table.insert(self.grips,grip)
+		for _,part in ipairs(grip.segments) do self.lookup[part]=grip end
 	end
 
 	local function connect(signal, fn)
@@ -283,9 +323,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	end
 
 	local function pick(point:Vector2)
-		-- Studio's native ArcHandles take care of Rotate mouse capture.
-		-- Move and Scale are real raycastable highlighted Parts.
-		if self.hidden or not self.component or self.mode=="Rotate" then return nil end
+		if self.hidden or not self.component then return nil end
 		local camera=workspace.CurrentCamera
 		if not camera then return nil end
 		local ray=camera:ViewportPointToRay(point.X,point.Y)
@@ -293,8 +331,26 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		params.FilterType=Enum.RaycastFilterType.Include
 		params.FilterDescendantsInstances={folder}
 		local hit=workspace:Raycast(ray.Origin,ray.Direction*2048,params)
-		local grip=if hit then self.lookup[hit.Instance] else nil
-		return if grip and grip.mode==self.mode then grip else nil
+		local direct=if hit then self.lookup[hit.Instance] else nil
+		if direct and direct.mode==self.mode then return direct end
+		if self.mode~="Rotate" then return nil end
+		local nearest=nil
+		local closest=RING_HIT_PIXELS
+		for _,grip in ipairs(self.grips) do
+			if grip.mode~="Rotate" or #grip.ringPoints==0 then continue end
+			local points=grip.ringPoints
+			for i,a in ipairs(points) do
+				local b=points[i%#points+1]
+				local pa,va=camera:WorldToViewportPoint(a)
+				local pb,vb=camera:WorldToViewportPoint(b)
+				if va and vb then
+					local distance=screenSegmentDistance(point,
+						Vector2.new(pa.X,pa.Y),Vector2.new(pb.X,pb.Y))
+					if distance<closest then closest,nearest=distance,grip end
+				end
+			end
+		end
+		return nearest
 	end
 
 	local function begin(grip, point: Vector2)
@@ -381,34 +437,6 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		self:refresh()
 	end
 
-	-- Native Roblox Studio-style rotation rings supply their own exact
-	-- relative angles. This avoids screen-projected custom wireframe picking.
-	for axis,arcs in pairs(self.rotationArcs) do
-		local grip=self.rotationGrips[axis]
-		connect(arcs.MouseButton1Down,function(_axis)
-			if self.mode~="Rotate" or self.hidden or not self.component
-				or self.dragStart then return end
-			begin(grip,UserInputService:GetMouseLocation())
-			if self.dragStart then self.dragStart.nativeArc=true end
-		end)
-		connect(arcs.MouseDrag,function(_axis,relativeAngle,_deltaRadius)
-			local start=self.dragStart
-			if not start or start.grip~=grip or not start.nativeArc then return end
-			local newRotation=putAxis(start.rotation,axis,
-				getAxis(start.rotation,axis)+math.deg(relativeAngle))
-			local ok=document:applyTransform(start.component,start.index,
-				nil,nil,newRotation,false)
-			if not ok then return end
-			self.dragChanged=true
-			self.measurementText.Text=string.format("%+.0f°",math.deg(relativeAngle))
-			self:refresh()
-			self.onChange("update",start.component,start.index)
-		end)
-		connect(arcs.MouseButton1Up,function(_axis)
-			if self.dragStart and self.dragStart.grip==grip then finish() end
-		end)
-	end
-
 	connect(UserInputService.InputBegan, function(input, processed)
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 or self.dragStart then return end
 		local point = UserInputService:GetMouseLocation()
@@ -418,8 +446,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		end
 	end)
 	connect(UserInputService.InputChanged, function(input)
-		if self.dragStart and not self.dragStart.nativeArc
-			and input.UserInputType==Enum.UserInputType.MouseMovement then
+		if self.dragStart and input.UserInputType==Enum.UserInputType.MouseMovement then
 			drag(UserInputService:GetMouseLocation())
 		end
 	end)
@@ -479,8 +506,8 @@ function TransformGizmo:hide()
 end
 
 function TransformGizmo:refresh(dt:number?)
-	local node=if self.component and self.index
-		then self.component.nodes[self.index] else nil
+	local node=if self.component and self.index then
+		self.component.nodes[self.index] else nil
 	local targetFrame=if node then frame(node) else nil
 	local cf=targetFrame
 	local size=if node then node.size else nil
@@ -496,54 +523,63 @@ function TransformGizmo:refresh(dt:number?)
 	else
 		self.visualFrame,self.visualSize=nil,nil
 	end
-
-	local showRotate=node~=nil and not self.hidden and self.mode=="Rotate"
-	for _,arcs in pairs(self.rotationArcs) do arcs.Visible=showRotate end
-	if node and cf and size then
-		local basis=cf
-		local dimensions=size
-		-- Freeze the ArcHandles' reference while dragging, so the ring
-		-- doesn't rotate underneath the mouse with each drag event.
-		if self.dragStart and self.dragStart.nativeArc then
-			local start=self.dragStart
-			basis=CFrame.new(start.position)*CFrame.fromOrientation(
-				math.rad(start.rotation.X),math.rad(start.rotation.Y),
-				math.rad(start.rotation.Z))
-			dimensions=start.size
-		end
-		local unit=visualScale(cf.Position)
-		self.rotationAnchor.CFrame=basis
-		self.rotationAnchor.Size=Vector3.one*math.max(
-			dimensions.Magnitude*1.16,unit*14)
-	end
-
 	for _,grip in ipairs(self.grips) do
-		if grip.mode=="Rotate" then continue end
 		local visible=node~=nil and not self.hidden and grip.mode==self.mode
 		local target=if grip==self.hovered then 1 else 0
-		local hoverBlend=if dt then 1-math.exp(-18*dt) else 1
-		grip.hoverAlpha+=(target-grip.hoverAlpha)*hoverBlend
+		local blend=if dt then 1-math.exp(-18*dt) else 1
+		grip.hoverAlpha+=(target-grip.hoverAlpha)*blend
 		local tint=grip.baseColor:Lerp(Color3.new(1,1,1),grip.hoverAlpha*0.38)
 		grip.highlight.Enabled=visible
 		grip.highlight.FillColor=tint
 		grip.highlight.OutlineColor=tint
+		grip.highlight.FillTransparency=if grip.mode=="Rotate" then 0.88 else 0.72
 		local parts=if grip.mode=="Move" then {grip.stem,grip.tip}
-			else {grip.part}
+			elseif grip.mode=="Scale" then {grip.part} else grip.segments
 		for _,part in ipairs(parts) do
-			part.Transparency=if visible then 0 else 1
+			part.Transparency=if visible then (if grip.mode=="Rotate" then 0.04 else 0)
+				else 1
 			part.CanQuery=visible
 			part.Color=tint
 		end
-		if visible and node and cf and size then
-			local unit=visualScale(cf.Position)
-			if grip.mode=="Move" then
-				local direction=cf:VectorToWorldSpace(grip.normal)
-				placeArrow(grip,cf.Position,direction,
-					getAxis(size,grip.axis)/2,unit)
-			else
-				grip.part.CFrame=cf*CFrame.new(
-					grip.normal*(getAxis(size,grip.axis)/2+unit*1.5))
-				grip.part.Size=Vector3.one*unit*(1.25+0.18*grip.hoverAlpha)
+		if not visible or not node or not cf or not size then
+			if grip.mode=="Rotate" then
+				grip.ringFrame=nil
+				grip.ringPoints={}
+			end
+			continue
+		end
+		local unit=visualScale(cf.Position)
+		if grip.mode=="Move" then
+			local direction=cf:VectorToWorldSpace(grip.normal)
+			placeArrow(grip,cf.Position,direction,getAxis(size,grip.axis)/2,unit)
+		elseif grip.mode=="Scale" then
+			grip.part.CFrame=cf*CFrame.new(
+				grip.normal*(getAxis(size,grip.axis)/2+unit*1.5))
+			grip.part.Size=Vector3.one*unit*(1.25+0.18*grip.hoverAlpha)
+		else
+			-- The dragged ring remains at its initial orientation;
+			-- the workpiece rotates but its reference circle doesn't.
+			local basis=cf
+			local dimensions=size
+			if self.dragStart and self.dragStart.grip==grip then
+				local start=self.dragStart
+				basis=CFrame.new(start.position)*CFrame.fromOrientation(
+					math.rad(start.rotation.X),math.rad(start.rotation.Y),
+					math.rad(start.rotation.Z))
+				dimensions=start.size
+			end
+			local radius=ringRadius(dimensions,grip.axis,unit)
+			local thickness=math.max(unit*0.27,0.008)
+			local old=grip.ringFrame
+			local changed=not old
+				or (old.Position-basis.Position).Magnitude>0.0005
+				or (old.LookVector-basis.LookVector).Magnitude>0.0005
+				or (old.UpVector-basis.UpVector).Magnitude>0.0005
+				or math.abs(radius-grip.ringRadius)>0.0005
+				or math.abs(thickness-grip.ringThickness)>0.0005
+			if changed then
+				layoutRing(grip,basis,radius,thickness,tint)
+				grip.ringThickness=thickness
 			end
 		end
 	end
@@ -552,7 +588,6 @@ end
 function TransformGizmo:destroy()
 	for _, connection in ipairs(self.connections) do connection:Disconnect() end
 	self.folder:Destroy()
-	for _,arcs in pairs(self.rotationArcs) do arcs:Destroy() end
 	self.measurement:Destroy()
 end
 
