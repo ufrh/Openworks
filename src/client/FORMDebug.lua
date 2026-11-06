@@ -419,11 +419,10 @@ function Debug.start()
 		transformStatus.Text = "Mode: " .. string.upper(mode)
 	end
 	pair("Move [G]", function() setTransformMode("Move") end,
-		"Scale [S]", function() setTransformMode("Scale") end)
-	pair("Rotate [R]", function() setTransformMode("Rotate") end,
-		"Hide Handles", function()
+		"Rotate [R]", function() setTransformMode("Rotate") end)
+	pair("Hide Handles", function()
 			transformGizmo:setHidden(true)
-			transformStatus.Text = "Mode: HIDDEN (G/S/R)"
+			transformStatus.Text = "Mode: HIDDEN (G/R)"
 		end)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
@@ -433,8 +432,7 @@ function Debug.start()
 		if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 		if input.KeyCode == Enum.KeyCode.G then
 			setTransformMode("Move")
-		elseif input.KeyCode == Enum.KeyCode.S then
-			setTransformMode("Scale")
+
 		elseif input.KeyCode == Enum.KeyCode.R then
 			setTransformMode("Rotate")
 		end
