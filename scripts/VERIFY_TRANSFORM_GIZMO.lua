@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-SCALED-PARTS.4",
+assert(Gizmo.Revision=="GIZMO-UNIFORM-CONE.5",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
@@ -25,9 +25,16 @@ local success,reason=pcall(function()
 			moves+=1
 			assert(grip.stem:IsA("Part")
 				and grip.stem.Shape==Enum.PartType.Cylinder)
-			assert(grip.tip:IsA("WedgePart"))
-			assert(grip.highlight:IsA("Highlight")
-				and grip.highlight.Enabled)
+			assert(grip.tip:IsA("MeshPart") and grip.tip.Name=="Arrowhead",
+				"Move head must clone ReplicatedStorage.Cone")
+			assert(grip.highlight:IsA("Highlight") and grip.highlight.Enabled)
+			assert(grip.highlight.FillTransparency==0 and
+				grip.highlight.OutlineTransparency==1,
+				"Move highlight must be opaque fill only")
+			assert(grip.stemBorder:IsA("SelectionBox") and
+				grip.tipBorder:IsA("SelectionBox") and
+				grip.stemBorder.Visible and grip.tipBorder.Visible,
+				"Move boundaries must be adornment outlines")
 			assert(grip.stem.Transparency==0 and grip.tip.Transparency==0)
 			assert((grip.shaftStart-node.position).Magnitude<1e-5,
 				"Move shaft doesn't begin at the component pivot")
@@ -43,6 +50,9 @@ local success,reason=pcall(function()
 			scales+=1
 			assert(grip.part.Shape==Enum.PartType.Block
 				and grip.highlight.Enabled)
+			assert(grip.highlight.FillTransparency==0 and
+				grip.highlight.OutlineTransparency==1)
+			assert(grip.border:IsA("SelectionBox") and grip.border.Visible)
 			assert((grip.part.Position-node.position):Dot(grip.normal)>
 				node.size[grip.axis]*0.5,"Scale handle overlaps stock")
 		end
@@ -50,6 +60,7 @@ local success,reason=pcall(function()
 	assert(scales==6,"Need six Scale grips")
 	gizmo:setMode("Rotate")
 	local rings=0
+	local radii={}
 	local firstRadius=nil
 	local picked=false
 	for _,grip in ipairs(gizmo.grips) do
@@ -57,6 +68,12 @@ local success,reason=pcall(function()
 			rings+=1
 			assert(grip.highlight.Enabled,
 				"Rotation ring must have a visible highlight")
+			assert(grip.highlight.FillTransparency==0 and
+				grip.highlight.OutlineTransparency==1)
+			assert(grip.contour:IsA("WireframeHandleAdornment")
+				and grip.contour.Visible,
+				"Ring boundary should use one clean wireframe adornment")
+			radii[grip.axis]=grip.ringRadius
 			assert(#grip.segments==48 and #grip.ringPoints==48,
 				"Rotation ring must have 48 geometric segments")
 			for i,p in ipairs(grip.segments) do
@@ -80,6 +97,9 @@ local success,reason=pcall(function()
 	end
 	assert(rings==3 and picked,"Missing or unselectable XYZ rotation rings")
 	assert(firstRadius and firstRadius>0)
+	assert(math.abs(radii.X-radii.Y)<1e-5
+		and math.abs(radii.Y-radii.Z)<1e-5,
+		"All three rotation axes must have the same radius")
 	-- The user requires camera-scaled visuals, unlike native ArcHandles.
 	camera.CFrame=CFrame.lookAt(Vector3.new(19,15,22),Vector3.zero)
 	gizmo:refresh()
@@ -94,4 +114,4 @@ end)
 camera.CFrame=originalCamera
 gizmo:destroy()
 assert(success,tostring(reason))
-print("FORM: camera-scaled Part arrows, Scale cubes, and 48-segment XYZ rotation rings verified")
+print("FORM: replicated Cone arrowheads, fill-only Highlights, adornment borders and equal XYZ rings verified")
