@@ -23,7 +23,7 @@ local AXES = {
 local MOVE_AXES = { AXES[1], AXES[3], AXES[5] }
 local MM_PER_STUD = 280 -- Roblox standard physical scale, 0.28 m per stud.
 local RING_SAMPLES = 72
-local RING_HIT_PIXELS = 11
+local RING_HIT_PIXELS = 16
 local ROTATIONS = {
 	{ normal = Vector3.xAxis, radial = Vector3.yAxis, axis = "X", color = Color3.fromRGB(224, 88, 91) },
 	{ normal = Vector3.yAxis, radial = Vector3.zAxis, axis = "Y", color = Color3.fromRGB(99, 205, 122) },
@@ -142,6 +142,7 @@ local function newArrow(folder:Folder,decor:Instance,anchor:BasePart,
 	local drawing=adorn(decor,anchor,"WireframeHandleAdornment",
 		name.."_Arrow",color)
 	drawing.AlwaysOnTop=true
+	drawing.ZIndex=2
 	drawing.Thickness=2.6
 	drawing.CFrame=CFrame.identity
 	drawing.Scale=Vector3.one
@@ -180,6 +181,7 @@ local function newRotationGrip(folder:Folder,decor:Instance,anchor:BasePart,
 	local p=makePart(model,"RingHit",color,Enum.PartType.Ball)
 	local ring=adorn(decor,anchor,"WireframeHandleAdornment",name.."_Ring",color)
 	ring.AlwaysOnTop=true
+	ring.ZIndex=3
 	ring.Thickness=2.8
 	ring.CFrame=CFrame.identity
 	ring.Scale=Vector3.one
@@ -334,6 +336,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			hoverAlpha=0,normal=spec.normal,
 			radial=spec.radial,axis=spec.axis,mode="Rotate",ringRadius=0,
 			ringFrame=CFrame.identity,ringHighlighted=false,ringWorldPath={},
+			ringRenderedFrame=nil,ringRenderedRadius=nil,
 		}
 		table.insert(self.grips, grip)
 		self.lookup[grip.part] = grip
@@ -352,9 +355,9 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		params.FilterDescendantsInstances={folder}
 		local hit=workspace:Raycast(ray.Origin,ray.Direction*2048,params)
 		local proxy=if hit then self.lookup[hit.Instance] else nil
-		if proxy and proxy.mode==self.mode then return proxy end
-		if self.mode~="Rotate" or self.hidden or not self.component then
-			return nil
+		if self.hidden or not self.component then return nil end
+		if self.mode~="Rotate" then
+			return if proxy and proxy.mode==self.mode then proxy else nil
 		end
 		-- The actual ring circumference is clickable, not just a single
 		-- invisible sphere. Evaluate projected ring segments directly.
@@ -385,7 +388,9 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 				if distance<closest then closest,nearest=distance,grip end
 			end
 		end
-		return nearest
+		-- Prioritize the visible circumference; the invisible knob sphere
+		-- is only a fallback if no ring stroke is near the pointer.
+		return nearest or (if proxy and proxy.mode=="Rotate" then proxy else nil)
 	end
 
 	local function begin(grip, point: Vector2)
@@ -616,11 +621,24 @@ function TransformGizmo:refresh(dt: number?)
 				for _,localPoint in ipairs(grip.ringPath) do
 					table.insert(points,cf:PointToWorldSpace(localPoint*radius))
 				end
-				grip.ringWorldPath=points
-				grip.ring:Clear()
-				grip.ring.Color3=if grip==self.hovered then tint else grip.baseColor
-				grip.ring.Thickness=if grip==self.hovered then 4 else 2.8
-				grip.ring:AddPath(points,true)
+				local isHovered=grip==self.hovered
+				local last=grip.ringRenderedFrame
+				local changed=not last
+					or (last.Position-cf.Position).Magnitude>0.0001
+					or (last.LookVector-cf.LookVector).Magnitude>0.0001
+					or (last.UpVector-cf.UpVector).Magnitude>0.0001
+					or math.abs((grip.ringRenderedRadius or 0)-radius)>0.0001
+					or grip.ringHighlighted~=isHovered
+				if changed then
+					grip.ringWorldPath=points
+					grip.ring:Clear()
+					grip.ring.Color3=if isHovered then tint else grip.baseColor
+					grip.ring.Thickness=if isHovered then 4 else 2.8
+					grip.ring:AddPath(points,true)
+					grip.ringRenderedFrame=cf
+					grip.ringRenderedRadius=radius
+					grip.ringHighlighted=isHovered
+				end
 				grip.part.Position=cf:PointToWorldSpace(grip.radial*radius)
 				grip.part.Size=Vector3.one*unit*1.75
 			end
