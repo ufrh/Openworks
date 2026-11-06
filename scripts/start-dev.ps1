@@ -27,6 +27,42 @@ if ($LASTEXITCODE -eq 0) {
     }
 }
 
+
+# Report the exact code Rojo will serve. A successful git fetch does NOT
+# mean the working tree updated; the auto-pull intentionally skips dirty
+# and divergent branches. Make this visible instead of silently serving
+# an older FORM/gizmo build.
+$LocalSha = (& git rev-parse --short=8 HEAD | Out-String).Trim()
+$RemoteSha = (& git rev-parse --short=8 "origin/$Branch" 2>$null | Out-String).Trim()
+$DirtyFiles = @(git status --porcelain --untracked-files=normal)
+$BehindCount = 0
+if ($RemoteSha) {
+    $BehindCount = [int]((& git rev-list "HEAD..origin/$Branch" --count | Out-String).Trim())
+}
+Write-Host "[OPENWORKS] Local source: $Branch @ $LocalSha | origin/$Branch @ $RemoteSha"
+if ($Branch -ne 'dev') {
+    Write-Warning "[OPENWORKS] You are running '$Branch', not dev. Recent gizmo fixes were pushed to dev."
+}
+if ($BehindCount -gt 0) {
+    Write-Warning "[OPENWORKS] STALE SOURCE: local '$Branch' is $BehindCount commit(s) behind origin/$Branch."
+    if ($DirtyFiles.Count -gt 0) {
+        Write-Warning "[OPENWORKS] Auto-update skipped because local changes exist. Preserve them before merging; do not use Reset unless you intend to discard them."
+    } else {
+        Write-Warning "[OPENWORKS] Auto-update was not completed. Check diverged commits or fetch/pull failures."
+    }
+}
+$ClientEntry = Join-Path $Root 'src/client/init.client.lua'
+if (Test-Path $ClientEntry) {
+    $Stamp = Select-String -Path $ClientEntry -Pattern 'local BUILD = "([^"]+)"' |
+        Select-Object -First 1
+    if ($Stamp) {
+        Write-Host "[OPENWORKS] Local client build marker: $($Stamp.Matches.Groups[1].Value)"
+    } else {
+        Write-Warning '[OPENWORKS] No client BUILD marker in local init.client.lua. The viewport version badge is not in this working tree.'
+    }
+}
+Write-Host '[OPENWORKS] After Rojo connects, STOP Play and start Play again to reload cached client ModuleScripts.'
+
 $PidPath = Join-Path $Root '.rojo-pids.json'
 if (Test-Path $PidPath) {
     $PidData = Get-Content $PidPath -Raw | ConvertFrom-Json
