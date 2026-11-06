@@ -3,6 +3,7 @@
 local Quantize = {}
 
 Quantize.Grid = 0.05
+Quantize.Size = 1/280 -- size specs and scale controls resolve to 1 mm
 Quantize.Rotation = 15
 Quantize.MinSize = 0.05
 Quantize.MaxSize = 128
