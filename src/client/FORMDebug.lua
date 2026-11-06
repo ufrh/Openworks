@@ -420,10 +420,10 @@ function Debug.start()
 	end
 	pair("Move [G]", function() setTransformMode("Move") end,
 		"Rotate [R]", function() setTransformMode("Rotate") end)
-	pair("Hide Handles", function()
-			transformGizmo:setHidden(true)
-			transformStatus.Text = "Mode: HIDDEN (G/R)"
-		end)
+	button(row(29), "Hide Handles", 0, 1, function()
+		transformGizmo:setHidden(true)
+		transformStatus.Text = "Mode: HIDDEN (G/R)"
+	end)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if toolVisualizer:isAnimating() then return end
