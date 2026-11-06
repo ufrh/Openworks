@@ -19,11 +19,14 @@ while ($true) {
         if (-not $Branch) {
             $Reason = 'Detached HEAD; pull skipped.'
         } else {
-            $Changes = @(git status --porcelain --untracked-files=normal)
+            # Untracked screenshots and local scratch files do not modify tracked
+            # source. Git itself still refuses to overwrite an untracked
+            # path if a remote commit introduces the same filename.
+            $Changes = @(git status --porcelain --untracked-files=no)
             if ($LASTEXITCODE -ne 0) { throw 'Could not read Git working tree status.' }
 
             if ($Changes.Count -gt 0) {
-                $Reason = 'Local changes detected; pull skipped to protect your work.'
+                $Reason = 'Tracked local changes detected; pull skipped to protect your work.'
             } else {
                 $FetchOutput = @(git fetch --quiet origin $Branch 2>&1)
                 if ($LASTEXITCODE -ne 0) {
