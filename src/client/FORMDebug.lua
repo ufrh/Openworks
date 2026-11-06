@@ -199,8 +199,13 @@ function Debug.start()
 			if node and not Fabricator.requiresCompile(component) then
 				used=MaterialVolume.primitive(node.kind,node.size)
 			end
+			local state=if component then preview and preview.states[component.id] else nil
+			local pending=component and Fabricator.requiresCompile(component)
+				and (not state or state.key~=Fabricator.geometryKey(component))
 			volumeInfo.Text=if not component then "Material volume: —"
-				elseif used then "Material: "..MaterialVolume.display(used)..
+				elseif pending then "Material: calculating CSG…"
+				elseif used then "Material: "..(if component.volumeExact==false then "≈" else "")..
+					MaterialVolume.display(used)..
 					" / "..MaterialVolume.display(Quantize.MaxComponentVolume)
 				else "Material: calculating CSG…"
 		end
@@ -404,7 +409,9 @@ function Debug.start()
 			selected.notes=notesBox.Text
 		end
 	end)
-	volumeInfo=line("Material volume: —",26)
+	volumeInfo=line("Material volume: —",30)
+	volumeInfo.TextSize=11
+	volumeInfo.TextWrapped=true
 	line("Material budget: "..MaterialVolume.display(Quantize.MaxComponentVolume),24)
 	line("Scale: 1 mm · hollow shapes use less material",22)
 	line("FABRICATION TOOLS // MANUFACTURED SURFACES")
