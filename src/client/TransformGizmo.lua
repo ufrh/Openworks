@@ -296,23 +296,52 @@ end
 local function scaleDistance(camera:Camera,part:BasePart,pointer:Vector2):number
 	local cf=part.CFrame
 	local half=part.Size*0.5
-	local minX,maxX,minY,maxY=math.huge,-math.huge,math.huge,-math.huge
+	local points={}
 	for _,x in ipairs({-1,1}) do
 		for _,y in ipairs({-1,1}) do
 			for _,z in ipairs({-1,1}) do
 				local p=project(camera,cf:PointToWorldSpace(
 					Vector3.new(x*half.X,y*half.Y,z*half.Z)))
 				if not p then return math.huge end
-				minX=math.min(minX,p.X)
-				maxX=math.max(maxX,p.X)
-				minY=math.min(minY,p.Y)
-				maxY=math.max(maxY,p.Y)
+				table.insert(points,p)
 			end
 		end
 	end
-	local dx=math.max(minX-pointer.X,0,pointer.X-maxX)
-	local dy=math.max(minY-pointer.Y,0,pointer.Y-maxY)
-	return math.sqrt(dx*dx+dy*dy)
+	-- Monotone-chain convex hull of the 8 projected corners. A rotated
+	-- cube is a hexagon in screen space, not its loose axis-aligned box.
+	table.sort(points,function(a,b)
+		return a.X==b.X and a.Y<b.Y or a.X<b.X
+	end)
+	local function cross(a:Vector2,b:Vector2,c:Vector2):number
+		return (b.X-a.X)*(c.Y-a.Y)-(b.Y-a.Y)*(c.X-a.X)
+	end
+	local lower={}
+	for _,p in ipairs(points) do
+		while #lower>=2 and cross(lower[#lower-1],lower[#lower],p)<=0 do
+			table.remove(lower)
+		end
+		table.insert(lower,p)
+	end
+	local upper={}
+	for i=#points,1,-1 do
+		local p=points[i]
+		while #upper>=2 and cross(upper[#upper-1],upper[#upper],p)<=0 do
+			table.remove(upper)
+		end
+		table.insert(upper,p)
+	end
+	table.remove(lower)
+	table.remove(upper)
+	for _,p in ipairs(upper) do table.insert(lower,p) end
+	if #lower<3 then return math.huge end
+	local inside=true
+	local nearest=math.huge
+	for i,a in ipairs(lower) do
+		local b=lower[i%#lower+1]
+		if cross(a,b,pointer)<0 then inside=false end
+		nearest=math.min(nearest,screenSegmentDistance(pointer,a,b))
+	end
+	return if inside then 0 else nearest
 end
 
 local function moveDistance(camera:Camera,grip,pointer:Vector2):number
