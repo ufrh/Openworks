@@ -16,7 +16,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-UNIFORM-CONE.5"
+TransformGizmo.Revision = "GIZMO-CLEAN-TIPS.6"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -172,10 +172,11 @@ local function newArrow(folder:Folder,name:string,color:Color3)
 	tip.Color=color
 	tip.Transparency=1
 	tip.Parent=model
+	-- Never outline move grips with SelectionBox: it outlines a MeshPart's
+	-- bounding cube, not the actual cone. Those boxes were the unwanted
+	-- colored squares around each arrowhead.
 	return {model=model,part=tip,stem=stem,tip=tip,
-		highlight=highlight(model,color),
-		stemBorder=outline(stem,color,model),
-		tipBorder=outline(tip,color,model)}
+		highlight=highlight(model,color)}
 end
 
 local function newScale(folder:Folder,name:string,color:Color3)
@@ -336,8 +337,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		local arrow=newArrow(folder,"Move_"..spec.axis,spec.color)
 		local grip={
 			model=arrow.model,part=arrow.part,stem=arrow.stem,tip=arrow.tip,
-			highlight=arrow.highlight,stemBorder=arrow.stemBorder,
-			tipBorder=arrow.tipBorder,baseColor=spec.color,hoverAlpha=0,
+			highlight=arrow.highlight,baseColor=spec.color,hoverAlpha=0,
 			normal=spec.normal,axis=spec.axis,mode="Move",
 		}
 		table.insert(self.grips,grip)
@@ -590,12 +590,7 @@ function TransformGizmo:refresh(dt:number?)
 			grip.contour.Visible=visible
 			grip.contour.Color3=tint
 		end
-		if grip.mode=="Move" then
-			grip.stemBorder.Visible=visible
-			grip.tipBorder.Visible=visible
-			grip.stemBorder.Color3=tint
-			grip.tipBorder.Color3=tint
-		elseif grip.mode=="Scale" then
+		if grip.mode=="Scale" then
 			grip.border.Visible=visible
 			grip.border.Color3=tint
 		end
