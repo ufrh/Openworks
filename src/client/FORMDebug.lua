@@ -1018,10 +1018,14 @@ function Debug.start()
 			local plan=bevelData(selection.topology,selection.edge,selection.pose,width,segments)
 			if not plan then toolVisualizer:hide() return end
 			local edge=selection.edge
-			toolVisualizer:meshEdge(selection.topology.part,edge,width,plan.interior,
-				selection.topology.faces[edge.faces[1]].normal,
-				selection.topology.faces[edge.faces[2]].normal,
-				nil,nil,segments)
+			local n1=selection.topology.faces[edge.faces[1]].normal
+			local n2=selection.topology.faces[edge.faces[2]].normal
+			if activeTool=="Smooth" then
+				toolVisualizer:smoothInside(selection.topology.part,edge,width,segments,n1,n2)
+			else
+				toolVisualizer:meshEdge(selection.topology.part,edge,width,false,
+					n1,n2,nil,nil,segments)
+			end
 			return
 		end
 		local target = fabricationHit()
