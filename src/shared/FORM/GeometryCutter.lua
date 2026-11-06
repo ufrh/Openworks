@@ -473,4 +473,66 @@ function GeometryCutter.file(edgeA:Vector3,edgeB:Vector3,
 end
 
 
+-- Additive quarter-round for a genuinely concave 90-degree corner.
+-- Unlike exterior File, this fills a small convexly supported cavity
+-- volume. Tiny overlap behind both wall planes gives UnionAsync a real
+-- material intersection, preventing face-only contact / floating wedges.
+local function interiorProfile(a:Vector3,b:Vector3,n1:Vector3,n2:Vector3,
+	radius:number,count:number):{Vector3}
+	local epsilon=math.clamp(radius*0.055,0.0015,0.004)
+	local start=a-n1*epsilon-n2*epsilon
+	local profile={start}
+	for i=0,count do
+		local t=i/count*math.pi*0.5
+		local p=a+n1*radius*(1-math.sin(t))
+			+n2*radius*(1-math.cos(t))
+		if i==0 then p+=n1*epsilon-n2*epsilon end
+		if i==count then p+=n2*epsilon-n1*epsilon end
+		table.insert(profile,p)
+	end
+	if (profile[2]-profile[1]):Cross(profile[#profile]-profile[1])
+		:Dot(b-a)<0 then
+		local reversed={}
+		for i=#profile,1,-1 do table.insert(reversed,profile[i]) end
+		profile=reversed
+	end
+	return profile
+end
+
+function GeometryCutter.smoothInterior(a:Vector3,b:Vector3,n1:Vector3,
+	n2:Vector3,radius:number,count:number)
+	if (b-a).Magnitude<0.05 or radius<5/280 or radius>128
+		or count<2 or count>12 or count~=math.floor(count)
+		or math.abs(n1:Dot(n2))>0.12 then
+		error("Interior smoothing requires a straight 90-degree edge and 2-12 segments",0)
+	end
+	return GeometryCutter.prism(interiorProfile(a,b,n1.Unit,n2.Unit,
+		radius,count),b-a)
+end
+
+function GeometryCutter.smoothInteriorFaces(a:Vector3,b:Vector3,n1:Vector3,
+	n2:Vector3,radius:number,count:number)
+	local arc={}
+	for i=0,count do
+		local t=i/count*math.pi*0.5
+		table.insert(arc,a+n1*radius*(1-math.sin(t))
+			+n2*radius*(1-math.cos(t)))
+	end
+	local faces={}
+	for i=1,count do
+		local p,q=arc[i],arc[i+1]
+		local polygon={p,p+b-a,q+b-a,q}
+		local normal=(polygon[2]-polygon[1]):Cross(polygon[3]-polygon[1])
+		if normal.Magnitude>1e-8 then
+			normal=normal.Unit
+			if normal:Dot(n1+n2)<0 then
+				polygon={q,q+b-a,p+b-a,p}
+				normal=-normal
+			end
+			table.insert(faces,{polygon=polygon,normal=normal})
+		end
+	end
+	return faces
+end
+
 return GeometryCutter
