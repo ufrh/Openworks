@@ -19,7 +19,8 @@ local TransformGizmo = require(script.Parent.TransformGizmo)
 local SketchEditor = require(script.Parent.SketchEditor)
 local ToolVisualizer = require(script.Parent.ToolVisualizer)
 local SurfacePicker = require(script.Parent.SurfacePicker)
-local SurfaceMeasurements = require(script.Parent.SurfaceMeasurements)
+local ComponentPlacement = require(script.Parent.ComponentPlacement)
+local MeasurementTool = require(script.Parent.MeasurementTool)
 local EdgeAvailability = require(script.Parent.EdgeAvailability)
 local FaceTools = require(FORM.FaceTools)
 
@@ -46,7 +47,9 @@ function Debug.start()
 	local historyRows = {}
 	local sketchEditor: any = nil
 	local toolVisualizer = ToolVisualizer.new(playerGui)
-	local surfaceMeasurements = SurfaceMeasurements.new(playerGui)
+	local placementFlow:any=nil
+	local measurementTool:any=nil
+	local notesBox:TextBox?=nil
 	local surfacePicker: any = nil
 	local drillThrough = true
 
@@ -66,6 +69,7 @@ function Debug.start()
 	}, gui)
 	make("UICorner", { CornerRadius = UDim.new(0, 5) }, panel)
 
+	panel.Visible=false -- Enter the editor only after a component is placed
 	local title = make("TextLabel", {
 		BackgroundTransparency = 1,
 		Text = "FORM // DEBUG 01",
@@ -188,6 +192,9 @@ function Debug.start()
 		local node = selectedNode()
 		info.Text = if component then ("Selection: " .. component.name) else "Selection: none"
 		nodeInfo.Text = if node then ("Material: " .. node.kind) else "Material: none"
+		if notesBox and not notesBox:IsFocused() then
+			notesBox.Text=if component then component.notes or "" else ""
+		end
 		if historyInfo then
 			local active = 0
 			if component then
@@ -263,6 +270,17 @@ function Debug.start()
 				-- edges are absent, and new fillets supply their own edges.
 				-- Paths are world-space because origin is CFrame.identity.
 				for _,edge in ipairs(topology.edges) do
+					if node and node.kind=="RoundedL" and edge.curved then
+						local onCap=false
+						for _,fid in ipairs(edge.faces) do
+							local face=topology.faces[fid]
+							if face and (face.tag=="rounded_l_front" or
+								face.tag=="rounded_l_back") then
+								onCap=true
+							end
+						end
+						if not onCap then continue end
+					end
 					local a=topology.part.CFrame:PointToWorldSpace(edge.a)
 					local b=topology.part.CFrame:PointToWorldSpace(edge.b)
 					if (a-b).Magnitude>0.001 then
@@ -342,7 +360,6 @@ function Debug.start()
 	local toolStatus = line("Tool: none")
 	historyInfo = line("Fabrication: 0 cuts")
 	local function setTool(kind: string?)
-		surfaceMeasurements:hide()
 		toolVisualizer:stopAnimation()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool = kind
@@ -950,66 +967,14 @@ function Debug.start()
 	-- Passive CAD face inspection. Only show a measurement on a
 	-- visible, indexed manufactured surface with no fabrication tool,
 	-- camera gesture, text edit, or transform gizmo interaction.
-	local function inspectHoveredSurface()
-		if activeTool or (sketchEditor and sketchEditor.active)
-			or cameraController.dragging or transformGizmo:isDragging()
-			or UserInputService:GetFocusedTextBox() then
-			surfaceMeasurements:hide()
-			return
-		end
-		local camera=workspace.CurrentCamera
-		if not camera then surfaceMeasurements:hide() return end
-		local mouse=UserInputService:GetMouseLocation()
-		if (mouse.X<345 and mouse.Y<615)
-			or (mouse.X>camera.ViewportSize.X-340
-				and mouse.Y>225 and mouse.Y<610)
-			or viewGizmo:containsPoint(mouse)
-			or transformGizmo:capturesPoint(mouse) then
-			surfaceMeasurements:hide()
-			return
-		end
-		local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
-		local params=RaycastParams.new()
-		params.FilterType=Enum.RaycastFilterType.Include
-		params.FilterDescendantsInstances={preview.root}
-		local hit=workspace:Raycast(ray.Origin,ray.Direction*1000,params)
-		if not hit then surfaceMeasurements:hide() return end
-		local model=hit.Instance:FindFirstAncestorOfClass("Model")
-		local id=if model then model:GetAttribute("FORMComponentId") else nil
-		local component=if typeof(id)=="number" then document.components[id]
-			else nil
-		if not component then surfaceMeasurements:hide() return end
-		-- Do not display dimensions from a stale CSG body while its new
-		-- manufacturing operation is still being compiled.
-		local state=preview.states[id]
-		if not state or state.key~=Fabricator.geometryKey(component) then
-			surfaceMeasurements:hide()
-			return
-		end
-		local topology=surfacePicker:get(id,model,component)
-		if not topology or topology.part~=hit.Instance then
-			surfaceMeasurements:hide()
-			return
-		end
-		local face=topology.faceAt(topology,hit.Position,hit.Normal)
-		if not face or face.curved then
-			surfaceMeasurements:hide()
-			return
-		end
-		surfaceMeasurements:show(topology.part,face,hit.Position)
-	end
-
 	RunService.RenderStepped:Connect(function(dt)
 		if toolVisualizer:update(dt) then
-			surfaceMeasurements:hide()
-			return
+				return
 		end
 		if not activeTool then
 			toolVisualizer:hide()
-			inspectHoveredSurface()
 			return
 		end
-		surfaceMeasurements:hide()
 		if activeTool=="File" or activeTool=="Smooth" then
 			local selection=fileEdgeTarget()
 			local width=millimeters(if activeTool=="Smooth" then smoothRadiusInput
