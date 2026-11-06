@@ -8,6 +8,7 @@ local Cutters = require(script.Parent.Cutters)
 local Extrusion = require(script.Parent.Extrusion)
 local FileCutter = require(script.Parent.FileCutter)
 local GeometryCutter = require(script.Parent.GeometryCutter)
+local RoundedLProfile = require(script.Parent.RoundedLProfile)
 local CornerTriangle = require(script.Parent.CornerTriangle)
 
 local Fabricator = {}
@@ -17,6 +18,7 @@ local function vectorKey(v:Vector3):string
 end
 
 function Fabricator.requiresCompile(component): boolean
+	if component.nodes[1] and component.nodes[1].kind=="RoundedL" then return true end
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled ~= false then return true end
 	end
@@ -105,7 +107,18 @@ end
 -- solids, cutters, and EditableMeshes are all disposed deterministically.
 local function compileUnlocked(component): (BasePart, string)
 	local node = component.nodes[1]
-	local current = Compiler.nativePart(node)
+	local current:BasePart
+	if node.kind=="RoundedL" then
+		-- An L is a proper manufactured profile, not a rectangular
+		-- placeholder with a cosmetic ramp attached to it.
+		local profile,travel=RoundedLProfile.profile(node)
+		local mesh,release=GeometryCutter.prism(profile,travel)
+		current=mesh:Clone()
+		current.Name="FORM_RoundedL_Stock"
+		release()
+	else
+		current=Compiler.nativePart(node)
+	end
 	local meshCuts, nativeFallbacks, pausedInsideFiles = 0, 0, 0
 	-- Build pairings BEFORE replay so the first File already knows its
 	-- final miter plane. Applying a separate third corner patch afterward
