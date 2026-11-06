@@ -263,7 +263,11 @@ function Debug.start()
 		local model = if component then preview:getModel(component.id) else nil
 		selectionBorder:Clear()
 		selectionBorder.Visible=false
-		if component and model and surfacePicker then
+		local solidState=if component then preview.states[component.id] else nil
+		local ready=component and solidState
+			and solidState.key==Fabricator.geometryKey(component)
+			and (not Fabricator.requiresCompile(component) or solidState.boolean)
+		if ready and model and surfacePicker then
 			local topology=surfacePicker:get(component.id,model,component)
 			if topology then
 				-- Topology is manufactured-history aware: retired sharp
