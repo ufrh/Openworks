@@ -11,6 +11,7 @@ local FORM=ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Document=require(FORM.Document)
 local GeometryCutter=require(FORM.GeometryCutter)
 local Fabricator=require(FORM.Fabricator)
+local HistoryTopology=require(player.PlayerScripts.Openworks.HistoryTopology)
 
 local a,b=Vector3.new(-1,0.5,-1),Vector3.new(1,0.5,-1)
 local component={nodes={{kind="Block",size=Vector3.new(2,1,2)}},
@@ -32,6 +33,50 @@ component.operations[1].points={
 open=EdgeAvailability.segments(a,b,component,0.05)
 assert(#open==1 and open[1].a==a and open[1].b==b,
 	"Remote raised block must not shorten an unrelated edge")
+
+-- Ensure the authored history retires ONLY the filed side, rather
+-- than leaving the full stock edge available for another whole-edge cut.
+local localNode={
+	id=1,kind="Block",position=Vector3.zero,
+	size=Vector3.new(2,1,2),rotation=Vector3.zero,
+}
+local livePart=Instance.new("Part")
+livePart.Anchored=true
+livePart.Size=localNode.size
+livePart.CFrame=CFrame.identity
+local modified={
+	id=999,nodes={localNode},
+	operations={
+		component.operations[1],
+		{kind="FileMesh",a=a,b=Vector3.new(-0.256,0.5,-1),
+			normalA=Vector3.yAxis,normalB=-Vector3.zAxis,
+			width=0.05,segments=1,enabled=true},
+	},
+}
+-- Restore the blocking footprint for the manufactured-body test.
+modified.operations[1]={
+	kind="SketchExtrude",mode="Add",enabled=true,depth=0.5,
+	points={
+		Vector2.new(0.75,0),Vector2.new(1.25,0),
+		Vector2.new(1.25,0.20),Vector2.new(0.75,0.20),
+	},
+}
+local topology,why=HistoryTopology.build(livePart,modified)
+assert(topology,"Manufactured topology failed: "..tostring(why))
+local original=false
+local remainder=false
+for _,edge in ipairs(topology.edges) do
+	if (edge.a-a).Magnitude<0.002 and (edge.b-b).Magnitude<0.002
+		or (edge.b-a).Magnitude<0.002 and (edge.a-b).Magnitude<0.002 then
+		original=true
+	end
+	if (edge.a-b).Magnitude<0.002 or (edge.b-b).Magnitude<0.002 then
+		remainder=true
+	end
+end
+assert(not original,"Original full stock edge must retire after partial filing")
+assert(remainder,"Unfiled subsegment must remain in manufactured topology")
+livePart:Destroy()
 
 local document=Document.new()
 local body=document:create("Block",Vector3.zero)
