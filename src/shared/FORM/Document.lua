@@ -94,6 +94,18 @@ function Document:create(kind: string, minimumCorner: Vector3, name: string?, sp
 	return component
 end
 
+-- Volume budget includes material added above stock by sketch extrusions.
+-- This is a conservative envelope budget, not a mesh volume estimate.
+local function envelopeVolume(component,size:Vector3,extraDepth:number?):number
+	local highest=extraDepth or 0
+	for _,op in ipairs(component.operations or {}) do
+		if op.enabled~=false and op.kind=="SketchExtrude" and op.mode=="Add" then
+			highest=math.max(highest,op.depth or 0)
+		end
+	end
+	return size.X*size.Z*(size.Y+highest)
+end
+
 local function validateTransform(position: Vector3, size: Vector3, rotation: Vector3)
 	for _, n in ipairs({
 		position.X, position.Y, position.Z, size.X, size.Y, size.Z,
@@ -142,6 +154,9 @@ function Document:editNode(component, index: number, field: string, axis: string
 	end
 	local ok, reason = validateTransform(position, size, rotation)
 	if not ok then return false, reason end
+	if envelopeVolume(component,size)>Quantize.MaxComponentVolume+0.00001 then
+		return false,"Component envelope including added material exceeds 8 stud³"
+	end
 	node.position, node.size, node.rotation = position, size, rotation
 	component.revision += 1
 	return true, nil
@@ -172,6 +187,9 @@ function Document:applyTransform(component, index: number, position: Vector3?, s
 	end
 	local ok, reason = validateTransform(newPosition, newSize, newRotation)
 	if not ok then return false, reason end
+	if envelopeVolume(component,newSize)>Quantize.MaxComponentVolume+0.00001 then
+		return false,"Component envelope including added material exceeds 8 stud³"
+	end
 	if newPosition ~= node.position or newSize ~= node.size or newRotation ~= node.rotation then
 		node.position, node.size, node.rotation = newPosition, newSize, newRotation
 		component.revision += 1
@@ -396,6 +414,10 @@ function Document:addOperation(component, kind: string, data)
 		end
 		local points, _, sketchError = SketchProfile.prepare(snappedPoints)
 		if not points then return false, sketchError end
+		if mode=="Add" and envelopeVolume(component,node.size,depth)
+			>Quantize.MaxComponentVolume+0.00001 then
+			return false,"Added material would exceed the 8 stud³ component limit"
+		end
 		operation = {
 			kind = "SketchExtrude", mode = mode,
 			depth = depth, through = data.through == true,
