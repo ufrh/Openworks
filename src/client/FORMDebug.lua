@@ -356,6 +356,7 @@ function Debug.start()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool=nil
 		toolVisualizer:hide()
+		if measurementTool then measurementTool:setActive(false) end
 		transformGizmo:setHidden(true)
 		if placementFlow then placementFlow:open() end
 	end)
@@ -513,6 +514,7 @@ function Debug.start()
 		if toolVisualizer:isAnimating() then return end
 		if sketchEditor and sketchEditor.active then return end
 		if processed or UserInputService:GetFocusedTextBox() then return end
+		if placementFlow and (placementFlow.placing or placementFlow.form.Visible) then return end
 		if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 		if input.KeyCode == Enum.KeyCode.G then
 			setTransformMode("Move")
@@ -1082,7 +1084,7 @@ function Debug.start()
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if sketchEditor and sketchEditor.active then return end
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-		if placementFlow and placementFlow.placing then return end
+		if placementFlow and (placementFlow.placing or placementFlow.form.Visible) then return end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
 			or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
 		if activeTool=="File" or activeTool=="Smooth" then
