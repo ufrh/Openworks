@@ -158,9 +158,9 @@ function Debug.start()
 	local selectionBorder = make("SelectionBox", {
 		Name = "FORM_SelectionBorder",
 		Color3 = Color3.fromRGB(100, 234, 246),
-		LineThickness = 0.018,
+		LineThickness = 0.003,
 		SurfaceTransparency = 1,
-		Transparency = 0.08,
+		Transparency = 0.16,
 		Visible = false,
 	}, workspace)
 
