@@ -472,6 +472,24 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		self:refresh()
 	end
 
+	-- GUI adornments can consume InputBegan as a processed UI click.
+	-- Connect them directly as well as keeping screen-space ring picking,
+	-- so Rotate actually begins dragging when the wireframe is clicked.
+	for _,grip in ipairs(self.grips) do
+		local handle=if grip.mode=="Move" then grip.arrow
+			elseif grip.mode=="Rotate" then grip.ring else nil
+		if handle then
+			connect(handle.MouseButton1Down,function()
+				if self.mode~=grip.mode or self.hidden or not self.component
+					or self.dragStart then return end
+				begin(grip,UserInputService:GetMouseLocation())
+			end)
+			connect(handle.MouseButton1Up,function()
+				if self.dragStart and self.dragStart.grip==grip then finish() end
+			end)
+		end
+	end
+
 	connect(UserInputService.InputBegan, function(input, processed)
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 or self.dragStart then return end
 		local point = UserInputService:GetMouseLocation()
