@@ -36,7 +36,9 @@ local ok,problem=pcall(function()
 	assert(overlay:show(part,top,Vector3.new(-0.5,5.5,-0.5)))
 	local initialX=overlay.widthBadge.label.Text
 	local initialY=overlay.heightBadge.label.Text
-	assert(overlay.lineCount>=25,"Missing in-face ticked ruler baselines")
+	assert(overlay.lineCount>=20,"Missing ruler ticks along cursor-crossing lines")
+	assert(overlay.cursorDot.Enabled and overlay.cursorDot.Dot.BackgroundColor3==Color3.new(1,1,1),
+		"Pure white snapped cursor dot missing")
 	assert(overlay:show(part,top,Vector3.new(-0.499,5.5,-0.499)))
 	assert(overlay.widthBadge.label.Text==initialX
 		and overlay.heightBadge.label.Text==initialY,
@@ -58,7 +60,7 @@ local ok,problem=pcall(function()
 	assert(overlay.part==nil and not overlay.widthBadge.gui.Enabled)
 	assert(overlay:show(part,top))
 	overlay:hide()
-	assert(overlay.lineCount==0)
+	assert(overlay.lineCount==0 and not overlay.cursorDot.Enabled)
 	assert(not overlay.heightBadge.gui.Enabled)
 	for _,line in ipairs(overlay.guides) do
 		assert(not line.Visible,"Dimension guide leaked after hover ended")
@@ -70,4 +72,4 @@ end)
 overlay:destroy()
 part:Destroy()
 assert(ok,tostring(problem))
-print("FORM Surface Measurements: fine 1 mm snap, interior ruler lines, no perimeter outline and cleanup verified")
+print("FORM Surface Measurements: fine 1 mm snap, white cursor-crossing rulers and dot and cleanup verified")
