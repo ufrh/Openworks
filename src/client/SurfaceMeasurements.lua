@@ -6,17 +6,17 @@ local Measurements={}
 Measurements.__index=Measurements
 
 local SCALE_MM=280
-local OUTLINE=Color3.fromRGB(105,226,235)
 local DIMENSION=Color3.fromRGB(163,192,200)
 local MAX_LINES=96
-local RULER_STEPS=10 -- ten equal visual divisions per face axis; five-step marks are longer
+local SNAP_MM=1 -- independent fine ruler snap; not FORM construction grid
+local RULER_STEPS=10 -- major ruler subdivisions along the on-face guide lines
 
 local function line(parent:Instance,origin:BasePart,index:number):LineHandleAdornment
 	local visual=Instance.new("LineHandleAdornment")
 	visual.Name="SurfaceGuide_"..index
 	visual.Adornee=origin
 	visual.AlwaysOnTop=false
-	visual.Color3=OUTLINE
+	visual.Color3=DIMENSION
 	visual.Transparency=0.03
 	visual.Thickness=1.4
 	visual.Visible=false
@@ -102,7 +102,7 @@ function Measurements:segment(a:Vector3,b:Vector3,tint:Color3?,thickness:number?
 	guide.Length=offset.Magnitude
 	guide.Thickness=thickness or 1.4
 	guide.Transparency=0.05
-	guide.Color3=tint or OUTLINE
+	guide.Color3=tint or DIMENSION
 	guide.Visible=true
 end
 
@@ -167,61 +167,59 @@ function Measurements:show(part:BasePart,face,cursorWorld:Vector3?):boolean
 	local height=top-bottom
 	if width<0.01 or height<0.01 then return false end
 
-	-- Keep the boundary attached to the actual visible manufactured
-	-- contour. The small normal lift prevents Z-fighting with material.
+	-- Guides sit on the actual planar manufactured face. There is no
+	-- perimeter silhouette / SelectionBox-like outline.
 	local lift=normal*0.014
-	for i,a in ipairs(points) do
-		self:segment(a+lift,points[i%#points+1]+lift,OUTLINE,1.65)
-	end
-
 	local function corner(x:number,y:number):Vector3
 		return reference+axis*x+other*y+lift
 	end
-	local leftBottom=corner(left,bottom)
-	local rightBottom=corner(right,bottom)
-	local rightTop=corner(right,top)
-
-	-- Cursor-relative CAD coordinates in the actual face plane.
-	-- X is measured from the left edge, Y from the bottom edge of
-	-- the oriented planar bounding rectangle. Both use real mm.
+	-- Fine 1 mm cursor snap, independent of OpenWorks' 0.05-stud
+	-- modeling grid. Snap from the minimum edge, not from world zero.
 	local localCursor=if cursorWorld then cursorWorld-reference else
 		axis*(width*0.5+left)+other*(height*0.5+bottom)
-	-- Measurements are deliberately continuous, independent of the
-	-- modeling grid. The ruler marks below are visual increments only.
-	local cursorX=math.clamp(localCursor:Dot(axis),left,right)
-	local cursorY=math.clamp(localCursor:Dot(other),bottom,top)
+	local snapStuds=SNAP_MM/SCALE_MM
+	local cursorX=left+math.clamp(
+		math.round((localCursor:Dot(axis)-left)/snapStuds)*snapStuds,0,width)
+	local cursorY=bottom+math.clamp(
+		math.round((localCursor:Dot(other)-bottom)/snapStuds)*snapStuds,0,height)
 	local cursor=corner(cursorX,cursorY)
-	local xBase=corner(left,cursorY)
-	local yBase=corner(cursorX,bottom)
-	local tick=math.clamp(math.min(width,height)*0.04,0.015,0.05)
-	-- A graduated ruler on the left and bottom face extents. Minor
-	-- divisions divide the full length into ten steps; the midpoint
-	-- and end marks are longer. These marks do not snap the cursor.
-	local rulerLift=math.max(tick*0.75,0.012)
+	local short=math.min(width,height)
+	local inset=math.min(short*0.07,0.1)
+	local rulerX=bottom+inset
+	local rulerY=left+inset
+	local xStart=corner(left,rulerX)
+	local xEnd=corner(right,rulerX)
+	local yStart=corner(rulerY,bottom)
+	local yEnd=corner(rulerY,top)
+	-- Two real in-face ruler baselines with ticks ON the baselines.
+	self:segment(xStart,xEnd,DIMENSION,1.35)
+	self:segment(yStart,yEnd,DIMENSION,1.35)
+	local minor=math.clamp(short*0.022,0.009,0.025)
 	for i=0,RULER_STEPS do
 		local major=i%5==0
-		local length=if major then rulerLift*1.8 else rulerLift
+		local tick=if major then minor*1.9 else minor
 		local x=left+width*i/RULER_STEPS
 		local y=bottom+height*i/RULER_STEPS
-		local horizontal=corner(x,bottom)
-		local vertical=corner(left,y)
-		self:segment(horizontal,horizontal-other*length,DIMENSION,
-			if major then 1.55 else 1.1)
-		self:segment(vertical,vertical-axis*length,DIMENSION,
-			if major then 1.55 else 1.1)
+		local px=corner(x,rulerX)
+		local py=corner(rulerY,y)
+		self:segment(px-other*tick*0.5,px+other*tick*0.5,
+			DIMENSION,if major then 1.5 else 1)
+		self:segment(py-axis*tick*0.5,py+axis*tick*0.5,
+			DIMENSION,if major then 1.5 else 1)
 	end
-	-- Crosshair and two perpendicular measuring legs follow the mouse,
-	-- instead of labeling the entire face width/height.
-	self:segment(xBase,cursor,DIMENSION,1.3)
-	self:segment(yBase,cursor,DIMENSION,1.3)
-	self:segment(xBase-other*tick,xBase+other*tick,DIMENSION,1.3)
-	self:segment(yBase-axis*tick,yBase+axis*tick,DIMENSION,1.3)
-	self:segment(cursor-axis*tick,cursor+axis*tick,DIMENSION,1.4)
-	self:segment(cursor-other*tick,cursor+other*tick,DIMENSION,1.4)
-	self.widthBadge.position.Position=(xBase+cursor)*0.5+other*(tick*2)
+	-- Perpendicular cursor guides intersect the ruler axes while
+	-- remaining on the face. No border/perimeter drawing.
+	local xBase=corner(left,cursorY)
+	local yBase=corner(cursorX,bottom)
+	self:segment(xBase,cursor,DIMENSION,1.15)
+	self:segment(yBase,cursor,DIMENSION,1.15)
+	local cross=minor*0.85
+	self:segment(cursor-axis*cross,cursor+axis*cross,DIMENSION,1.35)
+	self:segment(cursor-other*cross,cursor+other*cross,DIMENSION,1.35)
+	self.widthBadge.position.Position=(xBase+cursor)*0.5+other*(cross*2)
 	self.widthBadge.label.Text="X "..dimension(cursorX-left)
 	self.widthBadge.gui.Enabled=true
-	self.heightBadge.position.Position=(yBase+cursor)*0.5+axis*(tick*2)
+	self.heightBadge.position.Position=(yBase+cursor)*0.5+axis*(cross*2)
 	self.heightBadge.label.Text="Y "..dimension(cursorY-bottom)
 	self.heightBadge.gui.Enabled=true
 	self.part=part
