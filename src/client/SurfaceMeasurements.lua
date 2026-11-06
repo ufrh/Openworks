@@ -127,13 +127,13 @@ end
 -- bounding EXTENTS in the face's own plane, not a misleading claim
 -- about an arbitrary polygon's perimeter or area. Bore walls are curved
 -- and intentionally receive no planar face measurement.
-function Measurements:show(part:BasePart,face):boolean
+function Measurements:show(part:BasePart,face,cursorWorld:Vector3?):boolean
 	if not part or not face or face.curved or not face.polygon
 		or #face.polygon<3 or #face.polygon>80 then
 		self:hide()
 		return false
 	end
-	if self.part==part and self.lastFace==face
+	if cursorWorld==nil and self.part==part and self.lastFace==face
 		and self.lastFrame==part.CFrame then
 		return true
 	end
@@ -180,31 +180,30 @@ function Measurements:show(part:BasePart,face):boolean
 	local rightBottom=corner(right,bottom)
 	local rightTop=corner(right,top)
 
-	-- Two offset dimension baselines and short witness ticks, CAD-style.
-	local margin=math.clamp(math.min(width,height)*0.15,0.06,0.23)
-	local tick=math.clamp(margin*0.22,0.014,0.045)
-	local a=leftBottom-other*margin
-	local b=rightBottom-other*margin
-	local c=rightBottom+axis*margin
-	local d=rightTop+axis*margin
-	self:segment(a,b,DIMENSION,1.15)
-	self:segment(c,d,DIMENSION,1.15)
-	self:segment(leftBottom,a-other*tick,DIMENSION,1)
-	self:segment(rightBottom,b-other*tick,DIMENSION,1)
-	self:segment(rightBottom,c+axis*tick,DIMENSION,1)
-	self:segment(rightTop,d+axis*tick,DIMENSION,1)
-	for _,p in ipairs({a,b}) do
-		self:segment(p-other*tick,p+other*tick,DIMENSION,1.7)
-	end
-	for _,p in ipairs({c,d}) do
-		self:segment(p-axis*tick,p+axis*tick,DIMENSION,1.7)
-	end
-
-	self.widthBadge.position.Position=(a+b)*0.5-other*(tick*2)
-	self.widthBadge.label.Text=dimension(width)
+	-- Cursor-relative CAD coordinates in the actual face plane.
+	-- X is measured from the left edge, Y from the bottom edge of
+	-- the oriented planar bounding rectangle. Both use real mm.
+	local localCursor=if cursorWorld then cursorWorld-reference else
+		axis*(width*0.5+left)+other*(height*0.5+bottom)
+	local cursorX=math.clamp(localCursor:Dot(axis),left,right)
+	local cursorY=math.clamp(localCursor:Dot(other),bottom,top)
+	local cursor=corner(cursorX,cursorY)
+	local xBase=corner(left,cursorY)
+	local yBase=corner(cursorX,bottom)
+	local tick=math.clamp(math.min(width,height)*0.04,0.015,0.05)
+	-- Crosshair and two perpendicular measuring legs follow the mouse,
+	-- instead of labeling the entire face width/height.
+	self:segment(xBase,cursor,DIMENSION,1.3)
+	self:segment(yBase,cursor,DIMENSION,1.3)
+	self:segment(xBase-other*tick,xBase+other*tick,DIMENSION,1.3)
+	self:segment(yBase-axis*tick,yBase+axis*tick,DIMENSION,1.3)
+	self:segment(cursor-axis*tick,cursor+axis*tick,DIMENSION,1.4)
+	self:segment(cursor-other*tick,cursor+other*tick,DIMENSION,1.4)
+	self.widthBadge.position.Position=(xBase+cursor)*0.5+other*(tick*2)
+	self.widthBadge.label.Text="X "..dimension(cursorX-left)
 	self.widthBadge.gui.Enabled=true
-	self.heightBadge.position.Position=(c+d)*0.5+axis*(tick*2)
-	self.heightBadge.label.Text=dimension(height)
+	self.heightBadge.position.Position=(yBase+cursor)*0.5+axis*(tick*2)
+	self.heightBadge.label.Text="Y "..dimension(cursorY-bottom)
 	self.heightBadge.gui.Enabled=true
 	self.part=part
 	self.lastFace=face
