@@ -33,7 +33,7 @@ with the running client `BUILD`, loaded `GIZMO` module revision, and
 loading the editor, so it remains visible if FORM's require/startup fails.
 The same version is printed in Studio Output.
 
-Current version marker: **BUILD 2026.11.06.01**, **GIZMO-UNIFORM-CONE.5**. The three custom rotation rings share a single radius, Move uses `ReplicatedStorage.Cone` MeshParts, Highlights are opaque fill only, and explicit adornments draw grip/selection outlines.
+Current version marker: **BUILD 2026.11.06.02**, **GIZMO-CLEAN-TIPS.6**. The three rotation rings share one radius; Move uses `ReplicatedStorage.Cone` without square tip outlines, the selected workpiece's SelectionBox stroke is thin, and hovering planar manufactured faces (without an active tool) displays read-only millimeter dimensions.
 
 If the badge is missing, the latest `src/client/init.client.lua` has not
 run in that Play session. Stop Play and verify your local `dev` branch is
