@@ -16,7 +16,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-CLEAN-TIPS.6"
+TransformGizmo.Revision = "GIZMO-CURSOR-CENTER.7"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -197,7 +197,7 @@ local function placeArrow(grip,center:Vector3,direction:Vector3,
 	-- Roblox cylinders extend along local X. LookAt local -Z points
 	-- along the axis; this explicit Y rotation puts local X on -Z.
 	local stemCenter=center+direction*(shaftLength*0.5)
-	grip.stem.Size=Vector3.new(shaftLength,unit*0.24,unit*0.24)
+	grip.stem.Size=Vector3.new(shaftLength,unit*0.13,unit*0.13)
 	grip.stem.CFrame=CFrame.lookAt(stemCenter,stemCenter+direction)
 		*CFrame.Angles(0,math.pi/2,0)
 	grip.tip.Size=Vector3.new(headWidth,tipLength,headWidth)
@@ -282,6 +282,43 @@ local function layoutRing(grip,cf:CFrame,radius:number,thickness:number,
 	end
 end
 
+-- Screen-sized center marker inspired by Studio's transform pivot.
+-- Billboard visuals never intersect rays or create extra physics parts.
+local function newCenterMarker(parent:PlayerGui,origin:BasePart):BillboardGui
+	local gui=Instance.new("BillboardGui")
+	gui.Name="FORM_MovePivotMarker"
+	gui.Adornee=origin
+	gui.Size=UDim2.fromOffset(26,26)
+	gui.AlwaysOnTop=true
+	gui.Enabled=false
+	gui.Parent=parent
+	local square=Instance.new("Frame")
+	square.Name="CenterSquare"
+	square.AnchorPoint=Vector2.new(0.5,0.5)
+	square.Position=UDim2.fromScale(0.5,0.5)
+	square.Size=UDim2.fromOffset(18,18)
+	square.BackgroundColor3=Color3.fromRGB(29,39,46)
+	square.BackgroundTransparency=0.22
+	square.BorderSizePixel=0
+	square.Parent=gui
+	local border=Instance.new("UIStroke")
+	border.Thickness=1.3
+	border.Color=Color3.fromRGB(228,238,242)
+	border.Parent=square
+	local circle=Instance.new("Frame")
+	circle.Name="CenterCircle"
+	circle.AnchorPoint=Vector2.new(0.5,0.5)
+	circle.Position=UDim2.fromScale(0.5,0.5)
+	circle.Size=UDim2.fromOffset(9,9)
+	circle.BackgroundColor3=Color3.fromRGB(236,244,247)
+	circle.BorderSizePixel=0
+	circle.Parent=square
+	local round=Instance.new("UICorner")
+	round.CornerRadius=UDim.new(1,0)
+	round.Parent=circle
+	return gui
+end
+
 local function newMeasurement(playerGui: PlayerGui)
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "FORM_TransformMeasurement"
@@ -323,6 +360,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	adornmentOrigin.CastShadow=false
 	adornmentOrigin.Parent=folder
 	local measurement, measurementText = newMeasurement(playerGui)
+	local centerMarker = newCenterMarker(playerGui,adornmentOrigin)
 	local self = setmetatable({
 		document = document, onChange = onChange, folder = folder,
 		adornmentOrigin=adornmentOrigin,
@@ -331,6 +369,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		mode = "Move", hidden = false, component = nil, index = nil,
 		dragStart = nil, dragChanged = false, hovered = nil, visualFrame = nil, visualSize = nil,
 		measurement = measurement, measurementText = measurementText,
+		centerMarker=centerMarker,
 	}, TransformGizmo)
 
 	for _,spec in ipairs(MOVE_AXES) do
@@ -563,6 +602,7 @@ function TransformGizmo:refresh(dt:number?)
 		self.component.nodes[self.index] else nil
 	local targetFrame=if node then frame(node) else nil
 	local cf=targetFrame
+	self.centerMarker.Enabled=(node~=nil and not self.hidden and self.mode=="Move")
 	local size=if node then node.size else nil
 	if node and targetFrame then
 		local alpha=if dt then 1-math.exp(-26*dt)
@@ -576,6 +616,7 @@ function TransformGizmo:refresh(dt:number?)
 	else
 		self.visualFrame,self.visualSize=nil,nil
 	end
+	if cf then self.adornmentOrigin.CFrame=CFrame.new(cf.Position) end
 	for _,grip in ipairs(self.grips) do
 		local visible=node~=nil and not self.hidden and grip.mode==self.mode
 		local target=if grip==self.hovered then 1 else 0
@@ -650,6 +691,7 @@ function TransformGizmo:destroy()
 	for _, connection in ipairs(self.connections) do connection:Disconnect() end
 	self.folder:Destroy()
 	self.measurement:Destroy()
+	self.centerMarker:Destroy()
 end
 
 return TransformGizmo
