@@ -6,6 +6,9 @@ local RunService = game:GetService("RunService")
 local Compiler = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Compiler)
 local Fabricator = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Fabricator)
 local Document = require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Document)
+local FORM=ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
+local MaterialVolume=require(FORM.MaterialVolume)
+local Quantize=require(FORM.Quantize)
 
 local Preview = {}
 Preview.__index = Preview
@@ -30,7 +33,7 @@ local function configure(part: BasePart)
 	end
 end
 
-function Preview.new(onStatus, onRendered)
+function Preview.new(onStatus, onRendered, onVolumeRejected)
 	local root = Instance.new("Folder")
 	root.Name = "FORM_LocalPreview"
 	root.Parent = workspace
@@ -40,8 +43,10 @@ function Preview.new(onStatus, onRendered)
 		states = {},
 		jobs = {},
 		dragging = {},
+		accepted = {},
 		onStatus = onStatus,
 		onRendered = onRendered,
+		onVolumeRejected = onVolumeRejected,
 	}, Preview)
 	-- Transforms update immediately; no CFrame/Size easing.
 	self.renderConnection=nil
@@ -64,6 +69,7 @@ function Preview:remove(id: number)
 	if model then model:Destroy() end
 	self.models[id] = nil
 	self.states[id] = nil
+	self.accepted[id] = nil
 end
 
 function Preview:ensure(component)
@@ -77,7 +83,7 @@ function Preview:ensure(component)
 	return model
 end
 
-function Preview:replace(component, part: BasePart, key: string, madeWithCSG: boolean)
+function Preview:replace(component, part: BasePart, key: string, madeWithCSG: boolean, measuredVolume:number?)
 	local id = component.id
 	local model = self:ensure(component)
 	local previous = self.states[id]
@@ -94,10 +100,16 @@ function Preview:replace(component, part: BasePart, key: string, madeWithCSG: bo
 		key = key,
 		kind = component.nodes[1].kind,
 		boolean = madeWithCSG,
+		materialVolume=measuredVolume or MaterialVolume.primitive(
+			component.nodes[1].kind,component.nodes[1].size),
 		targetFrame = targetFrame, targetSize = targetSize,
 		smoothing = false,
 		dragging = self.dragging[id] == true,
 	}
+	if madeWithCSG or not Fabricator.requiresCompile(component) then
+		component.materialVolume=self.states[id].materialVolume
+		self.accepted[id]=Document.snapshot(component)
+	end
 	self.onRendered(id, model)
 end
 
@@ -120,6 +132,9 @@ function Preview:updateGeometry(component)
 				part.CFrame = state.targetFrame
 			end
 			state.key = key
+			state.materialVolume=MaterialVolume.primitive(node.kind,node.size)
+			component.materialVolume=state.materialVolume
+			self.accepted[component.id]=Document.snapshot(component)
 		else
 			part = Compiler.nativePart(node)
 			self:replace(component, part, key, false)
@@ -184,8 +199,30 @@ function Preview:queueManufacture(component)
 					job.pending = Document.snapshot(component)
 				end
 			else
-				self:replace(component, output, expectedKey, true)
-				self.onStatus(snapshot.name .. " ready: " .. summary)
+				-- Measure final manufactured material, not its enclosing
+				-- rectangular envelope. Removals free material budget.
+				local hasFeatures=false
+				for _,feature in ipairs(snapshot.operations) do
+					if feature.enabled~=false then hasFeatures=true break end
+				end
+				local material=if hasFeatures then MaterialVolume.fromPart(output)
+					else MaterialVolume.primitive(snapshot.nodes[1].kind,snapshot.nodes[1].size)
+				if not MaterialVolume.within(material) then
+					output:Destroy()
+					local lastGood=self.accepted[id]
+					if self.onVolumeRejected and lastGood then
+						self.onVolumeRejected(id,lastGood,
+							snapshot.name.." exceeds material budget: "..
+							MaterialVolume.display(material).." / "..
+							MaterialVolume.display(Quantize.MaxComponentVolume))
+					else
+						self.onStatus("Component material exceeds the numeric volume budget")
+					end
+				else
+					self:replace(component, output, expectedKey, true,material)
+					self.onStatus(snapshot.name.." · "..MaterialVolume.display(material)..
+						" / "..MaterialVolume.display(Quantize.MaxComponentVolume))
+				end
 			end
 		end
 		job.running = false
