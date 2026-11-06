@@ -152,13 +152,16 @@ function Debug.start()
 	local info = line("Selection: none")
 	local nodeInfo = line("Node: none")
 
-	local highlight = make("Highlight", {
-		Name = "FORM_Selection",
-		FillTransparency = 1,
-		OutlineTransparency = 0,
-		OutlineColor = Color3.fromRGB(100, 234, 246),
-		DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-		Enabled = false,
+	-- Explicit adornment border instead of an outline-only Highlight.
+	-- SelectionBox outlines the selected solid's bounding volume;
+	-- it does not attempt CSG mesh readback for an exact contour.
+	local selectionBorder = make("SelectionBox", {
+		Name = "FORM_SelectionBorder",
+		Color3 = Color3.fromRGB(100, 234, 246),
+		LineThickness = 0.018,
+		SurfaceTransparency = 1,
+		Transparency = 0.08,
+		Visible = false,
 	}, workspace)
 
 	local preview
@@ -243,8 +246,8 @@ function Debug.start()
 			end
 		end
 		local model = if component then preview:getModel(component.id) else nil
-		highlight.Adornee = model
-		highlight.Enabled = model ~= nil
+		selectionBorder.Adornee = if model then model:FindFirstChildWhichIsA("BasePart") else nil
+		selectionBorder.Visible = selectionBorder.Adornee ~= nil
 		if transformGizmo then
 			if component and node then
 				transformGizmo:show(component, nodeIndex)
