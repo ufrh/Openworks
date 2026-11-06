@@ -166,6 +166,13 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 		indicator.Transparency=.68
 		onStatus("Move the placement grid over the ground and click")
 	end)
+	-- The pointer marks the CENTER of the footprint; source component
+	-- storage continues using the minimum corner of that footprint.
+	local function footprint(cursor:Vector3,size:Vector3):Vector3
+		return Vector3.new(
+			Quantize.snap(cursor.X-size.X*0.5,Quantize.Grid),0,
+			Quantize.snap(cursor.Z-size.Z*0.5,Quantize.Grid))
+	end
 	local function hideGrid()
 		for _,line in ipairs(gridLines) do line.Visible=false end
 		indicator.Transparency=1
@@ -222,10 +229,11 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 		end
 		self.lastPosition=at
 		indicator.Size=self.size
-		indicator.CFrame=CFrame.new(at+self.size*0.5)
+		local base=footprint(at,self.size)
+		indicator.CFrame=CFrame.new(base+self.size*0.5)
 		indicator.Transparency=.68
-		if self.lastOrigin and self.lastOrigin==at then return end
-		self.lastOrigin=at
+		if self.lastOrigin and self.lastOrigin==base then return end
+		self.lastOrigin=base
 		for _,g in ipairs(gridLines) do g.Visible=false end
 		local width,depth=self.size.X,self.size.Z
 		local spacing=Quantize.Grid
@@ -238,11 +246,11 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 		end
 		for i=0,math.ceil(width/spacing),stepX do
 			local x=math.min(width,i*spacing)
-			add(at+Vector3.new(x,.004,0),at+Vector3.new(x,.004,depth))
+			add(base+Vector3.new(x,.004,0),base+Vector3.new(x,.004,depth))
 		end
 		for i=0,math.ceil(depth/spacing),stepZ do
 			local z=math.min(depth,i*spacing)
-			add(at+Vector3.new(0,.004,z),at+Vector3.new(width,.004,z))
+			add(base+Vector3.new(0,.004,z),base+Vector3.new(width,.004,z))
 		end
 	end)
 	UserInputService.InputBegan:Connect(function(input,processed)
@@ -255,7 +263,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 		local at=pointOnGround()
 		if not at then return end
 		self:close()
-		onPlace(self.kind,self.name,self.size,at)
+		onPlace(self.kind,self.name,self.size,footprint(at,self.size))
 	end)
 	return self
 end
