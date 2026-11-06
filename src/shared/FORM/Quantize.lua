@@ -6,6 +6,7 @@ Quantize.Grid = 0.05
 Quantize.Rotation = 15
 Quantize.MinSize = 0.05
 Quantize.MaxSize = 128
+Quantize.MaxComponentVolume = 8 -- studs cubed; build larger assemblies from separate components
 Quantize.MaxPosition = 512
 
 function Quantize.isFinite(value: number): boolean
