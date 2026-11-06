@@ -9,7 +9,9 @@ local SCALE_MM=280
 local DIMENSION=Color3.new(1,1,1)
 local MAX_LINES=96
 local SNAP_MM=1 -- independent fine ruler snap; not FORM construction grid
-local RULER_STEPS=10 -- subdivisions on the two cursor-crossing ruler lines
+local TICK_SPACING_MM=10 -- physical spacing, never stretched to cursor distance
+local MAJOR_SPACING_MM=50
+local MAX_TICKS_PER_AXIS=43 -- keep bounded guide allocations on enormous faces
 
 local function line(parent:Instance,origin:BasePart,index:number):LineHandleAdornment
 	local visual=Instance.new("LineHandleAdornment")
@@ -22,35 +24,6 @@ local function line(parent:Instance,origin:BasePart,index:number):LineHandleAdor
 	visual.Visible=false
 	visual.Parent=parent
 	return visual
-end
-
-local function badge(parent:Instance,origin:BasePart,name:string)
-	local position=Instance.new("Attachment")
-	position.Name=name.."_Anchor"
-	position.Parent=origin
-
-	local gui=Instance.new("BillboardGui")
-	gui.Name=name
-	gui.Adornee=position
-	gui.AlwaysOnTop=true
-	gui.Size=UDim2.fromOffset(108,23)
-	gui.Enabled=false
-	gui.Parent=parent
-
-	local label=Instance.new("TextLabel")
-	label.Size=UDim2.fromScale(1,1)
-	label.BackgroundColor3=Color3.fromRGB(22,33,39)
-	label.BackgroundTransparency=0.08
-	label.TextColor3=Color3.fromRGB(230,244,247)
-	label.Font=Enum.Font.Code
-	label.TextSize=12
-	label.Text=""
-	label.Parent=gui
-
-	local round=Instance.new("UICorner")
-	round.CornerRadius=UDim.new(0,4)
-	round.Parent=label
-	return {position=position,gui=gui,label=label}
 end
 
 function Measurements.new(playerGui:PlayerGui)
@@ -96,8 +69,6 @@ function Measurements.new(playerGui:PlayerGui)
 	return setmetatable({
 		root=group,origin=origin,guides=guides,
 		cursorDot=dotGui,cursorAnchor=dotPosition,
-		widthBadge=badge(playerGui,origin,"SurfaceWidth"),
-		heightBadge=badge(playerGui,origin,"SurfaceHeight"),
 		lineCount=0,part=nil,lastFace=nil,lastFrame=nil,
 	},Measurements)
 end
@@ -105,8 +76,6 @@ end
 function Measurements:hide()
 	if not self.part then return end
 	for _,guide in ipairs(self.guides) do guide.Visible=false end
-	self.widthBadge.gui.Enabled=false
-	self.heightBadge.gui.Enabled=false
 	self.cursorDot.Enabled=false
 	self.lineCount=0
 	self.part=nil
@@ -139,10 +108,6 @@ local function selectAxis(points:{Vector3}):Vector3?
 		end
 	end
 	return result
-end
-
-local function dimension(value:number):string
-	return string.format("%.1f mm",value*SCALE_MM)
 end
 
 -- Supports convex/concave planar faces; measurements are orthogonal
@@ -215,29 +180,27 @@ function Measurements:show(part:BasePart,face,cursorWorld:Vector3?):boolean
 	local minor=math.clamp(short*0.023,0.009,0.03)
 	local xDistance=cursorX-left
 	local yDistance=cursorY-bottom
-	for i=0,RULER_STEPS do
-		local major=(i%5==0)
-		local tick=if major then minor*1.8 else minor
-		if xDistance>0.001 then
-			local p=corner(left+xDistance*i/RULER_STEPS,cursorY)
-			self:segment(p-other*tick*0.5,p+other*tick*0.5,
-				DIMENSION,if major then 1.45 else 1)
-		end
-		if yDistance>0.001 then
-			local p=corner(cursorX,bottom+yDistance*i/RULER_STEPS)
-			self:segment(p-axis*tick*0.5,p+axis*tick*0.5,
-				DIMENSION,if major then 1.45 else 1)
+	-- Draw real 10 mm increments, anchored to the minimum edge.
+	-- Moving the cursor adds/removes ticks; existing marks never stretch.
+	-- The cap only limits how many very distant ticks we render.
+	local function ticks(distance:number,alongX:boolean)
+		local total=math.floor(distance*SCALE_MM/TICK_SPACING_MM+1e-5)
+		local first=math.max(0,total-MAX_TICKS_PER_AXIS+1)
+		for i=first,total do
+			local mm=i*TICK_SPACING_MM
+			local major=mm%MAJOR_SPACING_MM==0
+			local tick=if major then minor*1.8 else minor
+			local p=if alongX then corner(left+mm/SCALE_MM,cursorY)
+				else corner(cursorX,bottom+mm/SCALE_MM)
+			local offset=if alongX then other*tick*0.5 else axis*tick*0.5
+			self:segment(p-offset,p+offset,DIMENSION,
+				if major then 1.45 else 1)
 		end
 	end
-	local cross=minor*0.85
+	ticks(xDistance,true)
+	ticks(yDistance,false)
 	self.cursorAnchor.Position=cursor
 	self.cursorDot.Enabled=true
-	self.widthBadge.position.Position=(xBase+cursor)*0.5+other*(cross*2)
-	self.widthBadge.label.Text="X "..dimension(cursorX-left)
-	self.widthBadge.gui.Enabled=true
-	self.heightBadge.position.Position=(yBase+cursor)*0.5+axis*(cross*2)
-	self.heightBadge.label.Text="Y "..dimension(cursorY-bottom)
-	self.heightBadge.gui.Enabled=true
 	self.part=part
 	self.lastFace=face
 	self.lastFrame=part.CFrame
@@ -247,8 +210,6 @@ end
 function Measurements:destroy()
 	self:hide()
 	self.cursorDot:Destroy()
-	self.widthBadge.gui:Destroy()
-	self.heightBadge.gui:Destroy()
 	self.root:Destroy()
 	self.origin:Destroy()
 end
