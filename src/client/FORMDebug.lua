@@ -317,6 +317,10 @@ function Debug.start()
 		selectedId = id
 		local component = selectedComponent()
 		nodeIndex = if component then #component.nodes else 1
+		if placementFlow then
+			panel.Visible=(component~=nil)
+			placementFlow:setLaunchVisible(component==nil)
+		end
 		refresh()
 	end
 
@@ -489,6 +493,7 @@ function Debug.start()
 		toolVisualizer:hide()
 		activeTool = nil
 		toolStatus.Text = "Tool: none"
+		if measurementTool then measurementTool:setActive(false) end
 		transformGizmo:setMode(mode)
 		transformStatus.Text = "Mode: " .. string.upper(mode)
 	end
@@ -1000,6 +1005,20 @@ function Debug.start()
 			toolVisualizer:hide()
 			return
 		end
+		if activeTool=="Measure" then
+			toolVisualizer:hide()
+			return
+		end
+		if activeTool=="Measure" then
+			if not measurementTool then return end
+			local distance=measurementTool:click()
+			if distance then
+				message(string.format("Point distance: %.1f mm",distance))
+			else
+				message("Select the next point to measure")
+			end
+			return
+		end
 		if activeTool=="File" or activeTool=="Smooth" then
 			local selection=fileEdgeTarget()
 			local width=millimeters(if activeTool=="Smooth" then smoothRadiusInput
@@ -1059,6 +1078,7 @@ function Debug.start()
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if sketchEditor and sketchEditor.active then return end
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		if placementFlow and placementFlow.placing then return end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
 			or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
 		if activeTool=="File" or activeTool=="Smooth" then
@@ -1163,8 +1183,25 @@ function Debug.start()
 		message(kind .. " operation recorded; compiling CSG")
 	end)
 
+	measurementTool=MeasurementTool.new(playerGui,preview.root)
+	placementFlow=ComponentPlacement.new(playerGui,function(kind,name,size,ground)
+		-- The minimum corner sits on the clicked ground plane; the
+		-- workpiece and orbit workspace retain that real-world location.
+		local component,reason=document:create(kind,ground,name,size)
+		if not component then message(reason or "Unable to create component") return end
+		selectComponent(component.id)
+		changed(component)
+		panel.Visible=true
+		placementFlow:setLaunchVisible(false)
+		cameraController:setFocusTarget(component.nodes[1].position)
+		cameraController:frameSelected()
+		transformGizmo:setMode("Move")
+		message("Component placed at cursor; workspace ready")
+	end,message)
+	panel.Visible=false
+	placementFlow:setLaunchVisible(true)
 	refresh()
-	message("Precision fabrication ready: Sketch, Saw, Drill, Inset, File.")
+	message("Create Component to name and size your material, then click the ground to place it.")
 end
 
 return Debug
