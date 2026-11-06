@@ -4,6 +4,7 @@
 -- volume is measured from Roblox's collision solid at unit density.
 local Quantize=require(script.Parent.Quantize)
 local RoundedLProfile=require(script.Parent.RoundedLProfile)
+local AssetService=game:GetService("AssetService")
 local Volume={}
 Volume.MM_PER_STUD=280
 Volume.MM3_PER_STUD3=Volume.MM_PER_STUD^3
@@ -42,6 +43,59 @@ function Volume.fromPart(solid:BasePart):number
 		return math.huge
 	end
 	return mass
+end
+
+-- Prefer the watertight *render mesh* for manufactured solids. This
+-- distinguishes actual cavities from collision hull approximations.
+-- Engine/asset permissions can deny readback; only then use physical
+-- collision volume as a documented estimate.
+function Volume.fromPartAsync(solid:BasePart):(number,boolean)
+	if solid:IsA("MeshPart") then
+		local loaded,editable=pcall(function()
+			return AssetService:CreateEditableMeshAsync(solid.MeshContent)
+		end)
+		if loaded and editable then
+			local ok,volume=pcall(function()
+				local size=editable:GetSize()
+				if math.min(size.X,size.Y,size.Z)<=0 then
+					error("Empty mesh")
+				end
+				local sx=solid.Size.X/size.X
+				local sy=solid.Size.Y/size.Y
+				local sz=solid.Size.Z/size.Z
+				local positions={}
+				local signed=0
+				for _,id in ipairs(editable:GetFaces()) do
+					local ids=editable:GetFaceVertices(id)
+					if #ids>=3 then
+						local function vertex(vertexId:number):Vector3
+							local cached=positions[vertexId]
+							if cached then return cached end
+							local p=editable:GetPosition(vertexId)
+							p=Vector3.new(p.X*sx,p.Y*sy,p.Z*sz)
+							positions[vertexId]=p
+							return p
+						end
+						local a=vertex(ids[1])
+						for i=2,#ids-1 do
+							local b=vertex(ids[i])
+							local c=vertex(ids[i+1])
+							signed+=a:Dot(b:Cross(c))/6
+						end
+					end
+				end
+				return math.abs(signed)
+			end)
+			editable:Destroy()
+			-- Signed tetrahedra give true material volume for closed
+			-- consistently wound meshes. Sanity check the bounds.
+			if ok and type(volume)=="number" and Quantize.isFinite(volume)
+				and volume>1e-9 and volume<=solid.Size.X*solid.Size.Y*solid.Size.Z*1.01 then
+				return volume,true
+			end
+		end
+	end
+	return Volume.fromPart(solid),false
 end
 
 function Volume.toMM3(stud3:number):number
