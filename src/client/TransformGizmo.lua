@@ -375,10 +375,9 @@ local function layoutRing(grip,cf:CFrame,radius:number,thickness:number,
 		local a=points[i]
 		local b=points[i%RING_SAMPLES+1]
 		local tangent=b-a
-		local midpoint=(a+b)*0.5
 		-- Cylinder Parts use local X for the long axis.
 		part.CFrame=CFrame.lookAt((a+b)*0.5,b)*CFrame.Angles(0,math.pi/2,0)
-		part.Size=Vector3.new(tangent.Magnitude,thickness,thickness)
+		part.Size=Vector3.new(tangent.Magnitude*1.015,thickness,thickness)
 		part.Color=tint
 	end
 end
@@ -576,7 +575,8 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		if start.grip.mode ~= "Rotate" then
 			local parameter = axisParameter(point, start.pivot, start.direction)
 			if not parameter or not start.initialParameter then return end
-			local distance = Quantize.snap(parameter - start.initialParameter, Quantize.Grid)
+			local distance = Quantize.snap(parameter - start.initialParameter,
+				if self.mode=="Scale" then Quantize.Size else Quantize.Grid)
 			if self.mode == "Move" then
 				position = start.position + start.direction * distance
 			elseif self.mode == "Scale" then
