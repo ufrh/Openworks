@@ -20,6 +20,7 @@ local SketchEditor = require(script.Parent.SketchEditor)
 local ToolVisualizer = require(script.Parent.ToolVisualizer)
 local SurfacePicker = require(script.Parent.SurfacePicker)
 local SurfaceMeasurements = require(script.Parent.SurfaceMeasurements)
+local EdgeAvailability = require(script.Parent.EdgeAvailability)
 local FaceTools = require(FORM.FaceTools)
 
 local Debug = {}
@@ -790,9 +791,35 @@ function Debug.start()
 			if not topology then continue end
 			local edge,distance=topology.closestEdge(topology,camera,mouse,18)
 			if edge and distance and distance<bestDistance then
-				bestDistance=distance
-				best={id=id,component=component,node=component.nodes[1],
-					pose=Compiler.pose(component.nodes[1]),topology=topology,edge=edge}
+				local pose=Compiler.pose(component.nodes[1])
+				local partFrame=topology.part.CFrame
+				local localA=pose:PointToObjectSpace(partFrame:PointToWorldSpace(edge.a))
+				local localB=pose:PointToObjectSpace(partFrame:PointToWorldSpace(edge.b))
+				local width=(tonumber(fileWidthInput.Text) or 14)/280
+				local available=EdgeAvailability.segments(localA,localB,component,width)
+				-- The originating topology edge may be longer than the
+				-- actual exposed edge. Pick only the unblocked segment
+				-- under the pointer, then preview/commit those endpoints.
+				for _,section in ipairs(available) do
+					local wa=pose:PointToWorldSpace(section.a)
+					local wb=pose:PointToWorldSpace(section.b)
+					local pa,va=camera:WorldToViewportPoint(wa)
+					local pb,vb=camera:WorldToViewportPoint(wb)
+					if not va and not vb then continue end
+					local origin=Vector2.new(pa.X,pa.Y)
+					local vector=Vector2.new(pb.X-pa.X,pb.Y-pa.Y)
+					local length2=vector:Dot(vector)
+					if length2<0.1 then continue end
+					local t=math.clamp((mouse-origin):Dot(vector)/length2,0,1)
+					local d=(mouse-origin-vector*t).Magnitude
+					if d>=math.min(bestDistance,12) then continue end
+					local clipped=table.clone(edge)
+					clipped.a=partFrame:PointToObjectSpace(wa)
+					clipped.b=partFrame:PointToObjectSpace(wb)
+					bestDistance=d
+					best={id=id,component=component,node=component.nodes[1],
+						pose=pose,topology=topology,edge=clipped}
+				end
 			end
 		end
 		return best
