@@ -581,7 +581,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 				position = start.position + start.direction * distance
 			elseif self.mode == "Scale" then
 				local old=getAxis(start.size,start.grip.axis)
-				local updated=math.clamp(Quantize.snap(old+distance,Quantize.Grid),
+				local updated=math.clamp(Quantize.snap(old+distance,Quantize.Size),
 					Quantize.MinSize,Quantize.MaxSize)
 				size=putAxis(start.size,start.grip.axis,updated)
 				position=start.position+start.direction*((updated-old)*0.5)
