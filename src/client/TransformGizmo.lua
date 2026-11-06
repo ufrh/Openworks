@@ -1,5 +1,6 @@
 --!strict
--- Small, camera-adaptive part grips with one Highlight per interactive axis handle.
+-- Camera-adaptive center-origin XYZ move arrows, face-scale grips, and
+-- three clickable wireframe rotation rings. Visible geometry is adornments.
 -- Three center-origin move arrows, six offset scale spheres, and three
 -- clickable wireframe rotation rings.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
