@@ -2,6 +2,8 @@
 -- Read-only dimensional preview for the actual hovered planar FORM face.
 -- Face polygons are taken from cached authored HistoryTopology, never
 -- the primitive stock envelope or a live EditableMesh readback.
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local Quantize=require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Quantize)
 local Measurements={}
 Measurements.__index=Measurements
 
@@ -185,8 +187,12 @@ function Measurements:show(part:BasePart,face,cursorWorld:Vector3?):boolean
 	-- the oriented planar bounding rectangle. Both use real mm.
 	local localCursor=if cursorWorld then cursorWorld-reference else
 		axis*(width*0.5+left)+other*(height*0.5+bottom)
-	local cursorX=math.clamp(localCursor:Dot(axis),left,right)
-	local cursorY=math.clamp(localCursor:Dot(other),bottom,top)
+	-- Snap the distance from each bounding edge (rather than the world
+	-- coordinate), so zero always starts exactly at the face boundary.
+	local cursorX=left+math.clamp(
+		Quantize.snap(localCursor:Dot(axis)-left,Quantize.Grid),0,width)
+	local cursorY=bottom+math.clamp(
+		Quantize.snap(localCursor:Dot(other)-bottom,Quantize.Grid),0,height)
 	local cursor=corner(cursorX,cursorY)
 	local xBase=corner(left,cursorY)
 	local yBase=corner(cursorX,bottom)
