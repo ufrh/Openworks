@@ -112,7 +112,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 	local self=setmetatable({
 		ui=ui,launch=launch,form=form,hint=placementHint,
 		indicator=indicator,origin=origin,gridLines=gridLines,
-		placing=false,kind="Block",size=Vector3.one,
+		placing=false,kind="Block",size=Vector3.one,lastOrigin=nil,
 		name="",onPlace=onPlace,onStatus=onStatus,showLaunch=true,
 	},ComponentPlacement)
 	local function refreshChoices()
@@ -158,6 +158,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 		self.kind=selectedKind
 		self.size=size
 		self.placing=true
+		self.lastOrigin=nil
 		form.Visible=false
 		launch.Visible=false
 		placementHint.Visible=true
@@ -171,6 +172,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 	end
 	function self:close()
 		self.placing=false
+		self.lastOrigin=nil
 		form.Visible=false
 		placementHint.Visible=false
 		launch.Visible=self.showLaunch
@@ -210,17 +212,20 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 			Quantize.MaxPosition),Quantize.Grid)
 		return Vector3.new(x,0,z)
 	end
-	local lastOrigin:Vector3?=nil
 	RunService.RenderStepped:Connect(function()
 		if not self.placing then return end
 		local at=pointOnGround()
-		if not at then hideGrid() return end
+		if not at then
+			self.lastOrigin=nil
+			hideGrid()
+			return
+		end
 		self.lastPosition=at
 		indicator.Size=self.size
-		indicator.CFrame=CFrame.new(at+self.size*Vector3.new(.5,.5,.5))
+		indicator.CFrame=CFrame.new(at+self.size*0.5)
 		indicator.Transparency=.68
-		if lastOrigin and lastOrigin==at then return end
-		lastOrigin=at
+		if self.lastOrigin and self.lastOrigin==at then return end
+		self.lastOrigin=at
 		for _,g in ipairs(gridLines) do g.Visible=false end
 		local width,depth=self.size.X,self.size.Z
 		local spacing=Quantize.Grid
