@@ -11,6 +11,25 @@ Document.__index = Document
 local KINDS = { Block = true, Cylinder = true }
 local AXES = { X = true, Y = true, Z = true }
 
+-- Authoritative feature constraint: a filed corner cannot share its
+-- segment or junction with an interior smooth, regardless of UI entry.
+local function nearSegment(point:Vector3,a:Vector3,b:Vector3):boolean
+	local d=b-a
+	local t=math.clamp((point-a):Dot(d)/math.max(d:Dot(d),1e-9),0,1)
+	return (point-(a+d*t)).Magnitude<0.008
+end
+local function edgesTouch(a:Vector3,b:Vector3,c:Vector3,d:Vector3):boolean
+	return nearSegment(a,c,d) or nearSegment(b,c,d)
+		or nearSegment(c,a,b) or nearSegment(d,a,b)
+end
+local function adjacentOperation(component,a:Vector3,b:Vector3,kind:string):boolean
+	for _,op in ipairs(component.operations) do
+		if op.enabled==false or op.kind~=kind then continue end
+		if edgesTouch(a,b,op.a,op.b) then return true end
+	end
+	return false
+end
+
 local function orientation(rotation: Vector3): CFrame
 	return CFrame.fromOrientation(math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
 end
@@ -285,6 +304,9 @@ function Document:addOperation(component, kind: string, data)
 			or (b-a).Magnitude < 0.01 or n1.Magnitude<0.9 or n2.Magnitude<0.9 then
 			return false, "Invalid edge filing geometry"
 		end
+		if adjacentOperation(component,a,b,"SmoothInside") then
+			return false,"Cannot File an edge touching a smoothed interior junction"
+		end
 		local segments=data.segments or 1
 		if typeof(segments)~="number" or segments~=math.floor(segments)
 			or segments<1 or segments>12 then
@@ -306,6 +328,10 @@ function Document:addOperation(component, kind: string, data)
 			or typeof(segments)~="number" or segments~=math.floor(segments)
 			or segments<2 or segments>12 then
 			return false,"Smooth needs a straight interior 90-degree edge, 2-12 segments"
+		end
+		if adjacentOperation(component,a,b,"FileMesh")
+			or adjacentOperation(component,a,b,"SmoothInside") then
+			return false,"Interior smooth overlaps a File or another smooth junction"
 		end
 		operation={kind="SmoothInside",a=a,b=b,normalA=n1.Unit,
 			normalB=n2.Unit,radius=Quantize.snap(radius,1/280),
