@@ -1,3 +1,5 @@
+> **November 5 transform correction:** Move arrows now use a single X/Y/Z pivot at the component center, with all three line shafts extending from that pivot beyond their positive face. Their ConeHandleAdornments follow the world-space axis using `CFrame.lookAt(...)` directly (the old extra 90° X rotation incorrectly tipped the cones). Scale handles have additional clearance from their face. Rotate mode uses three real `WireframeHandleAdornment` rings (one in each plane) instead of tiny isolated sphere knobs; rings are selectable along their circumference using the projected 72-segment path, while rotation dragging still uses the existing planeRadial math. The invisible hit spheres remain as a fallback. Ring radius adapts to the part's dimensions and camera zoom. See [VERIFY_TRANSFORM_GIZMO.lua](../scripts/VERIFY_TRANSFORM_GIZMO.lua) for a client Studio test. This remains unverified in a running Roblox Studio session.
+
 # FORM — Adornment-based editor visualization
 
 Updated 2026-11-04 · branch `dev`
