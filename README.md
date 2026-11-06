@@ -33,7 +33,7 @@ with the running client `BUILD`, loaded `GIZMO` module revision, and
 loading the editor, so it remains visible if FORM's require/startup fails.
 The same version is printed in Studio Output.
 
-Current version marker: **BUILD 2026.11.05.01**, **GIZMO-WORLD-WIRE.2**.
+Current version marker: **BUILD 2026.11.05.02**, **GIZMO-SCALED-PARTS.4**. The transform UI uses custom camera-sized highlighted Parts (including rotation rings), not native fixed-size Handles.
 
 If the badge is missing, the latest `src/client/init.client.lua` has not
 run in that Play session. Stop Play and verify your local `dev` branch is
