@@ -45,6 +45,14 @@ local smooth={
 local accepted,reason=document:addOperation(body,"SmoothInside",smooth)
 assert(accepted,"Interior smooth operation rejected: "..tostring(reason))
 assert(body.operations[#body.operations].kind=="SmoothInside")
+local refused,adjacentReason=document:addOperation(body,"FileMesh",{
+	a=smooth.a,b=smooth.a+Vector3.zAxis*0.15,
+	normalA=Vector3.yAxis,normalB=Vector3.xAxis,
+	width=14/280,segments=1,
+})
+assert(not refused and string.find(tostring(adjacentReason),"smoothed"),
+	"File must be blocked on an edge adjoining interior smoothing")
+
 local faces=GeometryCutter.smoothInteriorFaces(
 	smooth.a,smooth.b,smooth.normalA,smooth.normalB,
 	smooth.radius,smooth.segments)
