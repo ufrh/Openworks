@@ -73,7 +73,7 @@ function Document:create(kind: string, minimumCorner: Vector3, name: string?, sp
 		or size.X*size.Y*size.Z>Quantize.MaxComponentVolume+0.00001 then
 		return nil,"Component size exceeds the allowed 8 stud³ volume or size limits"
 	end
-	size=Quantize.vector(size,Quantize.Grid)
+	size=Quantize.vector(size,Quantize.Size)
 	if size.X*size.Y*size.Z>Quantize.MaxComponentVolume+0.00001 then
 		return nil,"Component volume may not exceed 8 stud³"
 	end
@@ -121,7 +121,8 @@ function Document:editNode(component, index: number, field: string, axis: string
 		return false, "Enter a finite number"
 	end
 	if not axis or not AXES[axis] then return false, "Invalid axis" end
-	local snapped = Quantize.snap(value, if field == "rotation" then Quantize.Rotation else Quantize.Grid)
+	local snapped = Quantize.snap(value, if field == "rotation" then Quantize.Rotation
+		elseif field=="size" then Quantize.Size else Quantize.Grid)
 	local position, size, rotation = node.position, node.size, node.rotation
 	if field == "position" then
 		-- Numeric MIN fields edit a boundary coordinate, not the part's center.
@@ -149,7 +150,7 @@ end
 function Document:applyTransform(component, index: number, position: Vector3?, size: Vector3?, rotation: Vector3?, preserveFaceAnchor: boolean?, preserveRotationPrecision: boolean?)
 	local node = component.nodes[index]
 	if not node then return false, "No node selected" end
-	local newSize = Quantize.vector(size or node.size, Quantize.Grid)
+	local newSize = Quantize.vector(size or node.size, Quantize.Size)
 	local incoming = rotation or node.rotation
 	local newRotation = Vector3.new(
 		(if preserveRotationPrecision then incoming.X else Quantize.snap(incoming.X, Quantize.Rotation)) % 360,
