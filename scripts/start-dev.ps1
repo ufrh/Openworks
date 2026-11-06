@@ -18,7 +18,9 @@ if (-not $Branch) { throw 'Detached HEAD; select a branch first.' }
 
 & git fetch --quiet origin $Branch 2>$null
 if ($LASTEXITCODE -eq 0) {
-    $Dirty = @(& git status --porcelain)
+    # Only changes to tracked files block the automatic fast-forward.
+    # Untracked screenshots are safe to preserve during a normal pull.
+    $Dirty = @(& git status --porcelain --untracked-files=no)
     $Ahead = [int]((& git rev-list "origin/$Branch..HEAD" --count).Trim())
     $Behind = [int]((& git rev-list "HEAD..origin/$Branch" --count).Trim())
     if ($Dirty.Count -eq 0 -and $Ahead -eq 0 -and $Behind -gt 0) {
@@ -34,7 +36,7 @@ if ($LASTEXITCODE -eq 0) {
 # an older FORM/gizmo build.
 $LocalSha = (& git rev-parse --short=8 HEAD | Out-String).Trim()
 $RemoteSha = (& git rev-parse --short=8 "origin/$Branch" 2>$null | Out-String).Trim()
-$DirtyFiles = @(git status --porcelain --untracked-files=normal)
+$DirtyFiles = @(git status --porcelain --untracked-files=no)
 $BehindCount = 0
 if ($RemoteSha) {
     $BehindCount = [int]((& git rev-list "HEAD..origin/$Branch" --count | Out-String).Trim())
