@@ -24,3 +24,29 @@ See [FORM Phase 1 instructions](docs/FORM_PHASE1.md).
 Run `START_OPENWORKS.bat` with `dev`, connect the Studio Rojo plugin to localhost:34872, and press Play. Use `STOP_OPENWORKS.bat` when finished. Rojo maps src/shared, src/client, and src/server into the Roblox place.
 
 Recent changes are source-verified but not yet Studio-runtime tested. Save/load, mechanical physics, multiplayer/shipping, and FORGE integration are not yet implemented.
+
+## Confirming the Studio build
+
+When you press **Play**, a small bottom-right badge reads `OPENWORKS / STUDIO DEV`
+with the running client `BUILD`, loaded `GIZMO` module revision, and
+`READY` or `BOOT ERROR` startup state. This badge is created **before**
+loading the editor, so it remains visible if FORM's require/startup fails.
+The same version is printed in Studio Output.
+
+Current version marker: **BUILD 2026.11.05.01**, **GIZMO-WORLD-WIRE.2**.
+
+If the badge is missing, the latest `src/client/init.client.lua` has not
+run in that Play session. Stop Play and verify your local `dev` branch is
+updated and the Rojo Studio plugin is connected to `localhost:34872`.
+If the badge appears but the gizmo revision says `UNSTAMPED` or
+`GIZMO NOT SYNCED`, the client entry script updated but the gizmo module
+did not. If it displays `BOOT ERROR`, read the matching `[OPENWORKS]`
+warning in the Studio Output window.
+
+The dev launcher runs `git fetch`, but its automatic pull deliberately
+**skips when there are uncommitted local changes, local commits ahead of
+origin, or a non-fast-forward state**. Check the launcher/live-sync output
+and `git status` rather than assuming a successful fetch updated the
+working tree. Preserve local changes before merging or discarding anything.
+`ModuleScript` requires are cached during Play: even after Rojo has synced,
+**Stop and Play again** to get a new instance of the updated editor.
