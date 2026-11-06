@@ -230,9 +230,11 @@ function Preview:queueManufacture(component)
 					local lastGood=self.accepted[id]
 					if self.onVolumeRejected and lastGood then
 						self.onVolumeRejected(id,lastGood,
-							snapshot.name.." exceeds material budget: "..
-							MaterialVolume.display(material).." / "..
-							MaterialVolume.display(Quantize.MaxComponentVolume))
+							(if not Quantize.isFinite(material) then
+								snapshot.name.." material volume could not be verified"
+							else snapshot.name.." exceeds material budget: "..
+								MaterialVolume.display(material).." / "..
+								MaterialVolume.display(Quantize.MaxComponentVolume)))
 					else
 						self.onStatus("Component material exceeds the numeric volume budget")
 					end
