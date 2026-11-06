@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-RING-HIGHLIGHT.10",
+assert(Gizmo.Revision=="GIZMO-PRECISE-PICK.11",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
@@ -45,7 +45,16 @@ local success,reason=pcall(function()
 				"Move arrowhead points inward")
 		end
 	end
-	assert(moves==3,"Need X/Y/Z Move arrows")
+	-- The projected tip must be clickable without an oversized proxy.
+	for _,grip in ipairs(gizmo.grips) do
+		if grip.mode~="Move" then continue end
+		local pos,visible=camera:WorldToViewportPoint(grip.tip.Position)
+		if visible then
+			assert(gizmo._pick(Vector2.new(pos.X,pos.Y))~=nil,
+				"Visible move arrowheads must be selectable")
+		end
+	end
+		assert(moves==3,"Need X/Y/Z Move arrows")
 	assert(math.abs(moveLengths.X-moveLengths.Y)<1e-5
 		and math.abs(moveLengths.Y-moveLengths.Z)<1e-5,
 		"Move arrow shafts must be exactly equal length")
@@ -68,7 +77,15 @@ local success,reason=pcall(function()
 				node.size[grip.axis]*0.5,"Scale handle overlaps stock")
 		end
 	end
-	assert(scales==6,"Need six Scale grips")
+	for _,grip in ipairs(gizmo.grips) do
+		if grip.mode~="Scale" then continue end
+		local pos,visible=camera:WorldToViewportPoint(grip.part.Position)
+		if visible then
+			assert(gizmo._pick(Vector2.new(pos.X,pos.Y))~=nil,
+				"Visible scale cubes must be selectable")
+		end
+	end
+		assert(scales==6,"Need six Scale grips")
 	gizmo:setMode("Rotate")
 	local rings=0
 	local radii={}
