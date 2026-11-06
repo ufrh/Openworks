@@ -3,6 +3,7 @@
 -- A component's origin is the minimum local corner of its uncut envelope,
 -- while BasePart positioning continues to use the calculated center.
 local Quantize = require(script.Parent.Quantize)
+local MaterialVolume = require(script.Parent.MaterialVolume)
 local SketchProfile = require(script.Parent.SketchProfile)
 
 local Document = {}
@@ -69,13 +70,13 @@ function Document:create(kind: string, minimumCorner: Vector3, name: string?, sp
 	if typeof(size)~="Vector3" or not Quantize.isFinite(size.X)
 		or not Quantize.isFinite(size.Y) or not Quantize.isFinite(size.Z)
 		or math.min(size.X,size.Y,size.Z)<Quantize.MinSize-0.00001
-		or math.max(size.X,size.Y,size.Z)>Quantize.MaxSize
-		or size.X*size.Y*size.Z>Quantize.MaxComponentVolume+0.00001 then
-		return nil,"Component size exceeds the allowed 8 stud³ volume or size limits"
+		or math.max(size.X,size.Y,size.Z)>Quantize.MaxSize then
+		return nil,"Component dimensions must be between 0.05 and 128 studs"
 	end
 	size=Quantize.vector(size,Quantize.Size)
-	if size.X*size.Y*size.Z>Quantize.MaxComponentVolume+0.00001 then
-		return nil,"Component volume may not exceed 8 stud³"
+	if not MaterialVolume.within(MaterialVolume.primitive(kind,size)) then
+		return nil,"Material volume exceeds "..MaterialVolume.display(
+			Quantize.MaxComponentVolume).." per component"
 	end
 	local node = {
 		id = self.nextNode,
@@ -94,16 +95,19 @@ function Document:create(kind: string, minimumCorner: Vector3, name: string?, sp
 	return component
 end
 
--- Volume budget includes material added above stock by sketch extrusions.
--- This is a conservative envelope budget, not a mesh volume estimate.
-local function envelopeVolume(component,size:Vector3,extraDepth:number?):number
-	local highest=extraDepth or 0
-	for _,op in ipairs(component.operations or {}) do
-		if op.enabled~=false and op.kind=="SketchExtrude" and op.mode=="Add" then
-			highest=math.max(highest,op.depth or 0)
-		end
+-- Fabricated components may have cavities or recesses; avoid limiting
+-- their bounding envelope. After a CSG operation, Preview checks the
+-- actual compiled material volume and restores the last valid snapshot.
+local function hasFabrication(component):boolean
+	for _,op in ipairs(component.operations) do
+		if op.enabled~=false then return true end
 	end
-	return size.X*size.Z*(size.Y+highest)
+	return component.nodes[1].kind=="RoundedL"
+end
+
+local function withinCurrentVolume(component,size:Vector3):boolean
+	if hasFabrication(component) then return true end
+	return MaterialVolume.within(MaterialVolume.primitive(component.nodes[1].kind,size))
 end
 
 local function validateTransform(position: Vector3, size: Vector3, rotation: Vector3)
@@ -119,9 +123,6 @@ local function validateTransform(position: Vector3, size: Vector3, rotation: Vec
 	if math.min(size.X, size.Y, size.Z) < Quantize.MinSize - 0.00001
 		or math.max(size.X, size.Y, size.Z) > Quantize.MaxSize then
 		return false, "Size must be between 0.05 and 128 studs"
-	end
-	if size.X*size.Y*size.Z>Quantize.MaxComponentVolume+0.00001 then
-		return false,"Component volume limit: 8 stud³. Use multiple components for larger assemblies"
 	end
 	return true, nil
 end
@@ -154,8 +155,8 @@ function Document:editNode(component, index: number, field: string, axis: string
 	end
 	local ok, reason = validateTransform(position, size, rotation)
 	if not ok then return false, reason end
-	if envelopeVolume(component,size)>Quantize.MaxComponentVolume+0.00001 then
-		return false,"Component envelope including added material exceeds 8 stud³"
+	if not withinCurrentVolume(component,size) then
+		return false,"Material volume limit: "..MaterialVolume.display(Quantize.MaxComponentVolume)
 	end
 	node.position, node.size, node.rotation = position, size, rotation
 	component.revision += 1
@@ -187,8 +188,8 @@ function Document:applyTransform(component, index: number, position: Vector3?, s
 	end
 	local ok, reason = validateTransform(newPosition, newSize, newRotation)
 	if not ok then return false, reason end
-	if envelopeVolume(component,newSize)>Quantize.MaxComponentVolume+0.00001 then
-		return false,"Component envelope including added material exceeds 8 stud³"
+	if not withinCurrentVolume(component,newSize) then
+		return false,"Material volume limit: "..MaterialVolume.display(Quantize.MaxComponentVolume)
 	end
 	if newPosition ~= node.position or newSize ~= node.size or newRotation ~= node.rotation then
 		node.position, node.size, node.rotation = newPosition, newSize, newRotation
@@ -414,10 +415,8 @@ function Document:addOperation(component, kind: string, data)
 		end
 		local points, _, sketchError = SketchProfile.prepare(snappedPoints)
 		if not points then return false, sketchError end
-		if mode=="Add" and envelopeVolume(component,node.size,depth)
-			>Quantize.MaxComponentVolume+0.00001 then
-			return false,"Added material would exceed the 8 stud³ component limit"
-		end
+		-- No bounding-volume rejection here: the compiled result is
+		-- checked against the scalar material budget after CSG.
 		operation = {
 			kind = "SketchExtrude", mode = mode,
 			depth = depth, through = data.through == true,
@@ -443,11 +442,8 @@ end
 function Document:setOperationEnabled(component, id: number, enabled: boolean)
 	for _, operation in ipairs(component.operations) do
 		if operation.id == id then
-			if enabled and operation.kind=="SketchExtrude" and operation.mode=="Add"
-				and envelopeVolume(component,component.nodes[1].size,operation.depth)
-				>Quantize.MaxComponentVolume+0.00001 then
-				return false,"Re-enabling that extrusion would exceed 8 stud³"
-			end
+			-- Added/removed features are measured after manufacture,
+			-- not by the stock's enclosing rectangular envelope.
 			if (operation.enabled ~= false) ~= enabled then
 				operation.enabled = enabled
 				component.revision += 1
@@ -484,6 +480,18 @@ function Document:removeComponent(id: number)
 	end
 end
 
+function Document:restoreSnapshot(component,snapshot)
+	if not snapshot or snapshot.id~=component.id then return false end
+	local copy=Document.snapshot(snapshot)
+	component.name=copy.name
+	component.nodes=copy.nodes
+	component.operations=copy.operations
+	component.notes=copy.notes
+	component.materialVolume=copy.materialVolume
+	component.revision+=1
+	return true
+end
+
 function Document.snapshot(component)
 	local nodes, operations = {}, {}
 	for _, node in ipairs(component.nodes) do table.insert(nodes, table.clone(node)) end
@@ -496,6 +504,7 @@ function Document.snapshot(component)
 		id = component.id, name = component.name,
 		revision = component.revision, nodes = nodes, operations = operations,
 		notes = component.notes or "",
+		materialVolume=component.materialVolume,
 	}
 end
 
