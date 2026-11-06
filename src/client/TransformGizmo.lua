@@ -16,7 +16,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-LOCAL-ROTATION.9"
+TransformGizmo.Revision = "GIZMO-RING-HIGHLIGHT.10"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -238,10 +238,17 @@ local function newRotationRing(folder:Folder,name:string,color:Color3,anchor:Bas
 		segment.CanQuery=false
 		table.insert(segments,segment)
 	end
-	-- Rotation handles are solid colored cylinder segments with a
-	-- fill-only Highlight. No wireframe or SelectionBox outlines.
+	-- One Highlight adorns the entire ring model. Roblox limits
+	-- simultaneous Highlights, so attaching one to all 48 individual
+	-- cylinders would exhaust the render budget. The model Highlight
+	-- fills every segment with the exact axis color, with NO outline.
+	local ringHighlight=highlight(model,color)
+	ringHighlight.Name="RotationAxisHighlight"
+	ringHighlight.FillColor=color
+	ringHighlight.FillTransparency=0
+	ringHighlight.OutlineTransparency=1
 	return {model=model,segments=segments,part=segments[1],
-		highlight=highlight(model,color)}
+		highlight=ringHighlight}
 end
 
 local function ringRadius(size:Vector3,unit:number):number
@@ -623,7 +630,9 @@ function TransformGizmo:refresh(dt:number?)
 		grip.hoverAlpha+=(target-grip.hoverAlpha)*blend
 		local tint=grip.baseColor:Lerp(Color3.new(1,1,1),grip.hoverAlpha*0.38)
 		grip.highlight.Enabled=visible
-		grip.highlight.FillColor=tint
+		-- Rotate stays at the axis's exact authored red/green/blue,
+		-- without the hover whitening used by Move and Scale.
+		grip.highlight.FillColor=if grip.mode=="Rotate" then grip.baseColor else tint
 		grip.highlight.FillTransparency=0
 		grip.highlight.OutlineTransparency=1
 		if grip.mode=="Scale" then
@@ -636,7 +645,7 @@ function TransformGizmo:refresh(dt:number?)
 			part.Transparency=if visible then (if grip.mode=="Rotate" then 0.04 else 0)
 				else 1
 			part.CanQuery=visible
-			part.Color=tint
+			part.Color=if grip.mode=="Rotate" then grip.baseColor else tint
 		end
 		if not visible or not node or not cf or not size then
 			if grip.mode=="Rotate" then
@@ -676,7 +685,7 @@ function TransformGizmo:refresh(dt:number?)
 				or math.abs(radius-grip.ringRadius)>0.0005
 				or math.abs(thickness-grip.ringThickness)>0.0005
 			if changed then
-				layoutRing(grip,basis,radius,thickness,tint)
+				layoutRing(grip,basis,radius,thickness,grip.baseColor)
 				grip.ringThickness=thickness
 			end
 		end
