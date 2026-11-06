@@ -10,6 +10,7 @@ local SurfaceTopology=require(script.Parent.SurfaceTopology)
 local BevelJunction=require(FORM.BevelJunction)
 local GeometryCutter=require(FORM.GeometryCutter)
 local CornerTriangle=require(FORM.CornerTriangle)
+local RoundedLProfile=require(FORM.RoundedLProfile)
 
 local HistoryTopology={}
 local EPS=0.0005
@@ -228,6 +229,29 @@ function HistoryTopology.build(part:BasePart,component)
 
 	if node.kind=="Block" then
 		topFace=boxFaces()
+	elseif node.kind=="RoundedL" then
+		local profile,travel=RoundedLProfile.profile(node)
+		local upper={}
+		for _,p in ipairs(profile) do table.insert(upper,p+travel) end
+		addFace(profile,-Vector3.zAxis,"rounded_l_back")
+		addFace(upper,Vector3.zAxis,"rounded_l_front")
+		-- Each short arc edge is a true facet. Mark its boundary as
+		-- curved so File/Inset cannot treat it as a sharp corner.
+		for i,a in ipairs(profile) do
+			local j=i%#profile+1
+			local b=profile[j]
+			local tangent=b-a
+			local n=Vector3.new(tangent.Y,-tangent.X,0)
+			if n.Magnitude>EPS then
+				local face=addFace({a,b,upper[j],upper[i]},n.Unit,
+					if i>=4 and i<4+RoundedLProfile.SEGMENTS
+						then "rounded_l_inside" else "rounded_l_side",
+					i>=4 and i<4+RoundedLProfile.SEGMENTS)
+				if face and face.curved then
+					for _,edge in ipairs(face.edges) do edge.curved=true end
+				end
+			end
+		end
 	elseif node.kind=="Cylinder" then
 		local poly=cylinderProfile(0,0,node.size.X/2)
 		topFace=profileCap(poly,half.Y,true,"cylinder_top")
