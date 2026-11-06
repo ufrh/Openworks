@@ -32,17 +32,19 @@ local ok,problem=pcall(function()
 		"Surface cursor labels must report X and Y positions")
 	assert(tonumber(a:match("([%d%.]+)")) and tonumber(b:match("([%d%.]+)")),
 		"Surface cursor positions must report numeric millimeters")
-	-- Pointer coordinates are continuous, including movements smaller
-	-- than FORM's construction snap increment. Ruler steps are visual.
+	-- The ruler snaps at 1 mm, substantially finer than the build grid.
 	assert(overlay:show(part,top,Vector3.new(-0.5,5.5,-0.5)))
 	local initialX=overlay.widthBadge.label.Text
 	local initialY=overlay.heightBadge.label.Text
-	local baselineGuides=overlay.lineCount
-	assert(baselineGuides>=30,"Missing graduated ruler tick marks")
-	assert(overlay:show(part,top,Vector3.new(-0.47,5.5,-0.47)))
+	assert(overlay.lineCount>=25,"Missing in-face ticked ruler baselines")
+	assert(overlay:show(part,top,Vector3.new(-0.499,5.5,-0.499)))
+	assert(overlay.widthBadge.label.Text==initialX
+		and overlay.heightBadge.label.Text==initialY,
+		"Sub-millimeter cursor drift must hold the ruler position")
+	assert(overlay:show(part,top,Vector3.new(-0.49,5.5,-0.49)))
 	assert(overlay.widthBadge.label.Text~=initialX
 		or overlay.heightBadge.label.Text~=initialY,
-		"Cursor measurement must not snap to the modeling grid")
+		"Millimeter ruler must advance independent of construction grid")
 	assert(overlay:show(part,top,Vector3.new(0.5,5.5,0.5)))
 	assert(overlay.widthBadge.label.Text~=a or overlay.heightBadge.label.Text~=b,
 		"Surface measurements must update as pointer moves")
@@ -68,4 +70,4 @@ end)
 overlay:destroy()
 part:Destroy()
 assert(ok,tostring(problem))
-print("FORM Surface Measurements: planar face, mm extents, rotation, curved hide and cleanup passed")
+print("FORM Surface Measurements: fine 1 mm snap, interior ruler lines, no perimeter outline and cleanup verified")
