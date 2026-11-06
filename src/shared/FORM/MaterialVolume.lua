@@ -35,6 +35,13 @@ function Volume.fromPart(solid:BasePart):number
 	-- collision solid's volume in stud^3. For MeshParts/CSG this is
 	-- a collision-fidelity estimate, NOT visual AABB volume.
 	local prior=solid.CustomPhysicalProperties
+	-- Fallback only: use the engine's most detailed collision volume
+	-- instead of a convex hull that would fill concave cavities.
+	pcall(function()
+		if solid:IsA("MeshPart") or solid:IsA("PartOperation") then
+			solid.CollisionFidelity=Enum.CollisionFidelity.PreciseConvexDecomposition
+		end
+	end)
 	solid.CustomPhysicalProperties=PhysicalProperties.new(1,0.3,0.5,1,1)
 	local success,mass=pcall(function() return solid:GetMass() end)
 	solid.CustomPhysicalProperties=prior
