@@ -16,7 +16,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-UNIFORM-SNAP.8"
+TransformGizmo.Revision = "GIZMO-LOCAL-ROTATION.9"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -51,6 +51,19 @@ local function putAxis(v: Vector3, axis: string, n: number): Vector3
 	if axis == "Y" then return Vector3.new(v.X, n, v.Z) end
 	return Vector3.new(v.X, v.Y, n)
 end
+
+-- Rotating a ring is a local-axis operation, NOT an update to one
+-- Euler component. Compose the delta with the initial orientation first,
+-- then extract the YXZ angles used by CFrame.fromOrientation / Document.
+local function rotateLocal(startRotation:Vector3,localAxis:Vector3,radians:number):Vector3
+	local initial=CFrame.fromOrientation(math.rad(startRotation.X),
+		math.rad(startRotation.Y),math.rad(startRotation.Z))
+	local composed=initial*CFrame.fromAxisAngle(localAxis,radians)
+	local x,y,z=composed:ToOrientation()
+	return Vector3.new(math.deg(x),math.deg(y),math.deg(z))
+end
+
+TransformGizmo.rotateLocal=rotateLocal
 
 local function rayFor(point: Vector2): (Vector3?, Vector3?)
 	local camera = workspace.CurrentCamera
@@ -225,21 +238,10 @@ local function newRotationRing(folder:Folder,name:string,color:Color3,anchor:Bas
 		segment.CanQuery=false
 		table.insert(segments,segment)
 	end
-	-- Use one crisp adornment for the circular contour rather than 48
-	-- rectangular SelectionBoxes around the tube segments.
-	local contour=Instance.new("WireframeHandleAdornment")
-	contour.Name="RingContour"
-	contour.Adornee=anchor
-	contour.Color3=color
-	contour.Transparency=0
-	contour.AlwaysOnTop=false
-	contour.Thickness=1.4
-	contour.CFrame=CFrame.identity
-	contour.Scale=Vector3.one
-	contour.Visible=false
-	contour.Parent=folder
+	-- Rotation handles are solid colored cylinder segments with a
+	-- fill-only Highlight. No wireframe or SelectionBox outlines.
 	return {model=model,segments=segments,part=segments[1],
-		highlight=highlight(model,color),contour=contour}
+		highlight=highlight(model,color)}
 end
 
 local function ringRadius(size:Vector3,unit:number):number
@@ -269,8 +271,6 @@ local function layoutRing(grip,cf:CFrame,radius:number,thickness:number,
 	grip.ringPoints=points
 	grip.ringRadius=radius
 	grip.ringFrame=cf
-	grip.contour:Clear()
-	grip.contour:AddPath(points,true)
 	for i,part in ipairs(grip.segments) do
 		local a=points[i]
 		local b=points[i%RING_SAMPLES+1]
@@ -288,31 +288,18 @@ local function newCenterMarker(parent:PlayerGui,origin:BasePart):BillboardGui
 	local gui=Instance.new("BillboardGui")
 	gui.Name="FORM_MovePivotMarker"
 	gui.Adornee=origin
-	gui.Size=UDim2.fromOffset(26,26)
+	gui.Size=UDim2.fromOffset(18,18)
 	gui.AlwaysOnTop=true
 	gui.Enabled=false
 	gui.Parent=parent
-	local square=Instance.new("Frame")
-	square.Name="CenterSquare"
-	square.AnchorPoint=Vector2.new(0.5,0.5)
-	square.Position=UDim2.fromScale(0.5,0.5)
-	square.Size=UDim2.fromOffset(18,18)
-	square.BackgroundColor3=Color3.fromRGB(29,39,46)
-	square.BackgroundTransparency=0.22
-	square.BorderSizePixel=0
-	square.Parent=gui
-	local border=Instance.new("UIStroke")
-	border.Thickness=1.3
-	border.Color=Color3.fromRGB(228,238,242)
-	border.Parent=square
 	local circle=Instance.new("Frame")
 	circle.Name="CenterCircle"
 	circle.AnchorPoint=Vector2.new(0.5,0.5)
 	circle.Position=UDim2.fromScale(0.5,0.5)
-	circle.Size=UDim2.fromOffset(9,9)
+	circle.Size=UDim2.fromOffset(10,10)
 	circle.BackgroundColor3=Color3.fromRGB(236,244,247)
 	circle.BorderSizePixel=0
-	circle.Parent=square
+	circle.Parent=gui
 	local round=Instance.new("UICorner")
 	round.CornerRadius=UDim.new(1,0)
 	round.Parent=circle
@@ -402,7 +389,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		local ring=newRotationRing(folder,"Rotate_"..spec.axis,spec.color,adornmentOrigin)
 		local grip={
 			model=ring.model,part=ring.part,segments=ring.segments,
-			highlight=ring.highlight,contour=ring.contour,
+			highlight=ring.highlight,
 			baseColor=spec.color,hoverAlpha=0,
 			normal=spec.normal,radial=spec.radial,axis=spec.axis,
 			mode="Rotate",ringPoints={},ringRadius=0,ringFrame=nil,
@@ -463,6 +450,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			grip = grip, direction = direction, pivot = pivot,
 			initialParameter = if grip.mode ~= "Rotate" then axisParameter(point, pivot, direction) else nil,
 			initialRadial = if radial then (planeRadial(point, pivot, direction) or radial) else nil,
+			lastRotationAngle = 0,
 		}
 		self.dragChanged = false
 		self.hovered = grip
@@ -494,8 +482,11 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			if not current or not start.initialRadial then return end
 			local initial = start.initialRadial
 			local radians = math.atan2(start.direction:Dot(initial:Cross(current)), initial:Dot(current))
-			rotation = putAxis(start.rotation, start.grip.axis,
-				getAxis(start.rotation, start.grip.axis) + math.deg(radians))
+			-- The ring normal is expressed in the object's LOCAL frame.
+			-- Multiplying the starting orientation by the local axis-angle
+			-- preserves correct behavior after multiple-axis rotations.
+			start.lastRotationAngle = radians
+			rotation = rotateLocal(start.rotation,start.grip.normal,radians)
 		end
 		local ok = document:applyTransform(start.component, start.index, position, size, rotation, self.mode == "Scale")
 		if ok then
@@ -509,8 +500,9 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			elseif self.mode == "Scale" then
 				delta = getAxis(node.size, start.grip.axis) - getAxis(start.size, start.grip.axis)
 			else
-				delta = getAxis(node.rotation, start.grip.axis) - getAxis(start.rotation, start.grip.axis)
-				if delta > 180 then delta -= 360 elseif delta < -180 then delta += 360 end
+				-- Euler coordinates are coupled; show the actual ring drag,
+				-- not the difference of one stored Euler component.
+				delta = math.deg(start.lastRotationAngle)
 			end
 			self.measurementText.Text = if self.mode == "Rotate"
 				then string.format("%+.0f°", delta)
@@ -630,10 +622,6 @@ function TransformGizmo:refresh(dt:number?)
 		grip.highlight.FillColor=tint
 		grip.highlight.FillTransparency=0
 		grip.highlight.OutlineTransparency=1
-		if grip.mode=="Rotate" then
-			grip.contour.Visible=visible
-			grip.contour.Color3=tint
-		end
 		if grip.mode=="Scale" then
 			grip.border.Visible=visible
 			grip.border.Color3=tint
