@@ -41,6 +41,7 @@ function HistoryTopology.build(part:BasePart,component)
 	local toPart=part.CFrame:ToObjectSpace(pose)
 	local faces,edges,edgeMap={}, {}, {}
 	local pendingHoles={}
+	local completedSmooths={}
 	local completedBevels={}
 	local bevelJunctions={}
 	local half=node.size/2
@@ -300,8 +301,7 @@ function HistoryTopology.build(part:BasePart,component)
 			if loop then pocket(loop,op.normal,op.depth,op.through==true,"groove") end
 		elseif kind=="SmoothInside" then
 			-- The original sharp crease is replaced by a rounded patch.
-			local old=edgeMap[edgeKey(point(op.a),point(op.b))]
-			if old then old.retired=true end
+			table.insert(completedSmooths,{a=op.a,b=op.b})
 			local strips=GeometryCutter.smoothInteriorFaces(op.a,op.b,
 				op.normalA,op.normalB,op.radius,op.segments or 8)
 			for _,surface in ipairs(strips) do
@@ -332,6 +332,61 @@ function HistoryTopology.build(part:BasePart,component)
 			end
 		end
 	end
+	-- Retire only the actually modified interval of an authored edge.
+	-- A File operation may cover just one side of a raised extrusion,
+	-- leaving the opposite subsegment sharp and selectable.
+	local function retireSpan(sourceA:Vector3,sourceB:Vector3)
+		local a,b=point(sourceA),point(sourceB)
+		local span=b-a
+		if span.Magnitude<EPS then return end
+		local count=#edges
+		for i=1,count do
+			local edge=edges[i]
+			if edge.retired or edge.curved then continue end
+			local d=edge.b-edge.a
+			local length2=d:Dot(d)
+			if length2<EPS*EPS then continue end
+			local direction=d/math.sqrt(length2)
+			if math.abs(direction:Dot(span.Unit))<0.9995 then continue end
+			-- Refuse a parallel but separate edge.
+			local ta=(a-edge.a):Dot(d)/length2
+			local tb=(b-edge.a):Dot(d)/length2
+			local onA=edge.a+d*ta
+			local onB=edge.a+d*tb
+			if (a-onA).Magnitude>0.003 or (b-onB).Magnitude>0.003 then
+				continue
+			end
+			local lo=math.max(0,math.min(ta,tb))
+			local hi=math.min(1,math.max(ta,tb))
+			if hi-lo<=0.0005 then continue end
+			edge.retired=true
+			-- Update the linked incident faces, not just topology.edges.
+			for _,fid in ipairs(edge.faces) do
+				local face=faces[fid]
+				if not face then continue end
+				local index=table.find(face.edges,edge)
+				if index then table.remove(face.edges,index) end
+			end
+			local function remainder(first:number,last:number)
+				if (last-first)*math.sqrt(length2)<EPS*2 then return end
+				local segment={a=edge.a+d*first,b=edge.a+d*last,
+					faces=table.clone(edge.faces),curved=edge.curved,
+					interior=edge.interior}
+				table.insert(edges,segment)
+				edgeMap[edgeKey(segment.a,segment.b)]=segment
+				for _,fid in ipairs(segment.faces) do
+					local face=faces[fid]
+					if face then table.insert(face.edges,segment) end
+				end
+			end
+			remainder(0,lo)
+			remainder(hi,1)
+		end
+	end
+	for _,smooth in ipairs(completedSmooths) do
+		retireSpan(smooth.a,smooth.b)
+	end
+
 	-- Exactly the same clipped bevel geometry as Fabricator. Never
 	-- reconstruct a guessed bevel corner after the Boolean: the new
 	-- exposed corner faces come from the source polyhedron itself.
@@ -361,8 +416,7 @@ function HistoryTopology.build(part:BasePart,component)
 
 	local newBevelFaces={}
 	for _,spec in ipairs(completedBevels) do
-		local old=edgeMap[edgeKey(point(spec.a),point(spec.b))]
-		if old then old.retired=true end
+		retireSpan(spec.a,spec.b)
 		local strips,why=GeometryCutter.fileSurfaceFaces(
 			spec.a,spec.b,spec.n1,spec.n2,spec.width,
 			spec.segments or 1,miterBySpec[spec])
