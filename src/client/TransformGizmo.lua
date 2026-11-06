@@ -16,7 +16,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-RING-HIGHLIGHT.10"
+TransformGizmo.Revision = "GIZMO-PRECISE-PICK.11"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -29,7 +29,9 @@ local AXES = {
 local MOVE_AXES = { AXES[1], AXES[3], AXES[5] }
 local MM_PER_STUD = 280 -- Roblox standard physical scale, 0.28 m per stud.
 local RING_SAMPLES = 48
-local RING_HIT_PIXELS = 13
+local RING_HIT_PIXELS = 5
+local SHAFT_HIT_PIXELS = 3.5
+local SCALE_HIT_PIXELS = 3
 local ROTATIONS = {
 	{ normal = Vector3.xAxis, radial = Vector3.yAxis, axis = "X", color = Color3.fromRGB(224, 88, 91) },
 	{ normal = Vector3.yAxis, radial = Vector3.zAxis, axis = "Y", color = Color3.fromRGB(99, 205, 122) },
@@ -265,6 +267,75 @@ local function screenSegmentDistance(point:Vector2,a:Vector2,b:Vector2):number
 	return (point-(a+delta*t)).Magnitude
 end
 
+-- Project the actual rendered parts onto the viewport for accurate
+-- pointer hit tests. Hits are matched to visible geometry, not to a large
+-- invisible ball, and overlapping handles compete by pixel distance.
+local function project(camera:Camera,world:Vector3):(Vector2?,number?)
+	local p=camera:WorldToViewportPoint(world)
+	if p.Z<=0 then return nil,nil end
+	return Vector2.new(p.X,p.Y),p.Z
+end
+
+local function worldPixels(camera:Camera,world:Vector3,worldRadius:number):number
+	local a=project(camera,world)
+	local b=project(camera,world+camera.CFrame.RightVector*worldRadius)
+	if not a or not b then return 0 end
+	return (b-a).Magnitude
+end
+
+local function projectedSegment(point:Vector2,a:Vector2,b:Vector2):(number,number)
+	local d=b-a
+	local len=d:Dot(d)
+	if len<1e-5 then return (point-a).Magnitude,0 end
+	local t=math.clamp((point-a):Dot(d)/len,0,1)
+	return (point-(a+d*t)).Magnitude,t
+end
+
+-- Project the eight corners of a Scale cube and test its actual 2D
+-- footprint. This avoids enlarged box hit targets near adjacent grips.
+local function scaleDistance(camera:Camera,part:BasePart,pointer:Vector2):number
+	local cf=part.CFrame
+	local half=part.Size*0.5
+	local minX,maxX,minY,maxY=math.huge,-math.huge,math.huge,-math.huge
+	for _,x in ipairs({-1,1}) do
+		for _,y in ipairs({-1,1}) do
+			for _,z in ipairs({-1,1}) do
+				local p=project(camera,cf:PointToWorldSpace(
+					Vector3.new(x*half.X,y*half.Y,z*half.Z)))
+				if not p then return math.huge end
+				minX=math.min(minX,p.X)
+				maxX=math.max(maxX,p.X)
+				minY=math.min(minY,p.Y)
+				maxY=math.max(maxY,p.Y)
+			end
+		end
+	end
+	local dx=math.max(minX-pointer.X,0,pointer.X-maxX)
+	local dy=math.max(minY-pointer.Y,0,pointer.Y-maxY)
+	return math.sqrt(dx*dx+dy*dy)
+end
+
+local function moveDistance(camera:Camera,grip,pointer:Vector2):number
+	local pivot=project(camera,grip.shaftStart)
+	local shaftEnd=project(camera,grip.shaftEnd)
+	local tip=project(camera,grip.arrowTip)
+	if not pivot or not shaftEnd or not tip then return math.huge end
+	local shaftDistance,shaftT=projectedSegment(pointer,pivot,shaftEnd)
+	-- Don't let every shaft claim the pivot where all three converge.
+	local pivotClearance=math.min(0.18,10/math.max((shaftEnd-pivot).Magnitude,1))
+	local score=math.huge
+	if shaftT>pivotClearance then
+		local width=worldPixels(camera,grip.stem.Position,grip.stem.Size.Y*0.5)
+		score=math.max(0,shaftDistance-width)
+	end
+	local headDistance,headT=projectedSegment(pointer,shaftEnd,tip)
+	local baseRadius=worldPixels(camera,grip.tip.Position,grip.tip.Size.X*0.5)
+	-- Cone tapers from its base at shaftEnd to its outward tip.
+	local headWidth=baseRadius*(1-headT)
+	score=math.min(score,math.max(0,headDistance-headWidth))
+	return score
+end
+
 local function layoutRing(grip,cf:CFrame,radius:number,thickness:number,
 	tint:Color3)
 	local axis=cf:VectorToWorldSpace(grip.normal).Unit
@@ -415,28 +486,38 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		if self.hidden or not self.component then return nil end
 		local camera=workspace.CurrentCamera
 		if not camera then return nil end
-		local ray=camera:ViewportPointToRay(point.X,point.Y)
-		local params=RaycastParams.new()
-		params.FilterType=Enum.RaycastFilterType.Include
-		params.FilterDescendantsInstances={folder}
-		local hit=workspace:Raycast(ray.Origin,ray.Direction*2048,params)
-		local direct=if hit then self.lookup[hit.Instance] else nil
-		if direct and direct.mode==self.mode then return direct end
-		if self.mode~="Rotate" then return nil end
 		local nearest=nil
-		local closest=RING_HIT_PIXELS
+		local closest=math.huge
 		for _,grip in ipairs(self.grips) do
-			if grip.mode~="Rotate" or #grip.ringPoints==0 then continue end
-			local points=grip.ringPoints
-			for i,a in ipairs(points) do
-				local b=points[i%#points+1]
-				local pa,va=camera:WorldToViewportPoint(a)
-				local pb,vb=camera:WorldToViewportPoint(b)
-				if va and vb then
-					local distance=screenSegmentDistance(point,
-						Vector2.new(pa.X,pa.Y),Vector2.new(pb.X,pb.Y))
-					if distance<closest then closest,nearest=distance,grip end
+			if grip.mode~=self.mode then continue end
+			local distance=math.huge
+			local threshold=0
+			if grip.mode=="Move" then
+				if not grip.shaftStart then continue end
+				distance=moveDistance(camera,grip,point)
+				threshold=SHAFT_HIT_PIXELS
+			elseif grip.mode=="Scale" then
+				distance=scaleDistance(camera,grip.part,point)
+				threshold=SCALE_HIT_PIXELS
+			else
+				threshold=RING_HIT_PIXELS
+				for i,a in ipairs(grip.ringPoints) do
+					local b=grip.ringPoints[i%#grip.ringPoints+1]
+					local pa=project(camera,a)
+					local pb=project(camera,b)
+					if pa and pb then
+						local d=screenSegmentDistance(point,pa,pb)
+						-- Account for the visible cylinder width, not a
+						-- blanket 13-pixel radius around the entire ring.
+						local radius=worldPixels(camera,(a+b)*0.5,
+							grip.ringThickness*0.5)
+						distance=math.min(distance,math.max(0,d-radius))
+					end
 				end
+			end
+			if distance<=threshold and distance<closest then
+				closest=distance
+				nearest=grip
 			end
 		end
 		return nearest
