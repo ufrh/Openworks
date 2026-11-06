@@ -10,11 +10,12 @@ local HistoryTopology=require(Players.LocalPlayer.PlayerScripts.Openworks.Histor
 local doc=Document.new()
 local component=doc:create("RoundedL",Vector3.zero)
 local node=component.nodes[1]
-assert(node.size==Vector3.new(1,1,0.6))
+assert(node.size==Vector3.new(0.25,0.25,0.20))
 assert(Fabricator.requiresCompile(component),
 	"Rounded L must be a manufactured solid even without added operations")
 local wall,radius=Profile.parameters(node)
 assert(wall>0 and radius>0 and wall+radius<node.size.X)
+assert(radius/(node.size.X-wall)>0.90,"Rounded L ramp should nearly fill the inside corner")
 local xy=Profile.outline(node)
 assert(#xy==4+Profile.SEGMENTS+2)
 assert((xy[4]-Vector2.new(wall+radius,wall)).Magnitude<1e-6)
