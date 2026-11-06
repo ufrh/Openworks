@@ -485,10 +485,14 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			-- The ring normal is expressed in the object's LOCAL frame.
 			-- Multiplying the starting orientation by the local axis-angle
 			-- preserves correct behavior after multiple-axis rotations.
-			start.lastRotationAngle = radians
-			rotation = rotateLocal(start.rotation,start.grip.normal,radians)
+			-- Snap the ANGLE around the selected axis, not each
+			-- resulting Euler component. This preserves the local axis.
+			local snappedRadians=math.rad(Quantize.snap(math.deg(radians),Quantize.Rotation))
+			start.lastRotationAngle = snappedRadians
+			rotation = rotateLocal(start.rotation,start.grip.normal,snappedRadians)
 		end
-		local ok = document:applyTransform(start.component, start.index, position, size, rotation, self.mode == "Scale")
+		local ok = document:applyTransform(start.component, start.index, position, size, rotation,
+			self.mode == "Scale", self.mode == "Rotate")
 		if ok then
 			local node = start.component.nodes[start.index]
 			if node.position ~= start.position or node.size ~= start.size or node.rotation ~= start.rotation then
