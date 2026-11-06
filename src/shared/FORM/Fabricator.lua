@@ -50,6 +50,10 @@ function Fabricator.geometryKey(component): string
 				op.width,vectorKey(op.a),vectorKey(op.b),vectorKey(op.normalA),vectorKey(op.normalB),
 				tostring(op.interior==true),tostring(op.taperA==true),tostring(op.taperB==true),
 				op.segments or 1))
+		elseif op.kind == "SmoothInside" then
+			table.insert(pieces,string.format("SI|%.6f|%s|%s|%s|%s|%d",
+				op.radius,vectorKey(op.a),vectorKey(op.b),
+				vectorKey(op.normalA),vectorKey(op.normalB),op.segments or 8))
 		elseif op.kind == "InsetFace" then
 			table.insert(pieces, string.format("IF|%.6f|%.6f|%s",
 				op.margin,op.depth,vectorKey(op.normal)))
@@ -141,7 +145,8 @@ local function compileUnlocked(component): (BasePart, string)
 			continue
 		end
 		if op.kind == "SketchExtrude" or op.kind == "File"
-			or op.kind == "FileMesh" or op.kind == "InsetFace" then
+			or op.kind == "FileMesh" or op.kind == "InsetFace"
+			or op.kind == "SmoothInside" then
 			local function createTool()
 				if op.kind == "File" then
 					if miterByOperation[op] then
@@ -154,6 +159,10 @@ local function compileUnlocked(component): (BasePart, string)
 				if op.kind == "FileMesh" then
 					return GeometryCutter.file(op.a,op.b,op.normalA,op.normalB,
 						op.width,false,nil,nil,nil,op.segments or 1,miterByOperation[op])
+				end
+				if op.kind == "SmoothInside" then
+					return GeometryCutter.smoothInterior(op.a,op.b,
+						op.normalA,op.normalB,op.radius,op.segments or 8)
 				end
 				if op.kind == "InsetFace" then
 					local margin=0.04
@@ -171,7 +180,8 @@ local function compileUnlocked(component): (BasePart, string)
 				error("Sketch extrusion " .. tostring(op.id) .. ": " .. tostring(cutter), 0)
 			end
 			-- Exterior filing ONLY. No additive wedges or corner patch.
-			local mode = if op.kind == "SketchExtrude" then op.mode else "Remove"
+			local mode = if op.kind == "SketchExtrude" then op.mode
+				elseif op.kind=="SmoothInside" then "Add" else "Remove"
 			local success, result = combine(current, cutter, mode)
 			release()
 			if not success then
