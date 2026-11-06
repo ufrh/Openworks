@@ -8,7 +8,7 @@ local SketchProfile = require(script.Parent.SketchProfile)
 local Document = {}
 Document.__index = Document
 
-local KINDS = { Block = true, Cylinder = true }
+local KINDS = { Block = true, Cylinder = true, RoundedL = true }
 local AXES = { X = true, Y = true, Z = true }
 
 -- Authoritative feature constraint: a filed corner cannot share its
@@ -50,6 +50,7 @@ end
 
 local function defaultSize(kind: string): Vector3
 	if kind == "Cylinder" then return Vector3.new(0.5, 0.4, 0.5) end
+	if kind == "RoundedL" then return Vector3.new(1,1,0.6) end
 	return Vector3.new(1, 0.4, 1)
 end
 
@@ -166,7 +167,7 @@ end
 -- resizing from the opposite face does not unexpectedly move previous cuts.
 function Document:addOperation(component, kind: string, data)
 	local node = component.nodes[1]
-	if node.kind ~= "Block" and node.kind ~= "Cylinder" then
+	if node.kind ~= "Block" and node.kind ~= "Cylinder" and node.kind ~= "RoundedL" then
 		return false, "This workpiece does not support fabrication"
 	end
 	local operation
