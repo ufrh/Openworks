@@ -1,6 +1,7 @@
 --!strict
 -- Small, camera-adaptive part grips with one Highlight per interactive axis handle.
--- Three positive-axis move arrows, six face scale spheres, three rotation knobs.
+-- Three center-origin move arrows, six offset scale spheres, and three
+-- clickable wireframe rotation rings.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -20,6 +21,8 @@ local AXES = {
 }
 local MOVE_AXES = { AXES[1], AXES[3], AXES[5] }
 local MM_PER_STUD = 280 -- Roblox standard physical scale, 0.28 m per stud.
+local RING_SAMPLES = 72
+local RING_HIT_PIXELS = 11
 local ROTATIONS = {
 	{ normal = Vector3.xAxis, radial = Vector3.yAxis, axis = "X", color = Color3.fromRGB(224, 88, 91) },
 	{ normal = Vector3.yAxis, radial = Vector3.zAxis, axis = "Y", color = Color3.fromRGB(99, 205, 122) },
@@ -148,22 +151,42 @@ local function newSphere(folder:Folder,decor:Instance,anchor:BasePart,
 		marker=adorn(decor,anchor,"SphereHandleAdornment",name.."_Sphere",color)}
 end
 
+-- A genuine wireframe ring is visible and selectable all around its
+-- circumference. Rotation still uses the original planeRadial drag math.
+local function ringPath(normal:Vector3,radial:Vector3)
+	local across=normal:Cross(radial).Unit
+	local points={}
+	for i=0,RING_SAMPLES-1 do
+		local angle=i*math.pi*2/RING_SAMPLES
+		table.insert(points,radial*math.cos(angle)+across*math.sin(angle))
+	end
+	return points
+end
+
 local function newRotationGrip(folder:Folder,decor:Instance,anchor:BasePart,
-	name:string,color:Color3)
+	name:string,color:Color3,normal:Vector3,radial:Vector3)
 	local model=Instance.new("Model")
 	model.Name=name
 	model.Parent=folder
-	local p=makePart(model,"KnobHit",color,Enum.PartType.Ball)
-	return {model=model,part=p,
-		marker=adorn(decor,anchor,"SphereHandleAdornment",name.."_Knob",color)}
+	-- Keep the old invisible hit sphere as a fallback for clients where
+	-- the pointer overlaps the small ring orientation handle.
+	local p=makePart(model,"RingHit",color,Enum.PartType.Ball)
+	local ring=adorn(decor,anchor,"WireframeHandleAdornment",name.."_Ring",color)
+	ring.AlwaysOnTop=true
+	ring.Thickness=2.5
+	local path=ringPath(normal,radial)
+	ring:AddPath(path,true)
+	return {model=model,part=p,ring=ring,path=path}
 end
 
-local function placeArrow(grip,face:Vector3,direction:Vector3,unit:number)
-	local shaftLength=unit*3
+local function placeArrow(grip,center:Vector3,direction:Vector3,extent:number,unit:number)
+	-- All three colored stems originate at the SAME object pivot.
+	-- Only the arrow tip protrudes past the body's positive-axis face.
+	local shaftLength=math.max(extent+unit*4.5,unit*6)
 	local shaftDiameter=unit*0.12
-	local tipLength=unit*0.95
-	local tipDiameter=unit*0.62
-	local begin=face+direction*(unit*2)
+	local tipLength=unit*1.15
+	local tipDiameter=unit*0.75
+	local begin=center
 	local endShaft=begin+direction*shaftLength
 	local stemCenter=(begin+endShaft)*0.5
 	local tipCenter=endShaft+direction*(tipLength*0.5)
@@ -171,14 +194,34 @@ local function placeArrow(grip,face:Vector3,direction:Vector3,unit:number)
 	grip.stem.CFrame=CFrame.lookAt(stemCenter,stemCenter+direction)
 	grip.tip.Size=Vector3.new(tipDiameter,tipLength,tipDiameter)
 	grip.tip.CFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
-		*CFrame.Angles(-math.pi/2,0,0)
+	-- ConeHandleAdornment is built along local -Z, exactly like a
+	-- lookAt frame. The old -90° X rotation incorrectly tipped it away.
+	local directionFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
 	grip.shaftAdornment.CFrame=CFrame.lookAt(begin,endShaft)
 	grip.shaftAdornment.Length=shaftLength
-	grip.shaftAdornment.Thickness=2
-	grip.tipAdornment.CFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
-		*CFrame.Angles(-math.pi/2,0,0)
+	grip.shaftAdornment.Thickness=2.5
+	grip.tipAdornment.CFrame=directionFrame
 	grip.tipAdornment.Radius=tipDiameter*0.5
 	grip.tipAdornment.Height=tipLength
+end
+
+local function ringRadius(size:Vector3,normal:Vector3,unit:number,axis:string)
+	local perpendicular=Vector3.new(
+		if math.abs(normal.X)>0.5 then 0 else size.X/2,
+		if math.abs(normal.Y)>0.5 then 0 else size.Y/2,
+		if math.abs(normal.Z)>0.5 then 0 else size.Z/2)
+	local halfDiagonal=perpendicular.Magnitude
+	-- Different offsets make the three rings individually legible.
+	local extra=if axis=="X" then 2.5 elseif axis=="Y" then 3.5 else 4.5
+	return halfDiagonal+unit*extra
+end
+
+local function screenSegmentDistance(point:Vector2,a:Vector2,b:Vector2)
+	local segment=b-a
+	local squared=segment:Dot(segment)
+	if squared<0.0001 then return math.huge end
+	local t=math.clamp((point-a):Dot(segment)/squared,0,1)
+	return (point-(a+segment*t)).Magnitude
 end
 
 local function newMeasurement(playerGui: PlayerGui)
@@ -257,11 +300,14 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		self.lookup[grip.part] = grip
 	end
 	for _, spec in ipairs(ROTATIONS) do
-		local control = newRotationGrip(folder,decorations,anchor,"Rotate_"..spec.axis,spec.color)
+		local control = newRotationGrip(folder,decorations,anchor,
+			"Rotate_"..spec.axis,spec.color,spec.normal,spec.radial)
 		local grip = {
 			model = control.model, part = control.part,
-			marker=control.marker,baseColor=spec.color,hoverAlpha=0,normal=spec.normal,
-			radial = spec.radial, axis = spec.axis, mode = "Rotate",
+			ring=control.ring,ringPath=control.path,baseColor=spec.color,
+			hoverAlpha=0,normal=spec.normal,
+			radial=spec.radial,axis=spec.axis,mode="Rotate",ringRadius=0,
+			ringFrame=CFrame.identity,ringHighlighted=false,
 		}
 		table.insert(self.grips, grip)
 		self.lookup[grip.part] = grip
@@ -272,14 +318,50 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	end
 
 	local function pick(point: Vector2)
-		local camera = workspace.CurrentCamera
+		local camera=workspace.CurrentCamera
 		if not camera then return nil end
-		local ray = camera:ViewportPointToRay(point.X, point.Y)
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Include
-		params.FilterDescendantsInstances = { folder }
-		local hit = workspace:Raycast(ray.Origin, ray.Direction * 2048, params)
-		return if hit then self.lookup[hit.Instance] else nil
+		local ray=camera:ViewportPointToRay(point.X,point.Y)
+		local params=RaycastParams.new()
+		params.FilterType=Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances={folder}
+		local hit=workspace:Raycast(ray.Origin,ray.Direction*2048,params)
+		local proxy=if hit then self.lookup[hit.Instance] else nil
+		if proxy and proxy.mode==self.mode then return proxy end
+		if self.mode~="Rotate" or self.hidden or not self.component then
+			return nil
+		end
+		-- The actual ring circumference is clickable, not just a single
+		-- invisible sphere. Evaluate projected ring segments directly.
+		local nearest=nil
+		local closest=RING_HIT_PIXELS
+		for _,grip in ipairs(self.grips) do
+			if grip.mode~="Rotate" or not grip.ring.Visible then continue end
+			local lastPoint=nil
+			local firstPoint=nil
+			local lastVisible=false
+			local firstVisible=false
+			for _,localPoint in ipairs(grip.ringPath) do
+				local world=grip.ringFrame:PointToWorldSpace(
+					localPoint*grip.ringRadius)
+				local projection,visible=camera:WorldToViewportPoint(world)
+				local screen=Vector2.new(projection.X,projection.Y)
+				if lastPoint and visible and lastVisible then
+					local distance=screenSegmentDistance(point,lastPoint,screen)
+					if distance<closest then
+						closest,nearest=distance,grip
+					end
+				end
+				if not firstPoint then
+					firstPoint,firstVisible=screen,visible
+				end
+				lastPoint,lastVisible=screen,visible
+			end
+			if lastPoint and firstPoint and lastVisible and firstVisible then
+				local distance=screenSegmentDistance(point,lastPoint,firstPoint)
+				if distance<closest then closest,nearest=distance,grip end
+			end
+		end
+		return nearest
 	end
 
 	local function begin(grip, point: Vector2)
@@ -466,6 +548,18 @@ function TransformGizmo:refresh(dt: number?)
 			grip.tipAdornment.Color3=tint
 			grip.shaftAdornment.Visible=visible
 			grip.tipAdornment.Visible=visible
+		elseif grip.mode=="Rotate" then
+			grip.ring.Visible=visible
+			-- WireframeHandleAdornment applies color and thickness when
+			-- drawing lines, so redraw only when hover state changes.
+			local highlighted=grip==self.hovered
+			if highlighted~=grip.ringHighlighted then
+				grip.ringHighlighted=highlighted
+				grip.ring:Clear()
+				grip.ring.Color3=if highlighted then tint else grip.baseColor
+				grip.ring.Thickness=if highlighted then 4 else 2.5
+				grip.ring:AddPath(grip.ringPath,true)
+			end
 		else
 			grip.marker.Color3=tint
 			grip.marker.Visible=visible
@@ -473,21 +567,23 @@ function TransformGizmo:refresh(dt: number?)
 		if visible and node then
 			local unit = visualScale(cf.Position)
 			if grip.mode == "Move" then
-				local direction = cf:VectorToWorldSpace(grip.normal)
-				local face = cf:PointToWorldSpace(
-					grip.normal * (getAxis(size, grip.axis) / 2))
-				placeArrow(grip, face, direction, unit)
+				local direction=cf:VectorToWorldSpace(grip.normal)
+				placeArrow(grip,cf.Position,direction,
+					getAxis(size,grip.axis)/2,unit)
 			elseif grip.mode == "Scale" then
 				grip.part.Position = cf:PointToWorldSpace(
-					grip.normal * (getAxis(size, grip.axis) / 2 + unit * 0.75))
+					grip.normal*(getAxis(size,grip.axis)/2+unit*3))
 				grip.part.Size = Vector3.one * unit * (1.35 + 0.18 * grip.hoverAlpha)
 				grip.marker.CFrame=CFrame.new(grip.part.Position)
 				grip.marker.Radius=grip.part.Size.X*0.5
 			else
-				grip.part.Position = cf:PointToWorldSpace(grip.radial * (unit * 6))
-				grip.part.Size = Vector3.one * unit * (1 + 0.14 * grip.hoverAlpha)
-				grip.marker.CFrame=CFrame.new(grip.part.Position)
-				grip.marker.Radius=grip.part.Size.X*0.5
+				local radius=ringRadius(size,grip.normal,unit,grip.axis)
+				grip.ringFrame=cf
+				grip.ringRadius=radius
+				grip.ring.CFrame=cf
+				grip.ring.Scale=Vector3.one*radius
+				grip.part.Position=cf:PointToWorldSpace(grip.radial*radius)
+				grip.part.Size=Vector3.one*unit*1.75
 			end
 		end
 	end
