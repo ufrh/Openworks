@@ -23,51 +23,41 @@ local top={
 	}
 }
 local ok,problem=pcall(function()
-	assert(overlay:show(part,top,Vector3.new(-0.5,5.5,-0.5)),"Top face failed to render")
-	assert(overlay.part==part and overlay.lineCount>=12)
-	assert(overlay.widthBadge.gui.Enabled and overlay.heightBadge.gui.Enabled)
-	local a=overlay.widthBadge.label.Text
-	local b=overlay.heightBadge.label.Text
-	assert(a:match("^X ") and b:match("^Y "),
-		"Surface cursor labels must report X and Y positions")
-	assert(tonumber(a:match("([%d%.]+)")) and tonumber(b:match("([%d%.]+)")),
-		"Surface cursor positions must report numeric millimeters")
-	-- The ruler snaps at 1 mm, substantially finer than the build grid.
+	assert(overlay:show(part,top,Vector3.new(-0.99,5.5,-1.49)),
+		"Top face failed to render")
+	assert(overlay.part==part and overlay.cursorDot.Enabled)
+	assert(overlay.widthBadge==nil and overlay.heightBadge==nil,
+		"Surface X/Y labels must not exist")
+	local nearLines=overlay.lineCount
+	local nearCursor=overlay.cursorAnchor.Position
+	assert(overlay:show(part,top,Vector3.new(-0.989,5.5,-1.489)))
+	assert((overlay.cursorAnchor.Position-nearCursor).Magnitude<1e-6,
+		"Submillimeter pointer drift should remain snapped")
 	assert(overlay:show(part,top,Vector3.new(-0.5,5.5,-0.5)))
-	local initialX=overlay.widthBadge.label.Text
-	local initialY=overlay.heightBadge.label.Text
-	assert(overlay.lineCount>=20,"Missing ruler ticks along cursor-crossing lines")
-	assert(overlay.cursorDot.Enabled and overlay.cursorDot.Dot.BackgroundColor3==Color3.new(1,1,1),
-		"Pure white snapped cursor dot missing")
-	assert(overlay:show(part,top,Vector3.new(-0.499,5.5,-0.499)))
-	assert(overlay.widthBadge.label.Text==initialX
-		and overlay.heightBadge.label.Text==initialY,
-		"Sub-millimeter cursor drift must hold the ruler position")
-	assert(overlay:show(part,top,Vector3.new(-0.49,5.5,-0.49)))
-	assert(overlay.widthBadge.label.Text~=initialX
-		or overlay.heightBadge.label.Text~=initialY,
-		"Millimeter ruler must advance independent of construction grid")
-	assert(overlay:show(part,top,Vector3.new(0.5,5.5,0.5)))
-	assert(overlay.widthBadge.label.Text~=a or overlay.heightBadge.label.Text~=b,
-		"Surface measurements must update as pointer moves")
+	assert(overlay.lineCount>nearLines,
+		"10mm ruler ticks should accumulate as the measurement grows")
+	assert(overlay.cursorDot.Dot.BackgroundColor3==Color3.new(1,1,1),
+		"Cursor dot should be pure white")
+	for i=1,overlay.lineCount do
+		assert(overlay.guides[i].Color3==Color3.new(1,1,1),
+			"Rulers should be pure white")
+	end
 	local before=overlay.guides[1].CFrame.Position
 	part.CFrame=CFrame.new(5,8,2)*CFrame.Angles(0,math.rad(20),0)
-	assert(overlay:show(part,top),"Rotated surface failed to render")
+	assert(overlay:show(part,top),"Rotated surface failed")
 	assert((overlay.guides[1].CFrame.Position-before).Magnitude>1,
-		"Surface overlay didn't follow component rotation/translation")
+		"Guides must follow the transformed stock")
 	assert(not overlay:show(part,{curved=true,polygon=top.polygon}),
-		"Curved faces should not report arbitrary planar dimensions")
-	assert(overlay.part==nil and not overlay.widthBadge.gui.Enabled)
+		"Curved faces must not show planar rulers")
+	assert(overlay.part==nil and not overlay.cursorDot.Enabled)
 	assert(overlay:show(part,top))
 	overlay:hide()
 	assert(overlay.lineCount==0 and not overlay.cursorDot.Enabled)
-	assert(not overlay.heightBadge.gui.Enabled)
 	for _,line in ipairs(overlay.guides) do
-		assert(not line.Visible,"Dimension guide leaked after hover ended")
+		assert(not line.Visible,"Dimension guide leaked")
 	end
-	assert(overlay.origin.CanQuery==false
-		and not overlay.origin.CanCollide,
-		"Hover guides must never intercept material raycasts or physics")
+	assert(not overlay.origin.CanQuery and not overlay.origin.CanCollide,
+		"Ruler helpers must not be raycast/physics targets")
 end)
 overlay:destroy()
 part:Destroy()
