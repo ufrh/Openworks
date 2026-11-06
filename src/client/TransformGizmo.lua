@@ -213,7 +213,7 @@ end
 -- Native ArcHandles are unsuitable because they cannot be resized to
 -- the camera's zoom. We keep the existing Part raycast/planeRadial
 -- dragging and add screen-space circle picking for generous hit targets.
-local function newRotationRing(folder:Folder,name:string,color:Color3)
+local function newRotationRing(folder:Folder,name:string,color:Color3,anchor:BasePart)
 	local model=Instance.new("Model")
 	model.Name=name
 	model.Parent=folder
@@ -224,8 +224,21 @@ local function newRotationRing(folder:Folder,name:string,color:Color3)
 		segment.CanQuery=false
 		table.insert(segments,segment)
 	end
+	-- Use one crisp adornment for the circular contour rather than 48
+	-- rectangular SelectionBoxes around the tube segments.
+	local contour=Instance.new("WireframeHandleAdornment")
+	contour.Name="RingContour"
+	contour.Adornee=anchor
+	contour.Color3=color
+	contour.Transparency=0
+	contour.AlwaysOnTop=false
+	contour.Thickness=1.4
+	contour.CFrame=CFrame.identity
+	contour.Scale=Vector3.one
+	contour.Visible=false
+	contour.Parent=folder
 	return {model=model,segments=segments,part=segments[1],
-		highlight=highlight(model,color)}
+		highlight=highlight(model,color),contour=contour}
 end
 
 local function ringRadius(size:Vector3,unit:number):number
@@ -255,6 +268,8 @@ local function layoutRing(grip,cf:CFrame,radius:number,thickness:number,
 	grip.ringPoints=points
 	grip.ringRadius=radius
 	grip.ringFrame=cf
+	grip.contour:Clear()
+	grip.contour:AddPath(points,true)
 	for i,part in ipairs(grip.segments) do
 		local a=points[i]
 		local b=points[i%RING_SAMPLES+1]
@@ -295,9 +310,21 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	local folder = Instance.new("Folder")
 	folder.Name = "FORM_TransformGrips"
 	folder.Parent = workspace
+	local adornmentOrigin=Instance.new("Part")
+	adornmentOrigin.Name="FORM_GizmoAdornmentOrigin"
+	adornmentOrigin.Size=Vector3.one*0.05
+	adornmentOrigin.CFrame=CFrame.identity
+	adornmentOrigin.Transparency=1
+	adornmentOrigin.Anchored=true
+	adornmentOrigin.CanCollide=false
+	adornmentOrigin.CanTouch=false
+	adornmentOrigin.CanQuery=false
+	adornmentOrigin.CastShadow=false
+	adornmentOrigin.Parent=folder
 	local measurement, measurementText = newMeasurement(playerGui)
 	local self = setmetatable({
 		document = document, onChange = onChange, folder = folder,
+		adornmentOrigin=adornmentOrigin,
 		
 		grips = {}, lookup = {}, connections = {},
 		mode = "Move", hidden = false, component = nil, index = nil,
@@ -330,10 +357,11 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	end
 	self.rotationGrips={}
 	for _,spec in ipairs(ROTATIONS) do
-		local ring=newRotationRing(folder,"Rotate_"..spec.axis,spec.color)
+		local ring=newRotationRing(folder,"Rotate_"..spec.axis,spec.color,adornmentOrigin)
 		local grip={
 			model=ring.model,part=ring.part,segments=ring.segments,
-			highlight=ring.highlight,baseColor=spec.color,hoverAlpha=0,
+			highlight=ring.highlight,contour=ring.contour,
+			baseColor=spec.color,hoverAlpha=0,
 			normal=spec.normal,radial=spec.radial,axis=spec.axis,
 			mode="Rotate",ringPoints={},ringRadius=0,ringFrame=nil,
 			ringThickness=0,
@@ -558,6 +586,10 @@ function TransformGizmo:refresh(dt:number?)
 		grip.highlight.FillColor=tint
 		grip.highlight.FillTransparency=0
 		grip.highlight.OutlineTransparency=1
+		if grip.mode=="Rotate" then
+			grip.contour.Visible=visible
+			grip.contour.Color3=tint
+		end
 		if grip.mode=="Move" then
 			grip.stemBorder.Visible=visible
 			grip.tipBorder.Visible=visible
