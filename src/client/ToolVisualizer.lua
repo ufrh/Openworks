@@ -282,6 +282,32 @@ function Visualizer:meshEdge(part:BasePart,edge,width:number,
 		if interior then "INSIDE FILE" else "FILE EDGE",width*280))
 end
 
+-- Preview the ACTUAL additive interior fillet arc, not the exterior
+-- rounded File profile which cuts in the opposite direction.
+function Visualizer:smoothInside(part:BasePart,edge,radius:number,segments:number,
+	normalA:Vector3,normalB:Vector3)
+	self:hide()
+	local cf=part.CFrame
+	local a,b=cf:PointToWorldSpace(edge.a),cf:PointToWorldSpace(edge.b)
+	local n1=cf:VectorToWorldSpace(normalA).Unit
+	local n2=cf:VectorToWorldSpace(normalB).Unit
+	self:guide(a,b,GREEN,2.3)
+	local previous=nil
+	for i=0,segments do
+		local t=i/segments*math.pi*0.5
+		local offset=n1*radius*(1-math.sin(t))
+			+n2*radius*(1-math.cos(t))
+		local p,q=a+offset,b+offset
+		self:guide(p,q,GREEN,1.4)
+		if previous then
+			self:guide(previous,p,GREEN,1)
+		end
+		previous=p
+	end
+	self:caption((a+b)*0.5,
+		string.format("SMOOTH INTERIOR · %.0f mm",radius*280))
+end
+
 function Visualizer:meshFace(part:BasePart,loop:{Vector3},margin:number,depth:number)
 	self:hide()
 	local center=Vector3.zero
