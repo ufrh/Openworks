@@ -7,12 +7,16 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local FORM = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Quantize = require(FORM.Quantize)
+-- Authored Cone MeshPart is modeled with its tip along local +Y.
+local ConeTemplate = ReplicatedStorage:WaitForChild("Cone")
+assert(ConeTemplate:IsA("MeshPart"),
+	"OPENWORKS requires ReplicatedStorage.Cone to be a MeshPart")
 
 local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-SCALED-PARTS.4"
+TransformGizmo.Revision = "GIZMO-UNIFORM-CONE.5"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -127,12 +131,27 @@ local function highlight(model:Model,color:Color3):Highlight
 	h.Adornee=model
 	h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
 	h.FillColor=color
-	h.FillTransparency=0.72
-	h.OutlineColor=color:Lerp(Color3.new(1,1,1),0.25)
-	h.OutlineTransparency=0.12
+	h.FillTransparency=0
+	h.OutlineTransparency=1
 	h.Enabled=false
 	h.Parent=model
 	return h
+end
+
+-- SelectionBox provides explicit geometric grip borders, leaving
+-- Highlights responsible only for solid color fill. It does not affect
+-- input, physics, or the user's compiled stock.
+local function outline(part:BasePart,color:Color3,parent:Instance):SelectionBox
+	local selection=Instance.new("SelectionBox")
+	selection.Name=part.Name.."_Border"
+	selection.Adornee=part
+	selection.Color3=color
+	selection.LineThickness=0.014
+	selection.SurfaceTransparency=1
+	selection.Transparency=0.18
+	selection.Visible=false
+	selection.Parent=parent
+	return selection
 end
 
 local function newArrow(folder:Folder,name:string,color:Color3)
@@ -140,9 +159,9 @@ local function newArrow(folder:Folder,name:string,color:Color3)
 	model.Name=name
 	model.Parent=folder
 	local stem=makePart(model,"Shaft",color,Enum.PartType.Cylinder)
-	-- WedgePart is a genuinely solid pointed head (not an Adornment).
-	-- Its local -Z axis faces outward and its tip is visible from the side.
-	local tip=Instance.new("WedgePart")
+	-- Reuse the existing artist-authored mesh rather than constructing
+	-- mismatched wedges or guessing a ConeHandleAdornment orientation.
+	local tip=ConeTemplate:Clone()
 	tip.Name="Arrowhead"
 	tip.Anchored=true
 	tip.CanCollide=false
@@ -154,7 +173,9 @@ local function newArrow(folder:Folder,name:string,color:Color3)
 	tip.Transparency=1
 	tip.Parent=model
 	return {model=model,part=tip,stem=stem,tip=tip,
-		highlight=highlight(model,color)}
+		highlight=highlight(model,color),
+		stemBorder=outline(stem,color,model),
+		tipBorder=outline(tip,color,model)}
 end
 
 local function newScale(folder:Folder,name:string,color:Color3)
@@ -162,7 +183,7 @@ local function newScale(folder:Folder,name:string,color:Color3)
 	model.Name=name
 	model.Parent=folder
 	local block=makePart(model,"ScaleCube",color,Enum.PartType.Block)
-	return {model=model,part=block,highlight=highlight(model,color)}
+	return {model=model,part=block,highlight=highlight(model,color),border=outline(block,color,model)}
 end
 
 local function placeArrow(grip,center:Vector3,direction:Vector3,
@@ -178,8 +199,11 @@ local function placeArrow(grip,center:Vector3,direction:Vector3,
 	grip.stem.Size=Vector3.new(shaftLength,unit*0.24,unit*0.24)
 	grip.stem.CFrame=CFrame.lookAt(stemCenter,stemCenter+direction)
 		*CFrame.Angles(0,math.pi/2,0)
-	grip.tip.Size=Vector3.new(headWidth,headWidth,tipLength)
+	grip.tip.Size=Vector3.new(headWidth,tipLength,headWidth)
+	-- Cone mesh local +Y -> world outward axis. The -90deg X
+	-- correction is required for this mesh, unlike ConeHandleAdornment.
 	grip.tip.CFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
+		*CFrame.Angles(-math.pi/2,0,0)
 	grip.shaftStart=center
 	grip.shaftEnd=shaftEnd
 	grip.arrowTip=shaftEnd+direction*tipLength
@@ -204,11 +228,10 @@ local function newRotationRing(folder:Folder,name:string,color:Color3)
 		highlight=highlight(model,color)}
 end
 
-local function ringRadius(size:Vector3,axis:string,unit:number):number
-	local perpendicular=if axis=="X" then Vector2.new(size.Y,size.Z)
-		elseif axis=="Y" then Vector2.new(size.X,size.Z)
-		else Vector2.new(size.X,size.Y)
-	return perpendicular.Magnitude*0.5+unit*3.5
+local function ringRadius(size:Vector3,unit:number):number
+	-- One bounding-sphere radius for ALL axes. Per-axis projected
+	-- dimensions used to produce three mismatched ring sizes.
+	return size.Magnitude*0.5+unit*3.5
 end
 
 local function screenSegmentDistance(point:Vector2,a:Vector2,b:Vector2):number
@@ -286,7 +309,8 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		local arrow=newArrow(folder,"Move_"..spec.axis,spec.color)
 		local grip={
 			model=arrow.model,part=arrow.part,stem=arrow.stem,tip=arrow.tip,
-			highlight=arrow.highlight,baseColor=spec.color,hoverAlpha=0,
+			highlight=arrow.highlight,stemBorder=arrow.stemBorder,
+			tipBorder=arrow.tipBorder,baseColor=spec.color,hoverAlpha=0,
 			normal=spec.normal,axis=spec.axis,mode="Move",
 		}
 		table.insert(self.grips,grip)
@@ -297,7 +321,8 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		local scale=newScale(folder,"Scale_"..spec.name,spec.color)
 		local grip={
 			model=scale.model,part=scale.part,
-			highlight=scale.highlight,baseColor=spec.color,hoverAlpha=0,
+			highlight=scale.highlight,border=scale.border,
+			baseColor=spec.color,hoverAlpha=0,
 			normal=spec.normal,axis=spec.axis,mode="Scale",
 		}
 		table.insert(self.grips,grip)
@@ -531,8 +556,17 @@ function TransformGizmo:refresh(dt:number?)
 		local tint=grip.baseColor:Lerp(Color3.new(1,1,1),grip.hoverAlpha*0.38)
 		grip.highlight.Enabled=visible
 		grip.highlight.FillColor=tint
-		grip.highlight.OutlineColor=tint
-		grip.highlight.FillTransparency=if grip.mode=="Rotate" then 0.88 else 0.72
+		grip.highlight.FillTransparency=0
+		grip.highlight.OutlineTransparency=1
+		if grip.mode=="Move" then
+			grip.stemBorder.Visible=visible
+			grip.tipBorder.Visible=visible
+			grip.stemBorder.Color3=tint
+			grip.tipBorder.Color3=tint
+		elseif grip.mode=="Scale" then
+			grip.border.Visible=visible
+			grip.border.Color3=tint
+		end
 		local parts=if grip.mode=="Move" then {grip.stem,grip.tip}
 			elseif grip.mode=="Scale" then {grip.part} else grip.segments
 		for _,part in ipairs(parts) do
@@ -568,7 +602,7 @@ function TransformGizmo:refresh(dt:number?)
 					math.rad(start.rotation.Z))
 				dimensions=start.size
 			end
-			local radius=ringRadius(dimensions,grip.axis,unit)
+			local radius=ringRadius(dimensions,unit)
 			local thickness=math.max(unit*0.27,0.008)
 			local old=grip.ringFrame
 			local changed=not old
