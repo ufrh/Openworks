@@ -87,7 +87,7 @@ function Document:create(kind: string, minimumCorner: Vector3, name: string?, sp
 	local component = {
 		id = self.nextComponent, name = if typeof(name)=="string" and name:match("%S")
 			then string.sub(name,1,64) else kind .. " " .. self.nextComponent,
-		nodes = { node }, operations = {}, revision = 1,
+		nodes = { node }, operations = {}, notes = "", revision = 1,
 	}
 	self.components[component.id] = component
 	table.insert(self.order, component.id)
@@ -495,6 +495,7 @@ function Document.snapshot(component)
 	return {
 		id = component.id, name = component.name,
 		revision = component.revision, nodes = nodes, operations = operations,
+		notes = component.notes or "",
 	}
 end
 
