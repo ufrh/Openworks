@@ -907,7 +907,7 @@ function Debug.start()
 			surfaceMeasurements:hide()
 			return
 		end
-		surfaceMeasurements:show(topology.part,face)
+		surfaceMeasurements:show(topology.part,face,hit.Position)
 	end
 
 	RunService.RenderStepped:Connect(function(dt)
