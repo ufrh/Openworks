@@ -49,7 +49,7 @@ function Measurements.new(playerGui:PlayerGui)
 	local dotGui=Instance.new("BillboardGui")
 	dotGui.Name="SnappedCursorDot"
 	dotGui.Adornee=dotPosition
-	dotGui.Size=UDim2.fromOffset(9,9)
+	dotGui.Size=UDim2.fromOffset(5,5)
 	dotGui.AlwaysOnTop=true
 	dotGui.Enabled=false
 	dotGui.Parent=playerGui
