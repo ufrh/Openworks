@@ -443,6 +443,11 @@ end
 function Document:setOperationEnabled(component, id: number, enabled: boolean)
 	for _, operation in ipairs(component.operations) do
 		if operation.id == id then
+			if enabled and operation.kind=="SketchExtrude" and operation.mode=="Add"
+				and envelopeVolume(component,component.nodes[1].size,operation.depth)
+				>Quantize.MaxComponentVolume+0.00001 then
+				return false,"Re-enabling that extrusion would exceed 8 stud³"
+			end
 			if (operation.enabled ~= false) ~= enabled then
 				operation.enabled = enabled
 				component.revision += 1
