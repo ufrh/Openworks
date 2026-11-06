@@ -26,6 +26,8 @@ local ok,problem=pcall(function()
 	assert(overlay:show(part,top,Vector3.new(-0.99,5.5,-1.49)),
 		"Top face failed to render")
 	assert(overlay.part==part and overlay.cursorDot.Enabled)
+	assert(overlay.cursorDot.Size==UDim2.fromOffset(5,5),
+		"Cursor dot should be five pixels")
 	assert(overlay.widthBadge==nil and overlay.heightBadge==nil,
 		"Surface X/Y labels must not exist")
 	local nearLines=overlay.lineCount
