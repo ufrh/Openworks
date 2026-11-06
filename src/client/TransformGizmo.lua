@@ -16,7 +16,7 @@ local TransformGizmo = {}
 TransformGizmo.__index = TransformGizmo
 -- Shown by the startup build badge, so Studio can distinguish a stale
 -- cached gizmo ModuleScript from a newly synced client entry script.
-TransformGizmo.Revision = "GIZMO-COMPACT-EDGES.14"
+TransformGizmo.Revision = "GIZMO-SCALE-FULL-RINGS.15"
 
 local AXES = {
 	{ normal = Vector3.xAxis, name = "X+", axis = "X", color = Color3.fromRGB(224, 88, 91) },
@@ -193,6 +193,15 @@ local function newArrow(folder:Folder,name:string,color:Color3)
 		highlight=highlight(model,color)}
 end
 
+local function newScale(folder:Folder,name:string,color:Color3)
+	local model=Instance.new("Model")
+	model.Name=name
+	model.Parent=folder
+	local cube=makePart(model,"ScaleCube",color,Enum.PartType.Block)
+	return {model=model,part=cube,highlight=highlight(model,color),
+		border=outline(cube,color,model)}
+end
+
 local function placeArrow(grip,center:Vector3,direction:Vector3,
 	extent:number,unit:number)
 	-- Same length on X/Y/Z, just beyond the largest stock face.
@@ -281,6 +290,53 @@ end
 
 -- Project the eight corners of a Scale cube and test its actual 2D
 -- footprint. This avoids enlarged box hit targets near adjacent grips.
+-- Screen-space scale hit based on the actual projected cube, not a
+-- giant invisible selection radius.
+local function scaleDistance(camera:Camera,part:BasePart,pointer:Vector2):number
+	local half=part.Size*0.5
+	local points={}
+	for _,x in ipairs({-1,1}) do
+		for _,y in ipairs({-1,1}) do
+			for _,z in ipairs({-1,1}) do
+				local p=project(camera,part.CFrame:PointToWorldSpace(
+					Vector3.new(x*half.X,y*half.Y,z*half.Z)))
+				if not p then return math.huge end
+				table.insert(points,p)
+			end
+		end
+	end
+	table.sort(points,function(a,b)
+		return a.X==b.X and a.Y<b.Y or a.X<b.X
+	end)
+	local function cross(a:Vector2,b:Vector2,c:Vector2):number
+		return (b.X-a.X)*(c.Y-a.Y)-(b.Y-a.Y)*(c.X-a.X)
+	end
+	local hull={}
+	for _,p in ipairs(points) do
+		while #hull>=2 and cross(hull[#hull-1],hull[#hull],p)<=0 do
+			table.remove(hull)
+		end
+		table.insert(hull,p)
+	end
+	local lowerCount=#hull
+	for i=#points-1,1,-1 do
+		local p=points[i]
+		while #hull>lowerCount and cross(hull[#hull-1],hull[#hull],p)<=0 do
+			table.remove(hull)
+		end
+		table.insert(hull,p)
+	end
+	if #hull<3 then return math.huge end
+	local inside=true
+	local nearest=math.huge
+	for i=1,#hull-1 do
+		local p,q=hull[i],hull[i+1]
+		if cross(p,q,pointer)<0 then inside=false end
+		nearest=math.min(nearest,screenSegmentDistance(pointer,p,q))
+	end
+	return if inside then 0 else nearest
+end
+
 local function moveDistance(camera:Camera,grip,pointer:Vector2):number
 	local pivot=project(camera,grip.shaftStart)
 	local shaftEnd=project(camera,grip.shaftEnd)
@@ -315,28 +371,11 @@ local function layoutRing(grip,cf:CFrame,radius:number,thickness:number,
 	grip.ringPoints=points
 	grip.ringRadius=radius
 	grip.ringFrame=cf
-	grip.ringGap={}
-	-- Ring axes intersect at cardinal points. Intentionally interrupt the
-	-- lower-priority Neon ring there to prevent two glowing tubes occupying
-	-- the same pixels / producing a bright color-crossing artifact.
-	-- All rings retain the same radius, position and drag rotation math.
-	local crossingAxes=if grip.axis=="X" then {Vector3.yAxis,Vector3.zAxis}
-		elseif grip.axis=="Y" then {Vector3.zAxis} else {}
 	for i,part in ipairs(grip.segments) do
 		local a=points[i]
 		local b=points[i%RING_SAMPLES+1]
 		local tangent=b-a
 		local midpoint=(a+b)*0.5
-		local gap=false
-		for _,other in ipairs(crossingAxes) do
-			local perpendicular=cf:VectorToWorldSpace(other)
-			if math.abs((midpoint-cf.Position):Dot(perpendicular))
-				<radius*0.075 then
-				gap=true
-				break
-			end
-		end
-		grip.ringGap[i]=gap
 		-- Cylinder Parts use local X for the long axis.
 		part.CFrame=CFrame.lookAt((a+b)*0.5,b)*CFrame.Angles(0,math.pi/2,0)
 		part.Size=Vector3.new(tangent.Magnitude,thickness,thickness)
@@ -435,6 +474,16 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		self.lookup[grip.stem]=grip
 		self.lookup[grip.tip]=grip
 	end
+	for _,spec in ipairs(AXES) do
+		local handle=newScale(folder,"Scale_"..spec.name,spec.color)
+		local grip={
+			model=handle.model,part=handle.part,highlight=handle.highlight,
+			border=handle.border,baseColor=spec.color,hoverAlpha=0,
+			normal=spec.normal,axis=spec.axis,mode="Scale",
+		}
+		table.insert(self.grips,grip)
+		self.lookup[grip.part]=grip
+	end
 	self.rotationGrips={}
 	for _,spec in ipairs(ROTATIONS) do
 		local ring=newRotationRing(folder,"Rotate_"..spec.axis,spec.color,adornmentOrigin)
@@ -443,7 +492,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			baseColor=spec.color,hoverAlpha=0,
 			normal=spec.normal,radial=spec.radial,axis=spec.axis,
 			mode="Rotate",ringPoints={},ringRadius=0,ringFrame=nil,
-			ringThickness=0,ringGap={},
+			ringThickness=0,
 		}
 		self.rotationGrips[spec.axis]=grip
 		table.insert(self.grips,grip)
@@ -468,10 +517,12 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 				if not grip.shaftStart then continue end
 				distance=moveDistance(camera,grip,point)
 				threshold=SHAFT_HIT_PIXELS
+			elseif grip.mode=="Scale" then
+				distance=scaleDistance(camera,grip.part,point)
+				threshold=3
 			else
 				threshold=RING_HIT_PIXELS
 				for i,a in ipairs(grip.ringPoints) do
-					if grip.ringGap[i] then continue end
 					local b=grip.ringPoints[i%#grip.ringPoints+1]
 					local pa=project(camera,a)
 					local pb=project(camera,b)
@@ -528,6 +579,12 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			local distance = Quantize.snap(parameter - start.initialParameter, Quantize.Grid)
 			if self.mode == "Move" then
 				position = start.position + start.direction * distance
+			elseif self.mode == "Scale" then
+				local old=getAxis(start.size,start.grip.axis)
+				local updated=math.clamp(Quantize.snap(old+distance,Quantize.Grid),
+					Quantize.MinSize,Quantize.MaxSize)
+				size=putAxis(start.size,start.grip.axis,updated)
+				position=start.position+start.direction*((updated-old)*0.5)
 			end
 		else
 			local current = planeRadial(point, start.pivot, start.direction)
@@ -544,7 +601,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			rotation = rotateLocal(start.rotation,start.grip.normal,snappedRadians)
 		end
 		local ok = document:applyTransform(start.component, start.index, position, size, rotation,
-			false, self.mode == "Rotate")
+			self.mode == "Scale", self.mode == "Rotate")
 		if ok then
 			local node = start.component.nodes[start.index]
 			if node.position ~= start.position or node.size ~= start.size or node.rotation ~= start.rotation then
@@ -553,6 +610,8 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			local delta
 			if self.mode == "Move" then
 				delta = (node.position - start.position):Dot(start.direction)
+			elseif self.mode == "Scale" then
+				delta = getAxis(node.size,start.grip.axis)-getAxis(start.size,start.grip.axis)
 			else
 				-- Euler coordinates are coupled; show the actual ring drag,
 				-- not the difference of one stored Euler component.
@@ -620,7 +679,7 @@ function TransformGizmo:capturesPoint(point: Vector2): boolean
 end
 
 function TransformGizmo:setMode(mode: string)
-	if (mode ~= "Move" and mode ~= "Rotate") or self.dragStart then return end
+	if (mode ~= "Move" and mode ~= "Scale" and mode ~= "Rotate") or self.dragStart then return end
 	self.mode, self.hidden = mode, false
 	self:refresh()
 end
@@ -668,7 +727,12 @@ function TransformGizmo:refresh(dt:number?)
 			grip.highlight.FillTransparency=0
 			grip.highlight.OutlineTransparency=1
 		end
-		local parts=if grip.mode=="Move" then {grip.stem,grip.tip} else grip.segments
+		if grip.mode=="Scale" then
+			grip.border.Visible=visible
+			grip.border.Color3=tint
+		end
+		local parts=if grip.mode=="Move" then {grip.stem,grip.tip}
+			elseif grip.mode=="Scale" then {grip.part} else grip.segments
 		for _,part in ipairs(parts) do
 			part.Transparency=if visible then 0
 				else 1
@@ -687,6 +751,10 @@ function TransformGizmo:refresh(dt:number?)
 			local direction=cf:VectorToWorldSpace(grip.normal)
 			placeArrow(grip,cf.Position,direction,
 				math.max(size.X,size.Y,size.Z)*0.5,unit)
+		elseif grip.mode=="Scale" then
+			grip.part.CFrame=cf*CFrame.new(
+				grip.normal*(getAxis(size,grip.axis)*0.5+unit*1.5))
+			grip.part.Size=Vector3.one*unit*1.12
 		else
 			-- The dragged ring remains at its initial orientation;
 			-- the workpiece rotates but its reference circle doesn't.
@@ -711,12 +779,6 @@ function TransformGizmo:refresh(dt:number?)
 			if changed then
 				layoutRing(grip,basis,radius,thickness,grip.baseColor)
 				grip.ringThickness=thickness
-			end
-			for i,segment in ipairs(grip.segments) do
-				if grip.ringGap[i] then
-					segment.Transparency=1
-					segment.CanQuery=false
-				end
 			end
 		end
 	end
