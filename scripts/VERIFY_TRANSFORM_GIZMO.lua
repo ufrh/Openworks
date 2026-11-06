@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-LOCAL-ROTATION.9",
+assert(Gizmo.Revision=="GIZMO-RING-HIGHLIGHT.10",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
@@ -77,8 +77,11 @@ local success,reason=pcall(function()
 	for _,grip in ipairs(gizmo.grips) do
 		if grip.mode=="Rotate" then
 			rings+=1
-			assert(grip.highlight.Enabled,
-				"Rotation ring must have a visible highlight")
+			assert(grip.highlight.Enabled and grip.highlight.Adornee==grip.model,
+				"Rotation ring must have a Highlight directly on its model")
+			assert(grip.highlight.Name=="RotationAxisHighlight"
+				and grip.highlight.FillColor==grip.baseColor,
+				"Rotation ring Highlight must match the exact X/Y/Z axis color")
 			assert(grip.highlight.FillTransparency==0 and
 				grip.highlight.OutlineTransparency==1)
 			assert(grip.contour==nil,
