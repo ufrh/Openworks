@@ -360,7 +360,10 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 	adornmentOrigin.CastShadow=false
 	adornmentOrigin.Parent=folder
 	local measurement, measurementText = newMeasurement(playerGui)
-	local centerMarker = newCenterMarker(playerGui,adornmentOrigin)
+	local centerOrigin=adornmentOrigin:Clone()
+	centerOrigin.Name="FORM_MovePivotOrigin"
+	centerOrigin.Parent=folder
+	local centerMarker = newCenterMarker(playerGui,centerOrigin)
 	local self = setmetatable({
 		document = document, onChange = onChange, folder = folder,
 		adornmentOrigin=adornmentOrigin,
@@ -369,7 +372,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 		mode = "Move", hidden = false, component = nil, index = nil,
 		dragStart = nil, dragChanged = false, hovered = nil, visualFrame = nil, visualSize = nil,
 		measurement = measurement, measurementText = measurementText,
-		centerMarker=centerMarker,
+		centerMarker=centerMarker,centerOrigin=centerOrigin,
 	}, TransformGizmo)
 
 	for _,spec in ipairs(MOVE_AXES) do
@@ -616,7 +619,7 @@ function TransformGizmo:refresh(dt:number?)
 	else
 		self.visualFrame,self.visualSize=nil,nil
 	end
-	if cf then self.adornmentOrigin.CFrame=CFrame.new(cf.Position) end
+	if cf then self.centerOrigin.CFrame=CFrame.new(cf.Position) end
 	for _,grip in ipairs(self.grips) do
 		local visible=node~=nil and not self.hidden and grip.mode==self.mode
 		local target=if grip==self.hovered then 1 else 0
