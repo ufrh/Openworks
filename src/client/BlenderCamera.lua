@@ -221,8 +221,8 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 		end
 
 
-		-- Smooth the orbit variables, not the camera CFrame. The resultant
-		-- CFrame is always aimed exactly at the fixed world origin.
+		-- Orbit around the active component workspace origin, which moves
+		-- to the clicked placement point when a component is created.
 		local yawDelta = (self.yaw - self.displayedYaw + math.pi) % (2 * math.pi) - math.pi
 		local rollDelta = (self.roll - self.displayedRoll + math.pi) % (2 * math.pi) - math.pi
 		self.displayedYaw += yawDelta * alpha
@@ -241,12 +241,12 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			upVector = Vector3.zAxis
 		end
 		local frame = CFrame.lookAt(
-			direction * self.displayedDistance,
-			Vector3.zero,
+			self.target+direction * self.displayedDistance,
+			self.target,
 			upVector
 		) * CFrame.Angles(0, 0, self.displayedRoll)
 		camera.CFrame = frame
-		camera.Focus = CFrame.new(Vector3.zero)
+		camera.Focus = CFrame.new(self.target)
 		if self.onFrame then self.onFrame(frame, self:viewLabel()) end
 	end)
 
@@ -263,7 +263,13 @@ function BlenderCamera:orbitDelta(delta: Vector2)
 end
 
 function BlenderCamera:getFocusTarget(): Vector3
-	return Vector3.zero
+	return self.target
+end
+
+function BlenderCamera:setFocusTarget(point:Vector3)
+	-- Component workspace enters at the exact ground placement point.
+	self.target=point
+	self.displayedTarget=point
 end
 
 function BlenderCamera:viewLabel(): string
@@ -340,9 +346,8 @@ end
 
 function BlenderCamera:frameBounds(frame: CFrame?, size: Vector3?)
 	if not frame or not size then return false end
-	-- Frame adjusts the zoom only. Never translate the camera pivot away
-	-- from the fixed world workspace origin.
-	local radius = frame.Position.Magnitude + boundsRadius(size)
+	-- Frame adjusts zoom relative to the current component workspace pivot.
+	local radius = (frame.Position-self.target).Magnitude + boundsRadius(size)
 	local camera = workspace.CurrentCamera
 	local viewport = if camera then camera.ViewportSize else Vector2.new(1920, 1080)
 	local aspect = viewport.X / math.max(1, viewport.Y)
