@@ -291,6 +291,15 @@ function HistoryTopology.build(part:BasePart,component)
 		elseif kind=="GrooveFace" then
 			local loop=kerfLoop(op.a,op.b,op.normal,op.width)
 			if loop then pocket(loop,op.normal,op.depth,op.through==true,"groove") end
+		elseif kind=="SmoothInside" then
+			-- The original sharp crease is replaced by a rounded patch.
+			local old=edgeMap[edgeKey(point(op.a),point(op.b))]
+			if old then old.retired=true end
+			local strips=GeometryCutter.smoothInteriorFaces(op.a,op.b,
+				op.normalA,op.normalB,op.radius,op.segments or 8)
+			for _,surface in ipairs(strips) do
+				addFace(surface.polygon,surface.normal,"smooth_interior",true)
+			end
 		elseif kind=="File" or kind=="FileMesh" then
 			if not (kind=="FileMesh" and op.interior==true) then
 				local spec=BevelJunction.spec(node,op)
