@@ -111,15 +111,15 @@ function Document:editNode(component, index: number, field: string, axis: string
 	return true, nil
 end
 
-function Document:applyTransform(component, index: number, position: Vector3?, size: Vector3?, rotation: Vector3?, preserveFaceAnchor: boolean?)
+function Document:applyTransform(component, index: number, position: Vector3?, size: Vector3?, rotation: Vector3?, preserveFaceAnchor: boolean?, preserveRotationPrecision: boolean?)
 	local node = component.nodes[index]
 	if not node then return false, "No node selected" end
 	local newSize = Quantize.vector(size or node.size, Quantize.Grid)
 	local incoming = rotation or node.rotation
 	local newRotation = Vector3.new(
-		Quantize.snap(incoming.X, Quantize.Rotation) % 360,
-		Quantize.snap(incoming.Y, Quantize.Rotation) % 360,
-		Quantize.snap(incoming.Z, Quantize.Rotation) % 360
+		(if preserveRotationPrecision then incoming.X else Quantize.snap(incoming.X, Quantize.Rotation)) % 360,
+		(if preserveRotationPrecision then incoming.Y else Quantize.snap(incoming.Y, Quantize.Rotation)) % 360,
+		(if preserveRotationPrecision then incoming.Z else Quantize.snap(incoming.Z, Quantize.Rotation)) % 360
 	)
 	if node.kind == "Cylinder" then
 		local dx = math.abs(newSize.X - node.size.X)
