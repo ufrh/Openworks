@@ -155,17 +155,20 @@ function Debug.start()
 	local info = line("Selection: none")
 	local nodeInfo = line("Node: none")
 
-	-- Explicit adornment border instead of an outline-only Highlight.
-	-- SelectionBox outlines the selected solid's bounding volume;
-	-- it does not attempt CSG mesh readback for an exact contour.
-	local selectionBorder = make("SelectionBox", {
-		Name = "FORM_SelectionBorder",
-		Color3 = Color3.fromRGB(100, 234, 246),
-		LineThickness = 0.0015,
-		SurfaceTransparency = 1,
-		Transparency = 0.16,
-		Visible = false,
-	}, workspace)
+	-- Manufactured-edge wireframe follows the authored CSG history.
+	-- Unlike SelectionBox, it does not outline the bounding volume.
+	local outlineOrigin=make("Part",{
+		Name="FORM_SelectionOutlineOrigin",Anchored=true,
+		CanQuery=false,CanTouch=false,CanCollide=false,
+		CastShadow=false,Transparency=1,Size=Vector3.one*0.05,
+		CFrame=CFrame.identity,
+	},workspace)
+	local selectionBorder=make("WireframeHandleAdornment",{
+		Name="FORM_ManufacturedSelectionOutline",
+		Adornee=outlineOrigin,Color3=Color3.fromRGB(100,234,246),
+		Transparency=0.12,Thickness=0.85,AlwaysOnTop=false,
+		Visible=false,
+	},workspace)
 
 	local preview
 	local transformGizmo: any = nil
@@ -251,8 +254,25 @@ function Debug.start()
 			end
 		end
 		local model = if component then preview:getModel(component.id) else nil
-		selectionBorder.Adornee = if model then model:FindFirstChildWhichIsA("BasePart") else nil
-		selectionBorder.Visible = selectionBorder.Adornee ~= nil
+		selectionBorder:Clear()
+		selectionBorder.Visible=false
+		if component and model and surfacePicker then
+			local topology=surfacePicker:get(component.id,model,component)
+			if topology then
+				-- Topology is manufactured-history aware: retired sharp
+				-- edges are absent, and new fillets supply their own edges.
+				-- Paths are world-space because origin is CFrame.identity.
+				for _,edge in ipairs(topology.edges) do
+					if edge.curved then continue end
+					local a=topology.part.CFrame:PointToWorldSpace(edge.a)
+					local b=topology.part.CFrame:PointToWorldSpace(edge.b)
+					if (a-b).Magnitude>0.001 then
+						selectionBorder:AddPath({a,b},false)
+					end
+				end
+				selectionBorder.Visible=true
+			end
+		end
 		if transformGizmo then
 			if component and node then
 				transformGizmo:show(component, nodeIndex)
@@ -262,7 +282,12 @@ function Debug.start()
 		end
 	end
 
-	surfacePicker = SurfacePicker.new(message)
+	surfacePicker = SurfacePicker.new(function(result)
+		message(result)
+		-- Async history topology becomes available after the preview
+		-- renders; refresh the manufactured outline at that point.
+		refresh()
+	end)
 	preview = Preview.new(message, function(id,model)
 		surfacePicker:request(id,model,document.components[id])
 		if id == selectedId then refresh() end
