@@ -92,7 +92,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 	placementHint.Visible=false
 	local indicator=make("Part",{
 		Name="FORM_PlacementPreview",Anchored=true,CanTouch=false,CanCollide=false,
-		CanQuery=false,CastShadow=false,Transparency=.68,
+		CanQuery=false,CastShadow=false,Transparency=1,
 		Color=Color3.fromRGB(99,220,239),Material=Enum.Material.SmoothPlastic,
 		Size=Vector3.one*0.1,
 	},workspace)
