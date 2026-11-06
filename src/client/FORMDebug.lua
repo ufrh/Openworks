@@ -19,6 +19,7 @@ local TransformGizmo = require(script.Parent.TransformGizmo)
 local SketchEditor = require(script.Parent.SketchEditor)
 local ToolVisualizer = require(script.Parent.ToolVisualizer)
 local SurfacePicker = require(script.Parent.SurfacePicker)
+local SurfaceMeasurements = require(script.Parent.SurfaceMeasurements)
 local FaceTools = require(FORM.FaceTools)
 
 local Debug = {}
@@ -44,6 +45,7 @@ function Debug.start()
 	local historyRows = {}
 	local sketchEditor: any = nil
 	local toolVisualizer = ToolVisualizer.new(playerGui)
+	local surfaceMeasurements = SurfaceMeasurements.new(playerGui)
 	local surfacePicker: any = nil
 	local drillThrough = true
 
@@ -309,6 +311,7 @@ function Debug.start()
 	local toolStatus = line("Tool: none")
 	historyInfo = line("Fabrication: 0 cuts")
 	local function setTool(kind: string?)
+		surfaceMeasurements:hide()
 		toolVisualizer:stopAnimation()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool = kind
@@ -855,8 +858,69 @@ function Debug.start()
 			taperA=false,taperB=false},nil
 	end
 
+	-- Passive CAD face inspection. Only show a measurement on a
+	-- visible, indexed manufactured surface with no fabrication tool,
+	-- camera gesture, text edit, or transform gizmo interaction.
+	local function inspectHoveredSurface()
+		if activeTool or (sketchEditor and sketchEditor.active)
+			or cameraController.dragging or transformGizmo:isDragging()
+			or UserInputService:GetFocusedTextBox() then
+			surfaceMeasurements:hide()
+			return
+		end
+		local camera=workspace.CurrentCamera
+		if not camera then surfaceMeasurements:hide() return end
+		local mouse=UserInputService:GetMouseLocation()
+		if (mouse.X<345 and mouse.Y<615)
+			or (mouse.X>camera.ViewportSize.X-340
+				and mouse.Y>225 and mouse.Y<610)
+			or viewGizmo:containsPoint(mouse)
+			or transformGizmo:capturesPoint(mouse) then
+			surfaceMeasurements:hide()
+			return
+		end
+		local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
+		local params=RaycastParams.new()
+		params.FilterType=Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances={preview.root}
+		local hit=workspace:Raycast(ray.Origin,ray.Direction*1000,params)
+		if not hit then surfaceMeasurements:hide() return end
+		local model=hit.Instance:FindFirstAncestorOfClass("Model")
+		local id=if model then model:GetAttribute("FORMComponentId") else nil
+		local component=if typeof(id)=="number" then document.components[id]
+			else nil
+		if not component then surfaceMeasurements:hide() return end
+		-- Do not display dimensions from a stale CSG body while its new
+		-- manufacturing operation is still being compiled.
+		local state=preview.states[id]
+		if not state or state.key~=Fabricator.geometryKey(component) then
+			surfaceMeasurements:hide()
+			return
+		end
+		local topology=surfacePicker:get(id,model,component)
+		if not topology or topology.part~=hit.Instance then
+			surfaceMeasurements:hide()
+			return
+		end
+		local face=topology.faceAt(topology,hit.Position,hit.Normal)
+		if not face or face.curved then
+			surfaceMeasurements:hide()
+			return
+		end
+		surfaceMeasurements:show(topology.part,face)
+	end
+
 	RunService.RenderStepped:Connect(function(dt)
-		if toolVisualizer:update(dt) then return end
+		if toolVisualizer:update(dt) then
+			surfaceMeasurements:hide()
+			return
+		end
+		if not activeTool then
+			toolVisualizer:hide()
+			inspectHoveredSurface()
+			return
+		end
+		surfaceMeasurements:hide()
 		if activeTool=="File" then
 			local selection=fileEdgeTarget()
 			local width=millimeters(fileWidthInput,"File width")
