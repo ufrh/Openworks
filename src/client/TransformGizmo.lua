@@ -188,10 +188,15 @@ local function placeArrow(grip,center:Vector3,direction:Vector3,extent:number,un
 	local tipDiameter=unit*0.75
 	local begin=center
 	local endShaft=begin+direction*shaftLength
-	local stemCenter=(begin+endShaft)*0.5
 	local tipCenter=endShaft+direction*(tipLength*0.5)
-	grip.stem.Size=Vector3.new(shaftDiameter,shaftDiameter,shaftLength)
-	grip.stem.CFrame=CFrame.lookAt(stemCenter,stemCenter+direction)
+	-- Draw the whole shaft from the center, but keep its invisible
+	-- mouse hit proxy outside the solid. Clicking the object itself
+	-- should not accidentally start an axis drag.
+	local hitStart=begin+direction*(extent+unit*0.45)
+	local hitLength=math.max((endShaft-hitStart):Dot(direction),unit*0.7)
+	local hitCenter=hitStart+direction*(hitLength*0.5)
+	grip.stem.Size=Vector3.new(shaftDiameter*2,shaftDiameter*2,hitLength)
+	grip.stem.CFrame=CFrame.lookAt(hitCenter,hitCenter+direction)
 	grip.tip.Size=Vector3.new(tipDiameter,tipLength,tipDiameter)
 	grip.tip.CFrame=CFrame.lookAt(tipCenter,tipCenter+direction)
 	-- ConeHandleAdornment is built along local -Z, exactly like a
