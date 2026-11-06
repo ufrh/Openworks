@@ -6,10 +6,10 @@ local Measurements={}
 Measurements.__index=Measurements
 
 local SCALE_MM=280
-local DIMENSION=Color3.fromRGB(163,192,200)
+local DIMENSION=Color3.new(1,1,1)
 local MAX_LINES=96
 local SNAP_MM=1 -- independent fine ruler snap; not FORM construction grid
-local RULER_STEPS=10 -- major ruler subdivisions along the on-face guide lines
+local RULER_STEPS=10 -- subdivisions on the two cursor-crossing ruler lines
 
 local function line(parent:Instance,origin:BasePart,index:number):LineHandleAdornment
 	local visual=Instance.new("LineHandleAdornment")
@@ -70,12 +70,32 @@ function Measurements.new(playerGui:PlayerGui)
 	origin.CFrame=CFrame.identity
 	origin.Parent=workspace
 
+	local dotPosition=Instance.new("Attachment")
+	dotPosition.Name="SnappedCursorAnchor"
+	dotPosition.Parent=origin
+	local dotGui=Instance.new("BillboardGui")
+	dotGui.Name="SnappedCursorDot"
+	dotGui.Adornee=dotPosition
+	dotGui.Size=UDim2.fromOffset(9,9)
+	dotGui.AlwaysOnTop=true
+	dotGui.Enabled=false
+	dotGui.Parent=playerGui
+	local dot=Instance.new("Frame")
+	dot.Name="Dot"
+	dot.Size=UDim2.fromScale(1,1)
+	dot.BackgroundColor3=Color3.new(1,1,1)
+	dot.BorderSizePixel=0
+	dot.Parent=dotGui
+	local circle=Instance.new("UICorner")
+	circle.CornerRadius=UDim.new(1,0)
+	circle.Parent=dot
 	local guides={}
 	for i=1,MAX_LINES do
 		table.insert(guides,line(group,origin,i))
 	end
 	return setmetatable({
 		root=group,origin=origin,guides=guides,
+		cursorDot=dotGui,cursorAnchor=dotPosition,
 		widthBadge=badge(playerGui,origin,"SurfaceWidth"),
 		heightBadge=badge(playerGui,origin,"SurfaceHeight"),
 		lineCount=0,part=nil,lastFace=nil,lastFrame=nil,
@@ -87,6 +107,7 @@ function Measurements:hide()
 	for _,guide in ipairs(self.guides) do guide.Visible=false end
 	self.widthBadge.gui.Enabled=false
 	self.heightBadge.gui.Enabled=false
+	self.cursorDot.Enabled=false
 	self.lineCount=0
 	self.part=nil
 	self.lastFace=nil
@@ -183,39 +204,34 @@ function Measurements:show(part:BasePart,face,cursorWorld:Vector3?):boolean
 	local cursorY=bottom+math.clamp(
 		math.round((localCursor:Dot(other)-bottom)/snapStuds)*snapStuds,0,height)
 	local cursor=corner(cursorX,cursorY)
-	local short=math.min(width,height)
-	local inset=math.min(short*0.07,0.1)
-	local rulerX=bottom+inset
-	local rulerY=left+inset
-	local xStart=corner(left,rulerX)
-	local xEnd=corner(right,rulerX)
-	local yStart=corner(rulerY,bottom)
-	local yEnd=corner(rulerY,top)
-	-- Two real in-face ruler baselines with ticks ON the baselines.
-	self:segment(xStart,xEnd,DIMENSION,1.35)
-	self:segment(yStart,yEnd,DIMENSION,1.35)
-	local minor=math.clamp(short*0.022,0.009,0.025)
-	for i=0,RULER_STEPS do
-		local major=i%5==0
-		local tick=if major then minor*1.9 else minor
-		local x=left+width*i/RULER_STEPS
-		local y=bottom+height*i/RULER_STEPS
-		local px=corner(x,rulerX)
-		local py=corner(rulerY,y)
-		self:segment(px-other*tick*0.5,px+other*tick*0.5,
-			DIMENSION,if major then 1.5 else 1)
-		self:segment(py-axis*tick*0.5,py+axis*tick*0.5,
-			DIMENSION,if major then 1.5 else 1)
-	end
-	-- Perpendicular cursor guides intersect the ruler axes while
-	-- remaining on the face. No border/perimeter drawing.
+	-- The two measurement legs ARE the rulers. They meet at the
+	-- snapped cursor and show 10 graduated ticks along their lengths.
+	-- No detached baselines and no face border.
 	local xBase=corner(left,cursorY)
 	local yBase=corner(cursorX,bottom)
-	self:segment(xBase,cursor,DIMENSION,1.15)
-	self:segment(yBase,cursor,DIMENSION,1.15)
+	self:segment(xBase,cursor,DIMENSION,1.2)
+	self:segment(yBase,cursor,DIMENSION,1.2)
+	local short=math.min(width,height)
+	local minor=math.clamp(short*0.023,0.009,0.03)
+	local xDistance=cursorX-left
+	local yDistance=cursorY-bottom
+	for i=0,RULER_STEPS do
+		local major=(i%5==0)
+		local tick=if major then minor*1.8 else minor
+		if xDistance>0.001 then
+			local p=corner(left+xDistance*i/RULER_STEPS,cursorY)
+			self:segment(p-other*tick*0.5,p+other*tick*0.5,
+				DIMENSION,if major then 1.45 else 1)
+		end
+		if yDistance>0.001 then
+			local p=corner(cursorX,bottom+yDistance*i/RULER_STEPS)
+			self:segment(p-axis*tick*0.5,p+axis*tick*0.5,
+				DIMENSION,if major then 1.45 else 1)
+		end
+	end
 	local cross=minor*0.85
-	self:segment(cursor-axis*cross,cursor+axis*cross,DIMENSION,1.35)
-	self:segment(cursor-other*cross,cursor+other*cross,DIMENSION,1.35)
+	self.cursorAnchor.Position=cursor
+	self.cursorDot.Enabled=true
 	self.widthBadge.position.Position=(xBase+cursor)*0.5+other*(cross*2)
 	self.widthBadge.label.Text="X "..dimension(cursorX-left)
 	self.widthBadge.gui.Enabled=true
@@ -230,6 +246,7 @@ end
 
 function Measurements:destroy()
 	self:hide()
+	self.cursorDot:Destroy()
 	self.widthBadge.gui:Destroy()
 	self.heightBadge.gui:Destroy()
 	self.root:Destroy()
