@@ -6,7 +6,7 @@ local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-assert(Gizmo.Revision=="GIZMO-PRECISE-PICK.11",
+assert(Gizmo.Revision=="GIZMO-NEON-RINGS.12",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera
 assert(camera,"CurrentCamera missing")
@@ -94,20 +94,17 @@ local success,reason=pcall(function()
 	for _,grip in ipairs(gizmo.grips) do
 		if grip.mode=="Rotate" then
 			rings+=1
-			assert(grip.highlight.Enabled and grip.highlight.Adornee==grip.model,
-				"Rotation ring must have a Highlight directly on its model")
-			assert(grip.highlight.Name=="RotationAxisHighlight"
-				and grip.highlight.FillColor==grip.baseColor,
-				"Rotation ring Highlight must match the exact X/Y/Z axis color")
-			assert(grip.highlight.FillTransparency==0 and
-				grip.highlight.OutlineTransparency==1)
+			assert(grip.highlight==nil,
+				"Rotation rings must render as Neon Parts without Highlights")
 			assert(grip.contour==nil,
 				"Rotation rings must not have any outline adornment")
 			radii[grip.axis]=grip.ringRadius
 			assert(#grip.segments==48 and #grip.ringPoints==48,
 				"Rotation ring must have 48 geometric segments")
 			for i,p in ipairs(grip.segments) do
-				assert(p.Shape==Enum.PartType.Cylinder and p.CanQuery,
+				assert(p.Shape==Enum.PartType.Cylinder and p.CanQuery
+					and p.Material==Enum.Material.Neon
+					and p.Color==grip.baseColor,
 					"Ring segments must be real selectable cylinder Parts")
 				assert(not p.CanCollide and not p.CanTouch,
 					"Visual gizmo must not affect physics")
@@ -175,7 +172,8 @@ local success,reason=pcall(function()
 		"Rotation rings must resize as the camera zooms")
 	gizmo:hide()
 	for _,grip in ipairs(gizmo.grips) do
-		assert(not grip.highlight.Enabled,"Handles remain after deselect")
+		assert(not grip.highlight or not grip.highlight.Enabled,
+			"Handles remain after deselect")
 	end
 end)
 camera.CFrame=originalCamera
