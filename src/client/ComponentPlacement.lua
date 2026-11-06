@@ -81,7 +81,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 	local xBox=textBox("X (mm)","84",149)
 	local yBox=textBox("Y (mm)","56",185)
 	local zBox=textBox("Z (mm)","84",221)
-	local feedback=label(form,"Material budget: 175,616,000 mm³ · sizes in mm",
+	local feedback=label(form,"Material budget: "..MaterialVolume.display(Quantize.MaxComponentVolume),
 		UDim2.fromOffset(16,258),UDim2.fromOffset(300,20))
 	feedback.TextSize=11
 	local cancel=button(form,"Cancel",UDim2.fromOffset(16,291),
@@ -191,7 +191,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,onPlace,onStatus)
 		self:close()
 		form.Visible=true
 		launch.Visible=false
-		feedback.Text="Material budget: 175,616,000 mm³ · sizes in mm"
+		feedback.Text="Material budget: "..MaterialVolume.display(Quantize.MaxComponentVolume)
 	end
 	function self:setLaunchVisible(value:boolean)
 		self.showLaunch=value
