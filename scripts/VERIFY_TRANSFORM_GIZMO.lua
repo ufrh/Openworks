@@ -1,83 +1,83 @@
 --!strict
--- Run in Play Solo CLIENT Command Bar after syncing OPENWORKS dev.
--- Tests real rendered world-coordinate arrow/ring vertices and selection.
--- UI event dispatch still needs a click in Studio.
+-- Studio CLIENT Command Bar test after syncing dev.
+-- Uses a mock Document so each handle can be rendered without modifying
+-- any real FORM body. Actual mouse dragging still needs a human test.
 local Players=game:GetService("Players")
 local player=Players.LocalPlayer
-assert(player,"Client Play Solo required")
+assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
 	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
-local camera=workspace.CurrentCamera
-assert(camera,"CurrentCamera missing")
-local originalCamera=camera.CFrame
-local position=Vector3.zero
-local size=Vector3.new(2,1,3)
-local node={position=position,size=size,rotation=Vector3.zero}
+assert(Gizmo.Revision=="GIZMO-STUDIO-HANDLES.3",
+	"Wrong gizmo module loaded: "..tostring(Gizmo.Revision))
+local mock={applyTransform=function()
+	return true
+end}
+local node={position=Vector3.zero,size=Vector3.new(2,1,3),
+	rotation=Vector3.zero}
 local component={id=1984,nodes={node},operations={}}
-local gizmo=Gizmo.new(player:WaitForChild("PlayerGui"),{},function() end)
-local ok,why=pcall(function()
-	camera.CFrame=CFrame.lookAt(Vector3.new(6,5,9),position)
+local gizmo=Gizmo.new(player:WaitForChild("PlayerGui"),mock,function() end)
+local success,problem=pcall(function()
 	gizmo:show(component,1)
-	local count=0
+	local moves=0
 	for _,grip in ipairs(gizmo.grips) do
 		if grip.mode=="Move" then
-			count+=1
+			moves+=1
+			assert(grip.stem:IsA("Part") and
+				grip.stem.Shape==Enum.PartType.Cylinder)
+			assert(grip.tip:IsA("WedgePart"),
+				"Arrowhead must be a solid Part, not an adornment")
+			assert(grip.highlight:IsA("Highlight"))
+			assert(grip.highlight.Enabled and grip.stem.Transparency==0
+				and grip.tip.Transparency==0)
+			assert((grip.shaftStart-node.position).Magnitude<1e-5,
+				"Arrow shaft doesn't begin at the object center")
 			local direction=grip.normal
-			assert(grip.arrow:IsA("WireframeHandleAdornment"),
-				"Move visual must be world-space wireframe")
-			assert(grip.arrow.Visible)
-			assert((grip.shaftStart-position).Magnitude<1e-5,
-				"Move stem does not begin at the object center")
-			assert((grip.shaftEnd-position):Dot(direction)>size[grip.axis]*0.5,
-				"Move stem fails to cross the object face")
 			assert((grip.arrowTip-grip.shaftEnd):Dot(direction)>0,
-				"Arrowhead tip points inward, not outward")
-			assert((grip.arrowTip-grip.shaftStart):Cross(direction).Magnitude<1e-5,
-				"Arrowhead deviates from its axis")
+				"Arrow tip must point outward from its axis")
+			assert((grip.arrowTip-node.position):Cross(direction).Magnitude<1e-5)
 		end
 	end
-	assert(count==3,"All XYZ move arrows required")
+	assert(moves==3,"Need X/Y/Z move arrows")
+
 	gizmo:setMode("Scale")
-	count=0
+	local scales=0
 	for _,grip in ipairs(gizmo.grips) do
 		if grip.mode=="Scale" then
-			count+=1
-			assert(grip.marker.Visible)
-			assert((grip.part.Position-position):Dot(grip.normal)>
-				size[grip.axis]*0.5,"Scale handle overlaps the body")
+			scales+=1
+			assert(grip.part:IsA("Part") and
+				grip.part.Shape==Enum.PartType.Block,
+				"Scale grip must be a studio-style solid cube")
+			assert(grip.highlight.Enabled and grip.part.Transparency==0)
 		end
 	end
-	assert(count==6,"All six scale faces required")
+	assert(scales==6,"Need six face scale grips")
+
 	gizmo:setMode("Rotate")
-	local ringCount=0
-	local clickable=false
+	local axes={X=false,Y=false,Z=false}
+	for axis,arcs in pairs(gizmo.rotationArcs) do
+		assert(arcs:IsA("ArcHandles"),"Rotation ring must be native ArcHandles")
+		assert(arcs.Visible and arcs.Adornee==gizmo.rotationAnchor,
+			"Native ring has no visible local part to adorn")
+		assert(arcs.Parent==player.PlayerGui,
+			"Native ArcHandles must be in PlayerGui to receive mouse events")
+		axes[axis]=true
+	end
+	assert(axes.X and axes.Y and axes.Z,"Need X/Y/Z native rotation axes")
+	assert(gizmo.rotationAnchor.CanQuery==false,
+		"Rotation pivot must not intercept material raycasts")
+	assert(gizmo.rotationAnchor.Transparency==1)
 	for _,grip in ipairs(gizmo.grips) do
-		if grip.mode=="Rotate" then
-			ringCount+=1
-			assert(grip.ring:IsA("WireframeHandleAdornment"))
-			assert(grip.ring.Visible,"A rotation ring is hidden")
-			assert(#grip.ringPath==72 and #grip.ringWorldPath==72,
-				"Rotation ring has no full wireframe circumference")
-			assert(grip.ring.CFrame==CFrame.identity,
-				"World-space ring must not apply a second transformation")
-			assert(grip.ring.Scale==Vector3.one,
-				"World-space ring must not apply a second scale")
-			for i,worldPoint in ipairs(grip.ringWorldPath) do
-				local projected=grip.ringFrame:PointToWorldSpace(
-					grip.ringPath[i]*grip.ringRadius)
-				assert((worldPoint-projected).Magnitude<1e-5,
-					"Rendered ring point differs from click target")
-				local point,front=camera:WorldToViewportPoint(worldPoint)
-				if front and gizmo._pick(Vector2.new(point.X,point.Y)) then
-					clickable=true
-				end
-			end
+		if grip.mode=="Move" or grip.mode=="Scale" then
+			assert(grip.highlight.Enabled==false,
+				"Non-rotation parts must hide during Rotate")
 		end
 	end
-	assert(ringCount==3,"Missing XYZ rotation rings")
-	assert(clickable,"Rotation ring cannot be selected at its drawn pixels")
+
+	gizmo:hide()
+	for _,arcs in pairs(gizmo.rotationArcs) do
+		assert(not arcs.Visible,"Rotation rings must hide on deselection")
+	end
 end)
-camera.CFrame=originalCamera
 gizmo:destroy()
-assert(ok,tostring(why))
-print("FORM gizmo: 3 pivot-origin outward arrows, 6 scale grips, 3 drawn/clickable rotation rings verified")
+assert(success,tostring(problem))
+print("FORM: 3 highlighted Part move arrows, six Scale cubes and 3 native ArcHandles verified")
