@@ -313,13 +313,31 @@ local function layoutRing(grip,cf:CFrame,radius:number,thickness:number,
 	grip.ringPoints=points
 	grip.ringRadius=radius
 	grip.ringFrame=cf
+	grip.ringGap={}
+	-- Ring axes intersect at cardinal points. Intentionally interrupt the
+	-- lower-priority Neon ring there to prevent two glowing tubes occupying
+	-- the same pixels / producing a bright color-crossing artifact.
+	-- All rings retain the same radius, position and drag rotation math.
+	local crossingAxes=if grip.axis=="X" then {Vector3.yAxis,Vector3.zAxis}
+		elseif grip.axis=="Y" then {Vector3.zAxis} else {}
 	for i,part in ipairs(grip.segments) do
 		local a=points[i]
 		local b=points[i%RING_SAMPLES+1]
 		local tangent=b-a
+		local midpoint=(a+b)*0.5
+		local gap=false
+		for _,other in ipairs(crossingAxes) do
+			local perpendicular=cf:VectorToWorldSpace(other)
+			if math.abs((midpoint-cf.Position):Dot(perpendicular))
+				<radius*0.075 then
+				gap=true
+				break
+			end
+		end
+		grip.ringGap[i]=gap
 		-- Cylinder Parts use local X for the long axis.
 		part.CFrame=CFrame.lookAt((a+b)*0.5,b)*CFrame.Angles(0,math.pi/2,0)
-		part.Size=Vector3.new(tangent.Magnitude*1.025,thickness,thickness)
+		part.Size=Vector3.new(tangent.Magnitude,thickness,thickness)
 		part.Color=tint
 	end
 end
@@ -423,7 +441,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			baseColor=spec.color,hoverAlpha=0,
 			normal=spec.normal,radial=spec.radial,axis=spec.axis,
 			mode="Rotate",ringPoints={},ringRadius=0,ringFrame=nil,
-			ringThickness=0,
+			ringThickness=0,ringGap={},
 		}
 		self.rotationGrips[spec.axis]=grip
 		table.insert(self.grips,grip)
@@ -451,6 +469,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			else
 				threshold=RING_HIT_PIXELS
 				for i,a in ipairs(grip.ringPoints) do
+					if grip.ringGap[i] then continue end
 					local b=grip.ringPoints[i%#grip.ringPoints+1]
 					local pa=project(camera,a)
 					local pb=project(camera,b)
@@ -690,6 +709,12 @@ function TransformGizmo:refresh(dt:number?)
 			if changed then
 				layoutRing(grip,basis,radius,thickness,grip.baseColor)
 				grip.ringThickness=thickness
+			end
+			for i,segment in ipairs(grip.segments) do
+				if grip.ringGap[i] then
+					segment.Transparency=1
+					segment.CanQuery=false
+				end
 			end
 		end
 	end
