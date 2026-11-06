@@ -2,8 +2,6 @@
 -- Read-only dimensional preview for the actual hovered planar FORM face.
 -- Face polygons are taken from cached authored HistoryTopology, never
 -- the primitive stock envelope or a live EditableMesh readback.
-local ReplicatedStorage=game:GetService("ReplicatedStorage")
-local Quantize=require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Quantize)
 local Measurements={}
 Measurements.__index=Measurements
 
@@ -11,6 +9,7 @@ local SCALE_MM=280
 local OUTLINE=Color3.fromRGB(105,226,235)
 local DIMENSION=Color3.fromRGB(163,192,200)
 local MAX_LINES=96
+local RULER_STEPS=10 -- ten equal visual divisions per face axis; five-step marks are longer
 
 local function line(parent:Instance,origin:BasePart,index:number):LineHandleAdornment
 	local visual=Instance.new("LineHandleAdornment")
@@ -122,7 +121,7 @@ local function selectAxis(points:{Vector3}):Vector3?
 end
 
 local function dimension(value:number):string
-	return string.format("%.0f mm",value*SCALE_MM)
+	return string.format("%.1f mm",value*SCALE_MM)
 end
 
 -- Supports convex/concave planar faces; measurements are orthogonal
@@ -187,16 +186,30 @@ function Measurements:show(part:BasePart,face,cursorWorld:Vector3?):boolean
 	-- the oriented planar bounding rectangle. Both use real mm.
 	local localCursor=if cursorWorld then cursorWorld-reference else
 		axis*(width*0.5+left)+other*(height*0.5+bottom)
-	-- Snap the distance from each bounding edge (rather than the world
-	-- coordinate), so zero always starts exactly at the face boundary.
-	local cursorX=left+math.clamp(
-		Quantize.snap(localCursor:Dot(axis)-left,Quantize.Grid),0,width)
-	local cursorY=bottom+math.clamp(
-		Quantize.snap(localCursor:Dot(other)-bottom,Quantize.Grid),0,height)
+	-- Measurements are deliberately continuous, independent of the
+	-- modeling grid. The ruler marks below are visual increments only.
+	local cursorX=math.clamp(localCursor:Dot(axis),left,right)
+	local cursorY=math.clamp(localCursor:Dot(other),bottom,top)
 	local cursor=corner(cursorX,cursorY)
 	local xBase=corner(left,cursorY)
 	local yBase=corner(cursorX,bottom)
 	local tick=math.clamp(math.min(width,height)*0.04,0.015,0.05)
+	-- A graduated ruler on the left and bottom face extents. Minor
+	-- divisions divide the full length into ten steps; the midpoint
+	-- and end marks are longer. These marks do not snap the cursor.
+	local rulerLift=math.max(tick*0.75,0.012)
+	for i=0,RULER_STEPS do
+		local major=i%5==0
+		local length=if major then rulerLift*1.8 else rulerLift
+		local x=left+width*i/RULER_STEPS
+		local y=bottom+height*i/RULER_STEPS
+		local horizontal=corner(x,bottom)
+		local vertical=corner(left,y)
+		self:segment(horizontal,horizontal-other*length,DIMENSION,
+			if major then 1.55 else 1.1)
+		self:segment(vertical,vertical-axis*length,DIMENSION,
+			if major then 1.55 else 1.1)
+	end
 	-- Crosshair and two perpendicular measuring legs follow the mouse,
 	-- instead of labeling the entire face width/height.
 	self:segment(xBase,cursor,DIMENSION,1.3)
