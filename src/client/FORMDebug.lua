@@ -263,10 +263,11 @@ function Debug.start()
 				-- edges are absent, and new fillets supply their own edges.
 				-- Paths are world-space because origin is CFrame.identity.
 				for _,edge in ipairs(topology.edges) do
-					if edge.curved then continue end
 					local a=topology.part.CFrame:PointToWorldSpace(edge.a)
 					local b=topology.part.CFrame:PointToWorldSpace(edge.b)
 					if (a-b).Magnitude>0.001 then
+						-- Keep even segmented curved trim edges: the
+						-- selection follows new smooth/file surfaces.
 						selectionBorder:AddPath({a,b},false)
 					end
 				end
