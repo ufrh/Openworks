@@ -422,6 +422,7 @@ function Debug.start(options:any?)
 	button(row(29), "+ Create Component", 0, 1, function()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool=nil
+		if options.onToolChanged then options.onToolChanged(nil) end
 		toolVisualizer:stopAnimation()
 		selectionBorder:Clear()
 		selectionBorder.Visible=false
@@ -466,6 +467,7 @@ function Debug.start(options:any?)
 		toolVisualizer:stopAnimation()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool = kind
+		if options.onToolChanged then options.onToolChanged(kind) end
 		if measurementTool then measurementTool:setActive(kind=="Measure") end
 		toolVisualizer:hide()
 		selectionBorder:Clear()
@@ -493,6 +495,7 @@ function Debug.start(options:any?)
 		if not component then message("Select a workpiece before using Saw") return end
 		if not sketchEditor then message("Sketch workspace unavailable") return end
 		activeTool = nil
+		if options.onToolChanged then options.onToolChanged("Saw") end
 		toolVisualizer:stopAnimation()
 		selectionBorder:Clear()
 		selectionBorder.Visible=false
@@ -514,6 +517,7 @@ function Debug.start(options:any?)
 		selectionBorder.Visible=false
 		transformGizmo:setHidden(true)
 		toolStatus.Text = "Tool: SKETCH"
+		if options.onToolChanged then options.onToolChanged("Sketch") end
 		sketchEditor:start(component)
 		transformGizmo:setHidden(true)
 	end, "New Component", function()
@@ -579,6 +583,7 @@ function Debug.start(options:any?)
 		toolStatus.Text = "Tool: none"
 		if measurementTool then measurementTool:setActive(false) end
 		transformGizmo:setMode(mode)
+		if options.onToolChanged then options.onToolChanged(mode) end
 		transformStatus.Text = "Mode: " .. string.upper(mode)
 		refresh()
 	end
