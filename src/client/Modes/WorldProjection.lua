@@ -29,6 +29,7 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,targetC
 				descendant.CFrame=CFrame.new(offset)*descendant.CFrame
 				descendant.Anchored=true
 				descendant.CanCollide=false
+				descendant.CanQuery=false -- Never obstruct the Free-mode ground placement raycast
 				descendant.CanTouch=false
 				descendant.CastShadow=true
 			end
