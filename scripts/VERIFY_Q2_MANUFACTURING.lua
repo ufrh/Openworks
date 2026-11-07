@@ -19,6 +19,7 @@ grid:setVisible(true)
 assert(grid.visible and grid.lineCount>0)
 local before=grid.lineCount
 assert(SnapSettings.set(.25))
+task.wait()
 assert(SnapSettings.get()==.25)
 assert(grid.visible and grid.lineCount~=before,
  "Grid must rebuild automatically at adjusted snap spacing")
