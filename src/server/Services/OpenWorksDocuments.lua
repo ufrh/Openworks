@@ -128,7 +128,8 @@ function Service:SetOperationEnabled(player:Player,id:any,revision:any,
  end
  remember(self,player,component)
  local ok,reason=doc:setOperationEnabled(component,operationId,enabled)
- return if ok then true else false,if ok then Document.snapshot(component) else reason
+ if not ok then return false,reason end
+ return true,Document.snapshot(component)
 end
 
 function Service:RemoveOperation(player:Player,id:any,revision:any,operationId:any)
@@ -137,7 +138,8 @@ function Service:RemoveOperation(player:Player,id:any,revision:any,operationId:a
  if typeof(operationId)~="number" then return false,"Invalid feature ID" end
  remember(self,player,component)
  local ok,reason=doc:removeOperation(component,operationId)
- return if ok then true else false,if ok then Document.snapshot(component) else reason
+ if not ok then return false,reason end
+ return true,Document.snapshot(component)
 end
 
 function Service:ApplyTransform(player:Player,id:any,revision:any,
@@ -184,7 +186,8 @@ function Service:UndoOperation(player:Player,id:any,revision:any)
  if not doc then return false,err end
  remember(self,player,component)
  local ok,reason=doc:undoOperation(component)
- return if ok then true else false,if ok then Document.snapshot(component) else reason
+ if not ok then return false,reason end
+ return true,Document.snapshot(component)
 end
 
 function Service:DeleteComponent(player:Player,id:any,revision:any)
