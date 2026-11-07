@@ -153,13 +153,18 @@ local function hasFabrication(component):boolean
 end
 
 local function withinCurrentVolume(component,size:Vector3):boolean
-	if hasFabrication(component) then return true end
 	local node=component.nodes[1]
 	if node.kind=="SketchBody" then
+		-- For an unmodified sketch the outline area is known exactly.
+		-- Once boolean features exist, Preview validates compiled material.
+		for _,op in ipairs(component.operations) do
+			if op.enabled~=false then return true end
+		end
 		local candidate=table.clone(node)
 		candidate.size=size
 		return MaterialVolume.within(MaterialVolume.node(candidate))
 	end
+	if hasFabrication(component) then return true end
 	return MaterialVolume.within(MaterialVolume.primitive(node.kind,size))
 end
 
