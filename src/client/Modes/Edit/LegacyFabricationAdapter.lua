@@ -55,6 +55,10 @@ function Debug.start(options:any?)
 	local document = Document.new()
 	local characterMode=CharacterMode.new(player)
 	local editorActive=false
+ local previewOnly=false
+ local gizmoWasHidden=false
+ local setPreviewEnabled:any=nil
+ local togglePreview:any=nil
 	local pendingSketch:any=nil
 	local currentWorkspace:any=nil
 	local worldProjection=WorldProjection.new()
@@ -84,6 +88,21 @@ function Debug.start(options:any?)
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}, playerGui)
 	gui.Enabled=false -- Roblox character play is the default mode
+ local previewButton=make("TextButton",{
+  Name="ModelPreviewToggle",
+  AnchorPoint=Vector2.new(1,0),
+  Position=UDim2.new(1,-16,0,64),
+  Size=UDim2.fromOffset(150,34),
+  Text="PREVIEW  [P]",
+  Font=Enum.Font.GothamMedium,TextSize=12,
+  TextColor3=Color3.fromRGB(231,245,252),
+  BackgroundColor3=Color3.fromRGB(33,65,81),
+  BorderSizePixel=0,AutoButtonColor=true,
+ },gui)
+ make("UICorner",{CornerRadius=UDim.new(0,6)},previewButton)
+ previewButton.Activated:Connect(function()
+  if togglePreview then togglePreview() end
+ end)
 	local panel = make("Frame", {
 		Name = "Controls",
 		BackgroundColor3 = Color3.fromRGB(25, 29, 33),
@@ -307,7 +326,7 @@ function Debug.start(options:any?)
 		local ready=component and solidState
 			and solidState.key==Fabricator.geometryKey(component)
 			and (not Fabricator.requiresCompile(component) or solidState.boolean)
-		if ready and editorActive and not pendingSketch and not activeTool
+		if ready and editorActive and not previewOnly and not pendingSketch and not activeTool
 			and not (sketchEditor and sketchEditor.active)
 			and model and surfacePicker then
 			local topology=surfacePicker:get(component.id,model,component)
@@ -339,7 +358,7 @@ function Debug.start(options:any?)
 			end
 		end
 		if transformGizmo then
-			if editorActive and not pendingSketch and component and node then
+			if ready and editorActive and not previewOnly and not pendingSketch and component and node then
 				transformGizmo:show(component, nodeIndex)
 			else
 				transformGizmo:hide()
@@ -397,6 +416,17 @@ function Debug.start(options:any?)
 		end
 		refresh()
 	end
+ -- Dragging a Free Mode component selects that manufactured object for
+ -- the next Edit entry. Free Mode never exposes the CAD gizmo.
+ worldProjection.onSelect=function(id:number)
+  local component=document.components[id]
+  if not component then return end
+  selectComponent(id)
+  currentWorkspace=EditWorkspace.new(component.worldOrigin
+   or component.workspaceOrigin or Vector3.zero,
+   component.workspaceSize or component.nodes[1].size,component.name)
+  if placementFlow then placementFlow:setLaunchVisible(true) end
+ end
 
 	local function changed(component)
 		toolVisualizer:stopAnimation()
@@ -613,7 +643,7 @@ function Debug.start(options:any?)
 	end)
 
 	connectExternal(UserInputService.InputBegan,function(input, processed)
-		if not editorActive then return end
+		if not editorActive or previewOnly then return end
 		if toolVisualizer:isAnimating() then return end
 		if sketchEditor and sketchEditor.active then return end
 		if processed or UserInputService:GetFocusedTextBox() then return end
@@ -774,6 +804,7 @@ function Debug.start(options:any?)
 	-- The player is walking by default. Explicitly entering/exiting
 	-- component workspace changes camera AND movement controls.
 	leaveEditor=function()
+  if previewOnly and setPreviewEnabled then setPreviewEnabled(false) end
 		pendingSketch=nil
 		editorActive=false
 		-- Switching modes must cancel an unfinished ground placement,
@@ -820,9 +851,12 @@ function Debug.start(options:any?)
 			if component then
 				local ok, reason = document:addOperation(component, "SketchExtrude", data)
 				if ok then
-					changed(component)
-					toolVisualizer:animateSketch(Compiler.pose(component.nodes[1]),
-						component.nodes[1],data)
+     -- Sketch booleans are replayed asynchronously. Never draw the old
+     -- cutter's 3D extrusion wireframe after committing it; that stale
+     -- animation looked like stretched/broken geometry during CSG.
+     toolVisualizer:stopAnimation()
+     toolVisualizer:discard()
+     changed(component)
 				end
 				return ok, reason
 			end
@@ -1131,7 +1165,7 @@ function Debug.start(options:any?)
 	-- visible, indexed manufactured surface with no fabrication tool,
 	-- camera gesture, text edit, or transform gizmo interaction.
 	connectExternal(RunService.RenderStepped,function(dt)
-		if not editorActive then return end
+		if not editorActive or previewOnly then return end
 		if sketchEditor and sketchEditor.active then
 			if selectionBorder.Visible then
 				selectionBorder:Clear()
@@ -1207,7 +1241,7 @@ function Debug.start(options:any?)
 	end)
 
 	connectExternal(UserInputService.InputBegan,function(input, processed)
-		if not editorActive then return end
+		if not editorActive or previewOnly then return end
 		if sketchEditor and sketchEditor.active then return end
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 		if placementFlow and (placementFlow.placing or placementFlow.form.Visible) then return end
@@ -1345,6 +1379,7 @@ function Debug.start(options:any?)
 		cameraController:frameBounds(CFrame.new(workspaceData.center),
 			Vector3.new(workspaceData.size.X,0.05,workspaceData.size.Z))
 		cameraController:setActive(true)
+  if previewOnly and setPreviewEnabled then setPreviewEnabled(false) end
 		gui.Enabled=true
 		panel.Visible=pendingSketch==nil and selectedComponent()~=nil
 		placementFlow:setLaunchVisible(false)
@@ -1393,9 +1428,44 @@ function Debug.start(options:any?)
 	placementFlow:setLaunchVisible(true)
 	grid:setVisible(false)
 	preview.root.Parent=nil
-	refresh()
+ refresh()
+ -- A clean viewport toggle: every OpenWorks edit GUI and editing
+ -- adornment disappears, but the camera and unsaved sketch remain intact.
+ setPreviewEnabled=function(enabled:boolean)
+  if enabled and (not editorActive or transformGizmo:isDragging()) then return end
+  if previewOnly==enabled then return end
+  previewOnly=enabled
+  if enabled then gizmoWasHidden=transformGizmo.hidden end
+  gui.Enabled=editorActive and not enabled
+  if sketchEditor then sketchEditor:setPreviewHidden(enabled) end
+  grid:setVisible(not enabled and gridUserVisible)
+  if enabled then
+   toolVisualizer:stopAnimation()
+   toolVisualizer:discard()
+   selectionBorder:Clear()
+   selectionBorder.Visible=false
+   transformGizmo:setHidden(true)
+   if measurementTool then measurementTool:setActive(false) end
+  else
+   transformGizmo:setHidden(gizmoWasHidden)
+   if editorActive then refresh() end
+   if activeTool=="Measure" and measurementTool then
+    measurementTool:setActive(true)
+   end
+  end
+  if options.onPreviewChanged then options.onPreviewChanged(enabled) end
+ end
+ togglePreview=function()
+  setPreviewEnabled(not previewOnly)
+ end
+ connectExternal(UserInputService.InputBegan,function(input,processed)
+  if not editorActive or processed or UserInputService:GetFocusedTextBox() then return end
+  if input.KeyCode==Enum.KeyCode.P then togglePreview() end
+ end)
 	message("Character mode · Create Component places a new sketch workspace")
 	return {
+  setPreviewEnabled=setPreviewEnabled,
+  isPreviewEnabled=function()return previewOnly end,
 		getWorkspace=function()
 			local selected=selectedComponent()
 			if selected then
