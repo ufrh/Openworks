@@ -1404,7 +1404,10 @@ function Debug.start(options:any?)
 				local size=selected.workspaceSize or selected.nodes[1].size
 				return EditWorkspace.new(origin,size,selected.name)
 			end
-			return currentWorkspace
+			-- A canceled first sketch is not a component. Reopening Edit
+			-- without a selected manufactured component would strand the
+			-- player in an empty chamber with no active sketch session.
+			return if pendingSketch then currentWorkspace else nil
 		end,
 		enterEditor=enterEdit,
 		leaveEditor=function()if leaveEditor then leaveEditor()end end,
