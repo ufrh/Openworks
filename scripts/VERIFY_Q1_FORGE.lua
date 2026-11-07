@@ -13,6 +13,8 @@ local Modes=scripts:WaitForChild("Modes")
 local Manager=require(Modes.ModeManager)
 local Workspace=require(Modes.EditWorkspace)
 local Environment=require(Modes.EditEnvironment)
+local Preview=require(scripts.Systems.Components.Preview)
+local WorldProjection=require(Modes.WorldProjection)
 local m=Manager.new()
 local log={}
 local function mode(id:string,fail:boolean?)
@@ -48,4 +50,46 @@ end
 env:hide()
 assert(env.root==nil and root.Parent==nil)
 assert(runtime.modeManager.currentName~=nil)
-print("OPENWORKS Q1 FORGE PASS: original framework, controller lifecycle, rollback, chamber and coordinate frames")
+-- Verify source models are NOT simultaneously shown at the same CAD origin.
+local preview=Preview.new(function() end,function() end)
+local first={id=1,name="Plate A",revision=1,
+ workspaceOrigin=authored.editCorner,worldOrigin=authored.worldCorner}
+local second={id=2,name="Plate B",revision=1,
+ workspaceOrigin=authored.editCorner,worldOrigin=authored.worldCorner+Vector3.new(6,0,0)}
+local one=preview:ensure(first)
+local two=preview:ensure(second)
+preview:showOnly(1)
+assert(one.Parent==preview.root and two.Parent==nil,
+ "Edit Mode must isolate only the active component")
+preview:showOnly(-1)
+assert(one.Parent==nil and two.Parent==nil,
+ "Initial sketch must hide all previously manufactured solids")
+preview:showOnly(2)
+assert(two.Parent==preview.root and one.Parent==nil)
+-- Projections must preserve world placement and cache identity on mode return.
+local source=Instance.new("Part")
+source.Name="Solid"
+source.Size=Vector3.new(1,.1,1)
+source.CFrame=CFrame.new(authored.editCorner+Vector3.new(.5,.1,.5))
+source.Parent=one
+preview.states[1]={part=source,key="q1-check"}
+local projection=WorldProjection.new()
+projection:show(preview,{components={[1]=first}},authored)
+local worldModel=projection.cache[1] and projection.cache[1].model
+assert(worldModel,"World model projection was not created")
+local cloned=worldModel:FindFirstChild("Solid")
+assert(cloned and cloned:IsA("BasePart"))
+local expected=authored:toWorld(source.Position)
+assert((cloned.Position-expected).Magnitude<1e-4,
+ "World projection must restore original component coordinates")
+assert(not cloned.CanCollide and not cloned.CanQuery)
+projection:clear()
+assert(projection.root.Parent==nil)
+projection:show(preview,{components={[1]=first}},authored)
+assert(projection.cache[1].model==worldModel,
+ "Mode switching must reuse unchanged projection rather than recloning")
+projection:Destroy()
+preview:destroy()
+local tests=FORGE.Tests:Run("OpenWorks.Q1")
+assert(tests.Total>=1 and tests.Failed==0,"FORGE Q1 registered tests failed")
+print("OPENWORKS Q1 FORGE PASS: framework, lifecycle, isolation, coordinate mapping, cache and test registry")
