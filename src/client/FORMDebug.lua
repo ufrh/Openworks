@@ -1297,8 +1297,7 @@ function Debug.start()
 				Vector3.new(size.X,0.05,size.Z))
 			-- Set all targets BEFORE activating the scripted camera so
 			-- the first visible CAD frame is already at the final pose.
-			cameraController:setActive(true)
-			cameraController:snapNow()
+			cameraController:setActive(true) -- setActive already snaps immediately
 			gui.Enabled=true
 			panel.Visible=false -- first sketch must create the solid
 			placementFlow:setLaunchVisible(false)
