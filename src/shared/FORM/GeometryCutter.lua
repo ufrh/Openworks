@@ -89,7 +89,7 @@ function GeometryCutter.projectRings(profile:{Vector3},travel:Vector3,miter)
 	return lower,upper
 end
 
-function GeometryCutter.prism(profile: {Vector3}, travel: Vector3, miter): (MeshPart, () -> ())
+function GeometryCutter.prism(profile: {Vector3}, travel: Vector3, miter, keepEditable:boolean?): (MeshPart, () -> ())
 	if #profile < 3 or #profile > 128 or travel.Magnitude < 0.0001 then
 		error("Invalid geometry cutter profile", 0)
 	end
@@ -168,6 +168,12 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3, miter): (Mesh
 		if editable then editable:Destroy() end
 		error("Surface cutter creation failed: "..tostring(failure),0)
 	end
+	-- The first sketched stock is a DISPLAYED MeshPart, not a disposable
+	-- CSG cutter. Its EditableMesh source must remain alive for its whole
+	-- lifetime; destroying it immediately could leave only wireframe UI.
+	if keepEditable then
+		editable.Parent=part
+	end
 	local done=false
 	return part,function()
 		if done then return end
@@ -175,6 +181,92 @@ function GeometryCutter.prism(profile: {Vector3}, travel: Vector3, miter): (Mesh
 		part:Destroy()
 		editable:Destroy()
 	end
+end
+
+-- Native Part fallback for the very first SketchBody when Mesh APIs are
+-- denied by experience settings. Ear-clipped triangles are split into two
+-- right triangles; one WedgePart represents each half of their Y prism.
+-- UnionAsync bakes a genuine single solid without EditableMesh.
+function GeometryCutter.prismNative(profile:{Vector3},travel:Vector3):BasePart
+	if #profile<3 or travel.Magnitude<0.001 then
+		error("Native sketch prism needs a closed profile and positive extrusion",0)
+	end
+	local source=table.clone(profile)
+	local winding=(source[2]-source[1]):Cross(source[3]-source[1]):Dot(travel)
+	if winding<0 then
+		local reversed={}
+		for i=#source,1,-1 do table.insert(reversed,source[i]) end
+		source=reversed
+	end
+	local triangles=triangulate(source,travel)
+	local wedges={}
+	local function rightWedge(foot:Vector3,endPoint:Vector3,apex:Vector3)
+		local base=endPoint-foot
+		local rise=apex-foot
+		if base.Magnitude<0.0001 or rise.Magnitude<0.0001 then return end
+		local longAxis=travel.Unit
+		local z=-base.Unit
+		local y=rise.Unit
+		local x=y:Cross(z).Unit
+		if math.abs(x:Dot(longAxis))<0.99 then
+			error("Native prism right triangle has invalid orthogonal axes",0)
+		end
+		local wedge=Instance.new("WedgePart")
+		wedge.Name="FORM_NativeSketchTriangle"
+		wedge.Anchored=true
+		wedge.Size=Vector3.new(travel.Magnitude,rise.Magnitude,base.Magnitude)
+		wedge.CFrame=CFrame.fromMatrix((endPoint+apex+travel)/2,x,y,z)
+		wedge.Color=Color3.new(1,1,1)
+		wedge.Material=Enum.Material.SmoothPlastic
+		wedge.Transparency=0
+		wedge.CanCollide=false
+		wedge.CanTouch=false
+		wedge.CanQuery=false
+		table.insert(wedges,wedge)
+	end
+	for _,ids in ipairs(triangles) do
+		local vertices={source[ids[1]],source[ids[2]],source[ids[3]]}
+		local baseA,baseB,apex=vertices[1],vertices[2],vertices[3]
+		local maxLength=-1
+		for _,candidate in ipairs({{1,2,3},{2,3,1},{3,1,2}}) do
+			local a,b=vertices[candidate[1]],vertices[candidate[2]]
+			local len=(b-a).Magnitude
+			if len>maxLength then
+				maxLength=len
+				baseA,baseB,apex=a,b,vertices[candidate[3]]
+			end
+		end
+		local along=baseB-baseA
+		local t=math.clamp((apex-baseA):Dot(along)/
+			math.max(along:Dot(along),1e-10),0,1)
+		local foot=baseA+along*t
+		-- Both right-angled prisms exactly partition the source triangle.
+		rightWedge(foot,baseA,apex)
+		rightWedge(foot,baseB,apex)
+	end
+	if #wedges==0 then error("Native sketch prism yielded no wedges",0) end
+	local GeometryService=game:GetService("GeometryService")
+	local success,result=pcall(function()
+		if #wedges==1 then return {wedges[1]:Clone()} end
+		local others={}
+		for i=2,#wedges do table.insert(others,wedges[i]) end
+		return GeometryService:UnionAsync(wedges[1],others,{SplitApart=false})
+	end)
+	for _,wedge in ipairs(wedges) do wedge:Destroy() end
+	if not success or typeof(result)~="table" or #result~=1 then
+		if success and typeof(result)=="table" then
+			for _,piece in ipairs(result) do piece:Destroy() end
+		end
+		error("Native wedge union could not create the solid: "..
+			tostring(if success then "non-contiguous shape" else result),0)
+	end
+	local solid=result[1]
+	solid.Name="FORM_NativeSketchSolid"
+	solid.Anchored=true
+	solid.CanCollide=false
+	solid.CanTouch=false
+	solid.CanQuery=false
+	return solid
 end
 
 -- A chamfer is different on convex and re-entrant edges:
