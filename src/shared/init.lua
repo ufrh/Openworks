@@ -1,2 +1,3 @@
--- OPENWORKS shared root. FORM and FORGE modules will be mounted here during implementation.
+-- OpenWorks shared game API root. FORM is the manufacturing engine.
+-- FORGE lives in its own top-level ReplicatedStorage.FORGE mount.
 return {}
