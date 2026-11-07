@@ -40,6 +40,11 @@ function Controller:Start()
    switch("Edit",{workspace=workspaceData})
   end,
   onFreeRequested=function()switch("Free")end,
+  onToolChanged=function(kind)
+   if not kind then self.tools:clear() return end
+   local ok,reason=self.tools:activate(kind)
+   if not ok then warn("[OPENWORKS] "..tostring(reason)) end
+  end,
  })
  manager:register("Free",FreeMode.new(self.bridge))
  manager:register("Edit",EditMode.new(self.bridge,self.environment))
