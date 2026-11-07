@@ -16,6 +16,7 @@ local Preview = require(script.Parent.Preview)
 local BlenderCamera = require(script.Parent.BlenderCamera)
 local GridOverlay = require(script.Parent.GridOverlay)
 local CharacterMode = require(script.Parent.CharacterMode)
+local SurfaceSnap = require(script.Parent.SurfaceSnap)
 local ViewGizmo = require(script.Parent.ViewGizmo)
 local TransformGizmo = require(script.Parent.TransformGizmo)
 local SketchEditor = require(script.Parent.SketchEditor)
@@ -857,7 +858,13 @@ function Debug.start()
 		if not mm or not Quantize.isFinite(mm) or mm < 5 or mm > 35840 then
 			return nil, label .. " must be between 5 mm and 35840 mm"
 		end
-		return mm / 280, nil
+		-- All editable tool dimensions are whole-millimeter increments,
+		-- regardless of whether typed or adjusted with the wheel.
+		local snappedMM=math.floor(mm+0.5)
+		if not box:IsFocused() and box.Text~=tostring(snappedMM) then
+			box.Text=tostring(snappedMM)
+		end
+		return SurfaceSnap.mm(snappedMM/280),nil
 	end
 
 
@@ -1049,6 +1056,17 @@ function Debug.start()
 			taperA=false,taperB=false},nil
 	end
 
+	-- Snap drilling centers in the selected face's tangent plane. The
+	-- face-normal coordinate is untouched so rotated/filleted surfaces
+	-- do not push the drill origin off the actual manufactured surface.
+	local function snappedFaceOrigin(target,topology,face):Vector3
+		local planePoint=topology.part.CFrame:PointToWorldSpace(face.polygon[1])
+		local normal=topology.part.CFrame:VectorToWorldSpace(face.normal)
+		local world=SurfaceSnap.pointOnPlane(
+			target.hit.Position,planePoint,normal,Quantize.Grid)
+		return target.pose:PointToObjectSpace(world)
+	end
+
 	-- Passive CAD face inspection. Only show a measurement on a
 	-- visible, indexed manufactured surface with no fabrication tool,
 	-- camera gesture, text edit, or transform gizmo interaction.
@@ -1098,7 +1116,7 @@ function Debug.start()
 			end
 			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
 			if not face then toolVisualizer:hide() return end
-			local origin=pose:PointToObjectSpace(target.hit.Position)
+			local origin=snappedFaceOrigin(target,topology,face)
 			local worldNormal=topology.part.CFrame:VectorToWorldSpace(face.normal)
 			toolVisualizer:drillFace(pose,origin,
 				pose:VectorToObjectSpace(worldNormal),diameter,depth,drillThrough,node.size.Magnitude,node.size)
@@ -1199,7 +1217,7 @@ function Debug.start()
 			local face=topology.faceAt(topology,target.hit.Position,target.hit.Normal)
 			if not face then message("Select a visible manufactured face") return end
 			local worldNormal=topology.part.CFrame:VectorToWorldSpace(face.normal)
-			data={origin=pose:PointToObjectSpace(target.hit.Position),
+			data={origin=snappedFaceOrigin(target,topology,face),
 				normal=pose:VectorToObjectSpace(worldNormal),
 				diameter=diameter,depth=depth,through=drillThrough}
 			kind="DrillFace"
