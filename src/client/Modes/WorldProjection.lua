@@ -10,7 +10,7 @@ function WorldProjection.new()
 	root.Parent=workspace
 	return setmetatable({root=root,source=nil},WorldProjection)
 end
-function WorldProjection:show(preview:any,document:any,workspaceData:any)
+function WorldProjection:show(preview:any,document:any,workspaceData:any,targetCorner:Vector3?)
 	self:clear()
 	if not workspaceData then return end
 	for _,component in pairs(document.components) do
@@ -19,7 +19,7 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any)
 		local clone=model:Clone()
 		clone.Name=component.name
 		clone.Parent=self.root
-		local offset=workspaceData.worldCorner-workspaceData.editCorner
+		local offset=(targetCorner or component.worldOrigin or workspaceData.worldCorner) - (component.workspaceOrigin or workspaceData.editCorner)
 		for _,descendant in ipairs(clone:GetDescendants()) do
 			if descendant:IsA("BasePart") then
 				descendant.CFrame=CFrame.new(offset)*descendant.CFrame
