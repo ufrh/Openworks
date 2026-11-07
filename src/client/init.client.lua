@@ -5,7 +5,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local BUILD = "2026.11.06.14"
+local BUILD = "2026.11.07.01"
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local oldBadge = playerGui:FindFirstChild("OPENWORKS_BuildStamp")
@@ -108,5 +108,5 @@ if not started then
 	return
 end
 
-displayStatus("READY", "FORM viewport active", false)
+displayStatus("READY", "Character mode / Create Component", false)
 print("[OPENWORKS] BUILD " .. BUILD .. " / FORM READY")
