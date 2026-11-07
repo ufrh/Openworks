@@ -602,7 +602,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			rotation = rotateLocal(start.rotation,start.grip.normal,snappedRadians)
 		end
 		local ok = document:applyTransform(start.component, start.index, position, size, rotation,
-			self.mode == "Scale", self.mode == "Rotate")
+			self.mode == "Scale", self.mode == "Rotate",SnapSettings.get())
 		if ok then
 			local node = start.component.nodes[start.index]
 			if node.position ~= start.position or node.size ~= start.size or node.rotation ~= start.rotation then
