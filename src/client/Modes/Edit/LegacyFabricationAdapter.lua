@@ -570,12 +570,17 @@ local snapRow=row(32)
 	notesButton.MouseButton1Click:Connect(function()
 		notesContainer.Visible=not notesContainer.Visible
 	end)
-	notesBox:GetPropertyChangedSignal("Text"):Connect(function()
-		local selected=selectedComponent()
-		if selected and notesBox:IsFocused() then
-			selected.notes=notesBox.Text
-		end
-	end)
+ -- Notes remain editable locally, but commit one server operation on
+ -- focus loss instead of sending a network request for every keystroke.
+ notesBox.FocusLost:Connect(function()
+  local selected=selectedComponent()
+  if not selected then return end
+  local ok,reason=document:setNotes(selected,notesBox.Text)
+  if not ok then
+   message("Notes could not be saved: "..tostring(reason))
+   refresh()
+  end
+ end)
 	volumeInfo=line("Material volume: —",30)
 	volumeInfo.TextSize=11
 	volumeInfo.TextWrapped=true
