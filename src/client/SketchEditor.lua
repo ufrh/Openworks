@@ -204,8 +204,14 @@ function SketchEditor:isOverUI(point: Vector2): boolean
 		and point.Y >= pos.Y and point.Y <= pos.Y + size.Y then
 		return true
 	end
-	-- Existing FORM debug controls and view orientation navigator.
-	if point.X < 345 and point.Y < 615 then return true end
+	-- The editor controls are intentionally hidden for the first sketch.
+	-- Do not block the left side of the viewport while drawing it.
+	local editor=self.gui.Parent:FindFirstChild("FORM_DebugUI")
+	local controls=editor and editor:FindFirstChild("Controls")
+	if editor and editor.Enabled and controls and controls.Visible
+		and point.X<345 and point.Y<615 then
+		return true
+	end
 	local cam = workspace.CurrentCamera
 	if cam and point.X > cam.ViewportSize.X - 170 and point.Y < 225 then return true end
 	return false
