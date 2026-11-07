@@ -47,13 +47,32 @@ env:show()
 local root=env.root
 assert(root and root.Name=="OPENWORKS_LocalEditChamber")
 assert(Environment.Size==Vector3.new(40,20,40))
+local visualNames={}
 for _,part in ipairs(root:GetChildren()) do
  assert(part:IsA("BasePart"))
  assert(not part.CastShadow and not part.CanCollide and not part.CanQuery)
+ visualNames[part.Name]=true
 end
+assert(visualNames.BlueWallX and visualNames.BlueWallZ and visualNames.BlueCeiling
+  and visualNames.SkyBackdrop_X and visualNames.SkyBackdrop_Z,
+ "Blue Edit environment must surround the room, not only paint the floor")
 env:hide()
 assert(env.root==nil and root.Parent==nil)
 assert(runtime.modeManager.currentName~=nil)
+if runtime.modeManager.currentName=="Free" then
+ local player=game.Players.LocalPlayer
+ assert(math.abs(player.CameraMinZoomDistance-player.CameraMaxZoomDistance)<1e-5,
+  "Free Mode must lock character camera zoom")
+elseif runtime.modeManager.currentName=="Edit" then
+ local bridge=runtime.bridge
+ bridge.setPreviewEnabled(true)
+ assert(bridge.isPreviewEnabled(),"Edit preview mode failed to activate")
+ local gui=game.Players.LocalPlayer.PlayerGui
+ assert(not gui.FORM_DebugUI.Enabled and not gui.OPENWORKS_Modes.Enabled,
+  "Model preview must hide both editing panels and the FORGE mode bar")
+ bridge.setPreviewEnabled(false)
+ assert(not bridge.isPreviewEnabled(),"Edit preview failed to restore")
+end
 -- Verify source models are NOT simultaneously shown at the same CAD origin.
 local preview=Preview.new(function() end,function() end)
 local first={id=1,name="Plate A",revision=1,
