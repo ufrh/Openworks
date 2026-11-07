@@ -198,7 +198,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		end
 		grid:setVisible(true)
 	end)
-	UserInputService.InputBegan:Connect(function(input,processed)
+	self.inputConnection=UserInputService.InputBegan:Connect(function(input,processed)
 		if not self.placing then return end
 		if input.KeyCode==Enum.KeyCode.Escape then
 			self:close()
@@ -213,6 +213,16 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		onPlace(self.name,self.size,at)
 	end)
 	return self
+end
+
+function ComponentPlacement:destroy()
+	self.placing=false
+	RunService:UnbindFromRenderStep("FORM_PlaceSketchGrid")
+	if self.inputConnection then
+		self.inputConnection:Disconnect()
+		self.inputConnection=nil
+	end
+	self.ui:Destroy()
 end
 
 return ComponentPlacement
