@@ -102,5 +102,14 @@ local profile,travel=SketchBodyProfile.profile(node)
 local nativeOK,nativeOrError=pcall(GeometryCutter.prismNative,profile,travel)
 assert(nativeOK and nativeOrError and nativeOrError:IsA("BasePart"),
 	"Native no-EditableMesh wedge fallback failed: "..tostring(nativeOrError))
+nativeOrError.Parent=workspace
+nativeOrError.CanQuery=true
+local cast=RaycastParams.new()
+cast.FilterType=Enum.RaycastFilterType.Include
+cast.FilterDescendantsInstances={nativeOrError}
+local hit=workspace:Raycast(Vector3.new(-0.25,1,-0.05),
+	Vector3.new(0,-2,0),cast)
+assert(hit and hit.Instance==nativeOrError,
+	"Native solid must occupy a point inside the authored sketch, not just its bounding box")
 nativeOrError:Destroy()
 print("FORM sketch-first: default 1000mm workspace / 56mm extrude, 3D CSG solid, native fallback and topology verified")
