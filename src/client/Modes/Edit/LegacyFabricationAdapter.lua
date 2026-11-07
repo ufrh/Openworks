@@ -496,19 +496,38 @@ function Debug.start(options:any?)
 		refresh()
 	end
 
+ local dragServerRevision:number?=nil
 	transformGizmo = TransformGizmo.new(playerGui, document, function(phase: string, component, index: number, dirty: boolean?)
 		if phase == "begin" then
+   dragServerRevision=component.revision
 			preview:beginLive(component, index)
 		elseif phase == "update" then
-			-- Update the existing solid immediately; no duplicate ghost.
+			-- The local physics/CAD preview updates on every drag frame.
+   -- Server-authoritative transforms are committed only once on release.
 			preview:updateLive(component, index)
 			refresh()
 		elseif phase == "finish" then
 			if dirty then
+    if remote then
+     local node=component.nodes[index]
+     local ok,snapshot=request("ApplyTransform",component.id,
+      dragServerRevision or component.revision,index,
+      node.position,node.size,node.rotation,
+      transformGizmo.mode=="Scale",
+      transformGizmo.mode=="Rotate",SnapSettings.get())
+     if ok then
+      document:adoptSnapshot(snapshot)
+     else
+      message("Transform rejected: "..tostring(snapshot))
+      local recovered,authoritative=request("GetSnapshot",component.id)
+      if recovered then document:adoptSnapshot(authoritative) end
+     end
+    end
 				preview:finishLive(component)
 			else
 				preview:cancelLive(component.id)
 			end
+   dragServerRevision=nil
 			refresh()
 		end
 	end)
