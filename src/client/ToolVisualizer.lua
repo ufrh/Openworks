@@ -204,7 +204,12 @@ function Visualizer:drillWireframe(origin:Vector3,normal:Vector3,
 				center+(u*math.cos(b)+v*math.sin(b))*radius,color,thickness)
 		end
 	end
-	circle(surface,CYAN,1.65)
+	circle(surface,CYAN,2.7)
+	-- A small cross marks the EXACT snapped drill center, so the
+	-- user can distinguish it from the nearby unsnapped mouse pointer.
+	local cross=math.min(radius*0.32,0.065)
+	self:guide(surface-u*cross,surface+u*cross,Color3.new(1,1,1),3.2)
+	self:guide(surface-v*cross,surface+v*cross,Color3.new(1,1,1),3.2)
 	if progress~=nil then
 		local amount=math.clamp(progress,0,1)
 		local feed=origin-axis*(penetration*amount)
@@ -264,7 +269,7 @@ function Visualizer:meshEdge(part:BasePart,edge,width:number,
 	local a=part.CFrame:PointToWorldSpace(edge.a)
 	local b=part.CFrame:PointToWorldSpace(edge.b)
 	local tint=if interior then GREEN else CYAN
-	self:guide(a,b,tint,2.8)
+	self:guide(a,b,tint,3.5)
 	if normalA and normalB then
 		local n1=part.CFrame:VectorToWorldSpace(normalA).Unit
 		local n2=part.CFrame:VectorToWorldSpace(normalB).Unit
@@ -307,7 +312,7 @@ function Visualizer:smoothInside(part:BasePart,edge,radius:number,segments:numbe
 	local a,b=cf:PointToWorldSpace(edge.a),cf:PointToWorldSpace(edge.b)
 	local n1=cf:VectorToWorldSpace(normalA).Unit
 	local n2=cf:VectorToWorldSpace(normalB).Unit
-	self:guide(a,b,GREEN,2.3)
+	self:guide(a,b,GREEN,3.5)
 	local previous=nil
 	for i=0,segments do
 		local t=i/segments*math.pi*0.5
@@ -331,7 +336,7 @@ function Visualizer:meshFace(part:BasePart,loop:{Vector3},margin:number,depth:nu
 		local q=loop[i%#loop+1]
 		local a=part.CFrame:PointToWorldSpace(p)
 		local b=part.CFrame:PointToWorldSpace(q)
-		self:guide(a,b,CYAN,2)
+		self:guide(a,b,CYAN,3)
 		center+=a
 	end
 	self:caption(center/#loop,string.format("FACE INSET · %.0f / %.0f mm",
