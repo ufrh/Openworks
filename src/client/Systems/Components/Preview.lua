@@ -204,7 +204,19 @@ function Preview:queueManufacture(component)
 			self.onStatus("Manufacturing " .. snapshot.name .. "...")
 			local ok, output, summary = pcall(Fabricator.compile, snapshot)
 			if not ok then
-				self.onStatus("Fabrication CSG failed: " .. tostring(output))
+				-- Never retain an invalid manufacturing operation while showing
+				-- the last valid solid. Roll back only if this is still the
+				-- current request; a newer edit must always win.
+				if not job.cancelled and not job.pending
+					and expectedKey == Fabricator.geometryKey(component) then
+					local accepted=self.accepted[id]
+					if accepted and self.onVolumeRejected then
+						self.onVolumeRejected(id,accepted,
+							"Fabrication CSG failed: "..tostring(output))
+					else
+						self.onStatus("Fabrication CSG failed: "..tostring(output))
+					end
+				end
 				continue
 			end
 
