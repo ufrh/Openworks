@@ -11,6 +11,7 @@ local BevelJunction=require(FORM.BevelJunction)
 local GeometryCutter=require(FORM.GeometryCutter)
 local CornerTriangle=require(FORM.CornerTriangle)
 local RoundedLProfile=require(FORM.RoundedLProfile)
+local SketchBodyProfile=require(FORM.SketchBodyProfile)
 
 local HistoryTopology={}
 local EPS=0.0005
@@ -229,7 +230,14 @@ function HistoryTopology.build(part:BasePart,component)
 
 	if node.kind=="Block" then
 		topFace=boxFaces()
-	elseif node.kind=="RoundedL" then
+	elseif node.kind=="SketchBody" then
+		-- Source faces follow the user's first sketch, not the square
+		-- construction grid. Concave profiles remain truly concave.
+		local outline=SketchBodyProfile.outline(node)
+		topFace=profileCap(outline,half.Y,true,"sketch_top")
+		profileCap(outline,-half.Y,false,"sketch_bottom")
+		profileWalls(outline,-half.Y,half.Y,true,"sketch_side")
+		elseif node.kind=="RoundedL" then
 		local profile,travel=RoundedLProfile.profile(node)
 		local upper={}
 		for _,p in ipairs(profile) do table.insert(upper,p+travel) end
