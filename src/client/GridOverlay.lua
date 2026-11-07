@@ -24,7 +24,7 @@ function GridOverlay.new(playerGui:PlayerGui)
 	container.Parent=playerGui
 	return setmetatable({
 		origin=origin,anchor=origin,decorations=container,
-		lines={},visible=false,corner=nil,size=nil,
+		lines={},visible=false,corner=nil,size=nil,lineCount=0,
 	},GridOverlay)
 end
 
@@ -44,24 +44,28 @@ local function guide(self,index:number):LineHandleAdornment
 end
 
 function GridOverlay:setVisible(value:boolean)
+	-- Mouse placement runs every rendered frame. A visibility assignment
+	-- must be idempotent instead of touching 40-100 adornments per frame.
+	if self.visible==value then return end
 	self.visible=value
 	for i,line in ipairs(self.lines) do
-		line.Visible=value and i<= (self.lineCount or 0) and line.Length>0
+		line.Visible=value and i<=self.lineCount and line.Length>0
 	end
 end
 
 function GridOverlay:update(corner:Vector3,size:Vector3)
-	-- 'corner' is the minimum X/Z location on the clicked ground. Width
-	-- and length come from the component specification, never 6x6 studs.
 	local width=math.max(Quantize.Grid,size.X)
 	local length=math.max(Quantize.Grid,size.Z)
-	local grounded=Vector3.new(corner.X,corner.Y,corner.Z)
-	if self.corner==grounded and self.size==Vector2.new(width,length) then return end
-	self.corner=grounded
-	self.size=Vector2.new(width,length)
+	local bounds=Vector2.new(width,length)
+	-- Local-space lines are attached to the origin. Cursor movement
+	-- needs ONE Part.CFrame assignment, not a rebuild of every line.
+	if self.corner~=corner then
+		self.corner=corner
+		self.origin.CFrame=CFrame.new(corner)
+	end
+	if self.size==bounds then return end
+	self.size=bounds
 	local increment=Quantize.Grid
-	-- Fixed physical spacing. If the area is very large, fall back to a
-	-- coarser multiple for draw budget, never an interpolated percentage.
 	local stride=math.max(1,math.ceil(math.max(width,length)/increment/48))
 	local step=increment*stride
 	local count=0
@@ -81,15 +85,15 @@ function GridOverlay:update(corner:Vector3,size:Vector3)
 	local nz=math.ceil(length/step)
 	for i=0,nx do
 		local x=math.min(width,i*step)
-		local major=i==0 or i==nx or i%5==0
-		add(grounded+offset+Vector3.new(x,0,0),
-			grounded+offset+Vector3.new(x,0,length),major)
+		add(offset+Vector3.new(x,0,0),
+			offset+Vector3.new(x,0,length),
+			i==0 or i==nx or i%5==0)
 	end
 	for i=0,nz do
 		local z=math.min(length,i*step)
-		local major=i==0 or i==nz or i%5==0
-		add(grounded+offset+Vector3.new(0,0,z),
-			grounded+offset+Vector3.new(width,0,z),major)
+		add(offset+Vector3.new(0,0,z),
+			offset+Vector3.new(width,0,z),
+			i==0 or i==nz or i%5==0)
 	end
 	for i=count+1,#self.lines do self.lines[i].Visible=false end
 	self.lineCount=count
