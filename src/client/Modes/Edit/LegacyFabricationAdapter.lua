@@ -14,6 +14,7 @@ local GeometryCutter = require(FORM.GeometryCutter)
 local Quantize = require(FORM.Quantize)
 local MaterialVolume = require(FORM.MaterialVolume)
 local Preview = require(Client.Systems.Components.Preview)
+local DocumentBridge = require(Client.Systems.Documents.DocumentBridge)
 local BlenderCamera = require(Client.Experience.Cameras.BlenderCamera)
 local GridOverlay = require(Client.Experience.Visuals.GridOverlay)
 local CharacterMode = require(Client.Modes.Free.CharacterMode)
@@ -55,71 +56,7 @@ function Debug.start(options:any?)
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	local document = Document.new()
- local remote=options.documents
- local function request(action:string,...):(boolean,any)
-  if not remote then return false,"FORGE document service is unavailable" end
-  local method=remote[action]
-  if type(method)~="function" then
-   return false,"Missing FORGE document endpoint: "..action
-  end
-  local ok,accepted,response=pcall(method,remote,...)
-  if not ok then return false,tostring(accepted) end
-  return accepted==true,response
- end
- if remote then
-  -- FORM history is server-owned; the live editor works on local copies
-  -- of validated snapshots. No client-only operations mutate the source.
-  function document:addOperation(component,kind,data)
-   local ok,snapshot=request("ApplyOperation",component.id,
-    component.revision,kind,data)
-   if not ok then return false,snapshot end
-   local body,err=self:adoptSnapshot(snapshot)
-   return body~=nil,err
-  end
-  function document:setOperationEnabled(component,id,enabled)
-   local ok,snapshot=request("SetOperationEnabled",component.id,
-    component.revision,id,enabled)
-   if not ok then return false,snapshot end
-   local body,err=self:adoptSnapshot(snapshot)
-   return body~=nil,err
-  end
-  function document:removeOperation(component,id)
-   local ok,snapshot=request("RemoveOperation",component.id,
-    component.revision,id)
-   if not ok then return false,snapshot end
-   local body,err=self:adoptSnapshot(snapshot)
-   return body~=nil,err
-  end
-  function document:undoOperation(component)
-   local ok,snapshot=request("UndoOperation",component.id,
-    component.revision)
-   if not ok then return false,snapshot end
-   local body,err=self:adoptSnapshot(snapshot)
-   return body~=nil,err
-  end
-  function document:editNode(component,index,field,axis,value)
-   local ok,snapshot=request("EditNode",component.id,
-    component.revision,index,field,axis,value)
-   if not ok then return false,snapshot end
-   local body,err=self:adoptSnapshot(snapshot)
-   return body~=nil,err
-  end
-  function document:removeComponent(id)
-   local component=self.components[id]
-   if not component then return false,"Component not found" end
-   local ok,err=request("DeleteComponent",id,component.revision)
-   if not ok then return false,err end
-   Document.removeComponent(self,id)
-   return true,nil
-  end
-  function document:restoreSnapshot(component,snapshot)
-   local ok,updated=request("RestoreRevision",component.id,
-    component.revision,snapshot.revision)
-   if not ok then return false,updated end
-   local adopted,err=self:adoptSnapshot(updated)
-   return adopted~=nil,err
-  end
- end
+ local documentBridge=DocumentBridge.new(document,options.documents)
 	local characterMode=CharacterMode.new(player)
 	local editorActive=false
  local previewOnly=false
@@ -530,20 +467,11 @@ function Debug.start(options:any?)
 			refresh()
 		elseif phase == "finish" then
 			if dirty then
-    if remote then
-     local node=component.nodes[index]
-     local ok,snapshot=request("ApplyTransform",component.id,
-      dragServerRevision or component.revision,index,
-      node.position,node.size,node.rotation,
-      transformGizmo.mode=="Scale",
-      transformGizmo.mode=="Rotate",SnapSettings.get())
-     if ok then
-      document:adoptSnapshot(snapshot)
-     else
-      message("Transform rejected: "..tostring(snapshot))
-      local recovered,authoritative=request("GetSnapshot",component.id)
-      if recovered then document:adoptSnapshot(authoritative) end
-     end
+    local ok,problem=documentBridge:commitTransform(component,
+     dragServerRevision or component.revision,index,
+     transformGizmo.mode,SnapSettings.get())
+    if not ok then
+     message("Transform rejected: "..tostring(problem))
     end
 				preview:finishLive(component)
 			else
@@ -1011,18 +939,9 @@ local snapRow=row(32)
 			-- The *first sketch itself* becomes the manufactured solid.
 			local pending=pendingSketch
 			if not pending then return false,"Create and place a component grid first" end
-   local body,reason
-   if remote then
-    local ok,snapshot=request("CreateSketchBody",
-     pending.name,pending.worldCorner or pending.corner,
-     pending.corner,pending.size,data.points,data.depth)
-    if not ok then return false,snapshot end
-    body,reason=document:adoptSnapshot(snapshot)
-   else
-    body,reason=document:createSketchBody(
-     pending.name,pending.corner,pending.size,data.points,data.depth)
-    if body then body.worldOrigin=pending.worldCorner or pending.corner end
-   end
+   local body,reason=documentBridge:createSketchBody(
+    pending.name,pending.worldCorner or pending.corner,
+    pending.corner,pending.size,data.points,data.depth)
    if not body then return false,reason end
 			pendingSketch=nil
 			selectComponent(body.id)
