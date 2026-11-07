@@ -28,10 +28,14 @@ function Extrusion.create(node, operation): (MeshPart, () -> ())
 		minZ, maxZ = math.min(minZ, point.Y), math.max(maxZ, point.Y)
 	end
 	local minY, maxY = heightRange(node, operation)
+	-- SketchEditor:projectMouse() produces coordinates relative to the
+	-- component's CENTER, as does SketchBodyProfile. The previous extra
+	-- -node.size.X/2 and -node.size.Z/2 translation shifted every Boolean
+	-- cutter toward a corner, corrupting the cut and its preview.
 	local center = Vector3.new(
-		(minX + maxX) / 2 - node.size.X / 2,
+		(minX + maxX) / 2,
 		(minY + maxY) / 2,
-		(minZ + maxZ) / 2 - node.size.Z / 2
+		(minZ + maxZ) / 2
 	)
 	local editable: EditableMesh? = nil
 	local meshPart: MeshPart? = nil
