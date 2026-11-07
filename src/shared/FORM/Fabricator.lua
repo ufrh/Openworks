@@ -9,6 +9,7 @@ local Extrusion = require(script.Parent.Extrusion)
 local FileCutter = require(script.Parent.FileCutter)
 local GeometryCutter = require(script.Parent.GeometryCutter)
 local RoundedLProfile = require(script.Parent.RoundedLProfile)
+local SketchBodyProfile=require(script.Parent.SketchBodyProfile)
 local CornerTriangle = require(script.Parent.CornerTriangle)
 
 local Fabricator = {}
@@ -18,7 +19,8 @@ local function vectorKey(v:Vector3):string
 end
 
 function Fabricator.requiresCompile(component): boolean
-	if component.nodes[1] and component.nodes[1].kind=="RoundedL" then return true end
+	if component.nodes[1] and (component.nodes[1].kind=="RoundedL"
+		or component.nodes[1].kind=="SketchBody") then return true end
 	for _, op in ipairs(component.operations or {}) do
 		if op.enabled ~= false then return true end
 	end
@@ -108,7 +110,15 @@ end
 local function compileUnlocked(component): (BasePart, string)
 	local node = component.nodes[1]
 	local current:BasePart
-	if node.kind=="RoundedL" then
+	if node.kind=="SketchBody" then
+		-- First sketch is the source stock: one watertight profiled
+		-- prism, no Boolean intersection with an invisible box.
+		local profile,travel=SketchBodyProfile.profile(node)
+		local mesh,release=GeometryCutter.prism(profile,travel)
+		current=mesh:Clone()
+		current.Name="FORM_SketchedStock"
+		release()
+	elseif node.kind=="RoundedL" then
 		-- An L is a proper manufactured profile, not a rectangular
 		-- placeholder with a cosmetic ramp attached to it.
 		local profile,travel=RoundedLProfile.profile(node)
