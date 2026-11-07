@@ -1226,10 +1226,14 @@ function Debug.start()
 			characterMode:setEditing(true)
 			cameraController:setFocusTarget(ground+
 				Vector3.new(size.X*0.5,0,size.Z*0.5))
-			cameraController:setActive(true)
+			cameraController:setView("Top")
 			cameraController:frameBounds(
 				CFrame.new(ground+Vector3.new(size.X*0.5,0,size.Z*0.5)),
 				Vector3.new(size.X,0.05,size.Z))
+			-- Set all targets BEFORE activating the scripted camera so
+			-- the first visible CAD frame is already at the final pose.
+			cameraController:setActive(true)
+			cameraController:snapNow()
 			gui.Enabled=true
 			panel.Visible=false -- first sketch must create the solid
 			placementFlow:setLaunchVisible(false)
