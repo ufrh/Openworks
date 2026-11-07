@@ -22,17 +22,15 @@ local function roomDistanceLimit(self:any, direction:Vector3):number
  if not bounds then return MAX_DISTANCE end
  local relative=self.target-bounds.center
  local half=bounds.size*0.5
- local maxDistance=MAX_DISTANCE
- for _,axis in ipairs({"X","Y","Z"}) do
-  local velocity=direction[axis]
-  if math.abs(velocity)>1e-5 then
-   local available=(if velocity>0
-    then half[axis]-relative[axis]
-    else half[axis]+relative[axis])-0.8
-   maxDistance=math.min(maxDistance,available/math.abs(velocity))
-  end
+ local function limit(h:number,offset:number,velocity:number):number
+  if math.abs(velocity)<1e-5 then return MAX_DISTANCE end
+  local available=(if velocity>0 then h-offset else h+offset)-0.8
+  return available/math.abs(velocity)
  end
- return math.clamp(maxDistance,MIN_DISTANCE,MAX_DISTANCE)
+ return math.clamp(math.min(
+  limit(half.X,relative.X,direction.X),
+  limit(half.Y,relative.Y,direction.Y),
+  limit(half.Z,relative.Z,direction.Z)),MIN_DISTANCE,MAX_DISTANCE)
 end
 local MIN_ORTHO_HEIGHT = 0.06
 local MAX_ORTHO_HEIGHT = 2000
