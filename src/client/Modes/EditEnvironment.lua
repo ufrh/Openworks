@@ -4,7 +4,7 @@
 local EditEnvironment={}
 EditEnvironment.__index=EditEnvironment
 EditEnvironment.Size=Vector3.new(40,20,40)
-EditEnvironment.Center=Vector3.new(0,3000,0)
+EditEnvironment.Center=Vector3.new(0,200,0)
 local CYAN=Color3.fromRGB(84,229,255)
 local STEEL=Color3.fromRGB(17,30,48)
 local function visual(parent:Instance,name:string,size:Vector3,position:Vector3,
