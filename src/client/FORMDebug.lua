@@ -826,7 +826,8 @@ function Debug.start(options:any?)
 				-- Canceling the required initial sketch returns to normal
 				-- player mode; no empty component was ever created.
 				pendingSketch=nil
-				if leaveEditor then leaveEditor() end
+				if options.onFreeRequested then options.onFreeRequested()
+				elseif leaveEditor then leaveEditor() end
 				return
 			end
 			transformGizmo:setMode("Move")
