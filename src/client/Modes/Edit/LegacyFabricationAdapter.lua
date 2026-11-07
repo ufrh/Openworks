@@ -22,6 +22,7 @@ local EditEnvironment = require(Client.Modes.EditEnvironment)
 local WorldProjection = require(Client.Modes.WorldProjection)
 local AssemblyEnvironment = require(Client.Modes.AssemblyEnvironment)
 local SurfaceSnap = require(Client.Tools.Snapping.SurfaceSnap)
+local SnapSettings = require(Client.Tools.Snapping.SnapSettings)
 local ViewGizmo = require(Client.Experience.Cameras.ViewGizmo)
 local TransformGizmo = require(Client.Tools.Transform.TransformGizmo)
 local SketchEditor = require(Client.Tools.Sketch.SketchEditor)
@@ -82,7 +83,7 @@ function Debug.start(options:any?)
 	local drillThrough = true
 
 	local grid = GridOverlay.new(playerGui)
-	local gridUserVisible=false
+	local gridUserVisible=true
 
 	local gui = make("ScreenGui", {
 		Name = "FORM_DebugUI",
@@ -386,16 +387,10 @@ function Debug.start(options:any?)
 			worldProjection:show(preview,document,currentWorkspace,stageCorner)
 		end
 		if id == selectedId then
-			-- Once the first manufactured solid exists, don't leave a
-			-- wireframe grid obscuring it. Its real placement remains
-			-- available through the construction-grid toggle.
-			local material=preview.states[id]
-			if material and material.boolean and gridUserVisible then
-				gridUserVisible=false
-				grid:clear()
-			end
-			refresh()
-		end
+   -- Grid visibility is an explicit Edit preference, not tied to
+   -- whether a CSG compilation happened to produce a boolean MeshPart.
+   refresh()
+  end
 	end,function(id,accepted,reason)
 		local component=document.components[id]
 		if not component then return end
@@ -460,6 +455,43 @@ function Debug.start(options:any?)
   selectionBorder.Visible=false
   refresh()
  end)
+local snapRow=row(32)
+ local snapLabel=make("TextLabel",{
+  Name="SnapLabel",BackgroundTransparency=1,
+  Font=Enum.Font.Code,Text="Snap spacing (mm)",
+  TextColor3=Color3.fromRGB(184,195,200),TextSize=12,
+  TextXAlignment=Enum.TextXAlignment.Left,
+  Position=UDim2.fromScale(0,0),Size=UDim2.new(.53,0,1,0),
+ },snapRow)
+ local snapInput=make("TextBox",{
+  Name="SnapMillimeters",Text=string.format("%.2f",SnapSettings.get()*280),
+  ClearTextOnFocus=false,
+  BackgroundColor3=Color3.fromRGB(45,54,61),
+  BorderSizePixel=0,TextColor3=Color3.fromRGB(235,246,249),
+  Font=Enum.Font.Code,TextSize=13,
+  Position=UDim2.new(.54,0,0,0),Size=UDim2.new(.46,-4,1,0),
+ },snapRow)
+ make("UICorner",{CornerRadius=UDim.new(0,4)},snapInput)
+ local function applySnap()
+  local mm=tonumber(snapInput.Text)
+  local ok,reason=SnapSettings.set(if mm then mm/280 else -1)
+  if not ok then message(reason or "Invalid snap") end
+  snapInput.Text=string.format("%.2f",SnapSettings.get()*280)
+  local current=selectedComponent()
+  if current and editorActive then
+   grid:update(current.workspaceOrigin or Document.minCorner(current.nodes[1]),
+    current.workspaceSize or current.nodes[1].size)
+  end
+ end
+ snapInput.FocusLost:Connect(applySnap)
+ local snapPresets=row(29)
+ for i,step in ipairs({0.05,0.1,0.25,0.5}) do
+  button(snapPresets,string.format("%g mm",step*280),
+   (i-1)/4,.25,function()
+    SnapSettings.set(step)
+    snapInput.Text=string.format("%.2f",step*280)
+   end)
+ end
 	button(row(29),"Toggle Construction Grid",0,1,function()
 		local component=selectedComponent()
 		if component then
@@ -827,8 +859,7 @@ function Debug.start(options:any?)
 		selectionBorder.Visible=false
 		if measurementTool then measurementTool:setActive(false) end
 		if transformGizmo then transformGizmo:setHidden(true) end
-		gridUserVisible=false
-		-- Preserve reusable grid adornments across mode switches. Creating
+			-- Preserve reusable grid adornments across mode switches. Creating
 		-- and destroying every line caused frame spikes on editor exit.
 		grid:setVisible(false)
 		gui.Enabled=false
@@ -1012,8 +1043,8 @@ function Debug.start(options:any?)
 		local normal = pose:VectorToObjectSpace(hit.Normal)
 		
 		local localPoint = pose:PointToObjectSpace(hit.Position)
-		local x = Quantize.snap(localPoint.X, Quantize.Grid)
-		local z = Quantize.snap(localPoint.Z, Quantize.Grid)
+		local x = Quantize.snap(localPoint.X, SnapSettings.get())
+		local z = Quantize.snap(localPoint.Z, SnapSettings.get())
 		return { component = component, id = id, node = node, pose = pose,
 			point = localPoint, x = x, z = z, hit = hit }
 	end
@@ -1174,7 +1205,7 @@ function Debug.start(options:any?)
 		local planePoint=topology.part.CFrame:PointToWorldSpace(face.polygon[1])
 		local normal=topology.part.CFrame:VectorToWorldSpace(face.normal)
 		local world=SurfaceSnap.pointOnPlane(
-			target.hit.Position,planePoint,normal,Quantize.Grid)
+			target.hit.Position,planePoint,normal,SnapSettings.get())
 		return target.pose:PointToObjectSpace(world)
 	end
 
