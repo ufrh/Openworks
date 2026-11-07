@@ -55,6 +55,71 @@ function Debug.start(options:any?)
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	local document = Document.new()
+ local remote=options.documents
+ local function request(action:string,...):(boolean,any)
+  if not remote then return false,"FORGE document service is unavailable" end
+  local method=remote[action]
+  if type(method)~="function" then
+   return false,"Missing FORGE document endpoint: "..action
+  end
+  local ok,accepted,response=pcall(method,remote,...)
+  if not ok then return false,tostring(accepted) end
+  return accepted==true,response
+ end
+ if remote then
+  -- FORM history is server-owned; the live editor works on local copies
+  -- of validated snapshots. No client-only operations mutate the source.
+  function document:addOperation(component,kind,data)
+   local ok,snapshot=request("ApplyOperation",component.id,
+    component.revision,kind,data)
+   if not ok then return false,snapshot end
+   local body,err=self:adoptSnapshot(snapshot)
+   return body~=nil,err
+  end
+  function document:setOperationEnabled(component,id,enabled)
+   local ok,snapshot=request("SetOperationEnabled",component.id,
+    component.revision,id,enabled)
+   if not ok then return false,snapshot end
+   local body,err=self:adoptSnapshot(snapshot)
+   return body~=nil,err
+  end
+  function document:removeOperation(component,id)
+   local ok,snapshot=request("RemoveOperation",component.id,
+    component.revision,id)
+   if not ok then return false,snapshot end
+   local body,err=self:adoptSnapshot(snapshot)
+   return body~=nil,err
+  end
+  function document:undoOperation(component)
+   local ok,snapshot=request("UndoOperation",component.id,
+    component.revision)
+   if not ok then return false,snapshot end
+   local body,err=self:adoptSnapshot(snapshot)
+   return body~=nil,err
+  end
+  function document:editNode(component,index,field,axis,value)
+   local ok,snapshot=request("EditNode",component.id,
+    component.revision,index,field,axis,value)
+   if not ok then return false,snapshot end
+   local body,err=self:adoptSnapshot(snapshot)
+   return body~=nil,err
+  end
+  function document:removeComponent(id)
+   local component=self.components[id]
+   if not component then return false,"Component not found" end
+   local ok,err=request("DeleteComponent",id,component.revision)
+   if not ok then return false,err end
+   Document.removeComponent(self,id)
+   return true,nil
+  end
+  function document:restoreSnapshot(component,snapshot)
+   local ok,updated=request("RestoreRevision",component.id,
+    component.revision,snapshot.revision)
+   if not ok then return false,updated end
+   local adopted,err=self:adoptSnapshot(updated)
+   return adopted~=nil,err
+  end
+ end
 	local characterMode=CharacterMode.new(player)
 	local editorActive=false
  local previewOnly=false
@@ -786,11 +851,12 @@ local snapRow=row(32)
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		local component = selectedComponent()
 		if not component then message("No selection") return end
-		preview:remove(component.id)
-		surfacePicker:remove(component.id)
-		document:removeComponent(component.id)
-		selectComponent(document.order[#document.order])
-		message("Component removed")
+  local ok,why=document:removeComponent(component.id)
+  if ok==false then message(why or "Unable to remove component") return end
+  preview:remove(component.id)
+  surfacePicker:remove(component.id)
+  selectComponent(document.order[#document.order])
+  message("Component removed")
 	end)
 
 
@@ -904,10 +970,19 @@ local snapRow=row(32)
 			-- The *first sketch itself* becomes the manufactured solid.
 			local pending=pendingSketch
 			if not pending then return false,"Create and place a component grid first" end
-			local body,reason=document:createSketchBody(
-				pending.name,pending.corner,pending.size,data.points,data.depth)
-			if not body then return false,reason end
-			body.worldOrigin=pending.worldCorner or pending.corner
+   local body,reason
+   if remote then
+    local ok,snapshot=request("CreateSketchBody",
+     pending.name,pending.worldCorner or pending.corner,
+     pending.corner,pending.size,data.points,data.depth)
+    if not ok then return false,snapshot end
+    body,reason=document:adoptSnapshot(snapshot)
+   else
+    body,reason=document:createSketchBody(
+     pending.name,pending.corner,pending.size,data.points,data.depth)
+    if body then body.worldOrigin=pending.worldCorner or pending.corner end
+   end
+   if not body then return false,reason end
 			pendingSketch=nil
 			selectComponent(body.id)
 			changed(body)
