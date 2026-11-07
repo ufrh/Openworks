@@ -12,6 +12,9 @@
       "$ignoreUnknownInstances": true,
       "Openworks": {
         "$path": "src/shared"
+      },
+      "FORGE": {
+        "$path": "src/shared/FORGE"
       }
     },
     "ServerScriptService": {
@@ -19,6 +22,9 @@
       "$ignoreUnknownInstances": true,
       "Openworks": {
         "$path": "src/server"
+      },
+      "FORGE": {
+        "$path": "src/server/FORGE"
       }
     },
     "StarterPlayer": {
