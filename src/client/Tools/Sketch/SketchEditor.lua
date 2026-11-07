@@ -20,6 +20,11 @@ local COLORS = {
 }
 local ACCENT = Color3.fromRGB(45, 255, 247)
 local MM_PER_STUD = 280
+-- Adornments sit on the rendered construction plane, never on a second
+-- raised sketch plane. GridOverlay draws the first-sketch grid at +0.012.
+local FLOOR_GRID_VISUAL_Y = 0.012
+-- For edits to existing solids, the face grid is drawn +0.018 above stock.
+local FACE_GRID_VISUAL_Y = 0.018
 
 local function make(class: string, properties, parent: Instance)
 	local result = Instance.new(class)
@@ -63,9 +68,9 @@ local function newVisual(parent:Instance,anchor:BasePart,name:string,kind:string
 	visual.Color3=ACCENT
 	visual.Transparency=0
 	if kind=="LineHandleAdornment" then
-		visual.Thickness=3
+		visual.Thickness=1.6
 	elseif kind=="SphereHandleAdornment" then
-		visual.Radius=0.025
+		visual.Radius=0.007
 	elseif kind=="BoxHandleAdornment" then
 		visual.Size=Vector3.one*0.05
 	end
@@ -430,7 +435,7 @@ local function placeSegment(adorn:LineHandleAdornment,a:Vector3,b:Vector3,
 	if delta.Magnitude<0.0001 then adorn.Visible=false return end
 	adorn.CFrame=CFrame.lookAt(a,b)
 	adorn.Length=delta.Magnitude
-	adorn.Thickness=math.clamp(width*180,2.5,5.5)
+	adorn.Thickness=math.clamp(width*145,1.3,2.8)
 	adorn.Color3=color
 	adorn.Transparency=0
 	adorn.Visible=true
@@ -448,7 +453,7 @@ local function placeWall(adorn:BoxHandleAdornment,a:Vector3,b:Vector3,
 	adorn.CFrame=CFrame.lookAt(center,center+edge)*CFrame.Angles(0,math.pi/2,0)
 	adorn.Size=Vector3.new(edge.Magnitude,height,0.003)
 	adorn.Color3=color
-	adorn.Transparency=0.58
+	adorn.Transparency=0.81
 	adorn.Visible=true
 end
 
@@ -458,7 +463,8 @@ function SketchEditor:render()
 	local cf = Compiler.pose(node)
 	local camera = workspace.CurrentCamera
 	local distance = if camera then (camera.CFrame.Position - node.position).Magnitude else 5
-	local thickness = math.clamp(distance * 0.0048, 0.015, 0.08)
+	-- A fine sketching stroke, not a large floating 3D gizmo.
+ local thickness = math.clamp(distance * 0.002, 0.006, 0.024)
 	local function worldAt(p: Vector2, height: number)
 		return cf:PointToWorldSpace(Vector3.new(p.X, height, p.Y))
 	end
@@ -481,16 +487,16 @@ function SketchEditor:render()
 	for i = 0, nx do
 		local x = -xHalf + i * step
 		table.insert(gridSegments, {
-			cf:PointToWorldSpace(Vector3.new(x, node.size.Y / 2 + 0.018, -zHalf)),
-			cf:PointToWorldSpace(Vector3.new(x, node.size.Y / 2 + 0.018, zHalf)),
+			cf:PointToWorldSpace(Vector3.new(x, node.size.Y / 2 + FACE_GRID_VISUAL_Y, -zHalf)),
+			cf:PointToWorldSpace(Vector3.new(x, node.size.Y / 2 + FACE_GRID_VISUAL_Y, zHalf)),
 			i % 5 == 0,
 		})
 	end
 	for i = 0, nz do
 		local z = -zHalf + i * step
 		table.insert(gridSegments, {
-			cf:PointToWorldSpace(Vector3.new(-xHalf, node.size.Y / 2 + 0.018, z)),
-			cf:PointToWorldSpace(Vector3.new(xHalf, node.size.Y / 2 + 0.018, z)),
+			cf:PointToWorldSpace(Vector3.new(-xHalf, node.size.Y / 2 + FACE_GRID_VISUAL_Y, z)),
+			cf:PointToWorldSpace(Vector3.new(xHalf, node.size.Y / 2 + FACE_GRID_VISUAL_Y, z)),
 			i % 5 == 0,
 		})
 	end
@@ -507,7 +513,10 @@ function SketchEditor:render()
 		self.gridParts[i].Visible=false
 	end
 	local segments = {}
-	local surfaceY = node.size.Y / 2 + 0.045
+	-- Keep both the live path and its vertices flush with the grid.
+ -- Do not offset the drawing to the height of the pending extrusion.
+ local surfaceY = node.size.Y / 2 +
+  (if self.standalone then FLOOR_GRID_VISUAL_Y else FACE_GRID_VISUAL_Y)
 	local color = if self.closed then COLORS[self.mode] else ACCENT
 	-- Stroke tint is applied to each LineHandleAdornment directly.
 	local function segment(a: Vector3, b: Vector3, tint: Color3?)
@@ -527,10 +536,15 @@ function SketchEditor:render()
 		for i, p in ipairs(self.points) do
 			local q = self.points[i % #self.points + 1]
 			local aw,bw = worldAt(p,top),worldAt(q,top)
-			segment(aw,bw)
-			segment(worldAt(p,bottom),worldAt(q,bottom),
-				color:Lerp(Color3.new(0, 0, 0), 0.28))
-			segment(worldAt(p,bottom), aw, color:Lerp(Color3.new(1,1,1),0.16))
+			-- The authored sketch ALWAYS stays on its construction grid.
+   -- Height/depth is indicated only by faint ghost edges, not by
+   -- relocating the bright drawn contour above the surface.
+   segment(worldAt(p,surfaceY),worldAt(q,surfaceY))
+   if top>surfaceY+0.001 then
+    segment(aw,bw,color:Lerp(Color3.fromRGB(85,111,129),0.75))
+    segment(worldAt(p,surfaceY),aw,
+     color:Lerp(Color3.fromRGB(85,111,129),0.83))
+   end
 			if not self.sidePanels[i] then
 				self.sidePanels[i] = newVisual(self.visuals,self.anchor,"ExtrusionWall_"..i,"BoxHandleAdornment")
 			end
@@ -565,9 +579,12 @@ function SketchEditor:render()
 		part.Color3 = if self.cursor and i == #points then Color3.fromRGB(255,214,68) else color
 		local closeTarget = self.cursor and i == 1 and #self.points >= 3
 			and (self.cursor - self.points[1]).Magnitude <= Quantize.Grid * 1.5
-		part.Radius = thickness*(if closeTarget then 2.0 else 1.25)
+		-- Small precision points. Even when zoomed out, vertices must not
+  -- balloon into giant spheres obscuring adjacent grid intersections.
+  part.Radius = math.clamp(thickness*
+   (if closeTarget then 0.85 else 0.48),0.0035,0.013)
 		if closeTarget then part.Color3 = Color3.fromRGB(255,201,113) end
-		part.CFrame = CFrame.new(worldAt(p,if self.closed then node.size.Y/2+0.04 else surfaceY))
+		part.CFrame = CFrame.new(worldAt(p,surfaceY))
 		part.Visible=true
 	end
 	for i = #points + 1, #self.dots do self.dots[i].Visible=false end
