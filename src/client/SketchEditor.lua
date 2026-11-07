@@ -259,7 +259,7 @@ function SketchEditor:start(component, tool: string?, firstWorkspace)
 				rotation=Vector3.zero,
 			}},
 		}
-		self.depthMM=size.Y*MM_PER_STUD
+		self.depthMM=56 -- first extrusion default, separate from 1000mm workspace height
 		self.mode,self.through="Add",false
 	else
 		self.component = component
@@ -279,6 +279,7 @@ function SketchEditor:start(component, tool: string?, firstWorkspace)
 		Vector3.new(self.component.nodes[1].size.X,.05,self.component.nodes[1].size.Z))
 	end
 	self:updateControls()
+	if self.camera.snapNow then self.camera:snapNow() end
 	self.onStatus(if self.standalone
 		then "Draw the component's first closed outline on the placed grid"
 		else "Sketch active: click vertices on the selected workpiece's top face")
