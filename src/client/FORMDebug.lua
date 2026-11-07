@@ -484,7 +484,9 @@ function Debug.start()
 		if not component then message("Select a workpiece before using Saw") return end
 		if not sketchEditor then message("Sketch workspace unavailable") return end
 		activeTool = nil
-		toolVisualizer:hide()
+		toolVisualizer:stopAnimation()
+		selectionBorder:Clear()
+		selectionBorder.Visible=false
 		toolStatus.Text = "Tool: SAW"
 		sketchEditor:start(component, "Saw")
 		transformGizmo:setHidden(true)
@@ -498,7 +500,9 @@ function Debug.start()
 		if not component then message("Create or select a workpiece first") return end
 		if not sketchEditor then message("Sketch workspace is not initialized") return end
 		activeTool = nil
-		toolVisualizer:hide()
+		toolVisualizer:stopAnimation()
+		selectionBorder:Clear()
+		selectionBorder.Visible=false
 		transformGizmo:setHidden(true)
 		toolStatus.Text = "Tool: SKETCH"
 		sketchEditor:start(component)
@@ -558,12 +562,15 @@ function Debug.start()
 	local transformStatus = line("Mode: MOVE (G)")
 	local function setTransformMode(mode: string)
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
-		toolVisualizer:hide()
+		toolVisualizer:stopAnimation()
+		selectionBorder:Clear()
+		selectionBorder.Visible=false
 		activeTool = nil
 		toolStatus.Text = "Tool: none"
 		if measurementTool then measurementTool:setActive(false) end
 		transformGizmo:setMode(mode)
 		transformStatus.Text = "Mode: " .. string.upper(mode)
+		refresh()
 	end
 	pair("Move [G]", function() setTransformMode("Move") end,
 		"Scale [S]", function() setTransformMode("Scale") end)
