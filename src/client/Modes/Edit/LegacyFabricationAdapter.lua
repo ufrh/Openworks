@@ -44,6 +44,12 @@ end
 
 function Debug.start(options:any?)
 	options=options or {}
+	local externalConnections={}
+	local function connectExternal(signal:any,callback:any)
+		local connection=signal:Connect(callback)
+		table.insert(externalConnections,connection)
+		return connection
+	end
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	local document = Document.new()
@@ -605,7 +611,7 @@ function Debug.start(options:any?)
 		transformStatus.Text = "Mode: HIDDEN (G/S/R)"
 	end)
 
-	UserInputService.InputBegan:Connect(function(input, processed)
+	connectExternal(UserInputService.InputBegan,function(input, processed)
 		if not editorActive then return end
 		if toolVisualizer:isAnimating() then return end
 		if sketchEditor and sketchEditor.active then return end
@@ -1116,7 +1122,7 @@ function Debug.start(options:any?)
 	-- Passive CAD face inspection. Only show a measurement on a
 	-- visible, indexed manufactured surface with no fabrication tool,
 	-- camera gesture, text edit, or transform gizmo interaction.
-	RunService.RenderStepped:Connect(function(dt)
+	connectExternal(RunService.RenderStepped,function(dt)
 		if not editorActive then return end
 		if sketchEditor and sketchEditor.active then
 			if selectionBorder.Visible then
@@ -1192,7 +1198,7 @@ function Debug.start(options:any?)
 		end
 	end)
 
-	UserInputService.InputBegan:Connect(function(input, processed)
+	connectExternal(UserInputService.InputBegan,function(input, processed)
 		if not editorActive then return end
 		if sketchEditor and sketchEditor.active then return end
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
@@ -1417,6 +1423,30 @@ function Debug.start(options:any?)
 			assemblyEnvironment:hide()
 			worldProjection:clear()
 			cameraController:setActive(false)
+		end,
+		destroy=function()
+			-- FORGE lifecycle ownership: disconnect long-lived input/render
+			-- listeners and release all client-only scene objects.
+			if leaveEditor then leaveEditor() end
+			for _,connection in ipairs(externalConnections) do
+				connection:Disconnect()
+			end
+			table.clear(externalConnections)
+			if placementFlow then placementFlow:destroy() end
+			if sketchEditor then sketchEditor:destroy() end
+			if viewGizmo then viewGizmo:destroy() end
+			if cameraController then cameraController:destroy() end
+			if transformGizmo then transformGizmo:destroy() end
+			if toolVisualizer then toolVisualizer:destroy() end
+			if measurementTool then measurementTool:destroy() end
+			if surfacePicker then surfacePicker:destroy() end
+			if grid then grid:destroy() end
+			if preview then preview:destroy() end
+			worldProjection:Destroy()
+			assemblyEnvironment:Destroy()
+			selectionBorder:Destroy()
+			outlineOrigin:Destroy()
+			gui:Destroy()
 		end,
 	}
 end
