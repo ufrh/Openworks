@@ -120,7 +120,7 @@ function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onSt
 		camera = cameraController, onCommit = onCommit, onStatus = onStatus,
 		onExit = onExit, gui = gui, panel = panel, visuals = visuals,
 		lines = {}, dots = {}, gridParts = {}, sidePanels = {}, anchor=anchor, connections = {},
-		active = false, component = nil, standalone = false, sketchTool = "Extrude", points = {}, closed = false,
+		active = false, previewHidden = false, component = nil, standalone = false, sketchTool = "Extrude", points = {}, closed = false,
 		mode = "Remove", through = true, depthMM = 56,
 		cursor = nil, count = count, subtitle = subtitle,
 	}, SketchEditor)
@@ -179,7 +179,7 @@ function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onSt
 		UDim2.fromOffset(202, 313), function() self:stop() end)
 
 	table.insert(self.connections, UserInputService.InputBegan:Connect(function(input, processed)
-		if not self.active or processed or UserInputService:GetFocusedTextBox() then return end
+		if not self.active or self.previewHidden or processed or UserInputService:GetFocusedTextBox() then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			local mouse = UserInputService:GetMouseLocation()
 			if self:isOverUI(mouse) then return end
@@ -245,6 +245,8 @@ end
 
 function SketchEditor:start(component, tool: string?, firstWorkspace)
 	if self.active then self:stop() end
+ self.previewHidden=false
+ self.visuals.Parent=self.gui.Parent
 	self.sketchTool = tool or "Extrude"
 	self.standalone = component == nil
 	if self.standalone then
@@ -451,7 +453,7 @@ local function placeWall(adorn:BoxHandleAdornment,a:Vector3,b:Vector3,
 end
 
 function SketchEditor:render()
-	if not self.active or not self.component then return end
+	if not self.active or self.previewHidden or not self.component then return end
 	local node = self.component.nodes[1]
 	local cf = Compiler.pose(node)
 	local camera = workspace.CurrentCamera
@@ -569,6 +571,14 @@ function SketchEditor:render()
 		part.Visible=true
 	end
 	for i = #points + 1, #self.dots do self.dots[i].Visible=false end
+end
+
+-- Pause sketch input and all sketch adornments without discarding vertices.
+-- The P preview toggle must never mutate an unfinished sketch.
+function SketchEditor:setPreviewHidden(hidden:boolean)
+ self.previewHidden=hidden
+ self.gui.Enabled=self.active and not hidden
+ self.visuals.Parent=if hidden then nil else self.gui.Parent
 end
 
 function SketchEditor:destroy()
