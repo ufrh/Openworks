@@ -56,6 +56,7 @@ function Debug.start(options:any?)
 	local characterMode=CharacterMode.new(player)
 	local editorActive=false
  local previewOnly=false
+ local showTopologyOutlines=false
  local gizmoWasHidden=false
  local setPreviewEnabled:any=nil
  local togglePreview:any=nil
@@ -326,7 +327,7 @@ function Debug.start(options:any?)
 		local ready=component and solidState
 			and solidState.key==Fabricator.geometryKey(component)
 			and (not Fabricator.requiresCompile(component) or solidState.boolean)
-		if ready and editorActive and not previewOnly and not pendingSketch and not activeTool
+		if showTopologyOutlines and ready and editorActive and not previewOnly and not pendingSketch and not activeTool
 			and not (sketchEditor and sketchEditor.active)
 			and model and surfacePicker then
 			local topology=surfacePicker:get(component.id,model,component)
@@ -452,6 +453,12 @@ function Debug.start(options:any?)
 	end)
 
 	line("COMPONENT WORKSPACE")
+	button(row(29),"Toggle Edge Outlines",0,1,function()
+  showTopologyOutlines=not showTopologyOutlines
+  selectionBorder:Clear()
+  selectionBorder.Visible=false
+  refresh()
+ end)
 	button(row(29),"Toggle Construction Grid",0,1,function()
 		local component=selectedComponent()
 		if component then
@@ -888,9 +895,17 @@ function Debug.start(options:any?)
 				elseif leaveEditor then leaveEditor() end
 				return
 			end
-			transformGizmo:setMode("Move")
+			-- Never resurrect CAD handles or topology paths when a sketch
+   -- finishes. The player can explicitly re-enable transforms with G/S/R.
+   activeTool=nil
+   if options.onToolChanged then options.onToolChanged(nil) end
+   toolVisualizer:stopAnimation()
+   toolVisualizer:discard()
+   selectionBorder:Clear()
+   selectionBorder.Visible=false
+   transformGizmo:setHidden(true)
 			toolStatus.Text = "Tool: none"
-			transformStatus.Text = "Mode: MOVE (G)"
+			transformStatus.Text = "Mode: HIDDEN (G/S/R)"
 			if editorActive then refresh() end
 		end
 	)
