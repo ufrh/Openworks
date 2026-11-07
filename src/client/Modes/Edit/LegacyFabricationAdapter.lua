@@ -18,6 +18,7 @@ local BlenderCamera = require(Client.Experience.Cameras.BlenderCamera)
 local GridOverlay = require(Client.Experience.Visuals.GridOverlay)
 local CharacterMode = require(Client.Modes.Free.CharacterMode)
 local EditWorkspace = require(Client.Modes.EditWorkspace)
+local EditEnvironment = require(Client.Modes.EditEnvironment)
 local WorldProjection = require(Client.Modes.WorldProjection)
 local AssemblyEnvironment = require(Client.Modes.AssemblyEnvironment)
 local SurfaceSnap = require(Client.Tools.Snapping.SurfaceSnap)
@@ -833,6 +834,7 @@ function Debug.start(options:any?)
 		gui.Enabled=false
 		panel.Visible=false
 		if placementFlow then placementFlow:setLaunchVisible(true) end
+  cameraController:setRoomBounds(nil,nil)
 		cameraController:setActive(false)
 		characterMode:setEditing(false)
 		if preview then preview.root.Parent=nil end
@@ -1390,6 +1392,9 @@ function Debug.start(options:any?)
 		preview:showOnly(if pendingSketch then -1 else selectedId)
 		characterMode:setEditing(true)
 		cameraController:setFocusTarget(workspaceData.center)
+  -- The workspace stays at the center of the sealed room. Limit CAD
+  -- zoom to its interior so the camera never looks from behind a wall.
+  cameraController:setRoomBounds(EditEnvironment.Center,EditEnvironment.Size)
 		cameraController:setView("Top")
 		cameraController:frameBounds(CFrame.new(workspaceData.center),
 			Vector3.new(workspaceData.size.X,0.05,workspaceData.size.Z))
