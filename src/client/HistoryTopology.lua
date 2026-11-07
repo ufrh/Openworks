@@ -237,7 +237,7 @@ function HistoryTopology.build(part:BasePart,component)
 		topFace=profileCap(outline,half.Y,true,"sketch_top")
 		profileCap(outline,-half.Y,false,"sketch_bottom")
 		profileWalls(outline,-half.Y,half.Y,true,"sketch_side")
-		elseif node.kind=="RoundedL" then
+	elseif node.kind=="RoundedL" then
 		local profile,travel=RoundedLProfile.profile(node)
 		local upper={}
 		for _,p in ipairs(profile) do table.insert(upper,p+travel) end
@@ -267,7 +267,7 @@ function HistoryTopology.build(part:BasePart,component)
 		profileWalls(poly,-half.Y,half.Y,true,"cylinder_wall")
 		for _,e in ipairs(edges) do e.curved=true end
 	else
-		return nil,"Unsupported primitive type"
+		return nil,"Unsupported component source geometry"
 	end
 	for _,op in ipairs(component.operations or {}) do
 		if op.enabled==false then continue end
