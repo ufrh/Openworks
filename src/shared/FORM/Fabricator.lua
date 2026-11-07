@@ -114,18 +114,38 @@ local function compileUnlocked(component): (BasePart, string)
 		-- First sketch is the source stock: one watertight profiled
 		-- prism, no Boolean intersection with an invisible box.
 		local profile,travel=SketchBodyProfile.profile(node)
-		local mesh,release=GeometryCutter.prism(profile,travel)
-		current=mesh:Clone()
-		current.Name="FORM_SketchedStock"
-		release()
+		local generated,meshOrError=pcall(GeometryCutter.prism,
+			profile,travel,nil,true)
+		if generated then
+			-- This MeshPart is the actual source stock. Keep its
+			-- editable backing alive; it is destroyed with the Part.
+			current=meshOrError
+			current.Name="FORM_SketchedStock"
+		else
+			-- Mesh creation can be denied in Studio/experience settings.
+			-- Native wedges + CSG union still produce actual solid stock.
+			local nativeOK,nativeOrError=pcall(GeometryCutter.prismNative,
+				profile,travel)
+			if not nativeOK then
+				error("Sketch solid generation failed. EditableMesh: "..
+					tostring(meshOrError).."; Native CSG: "..
+					tostring(nativeOrError),0)
+			end
+			current=nativeOrError
+		end
 	elseif node.kind=="RoundedL" then
 		-- An L is a proper manufactured profile, not a rectangular
 		-- placeholder with a cosmetic ramp attached to it.
 		local profile,travel=RoundedLProfile.profile(node)
-		local mesh,release=GeometryCutter.prism(profile,travel)
-		current=mesh:Clone()
-		current.Name="FORM_RoundedL_Stock"
-		release()
+		local created,meshOrError=pcall(GeometryCutter.prism,
+			profile,travel,nil,true)
+		if created then
+			current=meshOrError
+			current.Name="FORM_RoundedL_Stock"
+		else
+			current=GeometryCutter.prismNative(profile,travel)
+			current.Name="FORM_RoundedL_Stock"
+		end
 	else
 		current=Compiler.nativePart(node)
 	end
