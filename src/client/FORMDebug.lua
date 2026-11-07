@@ -293,7 +293,9 @@ function Debug.start()
 		local ready=component and solidState
 			and solidState.key==Fabricator.geometryKey(component)
 			and (not Fabricator.requiresCompile(component) or solidState.boolean)
-		if ready and model and surfacePicker then
+		if ready and editorActive and not activeTool
+			and not (sketchEditor and sketchEditor.active)
+			and model and surfacePicker then
 			local topology=surfacePicker:get(component.id,model,component)
 			if topology then
 				-- Topology is manufactured-history aware: retired sharp
@@ -346,7 +348,7 @@ function Debug.start()
 			local material=preview.states[id]
 			if material and material.boolean and gridUserVisible then
 				gridUserVisible=false
-				grid:setVisible(false)
+				grid:clear()
 			end
 			refresh()
 		end
@@ -412,7 +414,9 @@ function Debug.start()
 	button(row(29), "+ Create Component", 0, 1, function()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool=nil
-		toolVisualizer:hide()
+		toolVisualizer:stopAnimation()
+		selectionBorder:Clear()
+		selectionBorder.Visible=false
 		if measurementTool then measurementTool:setActive(false) end
 		transformGizmo:setHidden(true)
 		if placementFlow then placementFlow:open() end
@@ -455,6 +459,8 @@ function Debug.start()
 		activeTool = kind
 		if measurementTool then measurementTool:setActive(kind=="Measure") end
 		toolVisualizer:hide()
+		selectionBorder:Clear()
+		selectionBorder.Visible=false
 		if kind then
 			transformGizmo:setHidden(true)
 			toolStatus.Text = "Tool: " .. string.upper(kind)
@@ -470,6 +476,7 @@ function Debug.start()
 			transformGizmo:setMode("Move")
 			toolStatus.Text = "Tool: none"
 			message("Fabrication tool cleared")
+			refresh()
 		end
 	end
 	pair("Drill", function() setTool("Drill") end, "Saw (Profile)", function()
@@ -535,6 +542,7 @@ function Debug.start()
 				else "Drill: BLIND (click to toggle)"
 		end
 	end)
+	line("Position snap: 14 mm · Dimensions: 1 mm",24)
 	line("Wheel: Drill 2 | File 1 | Inset 2 mm", 20)
 	line("Shift+Wheel: coarse · Alt+Wheel: File segments", 20)
 	line("POCKET  /  FILE EDGE")
@@ -731,11 +739,13 @@ function Debug.start()
 		editorActive=false
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool=nil
-		toolVisualizer:hide()
+		toolVisualizer:stopAnimation()
+		selectionBorder:Clear()
+		selectionBorder.Visible=false
 		if measurementTool then measurementTool:setActive(false) end
 		if transformGizmo then transformGizmo:setHidden(true) end
 		gridUserVisible=false
-		grid:setVisible(false)
+		grid:clear()
 		gui.Enabled=false
 		panel.Visible=false
 		if placementFlow then placementFlow:setLaunchVisible(true) end
@@ -798,6 +808,7 @@ function Debug.start()
 			transformGizmo:setMode("Move")
 			toolStatus.Text = "Tool: none"
 			transformStatus.Text = "Mode: MOVE (G)"
+			if editorActive then refresh() end
 		end
 	)
 
@@ -1072,6 +1083,11 @@ function Debug.start()
 	-- camera gesture, text edit, or transform gizmo interaction.
 	RunService.RenderStepped:Connect(function(dt)
 		if not editorActive then return end
+		if sketchEditor and sketchEditor.active then
+			selectionBorder:Clear()
+			selectionBorder.Visible=false
+			return
+		end
 		if toolVisualizer:update(dt) then
 				return
 		end
