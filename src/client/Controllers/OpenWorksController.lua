@@ -80,6 +80,8 @@ function Controller:Start()
 end
 function Controller:Stop()
  if self.modeManager then self.modeManager:destroy() end
+ if self.bridge and self.bridge.destroy then self.bridge.destroy() end
+ self.bridge=nil
  if self.environment then self.environment:Destroy() end
  if self.modeBar then self.modeBar:destroy() end
  if self.tools then self.tools:destroy() end
