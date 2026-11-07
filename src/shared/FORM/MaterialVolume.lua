@@ -4,6 +4,7 @@
 -- volume is measured from Roblox's collision solid at unit density.
 local Quantize=require(script.Parent.Quantize)
 local RoundedLProfile=require(script.Parent.RoundedLProfile)
+local SketchBodyProfile=require(script.Parent.SketchBodyProfile)
 local AssetService=game:GetService("AssetService")
 local Volume={}
 Volume.MM_PER_STUD=280
@@ -28,6 +29,13 @@ function Volume.primitive(kind:string,size:Vector3):number
 		return polygonArea(RoundedLProfile.outline({size=size}))*size.Z
 	end
 	error("Unknown material primitive: "..tostring(kind))
+end
+
+function Volume.node(node):number
+	if node.kind=="SketchBody" then
+		return SketchBodyProfile.area(node)*node.size.Y
+	end
+	return Volume.primitive(node.kind,node.size)
 end
 
 function Volume.fromPart(solid:BasePart):number
