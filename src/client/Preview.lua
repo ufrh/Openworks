@@ -20,7 +20,7 @@ local function configure(part: BasePart)
 	part.CanTouch = false
 	part.CanQuery = true
 	part.CastShadow = true
-	part.Material = Enum.Material.SmoothPlastic
+	part.Material = Enum.Material.Metal
 	part.Color = Color3.fromRGB(170, 190, 196)
 	part.Reflectance = 0
 	part.Transparency = 0
