@@ -51,6 +51,7 @@ end
 function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	local self = setmetatable({
 		target = Vector3.zero,
+		active=false,
 		displayedTarget = Vector3.zero,
 		displayedYaw = math.rad(40),
 		displayedPitch = math.rad(30),
@@ -85,6 +86,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	end
 
 	connect(UserInputService.InputBegan, function(input, processed)
+		if not self.active then return end
 		local kind = input.UserInputType
 		if kind == Enum.UserInputType.MouseButton3
 			or kind == Enum.UserInputType.MouseButton2
@@ -150,6 +152,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	end)
 
 	connect(UserInputService.InputChanged, function(input, processed)
+		if not self.active then return end
 		if input.UserInputType ~= Enum.UserInputType.MouseWheel or processed then return end
 		local steps = input.Position.Z
 		if steps == 0 then return end
@@ -171,6 +174,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	end)
 
 	RunService:BindToRenderStep(RENDER_NAME, Enum.RenderPriority.Camera.Value + 2, function(dt)
+		if not self.active then return end
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		if camera ~= self.camera then
@@ -214,7 +218,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 		local alpha = 1 - math.exp(-math.max(0, dt) * 16)
 		self.displayedFov += (self.fov - self.displayedFov) * alpha
 		camera.FieldOfView = self.displayedFov
-		self.displayedTarget = Vector3.zero
+		self.displayedTarget = self.target
 		self.displayedOrthoHeight += (self.orthographicHeight - self.displayedOrthoHeight) * alpha
 		if self.nativeOrtho and self.orthographic then
 			camera.OrthographicSize = self.displayedOrthoHeight
@@ -264,6 +268,21 @@ end
 
 function BlenderCamera:getFocusTarget(): Vector3
 	return self.target
+end
+
+function BlenderCamera:setActive(active:boolean)
+	if self.active==active then return end
+	self.active=active
+	if active then
+		self.projectionDirty=true
+	else
+		self:releaseMouse()
+		local camera=workspace.CurrentCamera
+		if camera then
+			camera.CameraType=Enum.CameraType.Custom
+			pcall(function()camera.ProjectionType=Enum.ProjectionType.Perspective end)
+		end
+	end
 end
 
 function BlenderCamera:setFocusTarget(point:Vector3)
