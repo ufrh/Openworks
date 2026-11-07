@@ -1340,7 +1340,7 @@ function Debug.start(options:any?)
 			else
 				enterEdit(workspaceData)
 			end
-		end		end,message,function()
+		end,message,function()
 			-- Canceling placement never enters the CAD mode.
 			if editorActive and not pendingSketch then
 				local selected=selectedComponent()
