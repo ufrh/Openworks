@@ -388,6 +388,7 @@ function Debug.start(options:any?)
 	local function selectComponent(id: number?)
 		if id~=selectedId then toolVisualizer:stopAnimation() end
 		selectedId = id
+		if editorActive then preview:showOnly(id or -1) end
 		local component = selectedComponent()
 		nodeIndex = if component then #component.nodes else 1
 		if placementFlow then
@@ -1325,6 +1326,7 @@ function Debug.start(options:any?)
 		assemblyEnvironment:hide()
 		preview.root.Parent=workspace
 		editorActive=true
+		preview:showOnly(if pendingSketch then -1 else selectedId)
 		characterMode:setEditing(true)
 		cameraController:setFocusTarget(workspaceData.center)
 		cameraController:setView("Top")
@@ -1332,7 +1334,7 @@ function Debug.start(options:any?)
 			Vector3.new(workspaceData.size.X,0.05,workspaceData.size.Z))
 		cameraController:setActive(true)
 		gui.Enabled=true
-		panel.Visible=selectedComponent()~=nil
+		panel.Visible=pendingSketch==nil and selectedComponent()~=nil
 		placementFlow:setLaunchVisible(false)
 		grid:update(workspaceData.editCorner,workspaceData.size)
 		gridUserVisible=true
