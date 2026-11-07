@@ -8,6 +8,7 @@ local FORM = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Quantize = require(FORM.Quantize)
 local Compiler = require(FORM.Compiler)
 local SketchProfile = require(FORM.SketchProfile)
+local SnapSettings=require(script.Parent.Parent.Snapping.SnapSettings)
 
 local SketchEditor = {}
 SketchEditor.__index = SketchEditor
@@ -243,8 +244,8 @@ function SketchEditor:projectMouse(point: Vector2): Vector2?
 		return nil
 	end
 	return Vector2.new(
-		Quantize.snap(localPoint.X, Quantize.Grid),
-		Quantize.snap(localPoint.Z, Quantize.Grid)
+		Quantize.snap(localPoint.X, SnapSettings.get()),
+		Quantize.snap(localPoint.Z, SnapSettings.get())
 	)
 end
 
@@ -326,7 +327,7 @@ function SketchEditor:addPointUnderCursor()
 		self.onStatus("Sketch plane is outside the camera view")
 		return
 	end
-	if #self.points >= 3 and (self.points[1] - point).Magnitude <= Quantize.Grid * 1.5 then
+	if #self.points >= 3 and (self.points[1] - point).Magnitude <= SnapSettings.get() * 1.5 then
 		self:closeProfile()
 		return
 	end
@@ -334,7 +335,7 @@ function SketchEditor:addPointUnderCursor()
 		self.onStatus("A sketch supports at most 64 vertices")
 		return
 	end
-	if #self.points > 0 and (self.points[#self.points] - point).Magnitude < Quantize.Grid * 0.5 then
+	if #self.points > 0 and (self.points[#self.points] - point).Magnitude < SnapSettings.get() * 0.5 then
 		self.onStatus("Move to another grid point before placing the next vertex")
 		return
 	end
@@ -409,6 +410,7 @@ function SketchEditor:commit()
 	local component = if self.standalone then nil else self.component
 	local success, reason = self.onCommit(component, {
 		points = points, mode = self.mode, depth = depth, through = self.through,
+  snap=SnapSettings.get(),
 	})
 	if not success then
 		self.onStatus(reason or "Unable to commit sketch")
@@ -471,18 +473,20 @@ function SketchEditor:render()
 	local mouse = UserInputService:GetMouseLocation()
 	self.cursor = if self.closed or self:isOverUI(mouse) then nil else self:projectMouse(mouse)
 	if self.cursor then
-		self.subtitle.Text = string.format("Grid 0.10  |  Snap 0.05  |  X %.2f  Z %.2f",
-			self.cursor.X + node.size.X / 2,
+		self.subtitle.Text = string.format("Snap %.1f mm  |  X %.2f  Z %.2f",
+			SnapSettings.get()*MM_PER_STUD, self.cursor.X + node.size.X / 2,
 			self.cursor.Y + node.size.Z / 2)
 	else
-		self.subtitle.Text = "Click the top construction plane  ·  Snap 0.05"
+		self.subtitle.Text = "Click the construction plane  ·  adjustable snap"
 	end
 	-- Overlay a local workpiece grid slightly above the face, even though
 	-- the global floor grid may be hidden beneath solid stock.
 	local gridSegments = {}
 	if not self.standalone then
 	local xHalf, zHalf = node.size.X / 2, node.size.Z / 2
-	local step = math.max(0.1, Quantize.snap(math.max(node.size.X, node.size.Z) / 40, 0.1))
+	local increment=SnapSettings.get()
+  local step=increment*math.max(1,
+   math.ceil(math.max(node.size.X,node.size.Z)/increment/40))
 	local nx, nz = math.floor(node.size.X / step), math.floor(node.size.Z / step)
 	for i = 0, nx do
 		local x = -xHalf + i * step
@@ -578,7 +582,7 @@ function SketchEditor:render()
 		local part = self.dots[i]
 		part.Color3 = if self.cursor and i == #points then Color3.fromRGB(255,214,68) else color
 		local closeTarget = self.cursor and i == 1 and #self.points >= 3
-			and (self.cursor - self.points[1]).Magnitude <= Quantize.Grid * 1.5
+			and (self.cursor - self.points[1]).Magnitude <= SnapSettings.get() * 1.5
 		-- Small precision points. Even when zoomed out, vertices must not
   -- balloon into giant spheres obscuring adjacent grid intersections.
   part.Radius = math.clamp(thickness*
