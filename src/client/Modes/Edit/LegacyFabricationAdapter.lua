@@ -776,6 +776,11 @@ function Debug.start(options:any?)
 	leaveEditor=function()
 		pendingSketch=nil
 		editorActive=false
+		-- Switching modes must cancel an unfinished ground placement,
+		-- otherwise its RenderStep and click listener remain active.
+		if placementFlow and (placementFlow.placing or placementFlow.form.Visible) then
+			placementFlow:close()
+		end
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool=nil
 		toolVisualizer:stopAnimation()
@@ -1321,6 +1326,11 @@ function Debug.start(options:any?)
 	-- Entry from placement only requests a mode switch. The FORGE
 	-- OpenWorksRuntime controller is the sole owner of mode state.
 	local function enterEdit(workspaceData:any)
+		-- Reentering via the mode bar can interrupt an open specification
+		-- dialog. Do not leave a placement tool active in the chamber.
+		if placementFlow and (placementFlow.placing or placementFlow.form.Visible) then
+			placementFlow:close()
+		end
 		currentWorkspace=workspaceData
 		worldProjection:clear()
 		assemblyEnvironment:hide()
