@@ -24,7 +24,7 @@
         "$path": "src/server"
       },
       "FORGE": {
-        "$path": "src/server/FORGE"
+        "$path": "src/forge-server"
       }
     },
     "StarterPlayer": {
