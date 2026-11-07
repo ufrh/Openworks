@@ -410,15 +410,20 @@ function BlenderCamera:zoom(factor: number)
 	-- Hybrid dolly/lens zoom, about 60% physical travel and 40% FoV change.
 	-- Zoom does not change target, yaw, pitch, roll, or construction objects.
 	factor = math.clamp(factor, 0.05, 20)
+	-- Sketch-mode zoom should get close enough for individual 0.05-stud
+	-- grid points; ordinary workspace zoom retains its prior limits.
+	local minimumOrtho=if self.sketchMode then 0.012 else MIN_ORTHO_HEIGHT
+	local minimumDistance=if self.sketchMode then 0.075 else MIN_DISTANCE
 	if self.orthographic and self.nativeOrtho then
-		self.orthographicHeight = math.clamp(self.orthographicHeight * factor, MIN_ORTHO_HEIGHT, MAX_ORTHO_HEIGHT)
+		self.orthographicHeight = math.clamp(self.orthographicHeight * factor,
+			minimumOrtho, MAX_ORTHO_HEIGHT)
 		return
 	end
 	local desiredScale = self.distance * halfTan(self.fov) * factor
-	local dollyDistance = math.clamp(self.distance * math.pow(factor, 0.6), MIN_DISTANCE, MAX_DISTANCE)
+	local dollyDistance = math.clamp(self.distance * math.pow(factor, 0.6), minimumDistance, MAX_DISTANCE)
 	local desiredFov = math.deg(2 * math.atan(desiredScale / dollyDistance))
 	local fov = math.clamp(desiredFov, MIN_FOV, MAX_FOV)
-	local distance = math.clamp(desiredScale / halfTan(fov), MIN_DISTANCE, MAX_DISTANCE)
+	local distance = math.clamp(desiredScale / halfTan(fov), minimumDistance, MAX_DISTANCE)
 	self.fov = fov
 	self.distance = distance
 end
