@@ -194,7 +194,7 @@ function Document:editNode(component, index: number, field: string, axis: string
 	end
 	if not axis or not AXES[axis] then return false, "Invalid axis" end
 	local snapped = Quantize.snap(value, if field == "rotation" then Quantize.Rotation
-		elseif field=="size" then Quantize.Size else Quantize.Grid)
+		elseif field=="size" then Quantize.Size else Quantize.Size)
 	local position, size, rotation = node.position, node.size, node.rotation
 	if field == "position" then
 		-- Numeric MIN fields edit a boundary coordinate, not the part's center.
@@ -335,10 +335,12 @@ function Document:addOperation(component, kind: string, data)
 			width=width,depth=depth,through=data.through==true}
 	elseif kind == "Saw" or kind == "Groove" then
 		local kerf = Quantize.snap(data.kerf, 1 / 280)
-		local x1, z1 = Quantize.snap(data.x1 + node.size.X * 0.5, Quantize.Grid),
-			Quantize.snap(data.z1 + node.size.Z * 0.5, Quantize.Grid)
-		local x2, z2 = Quantize.snap(data.x2 + node.size.X * 0.5, Quantize.Grid),
-			Quantize.snap(data.z2 + node.size.Z * 0.5, Quantize.Grid)
+		-- Cursor picks already use the configured snap; the source history
+  -- retains them at 1 mm precision instead of re-quantizing at .05 stud.
+  local x1,z1=Quantize.snap(data.x1+node.size.X*.5,Quantize.Size),
+   Quantize.snap(data.z1+node.size.Z*.5,Quantize.Size)
+  local x2,z2=Quantize.snap(data.x2+node.size.X*.5,Quantize.Size),
+   Quantize.snap(data.z2+node.size.Z*.5,Quantize.Size)
 		if not Quantize.isFinite(kerf) or kerf < 5 / 280
 			or kerf > Quantize.MaxSize then return false, "Cut width must be at least 5 mm" end
 		local depth = data.depth or node.size.Y
@@ -611,6 +613,17 @@ function Document:adoptSnapshot(snapshot:any)
   self.nextOperation=math.max(self.nextOperation,operation.id or 0)
  end
  return component,nil
+end
+
+function Document:setNotes(component,text:string)
+ if typeof(text)~="string" or #text>4096 then
+  return false,"Component notes must be at most 4,096 characters"
+ end
+ if component.notes~=text then
+  component.notes=text
+  component.revision+=1
+ end
+ return true,nil
 end
 
 -- Geometry-independent, stable feature IDs for future assembly mating.
