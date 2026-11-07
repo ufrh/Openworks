@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
+local Client=script.Parent.Parent.Parent
 local FORM = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Document = require(FORM.Document)
 local Compiler = require(FORM.Compiler)
@@ -30,7 +31,6 @@ local MeasurementTool = require(Client.MeasurementTool)
 local EdgeAvailability = require(Client.EdgeAvailability)
 local FaceTools = require(FORM.FaceTools)
 
-local Client=script.Parent.Parent.Parent.Parent
 local Debug = {}
 
 local function make(className: string, properties, parent: Instance)
