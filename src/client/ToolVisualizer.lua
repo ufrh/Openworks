@@ -4,18 +4,18 @@
 -- all LineHandle/BoxHandle/CylinderHandle/SphereHandle adornments.
 local Visualizer={}
 Visualizer.__index=Visualizer
-local CYAN=Color3.fromRGB(95,217,220)
-local AMBER=Color3.fromRGB(245,177,105)
-local GREEN=Color3.fromRGB(125,223,175)
+local CYAN=Color3.fromRGB(45,255,247)
+local AMBER=Color3.fromRGB(255,203,71)
+local GREEN=Color3.fromRGB(119,255,166)
 local MAX_LINES=128
 
 local function adorn(class:string,name:string,anchor:BasePart,parent:Instance)
 	local a=Instance.new(class)
 	a.Name=name
 	a.Adornee=anchor
-	a.AlwaysOnTop=false
+	a.AlwaysOnTop=class=="LineHandleAdornment"
 	a.Color3=CYAN
-	a.Transparency=0.06
+	a.Transparency=0
 	a.Visible=false
 	a.Parent=parent
 	return a
@@ -27,7 +27,7 @@ local function lineBetween(line:LineHandleAdornment,a:Vector3,b:Vector3,
 	-- CFrame of a LineHandleAdornment points its local -Z axis at the target.
 	line.CFrame=CFrame.lookAt(a,b)
 	line.Length=delta.Magnitude
-	line.Thickness=thickness or 2
+	line.Thickness=math.max(2.4,thickness or 2.7)
 	line.Color3=color or CYAN
 	line.Visible=true
 end
@@ -48,10 +48,7 @@ function Visualizer.new(playerGui:PlayerGui)
 	anchor.CastShadow=false
 	anchor.Parent=workspace
 
-	local lines={}
-	for i=1,MAX_LINES do
-		table.insert(lines,adorn("LineHandleAdornment","Guide_"..i,anchor,folder))
-	end
+	local lines={} -- allocated only while the tool is actually visible
 	local box=adorn("BoxHandleAdornment","RemovalVolume",anchor,folder)
 
 	-- A dedicated attachment keeps the badge at the actual tool point.
@@ -71,10 +68,10 @@ function Visualizer.new(playerGui:PlayerGui)
 	local display=Instance.new("TextLabel")
 	display.Size=UDim2.fromScale(1,1)
 	display.BackgroundColor3=Color3.fromRGB(31,39,46)
-	display.BackgroundTransparency=0.1
-	display.TextColor3=Color3.fromRGB(233,244,245)
+	display.BackgroundTransparency=0
+	display.TextColor3=Color3.new(1,1,1)
 	display.Font=Enum.Font.Code
-	display.TextSize=12
+	display.TextSize=14
 	display.Parent=label
 	local corner=Instance.new("UICorner")
 	corner.CornerRadius=UDim.new(0,5)
@@ -87,14 +84,29 @@ end
 function Visualizer:hide()
 	for _,line in ipairs(self.lines) do line.Visible=false end
 	self.lineCount=0
-	self.box.Visible=false
+	if self.box then self.box.Visible=false end
 	self.label.Enabled=false
 end
 
+-- Release actual temporary wireframe Instances at tool/mode boundaries.
+-- Idle hovering reuses a small pool; finished effects do not leave any.
+function Visualizer:discard()
+	self:hide()
+	for _,line in ipairs(self.lines) do line:Destroy() end
+	table.clear(self.lines)
+	if self.box then self.box:Destroy() self.box=nil end
+end
+
 function Visualizer:guide(a:Vector3,b:Vector3,color:Color3?,thickness:number?)
-	if self.lineCount>=#self.lines then return end
+	if self.lineCount>=MAX_LINES then return end
 	self.lineCount+=1
-	lineBetween(self.lines[self.lineCount],a,b,color,thickness)
+	local line=self.lines[self.lineCount]
+	if not line then
+		line=adorn("LineHandleAdornment","Guide_"..self.lineCount,
+			self.anchor,self.root)
+		self.lines[self.lineCount]=line
+	end
+	lineBetween(line,a,b,color,thickness)
 end
 
 function Visualizer:caption(position:Vector3,text:string)
@@ -127,10 +139,14 @@ function Visualizer:volume(frame:CFrame,size:Vector3,shape:Enum.PartType,
 	-- drawn by drillWireframe() with actual circles perpendicular to the
 	-- drilling axis; a filled CylinderHandleAdornment is never used.
 	if shape==Enum.PartType.Block then
+		if not self.box then
+			self.box=adorn("BoxHandleAdornment","RemovalVolume",
+				self.anchor,self.root)
+		end
 		self.box.CFrame=frame
 		self.box.Size=size
 		self.box.Color3=tint
-		self.box.Transparency=0.96
+		self.box.Transparency=0.63
 		self.box.Visible=true
 		local corners=boxCorners(frame,size)
 		for _,pair in ipairs({
@@ -344,7 +360,7 @@ end
 
 function Visualizer:stopAnimation()
 	self.animation=nil
-	self:hide()
+	self:discard()
 end
 
 function Visualizer:animateDrill(pose:CFrame,origin:Vector3,normal:Vector3,
@@ -468,15 +484,15 @@ function Visualizer:update(dt:number):boolean
 	end
 	if t>=1 then
 		self.animation=nil
-		-- Prevent a one-frame ghost after completion; normal hover resumes
-		-- next RenderStepped without leaving a stale progress badge.
-		self:hide()
+		-- Destroy the entire transient display, not just its visibility.
+		self:discard()
 	end
 	return true
 end
 
 function Visualizer:destroy()
 	self.animation=nil
+	self:discard()
 	self.root:Destroy()
 	self.label:Destroy()
 	self.anchor:Destroy()
