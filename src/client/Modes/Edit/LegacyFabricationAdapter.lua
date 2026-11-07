@@ -789,7 +789,9 @@ function Debug.start(options:any?)
 		if measurementTool then measurementTool:setActive(false) end
 		if transformGizmo then transformGizmo:setHidden(true) end
 		gridUserVisible=false
-		grid:clear()
+		-- Preserve reusable grid adornments across mode switches. Creating
+		-- and destroying every line caused frame spikes on editor exit.
+		grid:setVisible(false)
 		gui.Enabled=false
 		panel.Visible=false
 		if placementFlow then placementFlow:setLaunchVisible(true) end
