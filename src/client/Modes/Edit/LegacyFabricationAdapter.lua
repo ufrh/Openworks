@@ -307,7 +307,7 @@ function Debug.start(options:any?)
 		local ready=component and solidState
 			and solidState.key==Fabricator.geometryKey(component)
 			and (not Fabricator.requiresCompile(component) or solidState.boolean)
-		if ready and editorActive and not activeTool
+		if ready and editorActive and not pendingSketch and not activeTool
 			and not (sketchEditor and sketchEditor.active)
 			and model and surfacePicker then
 			local topology=surfacePicker:get(component.id,model,component)
@@ -339,7 +339,7 @@ function Debug.start(options:any?)
 			end
 		end
 		if transformGizmo then
-			if editorActive and component and node then
+			if editorActive and not pendingSketch and component and node then
 				transformGizmo:show(component, nodeIndex)
 			else
 				transformGizmo:hide()
