@@ -333,7 +333,7 @@ function Debug.start(options:any?)
 			end
 		end
 		if transformGizmo then
-			if component and node then
+			if editorActive and component and node then
 				transformGizmo:show(component, nodeIndex)
 			else
 				transformGizmo:hide()
@@ -349,6 +349,15 @@ function Debug.start(options:any?)
 	end)
 	preview = Preview.new(message, function(id,model)
 		surfacePicker:request(id,model,document.components[id])
+		-- A background CSG compilation can complete after leaving Edit.
+		-- Refresh only the visible projection for Free or Assembly.
+		if not editorActive and currentWorkspace then
+			local stageCorner=if assemblyEnvironment.root
+				then AssemblyEnvironment.Center-
+					Vector3.new(currentWorkspace.size.X*0.5,0,currentWorkspace.size.Z*0.5)
+				else nil
+			worldProjection:show(preview,document,currentWorkspace,stageCorner)
+		end
 		if id == selectedId then
 			-- Once the first manufactured solid exists, don't leave a
 			-- wireframe grid obscuring it. Its real placement remains
