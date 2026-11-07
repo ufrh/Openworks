@@ -15,6 +15,7 @@ local MaterialVolume = require(FORM.MaterialVolume)
 local Preview = require(script.Parent.Preview)
 local BlenderCamera = require(script.Parent.BlenderCamera)
 local GridOverlay = require(script.Parent.GridOverlay)
+local CharacterMode = require(script.Parent.CharacterMode)
 local ViewGizmo = require(script.Parent.ViewGizmo)
 local TransformGizmo = require(script.Parent.TransformGizmo)
 local SketchEditor = require(script.Parent.SketchEditor)
@@ -40,6 +41,10 @@ function Debug.start()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	local document = Document.new()
+	local characterMode=CharacterMode.new(player)
+	local editorActive=false
+	local pendingSketch:any=nil
+	local leaveEditor:any=nil
 	local selectedId: number? = nil
 	local nodeIndex = 1
 	local cameraController: any = nil
@@ -62,6 +67,7 @@ function Debug.start()
 		ResetOnSpawn = false,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}, playerGui)
+	gui.Enabled=false -- Roblox character play is the default mode
 	local panel = make("Frame", {
 		Name = "Controls",
 		BackgroundColor3 = Color3.fromRGB(25, 29, 33),
@@ -193,7 +199,8 @@ function Debug.start()
 		local component = selectedComponent()
 		local node = selectedNode()
 		info.Text = if component then ("Selection: " .. component.name) else "Selection: none"
-		nodeInfo.Text = if node then ("Material: " .. node.kind) else "Material: none"
+		nodeInfo.Text = if node then ("Material: " ..
+			(if node.kind=="SketchBody" then "Sketched Solid" else node.kind)) else "Material: none"
 		if volumeInfo then
 			local used=if component then component.materialVolume else nil
 			if node and not Fabricator.requiresCompile(component) then
@@ -464,14 +471,8 @@ function Debug.start()
 		toolStatus.Text = "Tool: SKETCH"
 		sketchEditor:start(component)
 		transformGizmo:setHidden(true)
-	end, "New Body Sketch", function()
-		if not sketchEditor then message("Sketch workspace is not initialized") return end
-		activeTool = nil
-		toolVisualizer:hide()
-		transformGizmo:setHidden(true)
-		toolStatus.Text = "Tool: NEW BODY"
-		sketchEditor:start(nil)
-		transformGizmo:setHidden(true)
+	end, "New Component", function()
+		if placementFlow then placementFlow:open() end
 	end)
 	pair("Exit Tool", function() setTool(nil) end, "Undo Last Cut", function()
 		local component = selectedComponent()
@@ -723,57 +724,32 @@ function Debug.start()
 				end
 				return ok, reason
 			end
-			-- Standalone sketch: construct a snapped bounding workpiece, then
-			-- intersect it with the sketched through-extrusion. The retained
-			-- result is a normal CSG solid, not a persistent EditableMesh.
-			local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
-			for _, p in ipairs(data.points) do
-				minX, maxX = math.min(minX, p.X), math.max(maxX, p.X)
-				minZ, maxZ = math.min(minZ, p.Y), math.max(maxZ, p.Y)
-			end
-			local width, length = maxX - minX, maxZ - minZ
-			if width < Quantize.MinSize or length < Quantize.MinSize then
-				return false, "New body sketch is smaller than the minimum workpiece"
-			end
-			-- Give the temporary intersection block a little lateral overlap.
-			-- Coplanar sketch/bounds walls can create unreliable CSG seams;
-			-- this extra stock gets discarded by IntersectAsync, leaving the
-			-- authored sketch dimensions completely unchanged.
-			local margin = Quantize.Grid * 2
-			local body = document:create("Block", Vector3.new(minX - margin, 0, minZ - margin))
-			for _, axisInfo in ipairs({
-				{ "X", width + 2 * margin },
-				{ "Y", data.depth },
-				{ "Z", length + 2 * margin },
-			}) do
-				local ok, reason = document:editNode(body, 1, "size", axisInfo[1], axisInfo[2])
-				if not ok then
-					document:removeComponent(body.id)
-					return false, reason
-				end
-			end
-			local middleX = (minX + maxX) * 0.5
-			local middleZ = (minZ + maxZ) * 0.5
-			local localPoints = {}
-			for _, p in ipairs(data.points) do
-				table.insert(localPoints, Vector2.new(p.X - middleX, p.Y - middleZ))
-			end
-			local ok, reason = document:addOperation(body, "SketchExtrude", {
-				points = localPoints, mode = "Intersect",
-				depth = data.depth, through = true,
-			})
-			if not ok then
-				document:removeComponent(body.id)
-				return false, reason
-			end
+			-- The placed grid provides an empty construction plane.
+			-- The *first sketch itself* becomes the manufactured solid.
+			local pending=pendingSketch
+			if not pending then return false,"Create and place a component grid first" end
+			local body,reason=document:createSketchBody(
+				pending.name,pending.corner,pending.size,data.points,data.depth)
+			if not body then return false,reason end
+			pendingSketch=nil
 			selectComponent(body.id)
 			changed(body)
-			toolVisualizer:animateSketch(Compiler.pose(body.nodes[1]),body.nodes[1],
-				{points=localPoints,mode="Intersect",depth=data.depth})
-			return true, nil
+			panel.Visible=true
+			grid:update(pending.corner,pending.size)
+			grid:setVisible(true)
+			-- No primitive stock and no hidden intersection box.
+			message("First sketch created; manufacturing solid")
+			return true,nil
 		end,
 		message,
 		function()
+			if pendingSketch then
+				-- Canceling the required initial sketch returns to normal
+				-- player mode; no empty component was ever created.
+				pendingSketch=nil
+				if leaveEditor then leaveEditor() end
+				return
+			end
 			transformGizmo:setMode("Move")
 			toolStatus.Text = "Tool: none"
 			transformStatus.Text = "Mode: MOVE (G)"
