@@ -19,7 +19,11 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,targetC
 		local clone=model:Clone()
 		clone.Name=component.name
 		clone.Parent=self.root
-		local offset=(targetCorner or component.worldOrigin or workspaceData.worldCorner) - (component.workspaceOrigin or workspaceData.editCorner)
+		local origin=component.worldOrigin or workspaceData.worldCorner
+		local destination=if targetCorner
+			then targetCorner+(origin-workspaceData.worldCorner)
+			else origin
+		local offset=destination-(component.workspaceOrigin or workspaceData.editCorner)
 		for _,descendant in ipairs(clone:GetDescendants()) do
 			if descendant:IsA("BasePart") then
 				descendant.CFrame=CFrame.new(offset)*descendant.CFrame
