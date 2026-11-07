@@ -4,6 +4,7 @@
 -- mouse placement, then retained at exactly that location for editing.
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local Quantize=require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Quantize)
+local SnapSettings=require(script.Parent.Parent.Parent.Tools.Snapping.SnapSettings)
 local GridOverlay={}
 GridOverlay.__index=GridOverlay
 
@@ -22,10 +23,19 @@ function GridOverlay.new(playerGui:PlayerGui)
 	local container=Instance.new("Folder")
 	container.Name="FORM_ComponentWorkspaceGrid"
 	container.Parent=playerGui
-	return setmetatable({
+	local self=setmetatable({
 		origin=origin,anchor=origin,decorations=container,
 		lines={},visible=false,corner=nil,size=nil,lineCount=0,
 	},GridOverlay)
+ self.snapConnection=SnapSettings.connect(function()
+  if self.corner and self.size then
+   local at=self.corner
+   local size=Vector3.new(self.size.X,1,self.size.Y)
+   self.size=nil -- force redraw with new spacing
+   self:update(at,size)
+  end
+ end)
+ return self
 end
 
 local function guide(self,index:number):LineHandleAdornment
@@ -54,8 +64,8 @@ function GridOverlay:setVisible(value:boolean)
 end
 
 function GridOverlay:update(corner:Vector3,size:Vector3)
-	local width=math.max(Quantize.Grid,size.X)
-	local length=math.max(Quantize.Grid,size.Z)
+	local width=math.max(SnapSettings.get(),size.X)
+	local length=math.max(SnapSettings.get(),size.Z)
 	local bounds=Vector2.new(width,length)
 	-- Local-space lines are attached to the origin. Cursor movement
 	-- needs ONE Part.CFrame assignment, not a rebuild of every line.
@@ -65,7 +75,7 @@ function GridOverlay:update(corner:Vector3,size:Vector3)
 	end
 	if self.size==bounds then return end
 	self.size=bounds
-	local increment=Quantize.Grid
+	local increment=SnapSettings.get()
 	local stride=math.max(1,math.ceil(math.max(width,length)/increment/48))
 	local step=increment*stride
 	local count=0
@@ -111,6 +121,7 @@ function GridOverlay:clear()
 end
 
 function GridOverlay:destroy()
+ if self.snapConnection then self.snapConnection:Disconnect() self.snapConnection=nil end
 	self:clear()
 	self.decorations:Destroy()
 	self.origin:Destroy()
