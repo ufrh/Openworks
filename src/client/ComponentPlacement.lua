@@ -137,7 +137,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		form.Visible=false
 		hint.Visible=false
 		launch.Visible=self.showLaunch
-		if not keepGrid then grid:setVisible(false) end
+		if not keepGrid then grid:clear() end
 	end
 	function self:close()
 		close(false)
