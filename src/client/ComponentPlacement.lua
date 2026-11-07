@@ -11,6 +11,7 @@ local ComponentPlacement={}
 ComponentPlacement.__index=ComponentPlacement
 local MM=280
 local WORKSPACE_HEIGHT_MM=1000 -- Construction-space limit, never sketch depth
+ComponentPlacement.WORKSPACE_HEIGHT_MM=WORKSPACE_HEIGHT_MM
 
 local function make(kind:string,properties,parent:Instance)
 	local obj=Instance.new(kind)
