@@ -8,6 +8,10 @@ assert(FORGE.Version=="4.4.1","OpenWorks must mount actual FORGE Reforge 4.4.1")
 local runtime=FORGE:GetController("OpenWorksRuntime")
 assert(runtime and runtime._Started and not runtime._Failed,
  "FORGE OpenWorksRuntime controller failed to start; inspect Output")
+assert(runtime.tools.mode==runtime.modeManager.currentName,
+ "Mode permissions must update synchronously with the active mode")
+assert(RS:WaitForChild("Openworks"):FindFirstChild("FORGE")==nil,
+ "Duplicate FORGE replication under Openworks")
 local scripts=game.Players.LocalPlayer.PlayerScripts:WaitForChild("Openworks")
 local Modes=scripts:WaitForChild("Modes")
 local Manager=require(Modes.ModeManager)
