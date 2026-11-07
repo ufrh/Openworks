@@ -75,7 +75,7 @@ print("[OPENWORKS] CLIENT BUILD " .. BUILD .. " loaded from StarterPlayerScripts
 
 -- Check the actual loaded gizmo ModuleScript, not a claim about the
 -- GitHub branch. This exposes Rojo sync and require-cache mismatches.
-local gizmoModule = script:FindFirstChild("TransformGizmo")
+local gizmoModule = script:FindFirstChild("Tools") and script.Tools:FindFirstChild("Transform") and script.Tools.Transform:FindFirstChild("TransformGizmo")
 if gizmoModule and gizmoModule:IsA("ModuleScript") then
 	local ok, loaded = pcall(require, gizmoModule)
 	if ok and typeof(loaded) == "table" then

@@ -5,7 +5,7 @@ local Players=game:GetService("Players")
 local player=Players.LocalPlayer
 assert(player,"Run during Play in the CLIENT Command Bar")
 local Gizmo=require(player:WaitForChild("PlayerScripts")
-	:WaitForChild("Openworks"):WaitForChild("TransformGizmo"))
+	:WaitForChild("Openworks"):WaitForChild("Tools"):WaitForChild("Transform"):WaitForChild("TransformGizmo"))
 assert(Gizmo.Revision=="GIZMO-SCALE-FULL-RINGS.15",
 	"Wrong gizmo loaded: "..tostring(Gizmo.Revision))
 local camera=workspace.CurrentCamera

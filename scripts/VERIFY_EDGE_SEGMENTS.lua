@@ -6,12 +6,12 @@ local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local player=Players.LocalPlayer
 assert(player,"Run this test on the client during Play")
 local EdgeAvailability=require(player:WaitForChild("PlayerScripts")
-	:WaitForChild("Openworks"):WaitForChild("EdgeAvailability"))
+	:WaitForChild("Openworks"):WaitForChild("Systems"):WaitForChild("Selection"):WaitForChild("EdgeAvailability"))
 local FORM=ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Document=require(FORM.Document)
 local GeometryCutter=require(FORM.GeometryCutter)
 local Fabricator=require(FORM.Fabricator)
-local HistoryTopology=require(player.PlayerScripts.Openworks.HistoryTopology)
+local HistoryTopology=require(player.PlayerScripts.Openworks.Systems.Selection.HistoryTopology)
 
 local a,b=Vector3.new(-1,0.5,-1),Vector3.new(1,0.5,-1)
 local component={nodes={{kind="Block",size=Vector3.new(2,1,2)}},

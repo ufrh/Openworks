@@ -7,7 +7,7 @@ local Players=game:GetService("Players")
 local player=Players.LocalPlayer
 assert(player,"Run in Roblox Studio's client Command Bar (Play Solo)")
 local client=player:WaitForChild("PlayerScripts"):WaitForChild("Openworks")
-local Visualizer=require(client:WaitForChild("ToolVisualizer"))
+local Visualizer=require(client.Tools.Visuals.ToolVisualizer)
 local visualizer=Visualizer.new(player:WaitForChild("PlayerGui"))
 local pose=CFrame.identity
 local top=Vector3.new(0,0.5,0)

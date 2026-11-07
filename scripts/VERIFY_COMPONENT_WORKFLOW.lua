@@ -64,7 +64,7 @@ assert(rounded,"Hollow L should fit despite 9-stud³ box: "..tostring(roundedErr
 assert(MaterialVolume.primitive("RoundedL",rounded.nodes[1].size)<8)
 assert(MaterialVolume.toMM3(8)==175616000)
 assert(MaterialVolume.display(8)=="175,616,000 mm³")
-local measure=require(player.PlayerScripts.Openworks.MeasurementTool)
+local measure=require(player.PlayerScripts.Openworks.Tools.Inspection.MeasurementTool)
 local dummy=Instance.new("Folder")
 dummy.Parent=workspace
 local widget=measure.new(player.PlayerGui,dummy)

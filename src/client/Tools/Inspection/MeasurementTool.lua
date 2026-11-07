@@ -2,7 +2,7 @@
 -- Click two actual world points (manufactured solid or ground) and read
 -- straight-line Euclidean distance. No cursor ruler or auto increments.
 local UserInputService=game:GetService("UserInputService")
-local SurfaceSnap=require(script.Parent.SurfaceSnap)
+local SurfaceSnap=require(script.Parent.Parent.Snapping.SurfaceSnap)
 local MeasurementTool={}
 MeasurementTool.__index=MeasurementTool
 local function part(parent:Instance,name:string)

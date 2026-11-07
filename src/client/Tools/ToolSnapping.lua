@@ -1,5 +1,5 @@
 --!strict
-local SurfaceSnap=require(script.Parent.Parent.SurfaceSnap)
+local SurfaceSnap=require(script.Parent.Snapping.SurfaceSnap)
 local Snapping={}
 Snapping.pointOnPlane=SurfaceSnap.pointOnPlane
 Snapping.mm=SurfaceSnap.mm
