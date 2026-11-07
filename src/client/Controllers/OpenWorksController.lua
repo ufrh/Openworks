@@ -32,8 +32,16 @@ function Controller:Start()
     return
    end
   end
+  local startedAt=os.clock()
   local ok,reason=manager:switch(name,context)
-  if not ok then warn("[OPENWORKS] Cannot enter "..name..": "..tostring(reason)) end
+  local elapsed=(os.clock()-startedAt)*1000
+  FORGE.Metric("OpenWorks.Mode.TransitionMs"):Observe(elapsed)
+  if not ok then
+   FORGE.Metric("OpenWorks.Mode.Failures"):Add(1)
+   warn("[OPENWORKS] Cannot enter "..name..": "..tostring(reason))
+  else
+   FORGE.Pulse("OpenWorks","Mode","Enter",{Name=name,DurationMs=elapsed})
+  end
  end
  self.bridge=Editor.start({
   onEditRequested=function(workspaceData)
@@ -54,6 +62,12 @@ function Controller:Start()
   self.modeBar:setActive(name)
   self.tools:setMode(name)
  end))
+ FORGE.Test("OpenWorks.Q1.ModeRegistration",function()
+  assert(manager.modes.Free and manager.modes.Edit and manager.modes.Assembly)
+  assert(self.tools.registry:available("Drill","Edit"))
+  assert(not self.tools.registry:available("Drill","Free"))
+  assert(self.environment.Size==Vector3.new(40,20,40))
+ end)
  self:Track(RunService.Heartbeat:Connect(function(dt)
   manager:update(dt)
  end))
