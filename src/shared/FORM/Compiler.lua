@@ -5,6 +5,14 @@ local Compiler = {}
 local CYLINDER_FRAME = CFrame.Angles(0, 0, math.pi / 2)
 
 function Compiler.geometryKey(node): string
+	if node.kind=="SketchBody" then
+		local parts={"SKETCH",string.format("%.4f/%.4f/%.4f",
+			node.size.X,node.size.Y,node.size.Z)}
+		for _,point in ipairs(node.profilePoints) do
+			table.insert(parts,string.format("%.6f,%.6f",point.X,point.Y))
+		end
+		return table.concat(parts,";")
+	end
 	return table.concat({
 		node.kind,
 		string.format("%.4f", node.size.X),
@@ -28,6 +36,8 @@ function Compiler.partSize(node): Vector3
 end
 
 function Compiler.nativePart(node): Part
+	assert(node.kind~="SketchBody",
+		"Sketch-sourced components must never spawn a primitive Part")
 	local part = Instance.new("Part")
 	part.Shape = if node.kind == "Cylinder"
 		then Enum.PartType.Cylinder else Enum.PartType.Block
