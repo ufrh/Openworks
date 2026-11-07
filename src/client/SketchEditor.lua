@@ -18,7 +18,7 @@ local COLORS = {
 	Remove = Color3.fromRGB(245, 172, 108),
 	Intersect = Color3.fromRGB(180, 158, 252),
 }
-local ACCENT = Color3.fromRGB(99, 223, 220)
+local ACCENT = Color3.fromRGB(45, 255, 247)
 local MM_PER_STUD = 280
 
 local function make(class: string, properties, parent: Instance)
@@ -58,14 +58,14 @@ local function newVisual(parent:Instance,anchor:BasePart,name:string,kind:string
 	local visual=Instance.new(kind)
 	visual.Name=name
 	visual.Adornee=anchor
-	visual.AlwaysOnTop=false
+	visual.AlwaysOnTop=kind~="BoxHandleAdornment"
 	visual.Visible=false
 	visual.Color3=ACCENT
-	visual.Transparency=0.1
+	visual.Transparency=0
 	if kind=="LineHandleAdornment" then
-		visual.Thickness=1.6
+		visual.Thickness=3
 	elseif kind=="SphereHandleAdornment" then
-		visual.Radius=0.015
+		visual.Radius=0.025
 	elseif kind=="BoxHandleAdornment" then
 		visual.Size=Vector3.one*0.05
 	end
@@ -171,7 +171,7 @@ function SketchEditor.new(playerGui: PlayerGui, cameraController, onCommit, onSt
 		UDim2.fromOffset(169, 225), function() self:closeProfile() end)
 	local info = text(panel, "LMB: point   •   Enter: close   •   Backspace: undo", 264, 10)
 	info.TextColor3 = Color3.fromRGB(157, 173, 183)
-	local helper = text(panel, "Use Escape to exit sketch mode.", 283, 10)
+	local helper = text(panel, "Wheel: zoom  •  Esc: cancel sketch", 283, 11)
 	helper.TextColor3 = Color3.fromRGB(157, 173, 183)
 	self.commitButton = button(panel, "EXTRUDE / COMMIT", UDim2.fromOffset(189, 38),
 		UDim2.fromOffset(14, 313), function() self:commit() end)
@@ -269,6 +269,8 @@ function SketchEditor:start(component, tool: string?, firstWorkspace)
 		end
 	end
 	self.active = true
+	if self.camera.setSketchMode then self.camera:setSketchMode(true) end
+	self:discardVisuals()
 	self.closed = false
 	self.points = {}
 	self.cursor = nil
@@ -286,19 +288,27 @@ function SketchEditor:start(component, tool: string?, firstWorkspace)
 		else "Sketch active: click vertices on the selected workpiece's top face")
 end
 
+-- Destroy transient geometry when a profile is committed, canceled or
+-- replaced. Merely Visible=false left dozens of old wireframe instances
+-- resident and sometimes resurrected them on later tool changes.
+function SketchEditor:discardVisuals()
+	for _,pool in ipairs({self.lines,self.dots,self.gridParts,self.sidePanels}) do
+		for _,visual in ipairs(pool) do visual:Destroy() end
+		table.clear(pool)
+	end
+end
+
 function SketchEditor:stop()
 	if not self.active then return end
-	self.active = false
-	self.component = nil
-	self.standalone = false
-	self.points = {}
-	self.cursor = nil
-	self.closed = false
-	self.gui.Enabled = false
-	for _, visual in ipairs(self.lines) do visual.Visible=false end
-	for _, visual in ipairs(self.dots) do visual.Visible=false end
-	for _, visual in ipairs(self.gridParts) do visual.Visible=false end
-	for _, visual in ipairs(self.sidePanels) do visual.Visible=false end
+	self.active=false
+	self.component=nil
+	self.standalone=false
+	table.clear(self.points)
+	self.cursor=nil
+	self.closed=false
+	self.gui.Enabled=false
+	self:discardVisuals()
+	if self.camera.setSketchMode then self.camera:setSketchMode(false) end
 	self.onExit()
 end
 
@@ -418,9 +428,9 @@ local function placeSegment(adorn:LineHandleAdornment,a:Vector3,b:Vector3,
 	if delta.Magnitude<0.0001 then adorn.Visible=false return end
 	adorn.CFrame=CFrame.lookAt(a,b)
 	adorn.Length=delta.Magnitude
-	adorn.Thickness=math.clamp(width*130,1,3.2)
+	adorn.Thickness=math.clamp(width*180,2.5,5.5)
 	adorn.Color3=color
-	adorn.Transparency=0.05
+	adorn.Transparency=0
 	adorn.Visible=true
 end
 
@@ -436,7 +446,7 @@ local function placeWall(adorn:BoxHandleAdornment,a:Vector3,b:Vector3,
 	adorn.CFrame=CFrame.lookAt(center,center+edge)*CFrame.Angles(0,math.pi/2,0)
 	adorn.Size=Vector3.new(edge.Magnitude,height,0.003)
 	adorn.Color3=color
-	adorn.Transparency=0.9
+	adorn.Transparency=0.58
 	adorn.Visible=true
 end
 
@@ -446,7 +456,7 @@ function SketchEditor:render()
 	local cf = Compiler.pose(node)
 	local camera = workspace.CurrentCamera
 	local distance = if camera then (camera.CFrame.Position - node.position).Magnitude else 5
-	local thickness = math.clamp(distance * 0.003, 0.009, 0.045)
+	local thickness = math.clamp(distance * 0.0048, 0.015, 0.08)
 	local function worldAt(p: Vector2, height: number)
 		return cf:PointToWorldSpace(Vector3.new(p.X, height, p.Y))
 	end
@@ -488,13 +498,13 @@ function SketchEditor:render()
 		end
 		placeSegment(self.gridParts[i], entry[1], entry[2], thickness * 0.45,
 			Color3.fromRGB(117, 155, 169))
-		self.gridParts[i].Transparency = if entry[3] then 0.46 else 0.76
+		self.gridParts[i].Transparency = if entry[3] then 0.53 else 0.84
 	end
 	for i = #gridSegments + 1, #self.gridParts do
 		self.gridParts[i].Visible=false
 	end
 	local segments = {}
-	local surfaceY = node.size.Y / 2 + 0.035
+	local surfaceY = node.size.Y / 2 + 0.045
 	local color = if self.closed then COLORS[self.mode] else ACCENT
 	-- Stroke tint is applied to each LineHandleAdornment directly.
 	local function segment(a: Vector3, b: Vector3, tint: Color3?)
@@ -531,7 +541,7 @@ function SketchEditor:render()
 		end
 		if self.cursor and #self.points > 0 then
 			segment(worldAt(self.points[#self.points], surfaceY),
-				worldAt(self.cursor, surfaceY), Color3.fromRGB(246, 198, 125))
+				worldAt(self.cursor, surfaceY), Color3.fromRGB(255, 214, 68))
 		end
 	end
 	for i, detail in ipairs(segments) do
@@ -549,10 +559,10 @@ function SketchEditor:render()
 			-- Native sphere adornment, no BasePart.
 		end
 		local part = self.dots[i]
-		part.Color3 = if self.cursor and i == #points then Color3.fromRGB(255,201,113) else color
+		part.Color3 = if self.cursor and i == #points then Color3.fromRGB(255,214,68) else color
 		local closeTarget = self.cursor and i == 1 and #self.points >= 3
 			and (self.cursor - self.points[1]).Magnitude <= Quantize.Grid * 1.5
-		part.Radius = thickness*(if closeTarget then 1.8 else 0.9)
+		part.Radius = thickness*(if closeTarget then 2.0 else 1.25)
 		if closeTarget then part.Color3 = Color3.fromRGB(255,201,113) end
 		part.CFrame = CFrame.new(worldAt(p,if self.closed then node.size.Y/2+0.04 else surfaceY))
 		part.Visible=true
