@@ -221,7 +221,7 @@ function Document:editNode(component, index: number, field: string, axis: string
 	return true, nil
 end
 
-function Document:applyTransform(component, index: number, position: Vector3?, size: Vector3?, rotation: Vector3?, preserveFaceAnchor: boolean?, preserveRotationPrecision: boolean?)
+function Document:applyTransform(component, index: number, position: Vector3?, size: Vector3?, rotation: Vector3?, preserveFaceAnchor: boolean?, preserveRotationPrecision: boolean?, moveSnap:number?)
 	local node = component.nodes[index]
 	if not node then return false, "No node selected" end
 	local newSize = Quantize.vector(size or node.size, Quantize.Size)
@@ -242,7 +242,7 @@ function Document:applyTransform(component, index: number, position: Vector3?, s
 		-- Move the *local minimum corner* onto 0.05-grid coordinates,
 		-- accounting for half-cell centers of odd-sized envelopes.
 		local half = halfOffset(newSize, node.rotation)
-		newPosition = Quantize.vector(position - half, Quantize.Grid) + half
+		newPosition = Quantize.vector(position - half, moveSnap or Quantize.Grid) + half
 	end
 	local ok, reason = validateTransform(newPosition, newSize, newRotation)
 	if not ok then return false, reason end
@@ -284,8 +284,10 @@ function Document:addOperation(component, kind: string, data)
 		if depth < 5 / 280 or depth > Quantize.MaxSize then
 			return false, "Drill depth must be between 5 mm and 128 studs"
 		end
-		local x = Quantize.snap(data.x + node.size.X * 0.5, Quantize.Grid)
-		local z = Quantize.snap(data.z + node.size.Z * 0.5, Quantize.Grid)
+		local snap=if typeof(data.snap)=="number" and Quantize.isFinite(data.snap)
+   and data.snap>=0.01 and data.snap<=2 then data.snap else Quantize.Grid
+  local x=Quantize.snap(data.x+node.size.X*0.5,snap)
+  local z=Quantize.snap(data.z+node.size.Z*0.5,snap)
 		if x < 0 or x > node.size.X or z < 0 or z > node.size.Z then
 			return false, "Drill center must be on the workpiece"
 		end
@@ -457,21 +459,24 @@ function Document:addOperation(component, kind: string, data)
 		if mode ~= "Add" and mode ~= "Remove" and mode ~= "Intersect" then
 			return false, "Choose Add, Remove or Intersect"
 		end
-		local depth = Quantize.snap(data.depth, Quantize.Grid)
+		local depth = Quantize.snap(data.depth, Quantize.Size)
 		if not Quantize.isFinite(depth) or depth < Quantize.MinSize
 			or depth > Quantize.MaxSize then
 			return false, "Extrusion depth must be 0.05 to 128 studs"
 		end
-		local snappedPoints = {}
-		for _, point in ipairs(data.points or {}) do
-			if typeof(point) ~= "Vector2" then
-				return false, "Sketch point must be Vector2"
-			end
-			table.insert(snappedPoints, Vector2.new(
-				Quantize.snap(point.X + node.size.X * 0.5, Quantize.Grid),
-				Quantize.snap(point.Y + node.size.Z * 0.5, Quantize.Grid)
-			))
-		end
+		-- SketchEditor and Extrusion both use component-CENTERED local
+  -- coordinates. Store exactly that frame; no +halfSize recentering.
+  -- Authoring snap is user configurable, geometric storage is 1 mm.
+  local snappedPoints={}
+  for _,point in ipairs(data.points or {}) do
+   if typeof(point)~="Vector2" or not Quantize.isFinite(point.X)
+    or not Quantize.isFinite(point.Y) then
+    return false,"Sketch point must be finite Vector2"
+   end
+   table.insert(snappedPoints,Vector2.new(
+    Quantize.snap(point.X,Quantize.Size),
+    Quantize.snap(point.Y,Quantize.Size)))
+  end
 		local points, _, sketchError = SketchProfile.prepare(snappedPoints)
 		if not points then return false, sketchError end
 		-- No bounding-volume rejection here: the compiled result is
