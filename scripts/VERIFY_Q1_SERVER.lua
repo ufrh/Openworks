@@ -5,6 +5,8 @@ assert(RunService:IsServer(),"Run on server")
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local FORGE=require(ReplicatedStorage:WaitForChild("FORGE"))
 assert(FORGE.Version=="4.4.1")
+assert(ReplicatedStorage:WaitForChild("Openworks"):FindFirstChild("FORGE")==nil,
+ "Rojo must mount FORGE once at ReplicatedStorage.FORGE, never nested under Openworks")
 local report=FORGE.GetBootReport()
 assert(report,"FORGE server boot report unavailable")
 assert(game:GetService("ReplicatedStorage"):FindFirstChild("__FORGE_NETWORK"),
