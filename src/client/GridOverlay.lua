@@ -95,7 +95,19 @@ function GridOverlay:update(corner:Vector3,size:Vector3)
 	self.lineCount=count
 end
 
+-- Release temporary placement/sketch lines completely. Reopening the
+-- grid reconstructs only the lines needed at its new actual dimensions.
+function GridOverlay:clear()
+	for _,line in ipairs(self.lines) do line:Destroy() end
+	table.clear(self.lines)
+	self.lineCount=0
+	self.corner=nil
+	self.size=nil
+	self.visible=false
+end
+
 function GridOverlay:destroy()
+	self:clear()
 	self.decorations:Destroy()
 	self.origin:Destroy()
 end
