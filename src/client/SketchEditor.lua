@@ -472,6 +472,7 @@ function SketchEditor:render()
 	-- Overlay a local workpiece grid slightly above the face, even though
 	-- the global floor grid may be hidden beneath solid stock.
 	local gridSegments = {}
+	if not self.standalone then
 	local xHalf, zHalf = node.size.X / 2, node.size.Z / 2
 	local step = math.max(0.1, Quantize.snap(math.max(node.size.X, node.size.Z) / 40, 0.1))
 	local nx, nz = math.floor(node.size.X / step), math.floor(node.size.Z / step)
@@ -491,7 +492,7 @@ function SketchEditor:render()
 			i % 5 == 0,
 		})
 	end
-	if self.standalone then table.clear(gridSegments) end -- placed GridOverlay is the only sketch grid
+	end -- Standalone sketch uses the already-placed GridOverlay; do no duplicate work.
 	for i, entry in ipairs(gridSegments) do
 		if not self.gridParts[i] then
 			self.gridParts[i] = newVisual(self.visuals,self.anchor,"SketchGrid_"..i,"LineHandleAdornment")
