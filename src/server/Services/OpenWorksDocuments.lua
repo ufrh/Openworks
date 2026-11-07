@@ -31,6 +31,20 @@ local function getDocument(self:any,player:Player):any
  end
  return current
 end
+local function remember(self:any,player:Player,component:any)
+ local byPlayer=self.history[player]
+ if not byPlayer then byPlayer={} self.history[player]=byPlayer end
+ local byComponent=byPlayer[component.id]
+ if not byComponent then byComponent={} byPlayer[component.id]=byComponent end
+ byComponent[component.revision]=Document.snapshot(component)
+ local revisions={}
+ for revision in pairs(byComponent) do table.insert(revisions,revision) end
+ table.sort(revisions)
+ while #revisions>20 do
+  byComponent[table.remove(revisions,1)]=nil
+ end
+end
+
 local function selected(self:any,player:Player,id:any,revision:any)
  if typeof(id)~="number" or id~=math.floor(id) then
   return nil,nil,"Invalid component ID"
@@ -46,6 +60,7 @@ end
 
 function Service:Init()
  self.documents={}
+ self.history={}
  self:Expose("CreateSketchBody")
  self:Expose("GetSnapshot")
  self:Expose("ListSnapshots")
@@ -53,8 +68,13 @@ function Service:Init()
  self:Expose("SetOperationEnabled")
  self:Expose("RemoveOperation")
  self:Expose("ApplyTransform")
+ self:Expose("EditNode")
+ self:Expose("UndoOperation")
+ self:Expose("DeleteComponent")
+ self:Expose("RestoreRevision")
  self:Track(Players.PlayerRemoving:Connect(function(player)
   self.documents[player]=nil
+  self.history[player]=nil
  end))
 end
 
@@ -79,6 +99,7 @@ function Service:CreateSketchBody(player:Player,name:any,worldOrigin:any,
  if not ok then return false,tostring(component) end
  if not component then return false,reason end
  component.worldOrigin=worldOrigin
+ remember(self,player,component)
  return true,Document.snapshot(component)
 end
 
@@ -89,6 +110,7 @@ function Service:ApplyOperation(player:Player,id:any,revision:any,kind:any,data:
   or #component.operations>=MAX_OPERATIONS then
   return false,"Invalid fabrication operation or operation limit reached"
  end
+ remember(self,player,component)
  local ok,valid,reason=pcall(function()
   return doc:addOperation(component,kind,data)
  end)
@@ -104,6 +126,7 @@ function Service:SetOperationEnabled(player:Player,id:any,revision:any,
  if typeof(operationId)~="number" or typeof(enabled)~="boolean" then
   return false,"Invalid feature operation"
  end
+ remember(self,player,component)
  local ok,reason=doc:setOperationEnabled(component,operationId,enabled)
  return if ok then true else false,if ok then Document.snapshot(component) else reason
 end
@@ -112,6 +135,7 @@ function Service:RemoveOperation(player:Player,id:any,revision:any,operationId:a
  local doc,component,err=selected(self,player,id,revision)
  if not doc then return false,err end
  if typeof(operationId)~="number" then return false,"Invalid feature ID" end
+ remember(self,player,component)
  local ok,reason=doc:removeOperation(component,operationId)
  return if ok then true else false,if ok then Document.snapshot(component) else reason
 end
@@ -128,12 +152,67 @@ function Service:ApplyTransform(player:Player,id:any,revision:any,
  end
  local step=if typeof(snap)=="number" and Quantize.isFinite(snap)
   and snap>=.01 and snap<=2 then snap else Quantize.Grid
+ remember(self,player,component)
  local ok,valid,reason=pcall(function()
   return doc:applyTransform(component,nodeId,position,size,rotation,
    faceAnchor==true,rotatePrecision==true,step)
  end)
  if not ok then return false,tostring(valid) end
  if not valid then return false,reason end
+ return true,Document.snapshot(component)
+end
+
+function Service:EditNode(player:Player,id:any,revision:any,index:any,
+ field:any,axis:any,value:any)
+ local doc,component,err=selected(self,player,id,revision)
+ if not doc then return false,err end
+ if typeof(index)~="number" or typeof(field)~="string"
+  or typeof(axis)~="string" or typeof(value)~="number" then
+  return false,"Invalid node edit"
+ end
+ remember(self,player,component)
+ local ok,valid,reason=pcall(function()
+  return doc:editNode(component,index,field,axis,value)
+ end)
+ if not ok then return false,tostring(valid) end
+ if not valid then return false,reason end
+ return true,Document.snapshot(component)
+end
+
+function Service:UndoOperation(player:Player,id:any,revision:any)
+ local doc,component,err=selected(self,player,id,revision)
+ if not doc then return false,err end
+ remember(self,player,component)
+ local ok,reason=doc:undoOperation(component)
+ return if ok then true else false,if ok then Document.snapshot(component) else reason
+end
+
+function Service:DeleteComponent(player:Player,id:any,revision:any)
+ local doc,component,err=selected(self,player,id,revision)
+ if not doc then return false,err end
+ doc:removeComponent(component.id)
+ local byPlayer=self.history[player]
+ if byPlayer then byPlayer[id]=nil end
+ return true,nil
+end
+
+-- A client may roll back only to a state *previously issued by this server*.
+-- This repairs failed local CSG compilations without accepting arbitrary
+-- client-authored snapshots as authoritative data.
+function Service:RestoreRevision(player:Player,id:any,revision:any,
+ targetRevision:any)
+ local doc,component,err=selected(self,player,id,revision)
+ if not doc then return false,err end
+ local history=self.history[player]
+ local byComponent=history and history[id]
+ local accepted=byComponent and byComponent[targetRevision]
+ if not accepted or targetRevision>component.revision then
+  return false,"Rollback revision is not in server history"
+ end
+ remember(self,player,component)
+ if not doc:restoreSnapshot(component,accepted) then
+  return false,"Unable to restore saved component"
+ end
  return true,Document.snapshot(component)
 end
 
@@ -157,5 +236,6 @@ end
 
 function Service:Stop()
  self.documents={}
+ self.history={}
 end
 return Service
