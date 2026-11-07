@@ -374,7 +374,8 @@ function SketchEditor:commit()
 		self.onStatus("Close a valid profile before extruding")
 		return
 	end
-	local depth = Quantize.snap(self.depthMM / MM_PER_STUD, Quantize.Grid)
+	local depth = Quantize.snap(self.depthMM / MM_PER_STUD,
+		if self.standalone then Quantize.Size else Quantize.Grid)
 	if depth < Quantize.MinSize then
 		self.onStatus("Extrusion depth must be at least 14 mm (0.05 studs)")
 		return
@@ -493,12 +494,14 @@ function SketchEditor:render()
 	end
 	if self.closed then
 		local bottom, top = extrusionRange(node, self.mode,
-			Quantize.snap(self.depthMM / MM_PER_STUD, Quantize.Grid), self.through)
+			Quantize.snap(self.depthMM / MM_PER_STUD,
+				if self.standalone then Quantize.Size else Quantize.Grid), self.through)
 		if self.standalone then
 			-- New-body preview is exactly floor Y=0 to the chosen height.
 			-- The compiler's tiny CSG overlap margin is not a design dimension.
 			bottom = node.size.Y / 2
-			top = bottom + Quantize.snap(self.depthMM / MM_PER_STUD, Quantize.Grid)
+			top = bottom + Quantize.snap(self.depthMM / MM_PER_STUD,
+				if self.standalone then Quantize.Size else Quantize.Grid)
 		end
 		for i, p in ipairs(self.points) do
 			local q = self.points[i % #self.points + 1]
