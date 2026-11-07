@@ -51,6 +51,10 @@ function DocumentBridge:attach()
   return bridge:adopt(bridge:request("EditNode",
    component.id,component.revision,index,field,axis,value))
  end
+ function document:setNotes(component,notes)
+  return bridge:adopt(bridge:request("SetNotes",
+   component.id,component.revision,notes))
+ end
  function document:removeComponent(id)
   local component=self.components[id]
   if not component then return false,"Component not found" end
