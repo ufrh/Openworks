@@ -5,7 +5,7 @@ local Quantize=require(game:GetService("ReplicatedStorage")
  :WaitForChild("Openworks"):WaitForChild("FORM").Quantize)
 local Snapping={}
 Snapping.Default=0.05
-Snapping.Min=0.01
+Snapping.Min=1/280
 Snapping.Max=2
 Snapping.Presets={0.01,0.025,0.05,0.1,0.25,0.5,1,2}
 local increment=Snapping.Default
@@ -14,12 +14,12 @@ function Snapping.get():number return increment end
 function Snapping.set(value:number):(boolean,string?)
  if typeof(value)~="number" or not Quantize.isFinite(value)
   or value<Snapping.Min or value>Snapping.Max then
-  return false,"Snap must be between 2.8 mm and 560 mm"
+  return false,"Snap must be between 1 mm and 560 mm"
  end
- local rounded=math.round(value*280)/280
- -- Retain common 0.05/0.1 increments exactly to preserve existing
- -- grid positions; arbitrary typed millimeter values use 1 mm precision.
- increment=if math.abs(value-rounded)<0.001 then rounded else value
+ -- Preserve the exact spacing chosen by the player. Values coming from
+ -- the millimeter text box are already represented in studs.
+ if increment==value then return true,nil end
+ increment=value
  changed:Fire(increment)
  return true,nil
 end
