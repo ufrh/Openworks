@@ -5,8 +5,9 @@
 -- exactly ON the selected surface (even after arbitrary rotation).
 local Quantize=require(game:GetService("ReplicatedStorage")
 	:WaitForChild("Openworks"):WaitForChild("FORM").Quantize)
+local SnapSettings=require(script.Parent.SnapSettings)
 local SurfaceSnap={}
-SurfaceSnap.Increment=Quantize.Grid -- 0.05 stud / 14mm
+SurfaceSnap.Increment=SnapSettings.Default -- compatibility only; get() is dynamic
 function SurfaceSnap.pointOnPlane(point:Vector3,origin:Vector3,
 	normal:Vector3,increment:number?):Vector3
 	local n=normal.Unit
@@ -15,7 +16,7 @@ function SurfaceSnap.pointOnPlane(point:Vector3,origin:Vector3,
 	local x=(base-n*base:Dot(n)).Unit
 	local y=n:Cross(x).Unit
 	local offset=point-origin
-	local size=increment or SurfaceSnap.Increment
+	local size=increment or SnapSettings.get()
 	return origin+
 		x*Quantize.snap(offset:Dot(x),size)+
 		y*Quantize.snap(offset:Dot(y),size)
