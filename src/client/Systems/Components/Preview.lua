@@ -281,7 +281,9 @@ end
 function Preview:render(component)
 	-- Preserve a valid baseline even if the first rounded-L CSG is
 	-- still compiling when the user starts editing it.
-	if not self.accepted[component.id] and #component.operations==0 then
+	if not self.accepted[component.id]
+  and not Fabricator.requiresCompile(component)
+  and #component.operations==0 then
 		local primitive=MaterialVolume.node(component.nodes[1])
 		if MaterialVolume.within(primitive) then
 			component.materialVolume=primitive
