@@ -5,6 +5,7 @@
 local Quantize = require(script.Parent.Quantize)
 local MaterialVolume = require(script.Parent.MaterialVolume)
 local SketchProfile = require(script.Parent.SketchProfile)
+local Features = require(script.Parent.Features)
 
 local Document = {}
 Document.__index = Document
@@ -582,6 +583,15 @@ function Document.snapshot(component)
 		workspaceSize=component.workspaceSize,
 		worldOrigin=component.worldOrigin,
 	}
+end
+
+-- Geometry-independent, stable feature IDs for future assembly mating.
+-- These are only candidates until the compiled final surface is verified.
+function Document:listFeatures(component)
+ return Features.list(component)
+end
+function Document:getFeature(component,id:string)
+ return Features.get(component,id)
 end
 
 return Document
