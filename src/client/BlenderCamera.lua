@@ -52,6 +52,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	local self = setmetatable({
 		target = Vector3.zero,
 		active=false,
+		sketchMode=false,
 		displayedTarget = Vector3.zero,
 		displayedYaw = math.rad(40),
 		displayedPitch = math.rad(30),
@@ -153,8 +154,17 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 
 	connect(UserInputService.InputChanged, function(input, processed)
 		if not self.active then return end
-		if input.UserInputType ~= Enum.UserInputType.MouseWheel or processed then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
 		local steps = input.Position.Z
+		-- Roblox GUI may mark wheel events processed while the sketch
+		-- dock is visible. Sketch mode owns zoom explicitly, even then.
+		if self.sketchMode then
+			if UserInputService:GetFocusedTextBox() then return end
+			self:zoom(math.pow(0.76,steps))
+			self:snapNow()
+			return
+		end
+		if processed then return end
 		if steps == 0 then return end
 		-- Precision fabrication tools get the wheel before the camera;
 		-- this is a direct callback, no double-zoom or delayed event race.
@@ -314,6 +324,10 @@ function BlenderCamera:snapNow()
 	if self.onFrame then self.onFrame(frame,self:viewLabel()) end
 end
 
+function BlenderCamera:setSketchMode(enabled:boolean)
+	self.sketchMode=enabled
+end
+
 function BlenderCamera:setActive(active:boolean)
 	if self.active==active then return end
 	self.active=active
@@ -321,6 +335,7 @@ function BlenderCamera:setActive(active:boolean)
 		self.projectionDirty=true
 		self:snapNow()
 	else
+		self.sketchMode=false
 		self:releaseMouse()
 		local camera=workspace.CurrentCamera
 		if camera then
