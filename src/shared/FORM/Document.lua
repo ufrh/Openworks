@@ -96,6 +96,51 @@ function Document:create(kind: string, minimumCorner: Vector3, name: string?, sp
 	return component
 end
 
+-- A brand-new component begins as a user-authored outline, not stock.
+-- Workspace X/Z bound the 2D sketch and Y is its first extrusion depth.
+function Document:createSketchBody(name:string,ground:Vector3,
+	workspaceSize:Vector3,outline:{Vector2},depth:number)
+	local points,_,reason=SketchProfile.prepare(outline)
+	if not points then return nil,reason end
+	if not Quantize.isFinite(depth) or depth<Quantize.MinSize
+		or depth>Quantize.MaxSize then
+		return nil,"Sketch extrusion must be between 14 and 35,840 mm"
+	end
+	local w=workspaceSize.X
+	local z=workspaceSize.Z
+	for _,p in ipairs(points) do
+		if math.abs(p.X)>w*0.5+0.001 or math.abs(p.Y)>z*0.5+0.001 then
+			return nil,"Sketch outline must fit inside the placed grid"
+		end
+	end
+	depth=Quantize.snap(depth,Quantize.Size)
+	local plane=Quantize.vector(ground,Quantize.Grid)
+	local node={
+		id=self.nextNode+1,kind="SketchBody",
+		position=plane+Vector3.new(w*0.5,depth*0.5,z*0.5),
+		size=Vector3.new(w,depth,z),rotation=Vector3.zero,
+		profileSize=Vector2.new(w,z),profilePoints=points,
+	}
+	local material=MaterialVolume.node(node)
+	if not MaterialVolume.within(material) then
+		return nil,"Sketched material exceeds "..MaterialVolume.display(
+			Quantize.MaxComponentVolume)
+	end
+	self.nextNode+=1
+	self.nextComponent+=1
+	local component={
+		id=self.nextComponent,
+		name=if name:match("%S") then string.sub(name,1,64)
+			else "Component "..self.nextComponent,
+		nodes={node},operations={},notes="",revision=1,
+		materialVolume=material,volumeExact=true,
+		workspaceOrigin=plane,workspaceSize=workspaceSize,
+	}
+	self.components[component.id]=component
+	table.insert(self.order,component.id)
+	return component
+end
+
 -- Fabricated components may have cavities or recesses; avoid limiting
 -- their bounding envelope. After a CSG operation, Preview checks the
 -- actual compiled material volume and restores the last valid snapshot.
@@ -104,11 +149,18 @@ local function hasFabrication(component):boolean
 		if op.enabled~=false then return true end
 	end
 	return component.nodes[1].kind=="RoundedL"
+		or component.nodes[1].kind=="SketchBody"
 end
 
 local function withinCurrentVolume(component,size:Vector3):boolean
 	if hasFabrication(component) then return true end
-	return MaterialVolume.within(MaterialVolume.primitive(component.nodes[1].kind,size))
+	local node=component.nodes[1]
+	if node.kind=="SketchBody" then
+		local candidate=table.clone(node)
+		candidate.size=size
+		return MaterialVolume.within(MaterialVolume.node(candidate))
+	end
+	return MaterialVolume.within(MaterialVolume.primitive(node.kind,size))
 end
 
 local function validateTransform(position: Vector3, size: Vector3, rotation: Vector3)
@@ -203,7 +255,8 @@ end
 -- resizing from the opposite face does not unexpectedly move previous cuts.
 function Document:addOperation(component, kind: string, data)
 	local node = component.nodes[1]
-	if node.kind ~= "Block" and node.kind ~= "Cylinder" and node.kind ~= "RoundedL" then
+	if node.kind ~= "Block" and node.kind ~= "Cylinder"
+		and node.kind ~= "RoundedL" and node.kind ~= "SketchBody" then
 		return false, "This workpiece does not support fabrication"
 	end
 	local operation
@@ -490,13 +543,19 @@ function Document:restoreSnapshot(component,snapshot)
 	component.notes=copy.notes
 	component.materialVolume=copy.materialVolume
 	component.volumeExact=copy.volumeExact
+	component.workspaceOrigin=copy.workspaceOrigin
+	component.workspaceSize=copy.workspaceSize
 	component.revision+=1
 	return true
 end
 
 function Document.snapshot(component)
 	local nodes, operations = {}, {}
-	for _, node in ipairs(component.nodes) do table.insert(nodes, table.clone(node)) end
+	for _, node in ipairs(component.nodes) do
+		local clone=table.clone(node)
+		if node.profilePoints then clone.profilePoints=table.clone(node.profilePoints) end
+		table.insert(nodes,clone)
+	end
 	for _, operation in ipairs(component.operations) do
 		local copy = table.clone(operation)
 		if operation.points then copy.points = table.clone(operation.points) end
@@ -508,6 +567,8 @@ function Document.snapshot(component)
 		notes = component.notes or "",
 		materialVolume=component.materialVolume,
 		volumeExact=component.volumeExact,
+		workspaceOrigin=component.workspaceOrigin,
+		workspaceSize=component.workspaceSize,
 	}
 end
 
