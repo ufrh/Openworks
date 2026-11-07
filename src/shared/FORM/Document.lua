@@ -193,8 +193,8 @@ function Document:editNode(component, index: number, field: string, axis: string
 		return false, "Enter a finite number"
 	end
 	if not axis or not AXES[axis] then return false, "Invalid axis" end
-	local snapped = Quantize.snap(value, if field == "rotation" then Quantize.Rotation
-		elseif field=="size" then Quantize.Size else Quantize.Size)
+	local snapped=Quantize.snap(value,
+  if field=="rotation" then Quantize.Rotation else Quantize.Size)
 	local position, size, rotation = node.position, node.size, node.rotation
 	if field == "position" then
 		-- Numeric MIN fields edit a boundary coordinate, not the part's center.
