@@ -16,6 +16,9 @@ local Preview = require(script.Parent.Preview)
 local BlenderCamera = require(script.Parent.BlenderCamera)
 local GridOverlay = require(script.Parent.GridOverlay)
 local CharacterMode = require(script.Parent.CharacterMode)
+local EditWorkspace = require(script.Parent.Modes.EditWorkspace)
+local WorldProjection = require(script.Parent.Modes.WorldProjection)
+local AssemblyEnvironment = require(script.Parent.Modes.AssemblyEnvironment)
 local SurfaceSnap = require(script.Parent.SurfaceSnap)
 local ViewGizmo = require(script.Parent.ViewGizmo)
 local TransformGizmo = require(script.Parent.TransformGizmo)
@@ -38,13 +41,17 @@ local function make(className: string, properties, parent: Instance)
 	return obj
 end
 
-function Debug.start()
+function Debug.start(options:any?)
+	options=options or {}
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	local document = Document.new()
 	local characterMode=CharacterMode.new(player)
 	local editorActive=false
 	local pendingSketch:any=nil
+	local currentWorkspace:any=nil
+	local worldProjection=WorldProjection.new()
+	local assemblyEnvironment=AssemblyEnvironment.new()
 	local leaveEditor:any=nil
 	local selectedId: number? = nil
 	local nodeIndex = 1
@@ -409,7 +416,8 @@ function Debug.start()
 		grid:setVisible(gridUserVisible)
 	end)
 	button(row(29),"Exit Workspace → Character",0,1,function()
-		if leaveEditor then leaveEditor() end
+		if options.onFreeRequested then options.onFreeRequested()
+		elseif leaveEditor then leaveEditor() end
 	end)
 	button(row(29), "+ Create Component", 0, 1, function()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
@@ -419,6 +427,7 @@ function Debug.start()
 		selectionBorder.Visible=false
 		if measurementTool then measurementTool:setActive(false) end
 		transformGizmo:setHidden(true)
+		if options.onFreeRequested then options.onFreeRequested() end
 		if placementFlow then placementFlow:open() end
 	end)
 	local notesButton=button(row(29),"Notepad (component notes)",0,1,function() end)
@@ -508,6 +517,7 @@ function Debug.start()
 		sketchEditor:start(component)
 		transformGizmo:setHidden(true)
 	end, "New Component", function()
+		if options.onFreeRequested then options.onFreeRequested() end
 		if placementFlow then placementFlow:open() end
 	end)
 	pair("Exit Tool", function() setTool(nil) end, "Undo Last Cut", function()
@@ -758,6 +768,7 @@ function Debug.start()
 		if placementFlow then placementFlow:setLaunchVisible(true) end
 		cameraController:setActive(false)
 		characterMode:setEditing(false)
+		if preview then preview.root.Parent=nil end
 		message("Character mode · Create Component to enter a workspace")
 	end
 	pair("Zoom Selected (F)", function()
@@ -793,6 +804,7 @@ function Debug.start()
 			local body,reason=document:createSketchBody(
 				pending.name,pending.corner,pending.size,data.points,data.depth)
 			if not body then return false,reason end
+			body.worldOrigin=pending.worldCorner or pending.corner
 			pendingSketch=nil
 			selectComponent(body.id)
 			changed(body)
@@ -1283,40 +1295,52 @@ function Debug.start()
 	end)
 
 	measurementTool=MeasurementTool.new(playerGui,preview.root)
-	placementFlow=ComponentPlacement.new(playerGui,grid,
-		function(name,size,ground)
-			-- Mode changes only after the placement click. Until then,
-			-- Roblox's normal camera, character and controls are active.
-			editorActive=true
-			characterMode:setEditing(true)
-			cameraController:setFocusTarget(ground+
-				Vector3.new(size.X*0.5,0,size.Z*0.5))
-			cameraController:setView("Top")
-			cameraController:frameBounds(
-				CFrame.new(ground+Vector3.new(size.X*0.5,0,size.Z*0.5)),
-				Vector3.new(size.X,0.05,size.Z))
-			-- Set all targets BEFORE activating the scripted camera so
-			-- the first visible CAD frame is already at the final pose.
-			cameraController:setActive(true) -- setActive already snaps immediately
-			gui.Enabled=true
-			panel.Visible=false -- first sketch must create the solid
-			placementFlow:setLaunchVisible(false)
-			grid:update(ground,size)
-			gridUserVisible=true
-			grid:setVisible(true)
-			pendingSketch={name=name,corner=ground,size=size}
-			toolVisualizer:hide()
-			transformGizmo:setHidden(true)
-			-- Don't let the grid-placement mouse click also create
-			-- the first sketch vertex during the same InputBegan signal.
+	-- Entry from placement only requests a mode switch. The FORGE
+	-- OpenWorksRuntime controller is the sole owner of mode state.
+	local function enterEdit(workspaceData:any)
+		currentWorkspace=workspaceData
+		worldProjection:clear()
+		assemblyEnvironment:hide()
+		preview.root.Parent=workspace
+		editorActive=true
+		characterMode:setEditing(true)
+		cameraController:setFocusTarget(workspaceData.center)
+		cameraController:setView("Top")
+		cameraController:frameBounds(CFrame.new(workspaceData.center),
+			Vector3.new(workspaceData.size.X,0.05,workspaceData.size.Z))
+		cameraController:setActive(true)
+		gui.Enabled=true
+		panel.Visible=selectedComponent()~=nil
+		placementFlow:setLaunchVisible(false)
+		grid:update(workspaceData.editCorner,workspaceData.size)
+		gridUserVisible=true
+		grid:setVisible(true)
+		toolVisualizer:hide()
+		transformGizmo:setHidden(true)
+		if pendingSketch then
 			local planned=pendingSketch
 			task.defer(function()
 				if editorActive and pendingSketch==planned then
 					sketchEditor:start(nil,"First",planned)
 				end
 			end)
-			message("Sketch the first closed profile; no primitives or solid stock")
-		end,message,function()
+		else
+			refresh()
+		end
+		message("Edit Chamber · sketch/fabrication workspace")
+	end
+	placementFlow=ComponentPlacement.new(playerGui,grid,
+		function(name,size,ground)
+			local workspaceData=EditWorkspace.new(ground,size,name)
+			pendingSketch={name=name,corner=workspaceData.editCorner,
+				worldCorner=ground,size=size}
+			currentWorkspace=workspaceData
+			if options.onEditRequested then
+				options.onEditRequested(workspaceData)
+			else
+				enterEdit(workspaceData)
+			end
+		end		end,message,function()
 			-- Canceling placement never enters the CAD mode.
 			if editorActive and not pendingSketch then
 				local selected=selectedComponent()
@@ -1332,8 +1356,53 @@ function Debug.start()
 	gui.Enabled=false
 	placementFlow:setLaunchVisible(true)
 	grid:setVisible(false)
+	preview.root.Parent=nil
 	refresh()
 	message("Character mode · Create Component places a new sketch workspace")
+	return {
+		getWorkspace=function()
+			local selected=selectedComponent()
+			if selected then
+				local origin=selected.worldOrigin or (currentWorkspace and currentWorkspace.worldCorner)
+					or selected.workspaceOrigin or Vector3.zero
+				local size=selected.workspaceSize or selected.nodes[1].size
+				return EditWorkspace.new(origin,size,selected.name)
+			end
+			return currentWorkspace
+		end,
+		enterEditor=enterEdit,
+		leaveEditor=function()if leaveEditor then leaveEditor()end end,
+		enterFree=function()
+			if leaveEditor then leaveEditor()end
+			assemblyEnvironment:hide()
+			if currentWorkspace then
+				worldProjection:show(preview,document,currentWorkspace)
+			end
+			placementFlow:setLaunchVisible(true)
+		end,
+		enterAssembly=function()
+			if leaveEditor then leaveEditor()end
+			assemblyEnvironment:show()
+			if currentWorkspace then
+				worldProjection:show(preview,document,currentWorkspace,
+					AssemblyEnvironment.Center-
+					Vector3.new(currentWorkspace.size.X*0.5,0,currentWorkspace.size.Z*0.5))
+			end
+			placementFlow:setLaunchVisible(false)
+			characterMode:setEditing(true)
+			cameraController:setFocusTarget(AssemblyEnvironment.Center)
+			cameraController:setView("Front")
+			cameraController:frameBounds(CFrame.new(AssemblyEnvironment.Center),
+				Vector3.new(12,8,12))
+			cameraController:setActive(true)
+			message("Assembly Mode · physical alignment arrives in Q3")
+		end,
+		leaveAssembly=function()
+			assemblyEnvironment:hide()
+			worldProjection:clear()
+			cameraController:setActive(false)
+		end,
+	}
 end
 
 return Debug
