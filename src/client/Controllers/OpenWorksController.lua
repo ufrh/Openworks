@@ -57,6 +57,13 @@ function Controller:Start()
    local ok,reason=self.tools:activate(kind)
    if not ok then warn("[OPENWORKS] "..tostring(reason)) end
   end,
+  onPreviewChanged=function(enabled)
+   -- Only OpenWorks chrome is hidden. Never toggle unrelated player UI
+   -- or Roblox CoreGui on behalf of the CAD preview.
+   if self.modeBar then self.modeBar.gui.Enabled=not enabled end
+   local badge=Players.LocalPlayer.PlayerGui:FindFirstChild("OPENWORKS_BuildStamp")
+   if badge and badge:IsA("ScreenGui") then badge.Enabled=not enabled end
+  end,
  })
  manager:register("Free",FreeMode.new(self.bridge))
  manager:register("Edit",EditMode.new(self.bridge,self.environment))
