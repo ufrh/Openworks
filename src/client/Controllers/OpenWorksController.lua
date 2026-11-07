@@ -40,6 +40,10 @@ function Controller:Start()
    FORGE.Metric("OpenWorks.Mode.Failures"):Add(1)
    warn("[OPENWORKS] Cannot enter "..name..": "..tostring(reason))
   else
+   -- FORGE.Signal dispatches listeners asynchronously. Update the
+   -- authoritative mode UI/tool permissions synchronously, in order.
+   self.modeBar:setActive(name)
+   self.tools:setMode(name)
    FORGE.Pulse("OpenWorks","Mode","Enter",{Name=name,DurationMs=elapsed})
   end
  end
@@ -58,10 +62,8 @@ function Controller:Start()
  manager:register("Edit",EditMode.new(self.bridge,self.environment))
  manager:register("Assembly",AssemblyMode.new(self.bridge))
  self.modeBar=ModeBar.new(Players.LocalPlayer:WaitForChild("PlayerGui"),switch)
- self:Track(manager.changed:Connect(function(name)
-  self.modeBar:setActive(name)
-  self.tools:setMode(name)
- end))
+ -- External observers may subscribe to manager.changed, but internal
+ -- correctness must never depend on asynchronous notification ordering.
  FORGE.Test("OpenWorks.Q1.ModeRegistration",function()
   assert(manager.modes.Free and manager.modes.Edit and manager.modes.Assembly)
   assert(self.tools.registry:available("Drill","Edit"))
@@ -73,6 +75,8 @@ function Controller:Start()
  end))
  local ok,reason=manager:switch("Free")
  assert(ok,"OpenWorks mode startup failed: "..tostring(reason))
+ self.modeBar:setActive("Free")
+ self.tools:setMode("Free")
 end
 function Controller:Stop()
  if self.modeManager then self.modeManager:destroy() end
