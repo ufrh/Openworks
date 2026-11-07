@@ -109,14 +109,17 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,targetC
   local editOrigin=component.workspaceOrigin or workspaceData.editCorner
   local offset=destination-editOrigin
   local desiredBase=CFrame.new(offset)*sourceModel:GetPivot()
-  -- Freeze before moving; otherwise an unanchored body would receive
-  -- a large teleport-induced impulse on mode transitions.
-  setBodyMode(entry,false)
-  entry.model:PivotTo(if free then entry.freeDelta*desiredBase else desiredBase)
-  if free then entry.basePivot=desiredBase end
-  -- Only OpenWorks components become simulated/draggable. The assembly
-  -- stage remains a nonphysical preview until Q3.
-  setBodyMode(entry,free)
+  -- On an unchanged Free body, leave physics completely untouched. Other
+  -- CSG jobs finishing must not interrupt an active physical drag.
+  if not (free and self.mode=="Free" and entry.detector.Enabled
+    and entry.basePivot==desiredBase) then
+   -- Freeze before moving; otherwise teleporting an unanchored body
+   -- between the world and Assembly would inject unwanted impulses.
+   setBodyMode(entry,false)
+   entry.model:PivotTo(if free then entry.freeDelta*desiredBase else desiredBase)
+   if free then entry.basePivot=desiredBase end
+   setBodyMode(entry,free)
+  end
   live[component.id]=true
  end
  for id,entry in pairs(self.cache) do
