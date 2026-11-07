@@ -295,4 +295,20 @@ function Preview:cancelLive(id: number)
 	if state then state.dragging = false end
 end
 
+-- A FORGE controller may restart during Studio hot reload. Retire
+-- manufacture jobs first; their coroutines verify cancellation before
+-- parenting any compiled geometry.
+function Preview:destroy()
+ for _,job in pairs(self.jobs) do
+  job.cancelled=true
+  job.pending=nil
+ end
+ table.clear(self.jobs)
+ table.clear(self.dragging)
+ table.clear(self.accepted)
+ table.clear(self.states)
+ table.clear(self.models)
+ self.root:Destroy()
+end
+
 return Preview
