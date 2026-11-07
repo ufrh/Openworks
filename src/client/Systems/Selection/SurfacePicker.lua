@@ -65,4 +65,9 @@ function SurfacePicker:remove(id:number)
 	self.cache[id]=nil
 end
 
+function SurfacePicker:destroy()
+ table.clear(self.cache) -- Invalidates in-flight async indexing callbacks
+ self.onStatus=function() end
+end
+
 return SurfacePicker
