@@ -2,6 +2,7 @@
 -- Click two actual world points (manufactured solid or ground) and read
 -- straight-line Euclidean distance. No cursor ruler or auto increments.
 local UserInputService=game:GetService("UserInputService")
+local SurfaceSnap=require(script.Parent.SurfaceSnap)
 local MeasurementTool={}
 MeasurementTool.__index=MeasurementTool
 local function part(parent:Instance,name:string)
@@ -22,7 +23,7 @@ local function marker(parent:PlayerGui,origin:Part,name:string):BillboardGui
 	local gui=Instance.new("BillboardGui")
 	gui.Name=name
 	gui.Adornee=origin
-	gui.Size=UDim2.fromOffset(7,7)
+	gui.Size=UDim2.fromOffset(9,9)
 	gui.AlwaysOnTop=true
 	gui.Enabled=false
 	gui.Parent=parent
@@ -49,9 +50,9 @@ function MeasurementTool.new(playerGui:PlayerGui,solidRoot:Instance)
 	guide.Name="BetweenPoints"
 	guide.Adornee=origin
 	guide.Color3=Color3.new(1,1,1)
-	guide.Thickness=1.5
+	guide.Thickness=2.8
 	guide.Transparency=0
-	guide.AlwaysOnTop=false
+	guide.AlwaysOnTop=true
 	guide.Visible=false
 	guide.Parent=folder
 	local firstGui=marker(playerGui,start,"MeasurementPointA")
@@ -71,7 +72,7 @@ function MeasurementTool.new(playerGui:PlayerGui,solidRoot:Instance)
 	label.BorderSizePixel=0
 	label.TextColor3=Color3.new(1,1,1)
 	label.Font=Enum.Font.Code
-	label.TextSize=13
+	label.TextSize=14
 	label.Parent=textGui
 	local corner=Instance.new("UICorner")
 	corner.CornerRadius=UDim.new(0,5)
@@ -104,11 +105,15 @@ function MeasurementTool:hitWorld():Vector3?
 	params.FilterType=Enum.RaycastFilterType.Include
 	params.FilterDescendantsInstances={self.solidRoot}
 	local hit=workspace:Raycast(ray.Origin,ray.Direction*1500,params)
-	if hit then return hit.Position end
+	if hit then
+		return SurfaceSnap.pointOnPlane(hit.Position,hit.Instance.Position,
+			hit.Normal)
+	end
 	if math.abs(ray.Direction.Y)<0.00001 then return nil end
 	local t=-ray.Origin.Y/ray.Direction.Y
 	if t<0 then return nil end
-	return ray.Origin+ray.Direction*t
+	return SurfaceSnap.pointOnPlane(
+		ray.Origin+ray.Direction*t,Vector3.zero,Vector3.yAxis)
 end
 function MeasurementTool:click():number?
 	if not self.active then return nil end
