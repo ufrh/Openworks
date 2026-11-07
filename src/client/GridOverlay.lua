@@ -71,10 +71,10 @@ function GridOverlay:update(corner:Vector3,size:Vector3)
 		local line=guide(self,count)
 		line.CFrame=CFrame.lookAt(a,b)
 		line.Length=(b-a).Magnitude
-		line.Color3=if major then Color3.fromRGB(221,244,248)
+		line.Color3=if major then Color3.fromRGB(235,249,255)
 			else Color3.fromRGB(134,180,194)
-		line.Thickness=if major then 1.4 else 0.85
-		line.Transparency=if major then 0.18 else 0.66
+		line.Thickness=if major then 1.8 else 1.1
+		line.Transparency=if major then 0.32 else 0.71
 		line.Visible=self.visible
 	end
 	local nx=math.ceil(width/step)
