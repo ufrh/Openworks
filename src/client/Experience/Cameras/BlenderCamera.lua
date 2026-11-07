@@ -13,6 +13,27 @@ local MIN_FOV = 22
 local MAX_FOV = 75
 local MIN_DISTANCE = 0.75
 local MAX_DISTANCE = 2000
+
+-- While Edit Mode is active, keep the camera physically inside its
+-- closed room. A high zoom-out distance otherwise places it behind the
+-- opaque walls and makes the room disappear from view.
+local function roomDistanceLimit(self:any, direction:Vector3):number
+ local bounds=self.roomBounds
+ if not bounds then return MAX_DISTANCE end
+ local relative=self.target-bounds.center
+ local half=bounds.size*0.5
+ local maxDistance=MAX_DISTANCE
+ for _,axis in ipairs({"X","Y","Z"}) do
+  local velocity=direction[axis]
+  if math.abs(velocity)>1e-5 then
+   local available=(if velocity>0
+    then half[axis]-relative[axis]
+    else half[axis]+relative[axis])-0.8
+   maxDistance=math.min(maxDistance,available/math.abs(velocity))
+  end
+ end
+ return math.clamp(maxDistance,MIN_DISTANCE,MAX_DISTANCE)
+end
 local MIN_ORTHO_HEIGHT = 0.06
 local MAX_ORTHO_HEIGHT = 2000
 local ORBIT_SENSITIVITY = 0.007
@@ -63,6 +84,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 		pitch = math.rad(30),
 		roll = 0,
 		distance = 8,
+  roomBounds=nil,
 		fov = INITIAL_FOV,
 		displayedFov = INITIAL_FOV,
 		orthographicHeight = 2 * 8 * PERSPECTIVE_TAN,
@@ -248,6 +270,10 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			math.sin(self.displayedPitch),
 			math.cos(self.displayedPitch) * math.cos(self.displayedYaw)
 		)
+  -- Angle interpolation can move the viewpoint through a wall even
+  -- if the target distance is capped. Clamp the displayed pose too.
+  self.displayedDistance=math.min(self.displayedDistance,
+   roomDistanceLimit(self,direction))
 		local upVector = Vector3.yAxis
 		if self.axisView == "Top" and math.abs(self.displayedPitch - math.pi / 2) < 0.05 then
 			upVector = -Vector3.zAxis
@@ -314,6 +340,8 @@ function BlenderCamera:snapNow()
 		math.cos(self.pitch)*math.sin(self.yaw),
 		math.sin(self.pitch),
 		math.cos(self.pitch)*math.cos(self.yaw))
+ self.distance=math.min(self.distance,roomDistanceLimit(self,direction))
+ self.displayedDistance=self.distance
 	local up=Vector3.yAxis
 	if self.axisView=="Top" then up=-Vector3.zAxis
 	elseif self.axisView=="Bottom" then up=Vector3.zAxis end
@@ -346,9 +374,14 @@ function BlenderCamera:setActive(active:boolean)
 end
 
 function BlenderCamera:setFocusTarget(point:Vector3)
-	-- Component workspace enters at the exact ground placement point.
-	self.target=point
-	self.displayedTarget=point
+ self.target=point
+ self.displayedTarget=point
+end
+
+-- A camera bound belongs to the active mode, never to its world placement.
+-- Pass nil on exit so Assembly Mode can use its independent stage freely.
+function BlenderCamera:setRoomBounds(center:Vector3?,size:Vector3?)
+ self.roomBounds=if center and size then {center=center,size=size} else nil
 end
 
 function BlenderCamera:viewLabel(): string
@@ -425,7 +458,11 @@ function BlenderCamera:zoom(factor: number)
 	local fov = math.clamp(desiredFov, MIN_FOV, MAX_FOV)
 	local distance = math.clamp(desiredScale / halfTan(fov), minimumDistance, MAX_DISTANCE)
 	self.fov = fov
-	self.distance = distance
+ local direction=Vector3.new(
+  math.cos(self.pitch)*math.sin(self.yaw),
+  math.sin(self.pitch),
+  math.cos(self.pitch)*math.cos(self.yaw))
+	self.distance = math.min(distance,roomDistanceLimit(self,direction))
 end
 
 function BlenderCamera:frameBounds(frame: CFrame?, size: Vector3?)
@@ -437,7 +474,11 @@ function BlenderCamera:frameBounds(frame: CFrame?, size: Vector3?)
 	local aspect = viewport.X / math.max(1, viewport.Y)
 	local effectiveHalfFov = math.atan(halfTan(self.fov) * math.min(1, aspect))
 	local desiredDistance = math.clamp(radius / math.sin(effectiveHalfFov) * 1.25, MIN_DISTANCE, MAX_DISTANCE)
-	self.distance = desiredDistance
+ local direction=Vector3.new(
+  math.cos(self.pitch)*math.sin(self.yaw),
+  math.sin(self.pitch),
+  math.cos(self.pitch)*math.cos(self.yaw))
+	self.distance = math.min(desiredDistance,roomDistanceLimit(self,direction))
 	self.orthographicHeight = math.clamp(radius * 2.8, MIN_ORTHO_HEIGHT, MAX_ORTHO_HEIGHT)
 	return true
 end
