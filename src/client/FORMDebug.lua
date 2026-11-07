@@ -559,8 +559,8 @@ function Debug.start()
 		end
 	end)
 
-	line("MATERIAL ENVELOPE EDITOR")
-	line("Boundary snap 0.05 / rotation 15°")
+	line("COMPONENT TRANSFORM")
+	line("Move snap 0.05 / Scale 1 mm / rotation 15°")
 	local function editRow(label: string, field: string, axes)
 		local container = row(32)
 		make("TextLabel", {
@@ -1043,16 +1043,6 @@ function Debug.start()
 			toolVisualizer:hide()
 			return
 		end
-		if activeTool=="Measure" then
-			if not measurementTool then return end
-			local distance=measurementTool:click()
-			if distance then
-				message(string.format("Point distance: %.1f mm",distance))
-			else
-				message("Select the next point to measure")
-			end
-			return
-		end
 		if activeTool=="File" or activeTool=="Smooth" then
 			local selection=fileEdgeTarget()
 			local width=millimeters(if activeTool=="Smooth" then smoothRadiusInput
@@ -1116,6 +1106,15 @@ function Debug.start()
 		if placementFlow and (placementFlow.placing or placementFlow.form.Visible) then return end
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
 			or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
+		if activeTool=="Measure" then
+			local mm=measurementTool and measurementTool:click()
+			if mm then
+				message(string.format("Point distance: %.1f mm",mm))
+			else
+				message("Choose the second point")
+			end
+			return
+		end
 		if activeTool=="File" or activeTool=="Smooth" then
 			local selection=fileEdgeTarget()
 			if not selection then
@@ -1239,7 +1238,14 @@ function Debug.start()
 			pendingSketch={name=name,corner=ground,size=size}
 			toolVisualizer:hide()
 			transformGizmo:setHidden(true)
-			sketchEditor:start(nil,"First",pendingSketch)
+			-- Don't let the grid-placement mouse click also create
+			-- the first sketch vertex during the same InputBegan signal.
+			local planned=pendingSketch
+			task.defer(function()
+				if editorActive and pendingSketch==planned then
+					sketchEditor:start(nil,"First",planned)
+				end
+			end)
 			message("Sketch the first closed profile; no primitives or solid stock")
 		end,message,function()
 			-- Canceling placement never enters the CAD mode.
