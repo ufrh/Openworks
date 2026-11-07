@@ -69,6 +69,7 @@ function Service:Init()
  self:Expose("RemoveOperation")
  self:Expose("ApplyTransform")
  self:Expose("EditNode")
+ self:Expose("SetNotes")
  self:Expose("UndoOperation")
  self:Expose("DeleteComponent")
  self:Expose("RestoreRevision")
@@ -178,6 +179,18 @@ function Service:EditNode(player:Player,id:any,revision:any,index:any,
  end)
  if not ok then return false,tostring(valid) end
  if not valid then return false,reason end
+ return true,Document.snapshot(component)
+end
+
+function Service:SetNotes(player:Player,id:any,revision:any,notes:any)
+ local doc,component,err=selected(self,player,id,revision)
+ if not doc then return false,err end
+ if typeof(notes)~="string" or #notes>4096 then
+  return false,"Component notes exceed the maximum length"
+ end
+ remember(self,player,component)
+ local ok,reason=doc:setNotes(component,notes)
+ if not ok then return false,reason end
  return true,Document.snapshot(component)
 end
 
