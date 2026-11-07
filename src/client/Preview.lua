@@ -100,8 +100,7 @@ function Preview:replace(component, part: BasePart, key: string, madeWithCSG: bo
 		key = key,
 		kind = component.nodes[1].kind,
 		boolean = madeWithCSG,
-		materialVolume=measuredVolume or MaterialVolume.primitive(
-			component.nodes[1].kind,component.nodes[1].size),
+		materialVolume=measuredVolume or MaterialVolume.node(component.nodes[1]),
 		exactVolume=if madeWithCSG then exactVolume==true else true,
 		targetFrame = targetFrame, targetSize = targetSize,
 		smoothing = false,
@@ -134,7 +133,7 @@ function Preview:updateGeometry(component)
 				part.CFrame = state.targetFrame
 			end
 			state.key = key
-			state.materialVolume=MaterialVolume.primitive(node.kind,node.size)
+			state.materialVolume=MaterialVolume.node(node)
 			component.materialVolume=state.materialVolume
 			component.volumeExact=true
 			self.accepted[component.id]=Document.snapshot(component)
@@ -146,8 +145,12 @@ function Preview:updateGeometry(component)
 	end
 
 	if not state then
-		-- A single visible, directly transformable placeholder until the
-		-- parametric primitive has been manufactured once.
+		if node.kind=="SketchBody" then
+			-- During first manufacture there is *no* starting box.
+			-- Keep only the in-place sketch grid until the solid is ready.
+			self:ensure(component)
+			return true
+		end
 		self:replace(component, Compiler.nativePart(node), "", false)
 		state = self.states[component.id]
 	end
@@ -212,7 +215,7 @@ function Preview:queueManufacture(component)
 				if hasFeatures then
 					material,exact=MaterialVolume.fromPartAsync(output)
 				else
-					material=MaterialVolume.primitive(snapshot.nodes[1].kind,snapshot.nodes[1].size)
+					material=MaterialVolume.node(snapshot.nodes[1])
 					exact=true
 				end
 				-- Mesh readback yields. Ignore results superseded while
@@ -254,8 +257,7 @@ function Preview:render(component)
 	-- Preserve a valid baseline even if the first rounded-L CSG is
 	-- still compiling when the user starts editing it.
 	if not self.accepted[component.id] and #component.operations==0 then
-		local primitive=MaterialVolume.primitive(
-			component.nodes[1].kind,component.nodes[1].size)
+		local primitive=MaterialVolume.node(component.nodes[1])
 		if MaterialVolume.within(primitive) then
 			component.materialVolume=primitive
 			component.volumeExact=true
