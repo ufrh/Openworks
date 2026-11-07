@@ -61,6 +61,7 @@ function Debug.start()
 	local drillThrough = true
 
 	local grid = GridOverlay.new(playerGui)
+	local gridUserVisible=false
 
 	local gui = make("ScreenGui", {
 		Name = "FORM_DebugUI",
@@ -337,7 +338,17 @@ function Debug.start()
 	end)
 	preview = Preview.new(message, function(id,model)
 		surfacePicker:request(id,model,document.components[id])
-		if id == selectedId then refresh() end
+		if id == selectedId then
+			-- Once the first manufactured solid exists, don't leave a
+			-- wireframe grid obscuring it. Its real placement remains
+			-- available through the construction-grid toggle.
+			local material=preview.states[id]
+			if material and material.boolean and gridUserVisible then
+				gridUserVisible=false
+				grid:setVisible(false)
+			end
+			refresh()
+		end
 	end,function(id,accepted,reason)
 		local component=document.components[id]
 		if not component then return end
@@ -384,6 +395,16 @@ function Debug.start()
 	end)
 
 	line("COMPONENT WORKSPACE")
+	button(row(29),"Toggle Construction Grid",0,1,function()
+		local component=selectedComponent()
+		if component then
+			local corner=component.workspaceOrigin or Document.minCorner(component.nodes[1])
+			local size=component.workspaceSize or component.nodes[1].size
+			grid:update(corner,size)
+		end
+		gridUserVisible=not gridUserVisible
+		grid:setVisible(gridUserVisible)
+	end)
 	button(row(29),"Exit Workspace → Character",0,1,function()
 		if leaveEditor then leaveEditor() end
 	end)
@@ -712,6 +733,7 @@ function Debug.start()
 		toolVisualizer:hide()
 		if measurementTool then measurementTool:setActive(false) end
 		if transformGizmo then transformGizmo:setHidden(true) end
+		gridUserVisible=false
 		grid:setVisible(false)
 		gui.Enabled=false
 		panel.Visible=false
@@ -1238,6 +1260,7 @@ function Debug.start()
 			panel.Visible=false -- first sketch must create the solid
 			placementFlow:setLaunchVisible(false)
 			grid:update(ground,size)
+			gridUserVisible=true
 			grid:setVisible(true)
 			pendingSketch={name=name,corner=ground,size=size}
 			toolVisualizer:hide()
