@@ -226,27 +226,35 @@ function SketchEditor:projectMouse(point: Vector2): Vector2?
 	if distance <= 0 then return nil end
 	local location = ray.Origin + ray.Direction * distance
 	local localPoint = frame:PointToObjectSpace(location)
+	if self.standalone and (math.abs(localPoint.X)>node.size.X*.5+0.001
+		or math.abs(localPoint.Z)>node.size.Z*.5+0.001) then
+		return nil
+	end
 	return Vector2.new(
 		Quantize.snap(localPoint.X, Quantize.Grid),
 		Quantize.snap(localPoint.Z, Quantize.Grid)
 	)
 end
 
-function SketchEditor:start(component, tool: string?)
+function SketchEditor:start(component, tool: string?, firstWorkspace)
 	if self.active then self:stop() end
 	self.sketchTool = tool or "Extrude"
 	self.standalone = component == nil
 	if self.standalone then
-		-- Local sketch coordinates coincide with world X/Z. Its top face is
-		-- precisely Y = 0, so it projects onto the permanent construction grid.
-		self.component = {
-			nodes = {{
-				position = Vector3.new(0, -0.025, 0),
-				size = Vector3.new(6, 0.05, 6),
-				rotation = Vector3.zero,
+		-- First sketch lives on the *placed* X/Z construction grid.
+		-- This virtual plane contains no physical stock whatsoever.
+		local corner=if firstWorkspace then firstWorkspace.corner else Vector3.zero
+		local size=if firstWorkspace then firstWorkspace.size
+			else Vector3.new(1,.5,1)
+		self.component={
+			nodes={{
+				position=corner+Vector3.new(size.X*.5,-0.025,size.Z*.5),
+				size=Vector3.new(size.X,0.05,size.Z),
+				rotation=Vector3.zero,
 			}},
 		}
-		self.mode, self.through = "Add", false
+		self.depthMM=size.Y*MM_PER_STUD
+		self.mode,self.through="Add",false
 	else
 		self.component = component
 		if self.sketchTool == "Saw" then
@@ -259,10 +267,14 @@ function SketchEditor:start(component, tool: string?)
 	self.cursor = nil
 	self.gui.Enabled = true
 	self.camera:setView("Top")
-	if not self.standalone then self.camera:frameSelected() end
+	if not self.standalone then self.camera:frameSelected()
+	else self.camera:frameBounds(
+		CFrame.new(self.component.nodes[1].position),
+		Vector3.new(self.component.nodes[1].size.X,.05,self.component.nodes[1].size.Z))
+	end
 	self:updateControls()
 	self.onStatus(if self.standalone
-		then "New body sketch: draw a closed outline directly on the world grid"
+		then "Draw the component's first closed outline on the placed grid"
 		else "Sketch active: click vertices on the selected workpiece's top face")
 end
 
@@ -348,7 +360,7 @@ function SketchEditor:updateControls()
 	self.depthBox.Text = string.format("%.1f", self.depthMM)
 	self.depthBox.TextEditable = self.standalone
 		or not (self.mode == "Intersect" or (self.mode == "Remove" and self.through))
-	self.commitButton.Text = if self.standalone then "CREATE NEW BODY"
+	self.commitButton.Text = if self.standalone then "CREATE FROM SKETCH"
 		elseif self.sketchTool == "Saw" then "SAW / REMOVE" else "EXTRUDE / COMMIT"
 	self.commitButton.BackgroundColor3 = if self.closed then COLORS[self.mode]
 		else Color3.fromRGB(68, 78, 86)
@@ -433,8 +445,8 @@ function SketchEditor:render()
 	self.cursor = if self.closed or self:isOverUI(mouse) then nil else self:projectMouse(mouse)
 	if self.cursor then
 		self.subtitle.Text = string.format("Grid 0.10  |  Snap 0.05  |  X %.2f  Z %.2f",
-			self.cursor.X + (if self.standalone then 0 else node.size.X / 2),
-			self.cursor.Y + (if self.standalone then 0 else node.size.Z / 2))
+			self.cursor.X + node.size.X / 2,
+			self.cursor.Y + node.size.Z / 2)
 	else
 		self.subtitle.Text = "Click the top construction plane  ·  Snap 0.05"
 	end
@@ -460,7 +472,7 @@ function SketchEditor:render()
 			i % 5 == 0,
 		})
 	end
-	if self.standalone then table.clear(gridSegments) end
+	if self.standalone then table.clear(gridSegments) end -- placed GridOverlay is the only sketch grid
 	for i, entry in ipairs(gridSegments) do
 		if not self.gridParts[i] then
 			self.gridParts[i] = newVisual(self.visuals,self.anchor,"SketchGrid_"..i,"LineHandleAdornment")
