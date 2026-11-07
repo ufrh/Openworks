@@ -45,8 +45,8 @@ end
 
 function GridOverlay:setVisible(value:boolean)
 	self.visible=value
-	for _,line in ipairs(self.lines) do
-		line.Visible=value and line.Length>0
+	for i,line in ipairs(self.lines) do
+		line.Visible=value and i<= (self.lineCount or 0) and line.Length>0
 	end
 end
 
