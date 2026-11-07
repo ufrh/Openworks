@@ -384,6 +384,9 @@ function Debug.start()
 	end)
 
 	line("COMPONENT WORKSPACE")
+	button(row(29),"Exit Workspace → Character",0,1,function()
+		if leaveEditor then leaveEditor() end
+	end)
 	button(row(29), "+ Create Component", 0, 1, function()
 		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
 		activeTool=nil
@@ -541,6 +544,7 @@ function Debug.start()
 	end)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
+		if not editorActive then return end
 		if toolVisualizer:isAnimating() then return end
 		if sketchEditor and sketchEditor.active then return end
 		if processed or UserInputService:GetFocusedTextBox() then return end
@@ -698,6 +702,24 @@ function Debug.start()
 
 
 	cameraController = BlenderCamera.new(selectionBounds, sceneBounds)
+	-- The player is walking by default. Explicitly entering/exiting
+	-- component workspace changes camera AND movement controls.
+	leaveEditor=function()
+		pendingSketch=nil
+		editorActive=false
+		if sketchEditor and sketchEditor.active then sketchEditor:stop() end
+		activeTool=nil
+		toolVisualizer:hide()
+		if measurementTool then measurementTool:setActive(false) end
+		if transformGizmo then transformGizmo:setHidden(true) end
+		grid:setVisible(false)
+		gui.Enabled=false
+		panel.Visible=false
+		if placementFlow then placementFlow:setLaunchVisible(true) end
+		cameraController:setActive(false)
+		characterMode:setEditing(false)
+		message("Character mode · Create Component to enter a workspace")
+	end
 	pair("Zoom Selected (F)", function()
 		if not cameraController:frameSelected() then message("Select a component first") end
 	end, "Zoom All (Home)", function()
@@ -1009,6 +1031,7 @@ function Debug.start()
 	-- visible, indexed manufactured surface with no fabrication tool,
 	-- camera gesture, text edit, or transform gizmo interaction.
 	RunService.RenderStepped:Connect(function(dt)
+		if not editorActive then return end
 		if toolVisualizer:update(dt) then
 				return
 		end
@@ -1087,6 +1110,7 @@ function Debug.start()
 	end)
 
 	UserInputService.InputBegan:Connect(function(input, processed)
+		if not editorActive then return end
 		if sketchEditor and sketchEditor.active then return end
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 		if placementFlow and (placementFlow.placing or placementFlow.form.Visible) then return end
@@ -1195,24 +1219,46 @@ function Debug.start()
 	end)
 
 	measurementTool=MeasurementTool.new(playerGui,preview.root)
-	placementFlow=ComponentPlacement.new(playerGui,function(kind,name,size,ground)
-		-- The minimum corner sits on the clicked ground plane; the
-		-- workpiece and orbit workspace retain that real-world location.
-		local component,reason=document:create(kind,ground,name,size)
-		if not component then message(reason or "Unable to create component") return end
-		selectComponent(component.id)
-		changed(component)
-		panel.Visible=true
-		placementFlow:setLaunchVisible(false)
-		cameraController:setFocusTarget(component.nodes[1].position)
-		cameraController:frameSelected()
-		transformGizmo:setMode("Move")
-		message("Component placed at cursor; workspace ready")
-	end,message)
+	placementFlow=ComponentPlacement.new(playerGui,grid,
+		function(name,size,ground)
+			-- Mode changes only after the placement click. Until then,
+			-- Roblox's normal camera, character and controls are active.
+			editorActive=true
+			characterMode:setEditing(true)
+			cameraController:setFocusTarget(ground+
+				Vector3.new(size.X*0.5,0,size.Z*0.5))
+			cameraController:setActive(true)
+			cameraController:frameBounds(
+				CFrame.new(ground+Vector3.new(size.X*0.5,0,size.Z*0.5)),
+				Vector3.new(size.X,0.05,size.Z))
+			gui.Enabled=true
+			panel.Visible=false -- first sketch must create the solid
+			placementFlow:setLaunchVisible(false)
+			grid:update(ground,size)
+			grid:setVisible(true)
+			pendingSketch={name=name,corner=ground,size=size}
+			toolVisualizer:hide()
+			transformGizmo:setHidden(true)
+			sketchEditor:start(nil,"First",pendingSketch)
+			message("Sketch the first closed profile; no primitives or solid stock")
+		end,message,function()
+			-- Canceling placement never enters the CAD mode.
+			if editorActive and not pendingSketch then
+				local selected=selectedComponent()
+				if selected then
+					grid:update(selected.workspaceOrigin or
+						Document.minCorner(selected.nodes[1]),
+						selected.workspaceSize or selected.nodes[1].size)
+					grid:setVisible(true)
+				end
+			end
+		end)
 	panel.Visible=false
+	gui.Enabled=false
 	placementFlow:setLaunchVisible(true)
+	grid:setVisible(false)
 	refresh()
-	message("Create Component to name and size your material, then click the ground to place it.")
+	message("Character mode · Create Component places a new sketch workspace")
 end
 
 return Debug
