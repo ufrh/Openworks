@@ -12,8 +12,8 @@ systems sit **above** FORGE.
 
 ```text
 src/
+├── forge-shared/               # Original FORGE API, Engine and Kernel
 ├── shared/
-│   ├── FORGE/                  # Original Reforge API, Engine and Kernel
 │   └── FORM/                   # Mode-independent solid modeling engine
 ├── forge-server/
 │   └── Kernel/Networking/     # Original FORGE server bridge
@@ -65,7 +65,7 @@ chamber, separate from the world; the component's grid is based on the
 **user-entered X/Z dimensions**, not chamber size. **Assembly:** independent
 stage and camera, ready for Q3 physical assembly and constraint systems.
 
-The editor's live solid is always a model in local Edit coordinates; when
+Only the selected workpiece is rendered in Edit; unselected solids remain retained in the document. The editor's live solid uses local Edit coordinates; when
 leaving Edit, a client-local projection appears at the original world
 placement. These visual copies are not yet physics-authoritative or saved.
 
@@ -87,7 +87,7 @@ required.
 
 The bottom-right build badge should report
 `FORGE 4.4.1 / Free · Edit · Assembly`. The top-center Mode Bar switches
-between modes. Create a component in Free Mode by specifying its X/Z
+between modes. FORGE receives mode transition timing/failure metrics. Create a component in Free Mode by specifying its X/Z
 workspace and placing the grid on the ground, then enter Edit.
 
 ## Studio verification
