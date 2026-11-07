@@ -574,6 +574,7 @@ function Document.snapshot(component)
 		volumeExact=component.volumeExact,
 		workspaceOrigin=component.workspaceOrigin,
 		workspaceSize=component.workspaceSize,
+		worldOrigin=component.worldOrigin,
 	}
 end
 
