@@ -7,6 +7,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local FORM = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Quantize = require(FORM.Quantize)
+local SnapSettings=require(script.Parent.Parent.Snapping.SnapSettings)
 -- Authored Cone MeshPart is modeled with its tip along local +Y.
 local ConeTemplate = ReplicatedStorage:WaitForChild("Cone")
 assert(ConeTemplate:IsA("MeshPart"),
@@ -576,7 +577,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange)
 			local parameter = axisParameter(point, start.pivot, start.direction)
 			if not parameter or not start.initialParameter then return end
 			local distance = Quantize.snap(parameter - start.initialParameter,
-				if self.mode=="Scale" then Quantize.Size else Quantize.Grid)
+				if self.mode=="Scale" then Quantize.Size else SnapSettings.get())
 			if self.mode == "Move" then
 				position = start.position + start.direction * distance
 			elseif self.mode == "Scale" then
