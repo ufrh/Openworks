@@ -322,6 +322,14 @@ local FORGE = {} do
 	local function LoadServerSubsystems()
 		if not RunService:IsServer() or ServerSubsystemsLoaded then return end
 
+		-- OpenWorks uses FORGE's real Kernel and secure transport without
+		-- RUCKUS-specific VAULT/Matchmaking plugins. Loading those engines
+		-- remains optional until the corresponding game systems need them.
+		local installed = ServerScriptService:FindFirstChild('FORGE')
+		if not installed or not installed:FindFirstChild('Engine') then
+			ServerSubsystemsLoaded = true
+			return
+		end
 		local ServerRoot = ServerScriptService:FindFirstChild('FORGE') or ServerScriptService:WaitForChild('FORGE', 3)
 		assert(ServerRoot, 'FORGE server folder is missing from ServerScriptService.')
 
