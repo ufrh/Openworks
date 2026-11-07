@@ -47,7 +47,13 @@ function Controller:Start()
    FORGE.Pulse("OpenWorks","Mode","Enter",{Name=name,DurationMs=elapsed})
   end
  end
+ -- Server-authoritative manufacturing data is exposed through FORGE.
+ -- The client retains local CSG only as a visual/physics preview.
+ self.documents=FORGE:GetService("OpenWorksDocuments")
+ assert(self.documents and self.documents.CreateSketchBody,
+  "OpenWorksDocuments FORGE service missing from server startup")
  self.bridge=Editor.start({
+  documents=self.documents,
   onEditRequested=function(workspaceData)
    switch("Edit",{workspace=workspaceData})
   end,
