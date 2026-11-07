@@ -457,14 +457,36 @@ function Debug.start(options:any?)
    refresh()
   end
 	end,function(id,accepted,reason)
-		local component=document.components[id]
-		if not component then return end
-		if document:restoreSnapshot(component,accepted) then
-			preview:render(component)
-			refresh()
-		end
-		message(reason.." · reverted to last valid material")
-	end)
+  local component=document.components[id]
+  if not component then return end
+  if not accepted then
+   -- First SketchBody compilation has no earlier manufactured body.
+   -- Discard the invalid draft on both the server and this local editor.
+   local ok,err=document:removeComponent(id)
+   if ok==false then
+    message("Failed draft could not be removed: "..tostring(err))
+    return
+   end
+   preview:remove(id)
+   if surfacePicker then surfacePicker:remove(id) end
+   if selectedId==id then
+    selectedId=nil
+    preview:showOnly(-1)
+    panel.Visible=false
+   end
+   message(reason.." · invalid draft discarded")
+   if options.onFreeRequested then options.onFreeRequested() end
+   return
+  end
+  local ok,err=document:restoreSnapshot(component,accepted)
+  if ok then
+   preview:render(component)
+   refresh()
+   message(reason.." · reverted to last valid material")
+  else
+   message("Rollback rejected: "..tostring(err))
+  end
+ end)
 
 	local function selectComponent(id: number?)
 		if id~=selectedId then toolVisualizer:stopAnimation() end
