@@ -40,8 +40,12 @@ local savedId=doc:listFeatures(part)[1].id
 local accepted,updated=api:GetSnapshot(id)
 assert(accepted and updated.revision==body.revision)
 assert(#updated.operations==1)
+local notesOK,annotated=api:SetNotes(id,updated.revision,"test note")
+assert(notesOK and annotated.notes=="test note"
+ and annotated.revision>updated.revision,
+ "Q2 notes were not committed through FORGE")
 local reverted
-reverted,body=api:RestoreRevision(id,updated.revision,original)
+reverted,body=api:RestoreRevision(id,annotated.revision,original)
 assert(reverted and #body.operations==0,
  "Rollback to a prior server-issued revision failed: "..tostring(body))
 local removed,problem=api:DeleteComponent(id,body.revision)
