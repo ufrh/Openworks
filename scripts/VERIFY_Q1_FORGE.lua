@@ -86,7 +86,11 @@ assert(cloned and cloned:IsA("BasePart"))
 local expected=authored:toWorld(source.Position)
 assert((cloned.Position-expected).Magnitude<1e-4,
  "World projection must restore original component coordinates")
-assert(not cloned.CanCollide and not cloned.CanQuery)
+assert(cloned.CanCollide and cloned.CanQuery and not cloned.Anchored,
+ "Free Mode components must have physics and support DragDetector selection")
+local drag=worldModel:FindFirstChild("OpenWorks_PhysicalDrag",true)
+assert(drag and drag:IsA("DragDetector") and drag.Enabled,
+ "Free Mode components must be physically draggable")
 projection:clear()
 assert(projection.root.Parent==nil)
 projection:show(preview,{components={[1]=first}},authored)
