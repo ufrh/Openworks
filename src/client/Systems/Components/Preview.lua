@@ -40,6 +40,7 @@ function Preview.new(onStatus, onRendered, onVolumeRejected)
 	local self = setmetatable({
 		root = root,
 		models = {},
+		visibleId = nil, -- nil: all; -1: empty first-sketch workspace
 		states = {},
 		jobs = {},
 		dragging = {},
@@ -55,6 +56,17 @@ end
 
 function Preview:getModel(id: number): Model?
 	return self.models[id]
+end
+
+-- Only the currently edited workpiece belongs in the shared Edit Chamber.
+-- Unrelated solids stay retained but unparented, so overlapping CAD origins
+-- cannot obscure a new sketch or interfere with raycasts.
+function Preview:showOnly(id:number?)
+	if self.visibleId==id then return end
+	self.visibleId=id
+	for componentId,model in pairs(self.models) do
+		model.Parent=if id==nil or componentId==id then self.root else nil
+	end
 end
 
 function Preview:remove(id: number)
@@ -78,7 +90,8 @@ function Preview:ensure(component)
 	model = Instance.new("Model")
 	model.Name = component.name
 	model:SetAttribute("FORMComponentId", component.id)
-	model.Parent = self.root
+	model.Parent = if self.visibleId == nil or self.visibleId == component.id
+		then self.root else nil
 	self.models[component.id] = model
 	return model
 end
