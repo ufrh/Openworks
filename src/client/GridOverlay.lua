@@ -1,77 +1,103 @@
 --!strict
--- FORM debug grid: visual 0.1-stud spacing; editing snap remains 0.05.
--- A single non-queryable pivot allows LineHandleAdornments to render in 3D.
-local GridOverlay = {}
-GridOverlay.__index = GridOverlay
+-- ONE workspace grid. No fixed world grid and no physical preview box.
+-- Drawn from non-queryable LineHandleAdornments with bounds supplied by
+-- mouse placement, then retained at exactly that location for editing.
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local Quantize=require(ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM").Quantize)
+local GridOverlay={}
+GridOverlay.__index=GridOverlay
 
-local STEP = 0.1 -- Visual grid only. Quantize.Grid remains the 0.05 edit increment.
-local HALF_STEPS = 30 -- 6x6 studs, 61 lines per axis
-local GRID_HALF = HALF_STEPS * STEP
-
-local function createLine(parent: Instance, pivot: BasePart, axis: string, index: number)
-	local amount = index * STEP
-	local start: Vector3
-	local finish: Vector3
-	if axis == "X" then
-		start = Vector3.new(-GRID_HALF, 0, amount)
-		finish = Vector3.new(GRID_HALF, 0, amount)
-	else
-		start = Vector3.new(amount, 0, -GRID_HALF)
-		finish = Vector3.new(amount, 0, GRID_HALF)
-	end
-	local isAxis = index == 0
-	local major = index % 10 == 0
-	local line = Instance.new("LineHandleAdornment")
-	line.Name = if isAxis then ("Axis_" .. axis) elseif major then "MajorGrid" else "MinorGrid"
-	line.Adornee = pivot
-	line.CFrame = CFrame.lookAt(start, finish)
-	line.Length = (finish - start).Magnitude
-	line.Thickness = if isAxis then 2 elseif major then 1.4 else 0.8
-	line.Color3 = if isAxis
-		then (if axis == "X" then Color3.fromRGB(189, 89, 89) else Color3.fromRGB(82, 130, 196))
-		elseif major then Color3.fromRGB(117, 129, 137)
-		else Color3.fromRGB(97, 104, 112)
-	line.Transparency = if isAxis then 0.1 elseif major then 0.45 else 0.78
-	line.AlwaysOnTop = false
-	line.Parent = parent
-end
-
-function GridOverlay.new(playerGui: PlayerGui)
-	local anchor = Instance.new("Part")
-	anchor.Name = "FORM_GridDebugAnchor"
-	anchor.Anchored = true
-	anchor.Transparency = 1
-	anchor.CanCollide = false
-	anchor.CanTouch = false
-	anchor.CanQuery = false
-	anchor.CastShadow = false
-	anchor.Size = Vector3.new(0.05, 0.05, 0.05)
-	anchor.CFrame = CFrame.new()
-	anchor.Parent = workspace
-
-	local decorations = Instance.new("Folder")
-	decorations.Name = "FORM_DebugGridLines"
-	decorations.Parent = playerGui
-
-	for index = -HALF_STEPS, HALF_STEPS do
-		createLine(decorations, anchor, "X", index)
-		createLine(decorations, anchor, "Z", index)
-	end
-
+function GridOverlay.new(playerGui:PlayerGui)
+	local origin=Instance.new("Part")
+	origin.Name="FORM_LocalGridOrigin"
+	origin.Anchored=true
+	origin.Size=Vector3.one*0.05
+	origin.Transparency=1
+	origin.CanTouch=false
+	origin.CanCollide=false
+	origin.CanQuery=false
+	origin.CastShadow=false
+	origin.CFrame=CFrame.identity
+	origin.Parent=workspace
+	local container=Instance.new("Folder")
+	container.Name="FORM_ComponentWorkspaceGrid"
+	container.Parent=playerGui
 	return setmetatable({
-		anchor = anchor,
-		decorations = decorations,
-			}, GridOverlay)
+		origin=origin,anchor=origin,decorations=container,
+		lines={},visible=false,corner=nil,size=nil,
+	},GridOverlay)
 end
 
--- Fixed build plane. The grid never follows the camera or selection.
-function GridOverlay:update(_focus: Vector3)
-	-- Reserved for the debug overlay API; intentionally immobile at 0,0,0.
+local function guide(self,index:number):LineHandleAdornment
+	if self.lines[index] then return self.lines[index] end
+	local line=Instance.new("LineHandleAdornment")
+	line.Name="WorkspaceGrid_"..index
+	line.Adornee=self.origin
+	line.AlwaysOnTop=false
+	line.Color3=Color3.fromRGB(173,213,226)
+	line.Transparency=0.56
+	line.Thickness=1
+	line.Visible=false
+	line.Parent=self.decorations
+	self.lines[index]=line
+	return line
+end
+
+function GridOverlay:setVisible(value:boolean)
+	self.visible=value
+	for _,line in ipairs(self.lines) do
+		line.Visible=value and line.Length>0
+	end
+end
+
+function GridOverlay:update(corner:Vector3,size:Vector3)
+	-- 'corner' is the minimum X/Z location on the clicked ground. Width
+	-- and length come from the component specification, never 6x6 studs.
+	local width=math.max(Quantize.Grid,size.X)
+	local length=math.max(Quantize.Grid,size.Z)
+	local grounded=Vector3.new(corner.X,corner.Y,corner.Z)
+	if self.corner==grounded and self.size==Vector2.new(width,length) then return end
+	self.corner=grounded
+	self.size=Vector2.new(width,length)
+	local increment=Quantize.Grid
+	-- Fixed physical spacing. If the area is very large, fall back to a
+	-- coarser multiple for draw budget, never an interpolated percentage.
+	local stride=math.max(1,math.ceil(math.max(width,length)/increment/48))
+	local step=increment*stride
+	local count=0
+	local offset=Vector3.new(0,0.012,0)
+	local function add(a:Vector3,b:Vector3,major:boolean)
+		count+=1
+		local line=guide(self,count)
+		line.CFrame=CFrame.lookAt(a,b)
+		line.Length=(b-a).Magnitude
+		line.Color3=if major then Color3.fromRGB(221,244,248)
+			else Color3.fromRGB(134,180,194)
+		line.Thickness=if major then 1.4 else 0.85
+		line.Transparency=if major then 0.18 else 0.66
+		line.Visible=self.visible
+	end
+	local nx=math.ceil(width/step)
+	local nz=math.ceil(length/step)
+	for i=0,nx do
+		local x=math.min(width,i*step)
+		local major=i==0 or i==nx or i%5==0
+		add(grounded+offset+Vector3.new(x,0,0),
+			grounded+offset+Vector3.new(x,0,length),major)
+	end
+	for i=0,nz do
+		local z=math.min(length,i*step)
+		local major=i==0 or i==nz or i%5==0
+		add(grounded+offset+Vector3.new(0,0,z),
+			grounded+offset+Vector3.new(width,0,z),major)
+	end
+	for i=count+1,#self.lines do self.lines[i].Visible=false end
+	self.lineCount=count
 end
 
 function GridOverlay:destroy()
 	self.decorations:Destroy()
-	self.anchor:Destroy()
+	self.origin:Destroy()
 end
 
 return GridOverlay
