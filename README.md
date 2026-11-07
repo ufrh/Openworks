@@ -62,8 +62,7 @@ and matchmaking server plugins when they are not installed.
 **Free:** normal Roblox character, fixed camera zoom, and client-local
 physically simulated, draggable manufactured components. Their shapes are
 rebuilt from FORM's latest accepted geometry whenever a cut finishes.
-**Edit:** fixed 40 × 40 × 20 stud midnight-steel/cyan room surrounded
-by an ambient blue backdrop on every side; the component's grid is based on
+**Edit:** fixed 40 × 40 × 20 stud **fully sealed, opaque** midnight-steel/cyan box with the workspace grid at its exact vertical center (10 studs above the floor and 10 below the ceiling); the CAD camera stays inside this box and an ambient blue backdrop provides fallback coverage; the component's grid is based on
 the **user-entered X/Z dimensions**, not chamber size. Press **P** (or the
 PREVIEW button) to toggle a clean model-only view: all OpenWorks edit GUIs,
 sketch adornments, construction grids, transform gizmos, and tool visualizers
@@ -121,3 +120,5 @@ Q3 covers physical assembly/relationships. Q4 covers integrated physics,
 actuation, diagnostics and persistence.
 
 Architecture decisions: [Q1 FORGE Architecture](docs/Q1_FORGE_ARCHITECTURE.md).
+
+For the sealed-room and sketch visual checks, run `scripts/VERIFY_EDIT_CHAMBER.lua` and `scripts/VERIFY_SKETCH_GRID_ALIGNMENT.lua` in the Studio client Command Bar. The latter confirms small vertices and sketch strokes lie directly on the construction grid.
