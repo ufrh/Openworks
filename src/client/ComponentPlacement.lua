@@ -64,6 +64,13 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 			Font=Enum.Font.Code,TextSize=13,
 			Position=UDim2.fromOffset(16,y),Size=UDim2.new(1,-32,0,29),
 		},form)
+		if name~="ComponentName" then
+			local axis=string.sub(name,1,1)
+			local axisLabel=label(form,axis.." (mm)",y+4,20)
+			axisLabel.Size=UDim2.fromOffset(80,20)
+			input.Position=UDim2.fromOffset(105,y)
+			input.Size=UDim2.new(1,-121,0,29)
+		end
 		make("UICorner",{CornerRadius=UDim.new(0,4)},input)
 		return input
 	end
