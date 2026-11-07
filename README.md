@@ -1,52 +1,108 @@
 # OPENWORKS
 
-An open-ended Roblox mechanical engineering and manufacturing sandbox.
+Open-ended Roblox mechanical engineering and manufacturing sandbox.
+Active development branch: `dev`.
 
-Active development branch: `dev`. The obsolete workbench/saw/file system is preserved at `archive/pre-foundation-reset-2026-11-03`.
+## Architecture — FORGE 4.4.1
 
-## FORM prototype
+OpenWorks runs on the **actual FORGE Reforge 4.4.1** implementation
+from the Ruckus repository. FORGE is the only infrastructure Kernel.
+OpenWorks game-specific modes, tooling, manufacturing and assembly
+systems sit **above** FORGE.
 
-FORM is a **parametric primitive editor**, not an arbitrary Union/Subtract modeling tool. Every primitive begins at 0.05 × 0.05 × 0.05 studs.
+```text
+src/
+├── shared/
+│   ├── FORGE/                  # Original Reforge API, Engine and Kernel
+│   └── FORM/                   # Mode-independent solid modeling engine
+├── forge-server/
+│   └── Kernel/Networking/     # Original FORGE server bridge
+├── server/
+│   └── init.server.lua        # FORGE.Start server
+└── client/
+    ├── init.client.lua        # Build badge + FORGE.Start
+    ├── Controllers/
+    │   └── OpenWorksController.lua
+    ├── Modes/
+    │   ├── FreeMode.lua
+    │   ├── EditMode.lua
+    │   ├── AssemblyMode.lua
+    │   ├── Edit/              # Legacy fabrication adapter
+    │   ├── Free/              # Character mode
+    │   ├── EditWorkspace.lua
+    │   ├── EditEnvironment.lua
+    │   ├── AssemblyEnvironment.lua
+    │   └── WorldProjection.lua
+    ├── Experience/
+    │   ├── Cameras/
+    │   ├── Placement/
+    │   ├── Visuals/
+    │   └── ModeBar.lua
+    ├── Systems/
+    │   ├── Components/        # Rendering
+    │   └── Selection/         # Topology and picking
+    └── Tools/
+        ├── Inspection/
+        ├── Sketch/
+        ├── Snapping/
+        ├── Transform/
+        ├── Visuals/
+        ├── ToolRegistry.lua
+        ├── ToolController.lua
+        └── ToolContext.lua
+```
 
-- Native **Block** and **Cylinder** update CFrame/Size directly when moved, rotated, or resized.
-- Special **Tube** and **Hole Block** types are individually parameterized; CSG is used *internally* only to manufacture their void when their shape changes.
-- A modified special primitive is remanufactured after a resize or bore/wall change, **not** on every translation or rotation.
-- The construction workspace, 0.05-stud debug grid, and orbit target are fixed at (0,0,0).
-- Smooth hybrid FOV/dolly camera: RMB/MMB orbit, wheel zoom, and ViewportFrame view/zoom controls.
-- Restored six-face Roblox resize handles, move handles, and rotate arcs. Opposite faces stay anchored during per-face resize.
-- One visible solid per component: no neon ghost and no extra, trailing CSG preview.
-- Temporary debug UI; final Duotone interface is postponed.
+FORGE's registry, loader, dependency graph, lifecycle, scopes, signals,
+network transport and developer diagnostics are used as-is. The sole
+OpenWorks-specific FORGE compatibility tweak skips Ruckus-only data
+and matchmaking server plugins when they are not installed.
 
-See [FORM Phase 1 instructions](docs/FORM_PHASE1.md).
+## Q1 interaction modes
 
-## Local development
+**Free:** normal Roblox character, component creation, world-space component
+projections. **Edit:** fixed 40 × 40 × 20 stud midnight-steel/cyan editing
+chamber, separate from the world; the component's grid is based on the
+**user-entered X/Z dimensions**, not chamber size. **Assembly:** independent
+stage and camera, ready for Q3 physical assembly and constraint systems.
 
-Run `START_OPENWORKS.bat` with `dev`, connect the Studio Rojo plugin to localhost:34872, and press Play. Use `STOP_OPENWORKS.bat` when finished. Rojo maps src/shared, src/client, and src/server into the Roblox place.
+The editor's live solid is always a model in local Edit coordinates; when
+leaving Edit, a client-local projection appears at the original world
+placement. These visual copies are not yet physics-authoritative or saved.
 
-Recent changes are source-verified but not yet Studio-runtime tested. Save/load, mechanical physics, multiplayer/shipping, and FORGE integration are not yet implemented.
+The first component starts from a closed sketch, not a primitive block.
+Workspace height defaults to **1,000 mm** and is independent from the
+first sketch extrusion depth (**56 mm**).
 
-## Confirming the Studio build
+Existing FORM manufacturing remains accessible through
+`Modes/Edit/LegacyFabricationAdapter.lua` until the full fabrication
+migration in Q2. Its legacy debug UI has not yet been replaced with a
+finished Duotone/FORGE.UI application.
 
-When you press **Play**, a small bottom-right badge reads `OPENWORKS / STUDIO DEV`
-with the running client `BUILD`, loaded `GIZMO` module revision, and
-`READY` or `BOOT ERROR` startup state. This badge is created **before**
-loading the editor, so it remains visible if FORM's require/startup fails.
-The same version is printed in Studio Output.
+## Start locally
 
-Current version marker: **BUILD 2026.11.06.02**, **GIZMO-CLEAN-TIPS.6**. The three rotation rings share one radius; Move uses `ReplicatedStorage.Cone` without square tip outlines, the selected workpiece's SelectionBox stroke is thin, and hovering planar manufactured faces (without an active tool) displays read-only millimeter dimensions.
+Run `START_OPENWORKS.bat` on `dev`, connect the Roblox Studio Rojo plugin
+to `localhost:34872`, and press Play. The project includes the FORGE
+source and secure server transport: no separate Ruckus Rojo session is
+required.
 
-If the badge is missing, the latest `src/client/init.client.lua` has not
-run in that Play session. Stop Play and verify your local `dev` branch is
-updated and the Rojo Studio plugin is connected to `localhost:34872`.
-If the badge appears but the gizmo revision says `UNSTAMPED` or
-`GIZMO NOT SYNCED`, the client entry script updated but the gizmo module
-did not. If it displays `BOOT ERROR`, read the matching `[OPENWORKS]`
-warning in the Studio Output window.
+The bottom-right build badge should report
+`FORGE 4.4.1 / Free · Edit · Assembly`. The top-center Mode Bar switches
+between modes. Create a component in Free Mode by specifying its X/Z
+workspace and placing the grid on the ground, then enter Edit.
 
-The dev launcher runs `git fetch`, but its automatic pull deliberately
-**skips when there are uncommitted local changes, local commits ahead of
-origin, or a non-fast-forward state**. Check the launcher/live-sync output
-and `git status` rather than assuming a successful fetch updated the
-working tree. Preserve local changes before merging or discarding anything.
-`ModuleScript` requires are cached during Play: even after Rojo has synced,
-**Stop and Play again** to get a new instance of the updated editor.
+## Studio verification
+
+- Run `scripts/VERIFY_Q1_SERVER.lua` in the server command bar.
+- Run `scripts/VERIFY_Q1_FORGE.lua` in the client command bar.
+- Validate first sketch + solid with `scripts/VERIFY_SKETCH_FIRST_WORKFLOW.lua`.
+- Verify existing snap/visualizer behavior with
+  `scripts/VERIFY_SNAP_OVERLAYS.lua`.
+- Check Output for `[OPENWORKS]` and `[FORGE]` errors.
+
+**Studio runtime tests have not been executed by the GitHub-only coding
+workflow.** Do not treat code commits as a verified playable build.
+Q2 covers manufacturing completion and server-authoritative documents.
+Q3 covers physical assembly/relationships. Q4 covers integrated physics,
+actuation, diagnostics and persistence.
+
+Architecture decisions: [Q1 FORGE Architecture](docs/Q1_FORGE_ARCHITECTURE.md).
