@@ -956,8 +956,8 @@ function Debug.start()
 				local partFrame=topology.part.CFrame
 				local localA=pose:PointToObjectSpace(partFrame:PointToWorldSpace(edge.a))
 				local localB=pose:PointToObjectSpace(partFrame:PointToWorldSpace(edge.b))
-				local width=(tonumber(if activeTool=="Smooth" then smoothRadiusInput.Text
-					else fileWidthInput.Text) or 14)/280
+				local width=SurfaceSnap.mm((tonumber(if activeTool=="Smooth"
+					then smoothRadiusInput.Text else fileWidthInput.Text) or 14)/280)
 				local available=EdgeAvailability.segments(localA,localB,component,width)
 				-- The originating topology edge may be longer than the
 				-- actual exposed edge. Pick only the unblocked segment
@@ -1091,8 +1091,10 @@ function Debug.start()
 	RunService.RenderStepped:Connect(function(dt)
 		if not editorActive then return end
 		if sketchEditor and sketchEditor.active then
-			selectionBorder:Clear()
-			selectionBorder.Visible=false
+			if selectionBorder.Visible then
+				selectionBorder:Clear()
+				selectionBorder.Visible=false
+			end
 			return
 		end
 		if toolVisualizer:update(dt) then
