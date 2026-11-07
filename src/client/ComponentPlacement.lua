@@ -10,6 +10,7 @@ local Quantize=require(FORM.Quantize)
 local ComponentPlacement={}
 ComponentPlacement.__index=ComponentPlacement
 local MM=280
+local WORKSPACE_HEIGHT_MM=1000 -- Construction-space limit, never sketch depth
 
 local function make(kind:string,properties,parent:Instance)
 	local obj=Instance.new(kind)
@@ -51,7 +52,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		Name="ComponentSpecification",Visible=false,
 		BackgroundColor3=Color3.fromRGB(24,30,35),
 		BorderSizePixel=0,AnchorPoint=Vector2.new(.5,.5),
-		Position=UDim2.fromScale(.5,.5),Size=UDim2.fromOffset(346,325),
+		Position=UDim2.fromScale(.5,.5),Size=UDim2.fromOffset(346,286),
 	},ui)
 	make("UICorner",{CornerRadius=UDim.new(0,8)},form)
 	label(form,"CREATE COMPONENT",12,24)
@@ -77,13 +78,12 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 	local nameBox=box("ComponentName","",70)
 	label(form,"SKETCH WORKSPACE SIZE (mm)",108,19)
 	local xBox=box("X_mm","280",132)
-	local yBox=box("Y_mm","140",169)
-	local zBox=box("Z_mm","280",206)
-	local feedback=label(form,"X/Z = grid size · Y = first extrusion height",243,24)
+	local zBox=box("Z_mm","280",169)
+	local feedback=label(form,"Workspace height: 1,000 mm (automatic)",209,27)
 	feedback.TextSize=11
-	local cancel=button(form,"Cancel",UDim2.fromOffset(16,280),
+	local cancel=button(form,"Cancel",UDim2.fromOffset(16,244),
 		UDim2.fromOffset(150,32))
-	local nextStep=button(form,"Place Sketch Grid",UDim2.fromOffset(172,280),
+	local nextStep=button(form,"Place Sketch Grid",UDim2.fromOffset(172,244),
 		UDim2.fromOffset(158,32))
 	local hint=label(ui,"Place sketch grid • Left click to confirm • Esc to cancel",
 		0,30)
@@ -96,7 +96,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 	local self=setmetatable({
 		ui=ui,launch=launch,form=form,hint=hint,
 		grid=grid,placing=false,showLaunch=true,
-		size=Vector3.new(1,.5,1),name="",
+		size=Vector3.new(1,WORKSPACE_HEIGHT_MM/MM,1),name="",
 		lastPosition=nil,onPlace=onPlace,onStatus=onStatus,onCancel=onCancel,
 	},ComponentPlacement)
 	local function groundPoint():Vector3?
@@ -146,7 +146,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		close(false)
 		form.Visible=true
 		launch.Visible=false
-		feedback.Text="X/Z = grid size · Y = first extrusion height"
+		feedback.Text="Workspace height: 1,000 mm (automatic)"
 	end
 	function self:setLaunchVisible(value:boolean)
 		self.showLaunch=value
@@ -155,10 +155,11 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 	launch.MouseButton1Click:Connect(function()self:open()end)
 	cancel.MouseButton1Click:Connect(function()self:close()end)
 	nextStep.MouseButton1Click:Connect(function()
-		local x,y,z=tonumber(xBox.Text),tonumber(yBox.Text),tonumber(zBox.Text)
-		if not x or not y or not z or not Quantize.isFinite(x)
-			or not Quantize.isFinite(y) or not Quantize.isFinite(z) then
-			feedback.Text="Enter valid numeric dimensions in mm"
+		local x,z=tonumber(xBox.Text),tonumber(zBox.Text)
+		local y=WORKSPACE_HEIGHT_MM
+		if not x or not z or not Quantize.isFinite(x)
+			or not Quantize.isFinite(z) then
+			feedback.Text="Enter valid X and Z grid dimensions in mm"
 			return
 		end
 		local size=Quantize.vector(Vector3.new(x,y,z)/MM,Quantize.Size)
