@@ -210,7 +210,7 @@ function Preview:queueManufacture(component)
 				if not job.cancelled and not job.pending
 					and expectedKey == Fabricator.geometryKey(component) then
 					local accepted=self.accepted[id]
-					if accepted and self.onVolumeRejected then
+					if self.onVolumeRejected then
 						self.onVolumeRejected(id,accepted,
 							"Fabrication CSG failed: "..tostring(output))
 					else
@@ -256,7 +256,7 @@ function Preview:queueManufacture(component)
 				if not MaterialVolume.within(material) then
 					output:Destroy()
 					local lastGood=self.accepted[id]
-					if self.onVolumeRejected and lastGood then
+					if self.onVolumeRejected then
 						self.onVolumeRejected(id,lastGood,
 							(if not Quantize.isFinite(material) then
 								snapshot.name.." material volume could not be verified"
