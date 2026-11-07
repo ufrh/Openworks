@@ -15,6 +15,14 @@ local Compiler=require(FORM.Compiler)
 local Fabricator=require(FORM.Fabricator)
 local HistoryTopology=require(client.HistoryTopology)
 local SketchBodyProfile=require(FORM.SketchBodyProfile)
+local SketchEditor=require(client.SketchEditor)
+local ComponentPlacement=require(client.ComponentPlacement)
+local GeometryCutter=require(FORM.GeometryCutter)
+assert(ComponentPlacement.WORKSPACE_HEIGHT_MM==1000,
+	"Component placement must set an automatic 1000mm workspace height")
+assert(SketchEditor.DEFAULT_FIRST_EXTRUSION_MM==56,
+	"First sketch extrusion must not inherit workspace height")
+
 
 local playerMode=CharacterMode.new(player)
 assert(not playerMode.editing,"Character controls should be default mode")
@@ -79,4 +87,20 @@ for _,face in ipairs(topology.faces) do
 end
 assert(top and #top.polygon==6,"Selection must follow six drawn edges, not a box")
 part:Destroy()
-print("FORM sketch-first: no global grid, live grid relocation, no primitive, manufactured polygon verified")
+-- This is the IMPORTANT runtime assertion: a finished manufactured
+-- BasePart, not just sketch adornments. Works with EditableMesh or the
+-- native CSG wedge fallback if mesh APIs are restricted in Studio.
+local compiled,actual,summary=pcall(Fabricator.compile,solid)
+assert(compiled,"First sketch solid failed to compile: "..tostring(actual))
+assert(typeof(actual)=="Instance" and actual:IsA("BasePart")
+	and actual.Size.Magnitude>0 and actual.Transparency<1,
+	"First sketch returned no visible manufactured solid")
+print("FORM first sketch compiled as "..actual.ClassName..
+	" ("..tostring(summary)..")")
+actual:Destroy()
+local profile,travel=SketchBodyProfile.profile(node)
+local nativeOK,nativeOrError=pcall(GeometryCutter.prismNative,profile,travel)
+assert(nativeOK and nativeOrError and nativeOrError:IsA("BasePart"),
+	"Native no-EditableMesh wedge fallback failed: "..tostring(nativeOrError))
+nativeOrError:Destroy()
+print("FORM sketch-first: default 1000mm workspace / 56mm extrude, 3D CSG solid, native fallback and topology verified")
