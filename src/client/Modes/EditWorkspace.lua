@@ -3,7 +3,7 @@
 -- edit chamber. The editor receives a separate virtual coordinate frame.
 local EditWorkspace={}
 EditWorkspace.__index=EditWorkspace
-local CENTER=Vector3.new(0,3000,0)
+local CENTER=Vector3.new(0,200,0)
 function EditWorkspace.new(worldCorner:Vector3,size:Vector3,name:string)
 	assert(size.X>0 and size.Z>0,"Positive X/Z component dimensions required")
 	local editCorner=CENTER-Vector3.new(size.X*0.5,0,size.Z*0.5)
