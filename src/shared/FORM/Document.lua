@@ -585,6 +585,34 @@ function Document.snapshot(component)
 	}
 end
 
+-- Replace local document state from a FORGE-authoritative snapshot, but
+-- preserve each component table identity for editor callbacks/preview jobs.
+function Document:adoptSnapshot(snapshot:any)
+ if typeof(snapshot)~="table" or typeof(snapshot.id)~="number"
+  or typeof(snapshot.nodes)~="table"
+  or typeof(snapshot.operations)~="table" then
+  return nil,"Invalid authoritative component snapshot"
+ end
+ local copy=Document.snapshot(snapshot)
+ local component=self.components[copy.id]
+ if not component then
+  component=copy
+  self.components[copy.id]=component
+  table.insert(self.order,copy.id)
+ else
+  table.clear(component)
+  for key,value in pairs(copy) do component[key]=value end
+ end
+ self.nextComponent=math.max(self.nextComponent,copy.id)
+ for _,node in ipairs(copy.nodes) do
+  self.nextNode=math.max(self.nextNode,node.id or 0)
+ end
+ for _,operation in ipairs(copy.operations) do
+  self.nextOperation=math.max(self.nextOperation,operation.id or 0)
+ end
+ return component,nil
+end
+
 -- Geometry-independent, stable feature IDs for future assembly mating.
 -- These are only candidates until the compiled final surface is verified.
 function Document:listFeatures(component)
