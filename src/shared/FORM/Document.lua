@@ -550,6 +550,7 @@ function Document:restoreSnapshot(component,snapshot)
 	component.volumeExact=copy.volumeExact
 	component.workspaceOrigin=copy.workspaceOrigin
 	component.workspaceSize=copy.workspaceSize
+	component.worldOrigin=copy.worldOrigin
 	component.revision+=1
 	return true
 end
