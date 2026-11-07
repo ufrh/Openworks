@@ -59,15 +59,24 @@ and matchmaking server plugins when they are not installed.
 
 ## Q1 interaction modes
 
-**Free:** normal Roblox character, component creation, world-space component
-projections. **Edit:** fixed 40 × 40 × 20 stud midnight-steel/cyan editing
-chamber, separate from the world; the component's grid is based on the
-**user-entered X/Z dimensions**, not chamber size. **Assembly:** independent
-stage and camera, ready for Q3 physical assembly and constraint systems.
+**Free:** normal Roblox character, fixed camera zoom, and client-local
+physically simulated, draggable manufactured components. Their shapes are
+rebuilt from FORM's latest accepted geometry whenever a cut finishes.
+**Edit:** fixed 40 × 40 × 20 stud midnight-steel/cyan room surrounded
+by an ambient blue backdrop on every side; the component's grid is based on
+the **user-entered X/Z dimensions**, not chamber size. Press **P** (or the
+PREVIEW button) to toggle a clean model-only view: all OpenWorks edit GUIs,
+sketch adornments, construction grids, transform gizmos, and tool visualizers
+are hidden, and unfinished sketches are paused and preserved. Press P again
+to resume editing. **Assembly:** independent stage/camera, ready for Q3
+physical alignment and mechanical constraints.
 
 Only the selected workpiece is rendered in Edit; unselected solids remain retained in the document. The editor's live solid uses local Edit coordinates; when
 leaving Edit, a client-local projection appears at the original world
-placement. These visual copies are not yet physics-authoritative or saved.
+placement. Free Mode copies are local physical bodies with collision and force-driven
+dragging, but they are not yet synchronized across players or persisted on
+the server. Only OpenWorks components use this drag/physics system; other
+Workspace objects are unaffected.
 
 The first component starts from a closed sketch, not a primitive block.
 Workspace height defaults to **1,000 mm** and is independent from the
@@ -97,6 +106,12 @@ workspace and placing the grid on the ground, then enter Edit.
 - Validate first sketch + solid with `scripts/VERIFY_SKETCH_FIRST_WORKFLOW.lua`.
 - Verify existing snap/visualizer behavior with
   `scripts/VERIFY_SNAP_OVERLAYS.lua`.
+- Run `scripts/VERIFY_FORM_SKETCH_REMOVAL.lua` to verify centered
+  subtraction cutters and valid Boolean solids.
+- In Play, confirm Free Mode wheel zoom stays fixed, drag a component,
+  then enter Edit, drill/remove material, and return to Free: the geometry
+  should refresh at its previous physical pose. Press P twice in Edit to
+  check that all OpenWorks visualizers hide and restore cleanly.
 - Check Output for `[OPENWORKS]` and `[FORGE]` errors.
 
 **Studio runtime tests have not been executed by the GitHub-only coding
