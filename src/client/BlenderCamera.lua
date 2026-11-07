@@ -270,11 +270,56 @@ function BlenderCamera:getFocusTarget(): Vector3
 	return self.target
 end
 
+-- Entering workspace is a mode switch, not an animated camera flight.
+-- Snap both internal interpolants AND the actual CurrentCamera now.
+function BlenderCamera:snapNow()
+	self.displayedYaw=self.yaw
+	self.displayedPitch=self.pitch
+	self.displayedRoll=self.roll
+	self.displayedDistance=self.distance
+	self.displayedFov=self.fov
+	self.displayedOrthoHeight=self.orthographicHeight
+	self.displayedTarget=self.target
+	local camera=workspace.CurrentCamera
+	if not camera or not self.active then return end
+	self.camera=camera
+	camera.CameraType=Enum.CameraType.Scriptable
+	camera.FieldOfView=self.fov
+	local ok=pcall(function()
+		camera.OrthographicMode=Enum.OrthographicMode.Vertical
+		camera.ProjectionType=if self.orthographic
+			then Enum.ProjectionType.Orthographic
+			else Enum.ProjectionType.Perspective
+	end)
+	self.nativeOrtho=ok
+	self.projectionDirty=false
+	if ok and self.orthographic then
+		camera.OrthographicSize=self.orthographicHeight
+	end
+	if not ok and self.orthographic then
+		self.orthographic=false
+		self.autoOrthographic=false
+	end
+	local direction=Vector3.new(
+		math.cos(self.pitch)*math.sin(self.yaw),
+		math.sin(self.pitch),
+		math.cos(self.pitch)*math.cos(self.yaw))
+	local up=Vector3.yAxis
+	if self.axisView=="Top" then up=-Vector3.zAxis
+	elseif self.axisView=="Bottom" then up=Vector3.zAxis end
+	local frame=CFrame.lookAt(self.target+direction*self.distance,
+		self.target,up)*CFrame.Angles(0,0,self.roll)
+	camera.CFrame=frame
+	camera.Focus=CFrame.new(self.target)
+	if self.onFrame then self.onFrame(frame,self:viewLabel()) end
+end
+
 function BlenderCamera:setActive(active:boolean)
 	if self.active==active then return end
 	self.active=active
 	if active then
 		self.projectionDirty=true
+		self:snapNow()
 	else
 		self:releaseMouse()
 		local camera=workspace.CurrentCamera
