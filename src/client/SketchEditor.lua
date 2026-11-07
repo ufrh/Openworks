@@ -11,6 +11,7 @@ local SketchProfile = require(FORM.SketchProfile)
 
 local SketchEditor = {}
 SketchEditor.__index = SketchEditor
+SketchEditor.DEFAULT_FIRST_EXTRUSION_MM=56
 
 local COLORS = {
 	Add = Color3.fromRGB(94, 211, 157),
@@ -259,7 +260,7 @@ function SketchEditor:start(component, tool: string?, firstWorkspace)
 				rotation=Vector3.zero,
 			}},
 		}
-		self.depthMM=56 -- first extrusion default, separate from 1000mm workspace height
+		self.depthMM=SketchEditor.DEFAULT_FIRST_EXTRUSION_MM -- never inherits 1000mm workspace height
 		self.mode,self.through="Add",false
 	else
 		self.component = component
