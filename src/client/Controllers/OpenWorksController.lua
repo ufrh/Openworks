@@ -16,6 +16,7 @@ local EditEnvironment=require(Modes.EditEnvironment)
 local ModeBar=require(Experience.ModeBar)
 local ToolRegistry=require(Client.Tools.ToolRegistry)
 local ToolController=require(Client.Tools.ToolController)
+local AssemblyController=require(Client.Systems.Assembly.AssemblyController)
 local Controller=FORGE.Controller("OpenWorksRuntime")
 function Controller:Init()
  self.modeManager=ModeManager.new()
@@ -50,6 +51,7 @@ function Controller:Start()
  -- Server-authoritative manufacturing data is exposed through FORGE.
  -- The client retains local CSG only as a visual/physics preview.
  self.documents=FORGE:GetService("OpenWorksDocuments")
+ self.assemblyService=FORGE:GetService("OpenWorksAssembly")
  assert(self.documents and self.documents.CreateSketchBody,
   "OpenWorksDocuments FORGE service missing from server startup")
  self.bridge=Editor.start({
@@ -58,6 +60,9 @@ function Controller:Start()
    switch("Edit",{workspace=workspaceData})
   end,
   onFreeRequested=function()switch("Free")end,
+  onAssemblySelected=function(id)
+   if self.assembly then self.assembly:select(id) end
+  end,
   onToolChanged=function(kind)
    if not kind then self.tools:clear() return end
    local ok,reason=self.tools:activate(kind)
@@ -71,9 +76,10 @@ function Controller:Start()
    if badge and badge:IsA("ScreenGui") then badge.Enabled=not enabled end
   end,
  })
+ self.assembly=AssemblyController.new(self.bridge,self.assemblyService)
  manager:register("Free",FreeMode.new(self.bridge))
  manager:register("Edit",EditMode.new(self.bridge,self.environment))
- manager:register("Assembly",AssemblyMode.new(self.bridge))
+ manager:register("Assembly",AssemblyMode.new(self.bridge,self.assembly))
  self.modeBar=ModeBar.new(Players.LocalPlayer:WaitForChild("PlayerGui"),switch)
  -- External observers may subscribe to manager.changed, but internal
  -- correctness must never depend on asynchronous notification ordering.
@@ -93,6 +99,7 @@ function Controller:Start()
 end
 function Controller:Stop()
  if self.modeManager then self.modeManager:destroy() end
+ if self.assembly then self.assembly:Destroy() end
  if self.bridge and self.bridge.destroy then self.bridge.destroy() end
  self.bridge=nil
  if self.environment then self.environment:Destroy() end
