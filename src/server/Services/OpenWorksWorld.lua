@@ -142,6 +142,80 @@ function Service:SourceFrame(player:Player,id:number,component:any):CFrame?
  return frame
 end
 
+-- Verify physical collision geometry on SERVER-owned source solids.
+-- Deliberately fail closed: an overlapping fastener installation cannot
+-- turn intersecting parts into a persistent joint. Roblox CSG hull
+-- approximation may reject some visually clear fits; report this.
+function Service:ValidateAssemblyClearance(player:Player,idA:number,
+ idB:number,shaftId:number,relativeB:CFrame,relativeS:CFrame):(boolean,string?)
+ local docs=FORGE:GetService("OpenWorksDocuments")
+ local document=docs and docs.documents[player]
+ if not document then return false,"Document unavailable" end
+ local ids={idA,idB,shaftId}
+ local parts={}
+ local function cleanup()
+  for _,part in ipairs(parts) do part:Destroy() end
+ end
+ for _,id in ipairs(ids) do
+  local component=document.components[id]
+  if not component then cleanup() return false,"Missing manufactured component" end
+  local record=self.records[player] and self.records[player][id]
+  local part:BasePart?
+  if record and record.revision==component.revision and record.part then
+   part=record.part:Clone()
+   part:ClearAllChildren()
+  else
+   local snapshot=Document.snapshot(component)
+   local success,result=pcall(function()
+    if Fabricator.requiresCompile(snapshot) then return Fabricator.compile(snapshot) end
+    return Compiler.nativePart(snapshot.nodes[1])
+   end)
+   if not success or not result or not result:IsA("BasePart") then
+    cleanup() return false,"Cannot compile collision geometry for installation"
+   end
+   part=result
+  end
+  part.Anchored=true
+  part.CanCollide=true
+  part.CanTouch=false
+  part.CanQuery=true
+  if part:IsA("MeshPart") or part:IsA("PartOperation") then
+   pcall(function()
+    part.CollisionFidelity=Enum.CollisionFidelity.PreciseConvexDecomposition
+   end)
+  end
+  table.insert(parts,part)
+  part.Parent=workspace
+ end
+ -- Keep validation bodies away from live workshop physics.
+ local origin=CFrame.new(0,100000,0)
+ parts[1].CFrame=origin
+ parts[2].CFrame=origin*relativeB
+ parts[3].CFrame=origin*relativeS
+ local overlapped=false
+ local valid=true
+ for i=1,2 do
+  for j=i+1,3 do
+   local params=OverlapParams.new()
+   params.FilterType=Enum.RaycastFilterType.Include
+   params.FilterDescendantsInstances={parts[j]}
+   params.MaxParts=1
+   local ok,results=pcall(function()
+    return workspace:GetPartsInPart(parts[i],params)
+   end)
+   if not ok then valid=false break end
+   if #results>0 then overlapped=true break end
+  end
+  if overlapped or not valid then break end
+ end
+ cleanup()
+ if not valid then return false,"Physical collision audit unavailable" end
+ if overlapped then
+  return false,"Solid penetration detected. Adjust the geometry/shaft clearance"
+ end
+ return true,nil
+end
+
 function Service:QueuePublish(player:Player,id:number)
  if not self.enabled[player] or not player.Parent then return end
  local queue=self.pending[player] or {}
