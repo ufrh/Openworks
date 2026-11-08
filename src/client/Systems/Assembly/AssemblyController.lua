@@ -41,7 +41,7 @@ local function solid(entry:any):BasePart?
  local part=model and model:FindFirstChild("Solid",true)
  return if part and part:IsA("BasePart") then part else nil
 end
-function Controller.new(bridge:any,remote:any)
+function Controller.new(bridge:any,remote:any,documents:any,world:any)
  local gui=Instance.new("ScreenGui")
  gui.Name="OPENWORKS_AssemblyControls"
  gui.ResetOnSpawn=false gui.Enabled=false gui.DisplayOrder=82
@@ -50,7 +50,7 @@ function Controller.new(bridge:any,remote:any)
  panel.Name="AssemblyPanel"
  panel.AnchorPoint=Vector2.new(1,0)
  panel.Position=UDim2.new(1,-14,0,70)
- panel.Size=UDim2.fromOffset(290,345)
+ panel.Size=UDim2.fromOffset(290,425)
  panel.BorderSizePixel=0
  panel.BackgroundColor3=Color3.fromRGB(22,35,44)
  panel.Parent=gui
@@ -63,6 +63,7 @@ function Controller.new(bridge:any,remote:any)
  status.Size=UDim2.new(1,-20,0,44)
  local self=setmetatable({bridge=bridge,remote=remote,
   gui=gui,choices=choices,status=status,assist=Assist.new(),
+  documents=documents,world=world,
   a=nil,b=nil,active=false,step=0,lastMatch=nil,lastJoint=nil,
   fixtures={}},Controller)
  button(panel,"Install Bolt  ·  Rigid",154,function()self:install("Rigid")end)
@@ -70,6 +71,8 @@ function Controller.new(bridge:any,remote:any)
  button(panel,"Start hinge motor",224,function()self:motor(true)end)
  button(panel,"Stop hinge motor",259,function()self:motor(false)end)
  button(panel,"Remove last joint",294,function()self:removeLast()end)
+ button(panel,"Save Workshop",329,function()self:save()end)
+ button(panel,"World / Physics Status",364,function()self:stats()end)
  return self
 end
 function Controller:_report(msg:string)
@@ -187,6 +190,22 @@ function Controller:removeLast()
   self.fixtures[id]=nil self.lastJoint=nil
   self:_report("Removed relationship #"..id)
  else self:_report("Removal rejected: "..tostring(if success then result else ok)) end
+end
+function Controller:save()
+ if not self.documents then return self:_report("Document service unavailable") end
+ local success,ok,msg=pcall(function()return self.documents:SaveNow(true)end)
+ self:_report(if success and ok then "Workshop saved" else
+  "Save unavailable: "..tostring(if success then msg else ok))
+end
+function Controller:stats()
+ if not self.world then return self:_report("World service unavailable") end
+ local success,ok,data=pcall(function()return self.world:GetStats()end)
+ if not success or not ok or type(data)~="table" then
+  return self:_report("Cannot read world diagnostics")
+ end
+ self:_report(string.format("%d published parts, %d joints. %s",
+  data.published or 0,data.joints or 0,
+  if data.busy then "Manufacturing..." else data.error or "Idle"))
 end
 function Controller:Destroy()
  self:Exit() self.assist:Destroy() self.gui:Destroy()
