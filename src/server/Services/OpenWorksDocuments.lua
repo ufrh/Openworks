@@ -86,6 +86,8 @@ function Service:CreateSketchBody(player:Player,name:any,worldOrigin:any,
   or not finiteVector(editOrigin) or not finiteSize(size)
   or math.max(math.abs(worldOrigin.X),math.abs(worldOrigin.Y),
    math.abs(worldOrigin.Z))>Quantize.MaxPosition
+  or math.max(math.abs(editOrigin.X),math.abs(editOrigin.Y),
+   math.abs(editOrigin.Z))>Quantize.MaxPosition
   or typeof(points)~="table" or #points<3 or #points>64
   or typeof(depth)~="number" or not Quantize.isFinite(depth) then
   return false,"Invalid component specification"
