@@ -30,7 +30,7 @@ function Service:Init()
  self:Track(Players.PlayerRemoving:Connect(function(player)
   local documents=FORGE:GetService("OpenWorksDocuments")
   if documents and documents.SaveNow then documents:SaveNow(player,true) end
-  self.graphs[player]=nil
+  task.delay(2,function()self.graphs[player]=nil end)
  end))
 end
 function Service:ListJoints(player:Player)
