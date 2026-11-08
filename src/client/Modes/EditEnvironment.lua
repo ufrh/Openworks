@@ -7,11 +7,12 @@ Environment.__index=Environment
 Environment.Size=Vector3.new(40,20,40)
 Environment.Center=Vector3.new(0,200,0)
 
-local CYAN=Color3.fromRGB(84,229,255)
-local WALL=Color3.fromRGB(21,43,72)
-local FLOOR=Color3.fromRGB(27,53,79)
-local CEILING=Color3.fromRGB(16,33,58)
-local BACKDROP=Color3.fromRGB(18,38,67)
+local NEON_BLUE=Color3.fromRGB(51,88,130)
+local CYAN=NEON_BLUE
+local WALL=NEON_BLUE
+local FLOOR=NEON_BLUE
+local CEILING=NEON_BLUE
+local BACKDROP=NEON_BLUE
 
 local function visual(parent:Instance,name:string,size:Vector3,position:Vector3,
  color:Color3,material:Enum.Material,transparency:number):BasePart
@@ -49,14 +50,14 @@ function Environment:show()
  -- transparent and the ceiling 91% transparent, exposing the actual sky.
  -- Geometry overlaps at the corners to remove light-colored seam gaps.
  visual(root,"ChamberFloor",Vector3.new(size.X+slab*2,slab,size.Z+slab*2),
-  center-Vector3.new(0,hy,0),FLOOR,Enum.Material.SmoothPlastic,0)
+  center-Vector3.new(0,hy,0),FLOOR,Enum.Material.Neon,0)
  visual(root,"BlueCeiling",Vector3.new(size.X+slab*2,slab,size.Z+slab*2),
-  center+Vector3.new(0,hy,0),CEILING,Enum.Material.SmoothPlastic,0)
+  center+Vector3.new(0,hy,0),CEILING,Enum.Material.Neon,0)
  for _,sign in ipairs({-1,1}) do
   visual(root,"BlueWallX",Vector3.new(slab,size.Y+slab*2,size.Z+slab*2),
-   center+Vector3.new(sign*hx,0,0),WALL,Enum.Material.SmoothPlastic,0)
+   center+Vector3.new(sign*hx,0,0),WALL,Enum.Material.Neon,0)
   visual(root,"BlueWallZ",Vector3.new(size.X+slab*2,size.Y+slab*2,slab),
-   center+Vector3.new(0,0,sign*hz),WALL,Enum.Material.SmoothPlastic,0)
+   center+Vector3.new(0,0,sign*hz),WALL,Enum.Material.Neon,0)
  end
 
  -- Soft neon structural edges make the room readable without replacing
@@ -65,17 +66,17 @@ function Environment:show()
  for _,dx in ipairs({-hx,hx}) do
   for _,dz in ipairs({-hz,hz}) do
    visual(root,"CyanPillar",Vector3.new(thickness,size.Y,thickness),
-    center+Vector3.new(dx,0,dz),CYAN,Enum.Material.Neon,0.38)
+    center+Vector3.new(dx,0,dz),CYAN,Enum.Material.Neon,0)
   end
   for _,dy in ipairs({-hy,hy}) do
    visual(root,"CyanEdgeZ",Vector3.new(thickness,thickness,size.Z),
-    center+Vector3.new(dx,dy,0),CYAN,Enum.Material.Neon,0.55)
+    center+Vector3.new(dx,dy,0),CYAN,Enum.Material.Neon,0)
   end
  end
  for _,dz in ipairs({-hz,hz}) do
   for _,dy in ipairs({-hy,hy}) do
    visual(root,"CyanEdgeX",Vector3.new(size.X,thickness,thickness),
-    center+Vector3.new(0,dy,dz),CYAN,Enum.Material.Neon,0.55)
+    center+Vector3.new(0,dy,dz),CYAN,Enum.Material.Neon,0)
   end
  end
 
@@ -84,14 +85,14 @@ function Environment:show()
  -- It is not the room itself and never determines construction size.
  local radius=500
  visual(root,"SkyBackdrop_Floor",Vector3.new(radius*2,slab,radius*2),
-  center+Vector3.new(0,-radius,0),BACKDROP,Enum.Material.SmoothPlastic,0)
+  center+Vector3.new(0,-radius,0),BACKDROP,Enum.Material.Neon,0)
  visual(root,"SkyBackdrop_Ceiling",Vector3.new(radius*2,slab,radius*2),
-  center+Vector3.new(0,radius,0),BACKDROP,Enum.Material.SmoothPlastic,0)
+  center+Vector3.new(0,radius,0),BACKDROP,Enum.Material.Neon,0)
  for _,sign in ipairs({-1,1}) do
   visual(root,"SkyBackdrop_X",Vector3.new(slab,radius*2,radius*2),
-   center+Vector3.new(sign*radius,0,0),BACKDROP,Enum.Material.SmoothPlastic,0)
+   center+Vector3.new(sign*radius,0,0),BACKDROP,Enum.Material.Neon,0)
   visual(root,"SkyBackdrop_Z",Vector3.new(radius*2,radius*2,slab),
-   center+Vector3.new(0,0,sign*radius),BACKDROP,Enum.Material.SmoothPlastic,0)
+   center+Vector3.new(0,0,sign*radius),BACKDROP,Enum.Material.Neon,0)
  end
 
  -- Lights are inside the closed room, with shadows disabled. These make
@@ -101,7 +102,7 @@ function Environment:show()
   {Vector3.new(11,4,9),Color3.fromRGB(115,204,239),0.85},
  }) do
   local source=visual(root,"StudioLightSource",Vector3.one*0.05,
-   center+spec[1],WALL,Enum.Material.SmoothPlastic,1)
+   center+spec[1],WALL,Enum.Material.Neon,1)
   local light=Instance.new("PointLight")
   light.Color=spec[2]
   light.Brightness=spec[3]
