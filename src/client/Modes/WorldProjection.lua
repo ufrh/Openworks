@@ -57,7 +57,9 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,
  if not workspaceData then self:clear() return end
  self:_savePositions()
  local free=targetCorner==nil
- local simulated=free or simulateAssembly==true
+ -- Assembly is always a physical staging mode. A late CSG refresh must
+ -- never silently anchor workpieces or disable their DragDetectors.
+ local simulated=true
  local live={}
  self.root.Parent=workspace
  local serverRoot=workspace:FindFirstChild("OPENWORKS_Published")
