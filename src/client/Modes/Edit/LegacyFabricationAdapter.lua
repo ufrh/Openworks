@@ -439,7 +439,11 @@ function Debug.start(options:any?)
 	end
  -- Dragging a Free Mode component selects that manufactured object for
  -- the next Edit entry. Free Mode never exposes the CAD gizmo.
- worldProjection.onSelect=function(id:number)
+ worldProjection.onSelect=function(id:number,mode:string?)
+  if mode=="Assembly" then
+   if options.onAssemblySelected then options.onAssemblySelected(id) end
+   return
+  end
   local component=document.components[id]
   if not component then return end
   selectComponent(id)
@@ -1555,6 +1559,9 @@ local snapRow=row(32)
  end)
 	message("Character mode · Create Component places a new sketch workspace")
 	return {
+  getAssemblyState=function()
+   return {document=document,projection=worldProjection}
+  end,
   setPreviewEnabled=setPreviewEnabled,
   isPreviewEnabled=function()return previewOnly end,
 		getWorkspace=function()
@@ -1586,7 +1593,8 @@ local snapRow=row(32)
 			if currentWorkspace then
 				worldProjection:show(preview,document,currentWorkspace,
 					AssemblyEnvironment.Center-
-					Vector3.new(currentWorkspace.size.X*0.5,0,currentWorkspace.size.Z*0.5))
+					Vector3.new(currentWorkspace.size.X*0.5,0,currentWorkspace.size.Z*0.5),
+     true)
 			end
 			placementFlow:setLaunchVisible(false)
 			characterMode:setEditing(true)
@@ -1595,7 +1603,7 @@ local snapRow=row(32)
 			cameraController:frameBounds(CFrame.new(AssemblyEnvironment.Center),
 				Vector3.new(12,8,12))
 			cameraController:setActive(true)
-			message("Assembly Mode · physical alignment arrives in Q3")
+			message("Assembly Mode · drag components, align drilled holes, install hardware")
 		end,
 		leaveAssembly=function()
 			assemblyEnvironment:hide()
