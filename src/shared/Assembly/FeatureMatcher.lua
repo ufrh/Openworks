@@ -17,6 +17,31 @@ local function frame(f:any):CFrame
  return CFrame.fromMatrix(f.componentLocalCenter,x,axis:Cross(x).Unit,axis)
 end
 Matcher.frame=frame
+-- Server verification of stage-authored relative body pose. Source
+-- CSG frames are material-local, so never assume a manufactured mesh
+-- is centered at the node origin.
+function Matcher.validateRelative(fa:any,fb:any,relative:CFrame,
+ sourceA:CFrame,sourceB:CFrame):(boolean,string?)
+ if not Matcher.compatible(fa,fb) then
+  return false,"Incompatible bore diameters"
+ end
+ local a=sourceA:Inverse()*frame(fa)
+ local b=relative*sourceB:Inverse()*frame(fb)
+ local axisA=a.ZVector.Unit
+ local axisB=b.ZVector.Unit
+ local angle=math.acos(math.clamp(math.abs(axisA:Dot(axisB)),-1,1))
+ local separation=b.Position-a.Position
+ local along=separation:Dot(axisA)
+ local lateral=(separation-axisA*along).Magnitude
+ if angle>math.rad(16) then return false,"Bore axes are not parallel" end
+ if lateral>math.max(0.05,math.min(fa.diameter,fb.diameter)*0.35) then
+  return false,"Bore centerlines miss their clearance tolerance"
+ end
+ if math.abs(along)>math.max(0.65,fa.depth+fb.depth+.2) then
+  return false,"Hole openings are too far apart for installation"
+ end
+ return true,nil
+end
 function Matcher.compatible(a:any,b:any):boolean
  if not valid(a) or not valid(b) then return false end
  -- Through and blind holes are both candidates, not threaded features.
