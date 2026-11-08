@@ -108,6 +108,14 @@ function DocumentBridge:createSketchBody(name:string,worldOrigin:Vector3,
  return body,reason
 end
 
+function DocumentBridge:createCylinder(name:string,worldOrigin:Vector3,
+ editOrigin:Vector3,workspaceSize:Vector3,diameter:number,length:number)
+ local ok,snapshot=self:request("CreateCylinder",name,worldOrigin,
+  editOrigin,workspaceSize,diameter,length)
+ if not ok then return nil,snapshot end
+ return self.document:adoptSnapshot(snapshot)
+end
+
 function DocumentBridge:commitTransform(component:any,revision:number,
  index:number,mode:string,snap:number):(boolean,string?)
  if not self.remote then return true,nil end
