@@ -87,7 +87,8 @@ function Controller:Start()
    if badge and badge:IsA("ScreenGui") then badge.Enabled=not enabled end
   end,
  })
- self.assembly=AssemblyController.new(self.bridge,self.assemblyService)
+ self.assembly=AssemblyController.new(self.bridge,self.assemblyService,
+  self.documents,self.worldService)
  manager:register("Free",FreeMode.new(self.bridge))
  manager:register("Edit",EditMode.new(self.bridge,self.environment))
  manager:register("Assembly",AssemblyMode.new(self.bridge,self.assembly))
