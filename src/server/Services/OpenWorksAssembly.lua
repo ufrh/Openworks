@@ -28,6 +28,8 @@ function Service:Init()
  self:Expose("Remove")
  self:Expose("SetActuator")
  self:Track(Players.PlayerRemoving:Connect(function(player)
+  local documents=FORGE:GetService("OpenWorksDocuments")
+  if documents and documents.SaveNow then documents:SaveNow(player) end
   self.graphs[player]=nil
  end))
 end
@@ -73,6 +75,8 @@ function Service:Install(player:Player,kind:any,idA:any,featureA:any,
   {componentId=idB,featureId=featureB})
  if not joint then return false,why end
  joint.relativePose=relativePose
+ local documents=FORGE:GetService("OpenWorksDocuments")
+ if documents and documents.Changed then documents:Changed(player,nil,false) end
  local world=FORGE:GetService("OpenWorksWorld")
  if world and world.RefreshJoints then
   task.defer(function()world:RefreshJoints(player)end)
@@ -83,6 +87,8 @@ function Service:Remove(player:Player,id:any)
  if typeof(id)~="number" or id%1~=0 then return false,"Invalid joint ID" end
  local graph=graphFor(self,player)
  if not graph:remove(id) then return false,"Joint not found" end
+ local documents=FORGE:GetService("OpenWorksDocuments")
+ if documents and documents.Changed then documents:Changed(player,nil,false) end
  local world=FORGE:GetService("OpenWorksWorld")
  if world and world.RefreshJoints then
   task.defer(function()world:RefreshJoints(player)end)
@@ -101,6 +107,8 @@ function Service:SetActuator(player:Player,id:any,speed:any,torque:any)
   return false,"Q4 motors currently drive revolute joints only"
  end
  joint.actuation={enabled=torque>0 and speed~=0,speed=speed,torque=torque}
+ local docs=FORGE:GetService("OpenWorksDocuments")
+ if docs and docs.Changed then docs:Changed(player,nil,false) end
  local world=FORGE:GetService("OpenWorksWorld")
  if world and world.ApplyActuation then world:ApplyActuation(player,id) end
  return true,joint.actuation
