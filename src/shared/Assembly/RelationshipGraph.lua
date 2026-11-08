@@ -17,11 +17,16 @@ local function validRef(ref:any):boolean
  return type(ref)=="table" and type(ref.componentId)=="number"
   and type(ref.featureId)=="string" and #ref.featureId<=96
 end
-function Graph:add(kind:string,a:any,b:any,limits:any?):(any?,string?)
+function Graph:add(kind:string,a:any,b:any,limits:any?,shaftId:number?):(any?,string?)
  if not Graph.Types[kind] then return nil,"Unknown relationship" end
  if not validRef(a) or not validRef(b) or
   a.componentId==b.componentId then
   return nil,"Relationship needs different components and real feature IDs"
+ end
+ if (kind=="Rigid" or kind=="Revolute") and
+  (type(shaftId)~="number" or shaftId%1~=0
+   or shaftId==a.componentId or shaftId==b.componentId) then
+  return nil,"Manufactured independent shaft required for connection"
  end
  for _,joint in pairs(self.joints) do
   if (joint.a.componentId==a.componentId and
@@ -36,7 +41,8 @@ function Graph:add(kind:string,a:any,b:any,limits:any?):(any?,string?)
  local joint={id=id,kind=kind,
   a={componentId=a.componentId,featureId=a.featureId},
   b={componentId=b.componentId,featureId=b.featureId},
-  limits=limits or {},installed=true,actuation={enabled=false,speed=0,torque=0}}
+  limits=limits or {},shaftId=shaftId,installed=true,
+  actuation={enabled=false,speed=0,torque=0}}
  self.joints[id]=joint
  return joint,nil
 end
@@ -47,7 +53,8 @@ function Graph:remove(id:number):boolean
 end
 function Graph:removeComponent(id:number)
  for jointId,joint in pairs(self.joints) do
-  if joint.a.componentId==id or joint.b.componentId==id then
+  if joint.a.componentId==id or joint.b.componentId==id
+   or joint.shaftId==id then
    self.joints[jointId]=nil
   end
  end
@@ -67,9 +74,13 @@ function Graph:restore(source:any)
    and validRef(j.a) and validRef(j.b)
    and j.a.componentId~=j.b.componentId
    and type(j.id)=="number" and j.id>0 and j.id%1==0
-   and not self.joints[j.id] then
+   and not self.joints[j.id]
+   and ((j.kind~="Rigid" and j.kind~="Revolute")
+    or (type(j.shaftId)=="number" and j.shaftId%1==0
+     and j.shaftId~=j.a.componentId and j.shaftId~=j.b.componentId)) then
    self.joints[j.id]={
-    id=j.id,kind=j.kind,
+    id=j.id,kind=j.kind,shaftId=j.shaftId,
+    shaftRelative=if typeof(j.shaftRelative)=="CFrame" then j.shaftRelative else nil,
     a={componentId=j.a.componentId,featureId=j.a.featureId},
     b={componentId=j.b.componentId,featureId=j.b.featureId},
     limits=if type(j.limits)=="table" then table.clone(j.limits) else {},
