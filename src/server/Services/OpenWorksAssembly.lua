@@ -66,6 +66,17 @@ function Service:Install(player:Player,kind:any,idA:any,featureA:any,
   (not fa.through or not fb.through) then
   return false,"Bolt/pin installation currently requires through holes"
  end
+ local world=FORGE:GetService("OpenWorksWorld")
+ if not world or not world.SourceFrame then
+  return false,"Server manufacturing compiler unavailable"
+ end
+ local frameA=world:SourceFrame(player,idA,a)
+ local frameB=world:SourceFrame(player,idB,b)
+ if not frameA or not frameB then
+  return false,"Both installed components must have valid manufactured geometry"
+ end
+ local fitting,whyFit=Matcher.validateRelative(fa,fb,relativePose,frameA,frameB)
+ if not fitting then return false,whyFit end
  local graph=graphFor(self,player)
  if #graph:list()>=MAX_JOINTS then
   return false,"Assembly relationship limit reached"
@@ -77,7 +88,6 @@ function Service:Install(player:Player,kind:any,idA:any,featureA:any,
  joint.relativePose=relativePose
  local documents=FORGE:GetService("OpenWorksDocuments")
  if documents and documents.Changed then documents:Changed(player,nil,false) end
- local world=FORGE:GetService("OpenWorksWorld")
  if world and world.RefreshJoints then
   task.defer(function()world:RefreshJoints(player)end)
  end
