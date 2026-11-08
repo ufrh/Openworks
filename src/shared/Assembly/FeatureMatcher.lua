@@ -125,6 +125,23 @@ function Matcher.pattern(a:{any},b:{any},poseA:CFrame,poseB:CFrame,
    CFrame.new(-centerA)*target
   table.insert(matched,second.pair)
  end
+ -- Extra holes join the same pattern only if the SINGLE solved rigid
+ -- target also fits their centers within bore clearance.
+ local usedA={[fa.id]=true}
+ local usedB={[fb.id]=true}
+ if second then
+  usedA[second.pair.a.id]=true
+  usedB[second.pair.b.id]=true
+ end
+ for _,pair in ipairs(pairs) do
+  if usedA[pair.a.id] or usedB[pair.b.id] then continue end
+  local wa=poseA:PointToWorldSpace(pair.a.componentLocalCenter)
+  local wb=target:PointToWorldSpace(pair.b.componentLocalCenter)
+  if (wa-wb).Magnitude<=math.max(.04,pair.a.diameter*.35) then
+   table.insert(matched,pair)
+   usedA[pair.a.id]=true usedB[pair.b.id]=true
+  end
+ end
  return {targetPose=target,pairs=matched,score=first.score,
   axis=axisA,hasTwistAnchor=second~=nil}
 end
