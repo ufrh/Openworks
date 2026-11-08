@@ -286,7 +286,7 @@ function Document:addOperation(component, kind: string, data)
 			return false, "Drill depth must be between 5 mm and 128 studs"
 		end
 		local snap=if typeof(data.snap)=="number" and Quantize.isFinite(data.snap)
-   and data.snap>=0.01 and data.snap<=2 then data.snap else Quantize.Grid
+   and data.snap>=Quantize.Size and data.snap<=2 then data.snap else Quantize.Grid
   local x=Quantize.snap(data.x+node.size.X*0.5,snap)
   local z=Quantize.snap(data.z+node.size.Z*0.5,snap)
 		if x < 0 or x > node.size.X or z < 0 or z > node.size.Z then
