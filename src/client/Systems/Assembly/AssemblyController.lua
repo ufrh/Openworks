@@ -237,6 +237,10 @@ function Controller:Enter()
  local state=self:_state()
  if state then
   state.projection.holePicker=function(ray:Ray):boolean return self:_pickRay(ray) end
+  self.manipulator.onActiveChanged=function(active:boolean)
+   state.projection.precisionManipulating=active
+   if active then state.projection:_stopAssemblyDrag() end
+  end
  end
  self:_refreshMarkers()
  -- Recreate only actual hardware-backed saved relationships.
@@ -274,8 +278,12 @@ function Controller:Exit()
  self.active=false
  self.gui.Enabled=false
  local state=self.bridge.getAssemblyState()
- if state then state.projection.holePicker=nil end
+ if state then
+  state.projection.holePicker=nil
+  state.projection.precisionManipulating=false
+ end
  self.manipulator:select(nil)
+ self.manipulator.onActiveChanged=nil
  self:_clearMarkers()
  for _,objects in pairs(self.fixtures) do Compiler.destroy(objects) end
  table.clear(self.fixtures)
