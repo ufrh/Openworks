@@ -156,7 +156,7 @@ function Service:ApplyTransform(player:Player,id:any,revision:any,
   return false,"Invalid transformation"
  end
  local step=if typeof(snap)=="number" and Quantize.isFinite(snap)
-  and snap>=.01 and snap<=2 then snap else Quantize.Grid
+  and snap>=Quantize.Size and snap<=2 then snap else Quantize.Grid
  remember(self,player,component)
  local ok,valid,reason=pcall(function()
   return doc:applyTransform(component,nodeId,position,size,rotation,
