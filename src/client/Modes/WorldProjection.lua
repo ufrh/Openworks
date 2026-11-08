@@ -143,11 +143,25 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,
   -- All translation from editing into the world uses the original component
   -- workspace origin; player-physics displacement is independent of geometry.
   local origin=component.worldOrigin or workspaceData.worldCorner
-  local destination=if free then origin
-   else targetCorner+(origin-workspaceData.worldCorner)
   local editOrigin=component.workspaceOrigin or workspaceData.editCorner
-  local offset=destination-editOrigin
-  local desiredBase=CFrame.new(offset)*sourceModel:GetPivot()
+  local sourcePivot=sourceModel:GetPivot()
+  local desiredBase:CFrame
+  if free then
+   desiredBase=CFrame.new(origin-editOrigin)*sourcePivot
+  else
+   -- Each workpiece starts in its own slot above the stage. Reusing
+   -- Free-mode origins made separately created solids spawn intersecting.
+   local index=1
+   for i,componentId in ipairs(document.order) do
+    if componentId==component.id then index=i break end
+   end
+   local slot=Vector3.new(
+    ((index-1)%3-1)*7,
+    math.max(.3,source.Size.Y*.5+.15),
+    math.floor((index-1)/3)*7)
+   desiredBase=CFrame.new(targetCorner+Vector3.new(workspaceData.size.X*.5,0,
+    workspaceData.size.Z*.5)+slot)*sourcePivot.Rotation
+  end
   -- On an unchanged Free body, leave physics completely untouched. Other
   -- CSG jobs finishing must not interrupt an active physical drag.
   local matchingMode=self.mode==(if free then "Free" else "Assembly")
@@ -233,9 +247,9 @@ function WorldProjection:_beginAssemblyDrag()
  align.Attachment0=attachment
  align.Attachment1=targetAttachment
  align.Mode=Enum.PositionAlignmentMode.TwoAttachment
- align.MaxForce=math.clamp(selectedPart:GetMass()*20000,2000,500000)
- align.MaxVelocity=80
- align.Responsiveness=30
+ align.MaxForce=math.clamp(selectedPart:GetMass()*900,120,18000)
+ align.MaxVelocity=3
+ align.Responsiveness=10
  align.RigidityEnabled=false
  align.Parent=selectedPart
  self.assemblyDrag={target=target,attachment=attachment,
