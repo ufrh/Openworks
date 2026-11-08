@@ -1,6 +1,6 @@
 --!strict
 -- FORGE Q3: feature-retained mechanical relationships owned by the server.
--- Hole proximity suggests mating; ONLY explicit Install creates a joint.
+-- Installation requires an authored, physically placed cylinder through two bores.
 local RS=game:GetService("ReplicatedStorage")
 local Players=game:GetService("Players")
 local FORGE=require(RS:WaitForChild("FORGE"))
@@ -8,6 +8,7 @@ local Assembly=RS:WaitForChild("Openworks"):WaitForChild("Assembly")
 local FORM=RS.Openworks:WaitForChild("FORM")
 local Graph=require(Assembly.RelationshipGraph)
 local Matcher=require(Assembly.FeatureMatcher)
+local ShaftFit=require(Assembly.ShaftFit)
 local Features=require(FORM.Features)
 local Service=FORGE.Service("OpenWorksAssembly")
 local MAX_JOINTS=128
@@ -37,29 +38,42 @@ function Service:ListJoints(player:Player)
  return true,graphFor(self,player):list()
 end
 function Service:Install(player:Player,kind:any,idA:any,featureA:any,
- idB:any,featureB:any,relativePose:any)
+ idB:any,featureB:any,shaftId:any,relativePose:any,shaftRelative:any)
  if typeof(kind)~="string" or typeof(idA)~="number"
   or typeof(idB)~="number" or idA%1~=0 or idB%1~=0
   or idA==idB or typeof(featureA)~="string"
-  or typeof(featureB)~="string" then
+  or typeof(featureB)~="string" or typeof(shaftId)~="number"
+  or shaftId%1~=0 or shaftId==idA or shaftId==idB then
   return false,"Invalid mechanical installation"
  end
  local document=ownDocuments(player)
  if not document then return false,"No manufactured components" end
  local a,b=document.components[idA],document.components[idB]
- if not a or not b then return false,"Both components must be owned" end
+ local shaft=document.components[shaftId]
+ if not a or not b or not shaft then
+  return false,"Two bodies and a manufactured shaft must be owned" end
+ if shaft.nodes[1].kind~="Cylinder" or #shaft.operations>0 then
+  return false,"The connector must be a manufactured uncut cylinder"
+ end
  local fa=Features.get(a,featureA)
  local fb=Features.get(b,featureB)
  if not fa or not fb or not Matcher.compatible(fa,fb) then
   return false,"Only compatible drilled features can be mated"
  end
  if not Graph.Types[kind] then return false,"Unknown mechanical relationship" end
- if typeof(relativePose)~="CFrame" or relativePose.Position.Magnitude>16 then
+ if (kind~="Rigid" and kind~="Revolute") then
+  return false,"Only shaft-based rigid and hinge joints are installed here"
+ end
+ if typeof(relativePose)~="CFrame" or relativePose.Position.Magnitude>16
+  or typeof(shaftRelative)~="CFrame"
+  or shaftRelative.Position.Magnitude>16 then
   return false,"Install needs a valid relative physical assembly pose"
  end
- for _,value in ipairs({relativePose:GetComponents()}) do
+ for _,frame in ipairs({relativePose,shaftRelative}) do
+  for _,value in ipairs({frame:GetComponents()}) do
   if value~=value or value==math.huge or value==-math.huge then
    return false,"Invalid component pose"
+  end
   end
  end
  if (kind=="Rigid" or kind=="Revolute") and
@@ -72,10 +86,12 @@ function Service:Install(player:Player,kind:any,idA:any,featureA:any,
  end
  local frameA=world:SourceFrame(player,idA,a)
  local frameB=world:SourceFrame(player,idB,b)
- if not frameA or not frameB then
+ local frameS=world:SourceFrame(player,shaftId,shaft)
+ if not frameA or not frameB or not frameS then
   return false,"Both installed components must have valid manufactured geometry"
  end
- local fitting,whyFit=Matcher.validateRelative(fa,fb,relativePose,frameA,frameB)
+ local fitting,whyFit=ShaftFit.validate(fa,fb,relativePose,
+  frameA,frameB,shaft.nodes[1].size,shaftRelative)
  if not fitting then return false,whyFit end
  local graph=graphFor(self,player)
  if #graph:list()>=MAX_JOINTS then
@@ -83,9 +99,10 @@ function Service:Install(player:Player,kind:any,idA:any,featureA:any,
  end
  local joint,why=graph:add(kind,
   {componentId=idA,featureId=featureA},
-  {componentId=idB,featureId=featureB})
+  {componentId=idB,featureId=featureB},nil,shaftId)
  if not joint then return false,why end
  joint.relativePose=relativePose
+ joint.shaftRelative=shaftRelative
  local documents=FORGE:GetService("OpenWorksDocuments")
  if documents and documents.Changed then documents:Changed(player,nil,false) end
  if world and world.RefreshJoints then
@@ -139,8 +156,9 @@ function Service:Restore(player:Player,joints:any)
  for id,joint in pairs(graph.joints) do
   local a=doc and doc.components[joint.a.componentId]
   local b=doc and doc.components[joint.b.componentId]
-  if not a or not b or not
-   Matcher.compatible(Features.get(a,joint.a.featureId),
+  local shaft=doc and doc.components[joint.shaftId]
+  if not a or not b or not shaft or shaft.nodes[1].kind~="Cylinder"
+   or not Matcher.compatible(Features.get(a,joint.a.featureId),
     Features.get(b,joint.b.featureId)) then
    graph.joints[id]=nil
   end
