@@ -157,10 +157,15 @@ For the sealed-room and sketch visual checks, run `scripts/VERIFY_EDIT_CHAMBER.l
 
 ## Q3 assembly implementation
 
-Assembly Mode now supports physically draggable workpieces, force-limited
-hole alignment, **explicit** Bolt/Rigid and Pin/Revolute installation,
-multi-hole matching, joint removal and hinge motor controls. A match
-never creates a joint on its own. The server validates actual manufactured
+Assembly Mode supports physically draggable workpieces and **explicit
+two-hole selection**: click the glowing marker on the first component,
+then the marker on a second component. If the bore diameters are compatible
+and their centers are within 0.75 studs (210 mm), the second click snaps
+the two hole axes into alignment. There is no automatic/magnetic alignment
+force. The aligned pair is held temporarily until the user installs a
+**Bolt/Rigid** or **Pin/Revolute** joint, or starts dragging again. A fit
+never creates a joint on its own. Joint removal and hinge motor controls
+remain available. The server validates actual manufactured
 hole source frames before accepting installation. The relationship graph
 also models prismatic/cylindrical/ball joints, whose player controls
 are not yet exposed. Bolts/pins have simplified metallic visuals;
