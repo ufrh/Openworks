@@ -125,14 +125,15 @@ function Manipulator:_move(face:Enum.NormalId,distance:number)
  if not drag or drag.kind~="Move" or not DIRECTIONS[face] then return end
  local direction=drag.start:VectorToWorldSpace(DIRECTIONS[face])
  local delta=math.round(distance/STEP)*STEP
- (drag.drive::AlignPosition).Position=drag.start.Position+direction*delta
+ local drive=drag.drive::AlignPosition
+ drive.Position=drag.start.Position+direction*delta
 end
 function Manipulator:_rotate(axis:Enum.Axis,angle:number)
  local drag=self.drag
  if not drag or drag.kind~="Rotate" or not AXES[axis] then return end
  local snapped=math.round(angle/ROTATION_STEP)*ROTATION_STEP
- (drag.drive::AlignOrientation).CFrame=
-  drag.start*CFrame.fromAxisAngle(AXES[axis],snapped)
+ local drive=drag.drive::AlignOrientation
+ drive.CFrame=drag.start*CFrame.fromAxisAngle(AXES[axis],snapped)
 end
 function Manipulator:Destroy()
  self:select(nil)
