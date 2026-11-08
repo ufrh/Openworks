@@ -8,6 +8,8 @@ local FORGE=require(ReplicatedStorage:WaitForChild("FORGE"))
 local FORM=ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Document=require(FORM.Document)
 local Quantize=require(FORM.Quantize)
+local Store=require(script.Parent.Parent.Persistence.DocumentStore)
+local HttpService=game:GetService("HttpService")
 local Service=FORGE.Service("OpenWorksDocuments")
 
 local MAX_COMPONENTS=96
@@ -25,9 +27,38 @@ local function finiteSize(value:any):boolean
 end
 local function getDocument(self:any,player:Player):any
  local current=self.documents[player]
- if not current then
-  current=Document.new()
-  self.documents[player]=current
+ if current then return current end
+ -- Only one load for each player; simultaneous first RPCs wait for it.
+ while self.loading[player] do
+  task.wait()
+  current=self.documents[player]
+  if current then return current end
+ end
+ self.loading[player]=true
+ current=Document.new()
+ local payload,err=self.store:load(player.UserId)
+ if err then warn("[OPENWORKS] Load failed for "..player.UserId..": "..err) end
+ if payload and type(payload.components)=="table" then
+  for i,snapshot in ipairs(payload.components) do
+   if i>96 then break end
+   local ok,why=pcall(function()
+    if type(snapshot)=="table" and type(snapshot.operations)=="table"
+     and #snapshot.operations<=256 then
+     current:adoptSnapshot(snapshot)
+    end
+   end)
+   if not ok then warn("[OPENWORKS] Skipped saved component: "..tostring(why)) end
+  end
+ end
+ self.documents[player]=current
+ self.loading[player]=nil
+ if payload then
+  local assembly=FORGE:GetService("OpenWorksAssembly")
+  if assembly and assembly.Restore then
+   assembly:Restore(player,payload.joints)
+  end
+  local world=FORGE:GetService("OpenWorksWorld")
+  if world and world.RestorePoses then world:RestorePoses(player,payload.poses) end
  end
  return current
 end
@@ -61,6 +92,14 @@ end
 function Service:Init()
  self.documents={}
  self.history={}
+ self.loading={}
+ self.dirty={}
+ self.sequence={}
+ self.savedAt={}
+ self.saveErrors={}
+ self.store=Store.new()
+ self.sessionId=HttpService:GenerateGUID(false)
+ self.running=false
  self:Expose("CreateSketchBody")
  self:Expose("GetSnapshot")
  self:Expose("ListSnapshots")
@@ -73,10 +112,73 @@ function Service:Init()
  self:Expose("UndoOperation")
  self:Expose("DeleteComponent")
  self:Expose("RestoreRevision")
+ self:Expose("SaveNow")
+ self:Expose("GetSaveStatus")
  self:Track(Players.PlayerRemoving:Connect(function(player)
+  self:SaveNow(player)
   self.documents[player]=nil
   self.history[player]=nil
+  self.loading[player]=nil
+  self.dirty[player]=nil
+  self.sequence[player]=nil
+  self.savedAt[player]=nil
+  self.saveErrors[player]=nil
  end))
+end
+function Service:Start()
+ self.running=true
+ task.spawn(function()
+  while self.running do
+   task.wait(120)
+   if not self.running then break end
+   for player in pairs(self.documents) do
+    if player.Parent and self.dirty[player] then
+     self:SaveNow(player)
+    end
+   end
+  end
+ end)
+end
+function Service:Changed(player:Player,id:number?,geometry:boolean?)
+ self.dirty[player]=true
+ self.sequence[player]=(self.sequence[player] or 0)+1
+ if geometry and id then
+  local world=FORGE:GetService("OpenWorksWorld")
+  if world and world.QueuePublish then world:QueuePublish(player,id) end
+ end
+end
+function Service:SaveNow(player:Player)
+ local doc=self.documents[player]
+ if not doc then return true,"Nothing to save" end
+ local components={}
+ for _,id in ipairs(doc.order) do
+  local component=doc.components[id]
+  if component then table.insert(components,Document.snapshot(component)) end
+ end
+ local assembly=FORGE:GetService("OpenWorksAssembly")
+ local graph=assembly and assembly.graphs[player]
+ local world=FORGE:GetService("OpenWorksWorld")
+ local poses=world and world:PoseSnapshot(player) or {}
+ local payload={version=1,sessionId=self.sessionId,
+  sequence=self.sequence[player] or 0,components=components,
+  joints=graph and graph:list() or {},poses=poses}
+ local ok,reason=self.store:save(player.UserId,payload)
+ if ok then
+  self.savedAt[player]=os.time()
+  self.dirty[player]=false
+  self.saveErrors[player]=nil
+  FORGE.Metric("OpenWorks.Save.Success"):Add(1)
+ else
+  self.saveErrors[player]=tostring(reason)
+  FORGE.Metric("OpenWorks.Save.Failures"):Add(1)
+ end
+ return ok,if ok then "Saved" else reason
+end
+function Service:GetSaveStatus(player:Player)
+ return true,{dirty=self.dirty[player]==true,
+  lastSaved=self.savedAt[player] or 0,
+  error=self.saveErrors[player] or "",
+  studioDisabled=self.store.disabled==true}
 end
 
 function Service:CreateSketchBody(player:Player,name:any,worldOrigin:any,
@@ -103,6 +205,7 @@ function Service:CreateSketchBody(player:Player,name:any,worldOrigin:any,
  if not component then return false,reason end
  component.worldOrigin=worldOrigin
  remember(self,player,component)
+ self:Changed(player,component.id,true)
  return true,Document.snapshot(component)
 end
 
@@ -119,6 +222,7 @@ function Service:ApplyOperation(player:Player,id:any,revision:any,kind:any,data:
  end)
  if not ok then return false,tostring(valid) end
  if not valid then return false,reason end
+ self:Changed(player,component.id,true)
  return true,Document.snapshot(component)
 end
 
@@ -132,6 +236,7 @@ function Service:SetOperationEnabled(player:Player,id:any,revision:any,
  remember(self,player,component)
  local ok,reason=doc:setOperationEnabled(component,operationId,enabled)
  if not ok then return false,reason end
+ self:Changed(player,component.id,true)
  return true,Document.snapshot(component)
 end
 
@@ -142,6 +247,7 @@ function Service:RemoveOperation(player:Player,id:any,revision:any,operationId:a
  remember(self,player,component)
  local ok,reason=doc:removeOperation(component,operationId)
  if not ok then return false,reason end
+ self:Changed(player,component.id,true)
  return true,Document.snapshot(component)
 end
 
@@ -164,6 +270,7 @@ function Service:ApplyTransform(player:Player,id:any,revision:any,
  end)
  if not ok then return false,tostring(valid) end
  if not valid then return false,reason end
+ self:Changed(player,component.id,true)
  return true,Document.snapshot(component)
 end
 
@@ -181,6 +288,7 @@ function Service:EditNode(player:Player,id:any,revision:any,index:any,
  end)
  if not ok then return false,tostring(valid) end
  if not valid then return false,reason end
+ self:Changed(player,component.id,true)
  return true,Document.snapshot(component)
 end
 
@@ -193,6 +301,7 @@ function Service:SetNotes(player:Player,id:any,revision:any,notes:any)
  remember(self,player,component)
  local ok,reason=doc:setNotes(component,notes)
  if not ok then return false,reason end
+ self:Changed(player,component.id,false)
  return true,Document.snapshot(component)
 end
 
@@ -202,6 +311,7 @@ function Service:UndoOperation(player:Player,id:any,revision:any)
  remember(self,player,component)
  local ok,reason=doc:undoOperation(component)
  if not ok then return false,reason end
+ self:Changed(player,component.id,true)
  return true,Document.snapshot(component)
 end
 
@@ -211,6 +321,7 @@ function Service:DeleteComponent(player:Player,id:any,revision:any)
  doc:removeComponent(component.id)
  local byPlayer=self.history[player]
  if byPlayer then byPlayer[id]=nil end
+ self:Changed(player,id,false)
  return true,nil
 end
 
@@ -231,6 +342,7 @@ function Service:RestoreRevision(player:Player,id:any,revision:any,
  if not doc:restoreSnapshot(component,accepted) then
   return false,"Unable to restore saved component"
  end
+ self:Changed(player,component.id,true)
  return true,Document.snapshot(component)
 end
 
@@ -252,7 +364,14 @@ function Service:ListSnapshots(player:Player)
  return true,result
 end
 
+function Service:SaveAll()
+ for player in pairs(self.documents) do
+  self:SaveNow(player)
+ end
+end
 function Service:Stop()
+ self.running=false
+ self:SaveAll()
  self.documents={}
  self.history={}
 end
