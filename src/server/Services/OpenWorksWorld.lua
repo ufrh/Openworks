@@ -222,16 +222,22 @@ function Service:RefreshJoints(player:Player)
  end
  for _,joint in ipairs(graph:list()) do
   local a,b=parts[joint.a.componentId],parts[joint.b.componentId]
-  if not a or not b then continue end
+  local shaft=parts[joint.shaftId]
+  if not a or not b or not shaft then continue end
   local previous=applied[joint.id]
   if typeof(joint.relativePose)=="CFrame"
-   and (not previous or previous.a~=a or previous.b~=b) then
-   -- Only move into the authored installed pose once, or when one
-   -- of the manufactured physical bodies is actually replaced.
-   b.Anchored=true b.CFrame=a.CFrame*joint.relativePose
-   b.Anchored=false
+   and typeof(joint.shaftRelative)=="CFrame"
+   and (not previous or previous.a~=a or previous.b~=b
+    or previous.shaft~=shaft) then
+   -- Reconstruct the already-validated physical assembly in the
+   -- published world, including its player-manufactured third part.
+   b.Anchored=true shaft.Anchored=true
+   b.CFrame=a.CFrame*joint.relativePose
+   shaft.CFrame=a.CFrame*joint.shaftRelative
+   b.Anchored=false shaft.Anchored=false
    pcall(function()b:SetNetworkOwner(nil)end)
-   applied[joint.id]={a=a,b=b}
+   pcall(function()shaft:SetNetworkOwner(nil)end)
+   applied[joint.id]={a=a,b=b,shaft=shaft}
   end
   local objects,reason=JointCompiler.compile(joint,parts,
    document.components,features,self:bucket(player))
