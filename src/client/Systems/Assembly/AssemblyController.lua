@@ -6,7 +6,6 @@ local RS=game:GetService("ReplicatedStorage")
 local Features=require(RS:WaitForChild("Openworks"):WaitForChild("FORM").Features)
 local Matcher=require(RS.Openworks.Assembly.FeatureMatcher)
 local MAX_PAIR_DISTANCE=.75 -- studs (210 mm), measured between bore centers
-local Assist=require(script.Parent.AlignmentAssist)
 local Compiler=require(RS.Openworks.Assembly.ConstraintCompiler)
 local Controller={}
 Controller.__index=Controller
@@ -62,7 +61,7 @@ function Controller.new(bridge:any,remote:any,documents:any,world:any)
  local status=label(panel,"Hole markers align on second click; bolt or pin is explicit.",98)
  status.Size=UDim2.new(1,-20,0,44)
  local self=setmetatable({bridge=bridge,remote=remote,
-  gui=gui,choices=choices,status=status,assist=Assist.new(),
+  gui=gui,choices=choices,status=status,
   documents=documents,world=world,
   a=nil,b=nil,active=false,step=0,lastMatch=nil,lastJoint=nil,
   pickedHole=nil,markers={},markerRoot=nil,fixtures={}},Controller)
@@ -235,7 +234,6 @@ function Controller:pickHole(id:number,featureId:string)
  self.a=first.id self.b=id
  self.lastMatch={pairs={{a=fa,b=feature,distance=0}},targetPose=targetPose}
  self.pickedHole=nil
- self.assist:release()
  self.choices.Text="A: "..tostring(self.a).." / "..fa.id..
   "   B: "..tostring(self.b).." / "..feature.id
  self:_report("Holes aligned. Install Bolt (rigid) or Pin (hinge) to connect.")
@@ -244,8 +242,7 @@ end
 
 function Controller:Enter()
  self.active=true self.step=0 self.a=nil self.b=nil
- self.pickedHole=nil self.lastMatch=nil self.assist:release()
- self.gui.Enabled=true
+ self.pickedHole=nil self.lastMatch=nil self.gui.Enabled=true
  self.bridge.enterAssembly()
  self.choices.Text="Click a hole on A, then a hole on B."
  self:_report("Drag bodies freely, then click two blue hole markers to align.")
@@ -291,7 +288,6 @@ function Controller:Exit()
  if state then state.projection.holePicker=nil end
  self:_clearMarkers()
  self.pickedHole=nil self.lastMatch=nil
- self.assist:release()
  for _,objects in pairs(self.fixtures) do Compiler.destroy(objects) end
  table.clear(self.fixtures)
  self.bridge.leaveAssembly()
@@ -340,7 +336,6 @@ function Controller:install(kind:string)
  end
  self.lastJoint=record.id
  self.lastMatch=nil
- self.assist:release()
  -- The stage receives the same physical relation as the published world.
  local features={
   [self.a]={[pair.a.id]=pair.a},
@@ -395,6 +390,6 @@ function Controller:stats()
   if data.busy then "Manufacturing..." else data.error or "Idle"))
 end
 function Controller:Destroy()
- self:Exit() self.assist:Destroy() self.gui:Destroy()
+ self:Exit() self.gui:Destroy()
 end
 return Controller
