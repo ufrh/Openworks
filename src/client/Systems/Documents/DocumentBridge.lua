@@ -28,6 +28,18 @@ function DocumentBridge:adopt(ok:boolean,snapshot:any):(boolean,string?)
  return component~=nil,err
 end
 
+function DocumentBridge:load(): (boolean,string?)
+ if not self.remote then return true,nil end
+ local ok,snapshots=self:request("ListSnapshots")
+ if not ok then return false,tostring(snapshots) end
+ if type(snapshots)~="table" then return false,"Invalid server document listing" end
+ for _,snapshot in ipairs(snapshots) do
+  local component,err=self.document:adoptSnapshot(snapshot)
+  if not component then return false,tostring(err) end
+ end
+ return true,nil
+end
+
 function DocumentBridge:attach()
  local document=self.document
  local bridge=self
