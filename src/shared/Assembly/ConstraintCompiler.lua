@@ -1,6 +1,7 @@
 --!strict
 -- The only module that turns installed relationship records into Roblox
 -- joints. Temporary alignment is never allowed to call this compiler.
+local Hardware=require(script.Parent.FastenerSystem)
 local Compiler={}
 local function frame(feature:any):CFrame
  local axis=feature.componentLocalAxis.Unit
@@ -78,6 +79,9 @@ function Compiler.compile(record:any,parts:any,components:any,
  constraint.Name="OW_Relationship_"..record.id
  constraint.Parent=parent
  table.insert(out,constraint)
+ for _,object in ipairs(Hardware.create(record,a,fa,att0,parent)) do
+  table.insert(out,object)
+ end
  return out,nil
 end
 function Compiler.destroy(instances:{Instance}?)
