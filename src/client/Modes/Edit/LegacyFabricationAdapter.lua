@@ -390,7 +390,8 @@ function Debug.start(options:any?)
 				then AssemblyEnvironment.Center-
 					Vector3.new(currentWorkspace.size.X*0.5,0,currentWorkspace.size.Z*0.5)
 				else nil
-			worldProjection:show(preview,document,currentWorkspace,stageCorner)
+			worldProjection:show(preview,document,currentWorkspace,stageCorner,
+				stageCorner~=nil)
 		end
 		if id == selectedId then
    -- Grid visibility is an explicit Edit preference, not tied to
