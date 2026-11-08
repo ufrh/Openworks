@@ -429,6 +429,24 @@ function Debug.start(options:any?)
   end
  end)
 
+ -- Restore the previously saved source document before exposing any tools.
+ -- Preview compilation is asynchronous, so the player remains responsive.
+ if #document.order>0 then
+  local lastId=document.order[#document.order]
+  local saved=document.components[lastId]
+  if saved and saved.nodes[1] then
+   selectedId=lastId
+   nodeIndex=#saved.nodes
+   currentWorkspace=EditWorkspace.new(
+    saved.worldOrigin or saved.workspaceOrigin or Vector3.zero,
+    saved.workspaceSize or saved.nodes[1].size,saved.name)
+  end
+  for _,id in ipairs(document.order) do
+   local component=document.components[id]
+   if component then preview:render(component) end
+  end
+ end
+
 	local function selectComponent(id: number?)
 		if id~=selectedId then toolVisualizer:stopAnimation() end
 		selectedId = id
