@@ -12,5 +12,7 @@ end,debug.traceback)
 if not ok then error("[OPENWORKS] FORGE server startup failed: "..tostring(err)) end
 print("[OPENWORKS] FORGE "..tostring(FORGE.Version).." SERVER READY")
 game:BindToClose(function()
+ local docs=FORGE:GetService("OpenWorksDocuments")
+ if docs and docs.SaveAll then docs:SaveAll() end
  FORGE.Shutdown()
 end)
