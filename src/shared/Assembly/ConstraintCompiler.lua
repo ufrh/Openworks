@@ -1,12 +1,9 @@
 --!strict
--- The only module that turns installed relationship records into Roblox
--- joints. Temporary alignment is never allowed to call this compiler.
-local Hardware=require(script.Parent.FastenerSystem)
+-- Physical fasteners are manufactured components. This compiler never
+-- spawns a decorative pin or bolt and never disables part collisions.
 local Compiler={}
 local function frame(feature:any):CFrame
  local axis=feature.componentLocalAxis.Unit
- -- Hinge/Prismatic/Cylindrical constraints operate on Attachment.Axis,
- -- which is the attachment's local X axis (not local Z).
  local y=axis:Cross(Vector3.yAxis)
  if y.Magnitude<.02 then y=axis:Cross(Vector3.zAxis) end
  y=y.Unit
@@ -19,73 +16,67 @@ local function attachment(part:BasePart,component:any,feature:any,
  local rotated=CFrame.new(node.position)*CFrame.fromOrientation(
   math.rad(node.rotation.X),math.rad(node.rotation.Y),
   math.rad(node.rotation.Z))
- local sourceFrame=part:GetAttribute("OWSourceLocalFrame")
- if typeof(sourceFrame)~="CFrame" then sourceFrame=CFrame.identity end
+ local source=part:GetAttribute("OWSourceLocalFrame")
+ if typeof(source)~="CFrame" then source=CFrame.identity end
  local a=Instance.new("Attachment")
  a.Name=name
- -- Source CSG part CFrame is relative to node pose, not to the
- -- component workbench's origin.
- a.CFrame=(rotated*sourceFrame):ToObjectSpace(rotated*frame(feature))
+ a.CFrame=(rotated*source):ToObjectSpace(rotated*frame(feature))
  a.Parent=part
  return a
+end
+local function weld(a:BasePart,b:BasePart,name:string,parent:Instance):WeldConstraint
+ local w=Instance.new("WeldConstraint")
+ w.Name=name w.Part0=a w.Part1=b w.Parent=parent
+ return w
 end
 function Compiler.compile(record:any,parts:any,components:any,
  features:any,parent:Instance):({Instance}?,string?)
  local ca=components[record.a.componentId]
  local cb=components[record.b.componentId]
+ local cs=components[record.shaftId]
  local a=parts[record.a.componentId]
  local b=parts[record.b.componentId]
+ local shaft=parts[record.shaftId]
  local fa=features[record.a.componentId] and
   features[record.a.componentId][record.a.featureId]
  local fb=features[record.b.componentId] and
   features[record.b.componentId][record.b.featureId]
- if not ca or not cb or not a or not b or not fa or not fb then
-  return nil,"Joint source component/hole not published"
+ if not ca or not cb or not cs or not a or not b or not shaft
+  or not fa or not fb or cs.nodes[1].kind~="Cylinder" then
+  return nil,"Joint requires two drilled bodies and the manufactured shaft"
  end
- local att0=attachment(a,ca,fa,"OW_A_"..record.id)
- local att1=attachment(b,cb,fb,"OW_B_"..record.id)
- local out={att0,att1}
- local constraint:Instance
+ if record.kind~="Rigid" and record.kind~="Revolute" then
+  return nil,"Unsupported physical connection"
+ end
+ local attA=attachment(a,ca,fa,"OW_A_"..record.id)
+ local attB=attachment(b,cb,fb,"OW_B_"..record.id)
+ local attS=Instance.new("Attachment")
+ attS.Name="OW_Shaft_"..record.id
+ attS.CFrame=shaft.CFrame:ToObjectSpace(attB.WorldCFrame)
+ attS.Parent=shaft
+ local objects={attA,attB,attS}
+ -- Shaft is mechanically fixed to the first body. The second body
+ -- either locks onto the shaft or rotates on it as a bearing.
+ table.insert(objects,weld(a,shaft,"OW_ShaftRetention_"..record.id,parent))
  if record.kind=="Rigid" then
-  local weld=Instance.new("WeldConstraint")
-  weld.Part0=a
-  weld.Part1=b
-  constraint=weld
- elseif record.kind=="Revolute" then
-  local h=Instance.new("HingeConstraint")
-  h.Attachment0=att0 h.Attachment1=att1
-  h.LimitsEnabled=record.limits and record.limits.enabled==true or false
-  if h.LimitsEnabled then
-   h.LowerAngle=math.clamp(record.limits.min or -180,-180,180)
-   h.UpperAngle=math.clamp(record.limits.max or 180,-180,180)
-  end
-  constraint=h
- elseif record.kind=="Prismatic" then
-  local h=Instance.new("PrismaticConstraint")
-  h.Attachment0=att0 h.Attachment1=att1
-  constraint=h
- elseif record.kind=="Cylindrical" then
-  local h=Instance.new("CylindricalConstraint")
-  h.Attachment0=att0 h.Attachment1=att1
-  constraint=h
- elseif record.kind=="Ball" then
-  local h=Instance.new("BallSocketConstraint")
-  h.Attachment0=att0 h.Attachment1=att1
-  constraint=h
+  table.insert(objects,weld(shaft,b,"OW_RigidThroughShaft_"..record.id,parent))
  else
-  att0:Destroy() att1:Destroy()
-  return nil,"Unsupported relationship"
+  local hinge=Instance.new("HingeConstraint")
+  hinge.Name="OW_ShaftBearing_"..record.id
+  hinge.Attachment0=attS
+  hinge.Attachment1=attB
+  hinge.LimitsEnabled=record.limits and record.limits.enabled==true or false
+  if hinge.LimitsEnabled then
+   hinge.LowerAngle=math.clamp(record.limits.min or -180,-180,180)
+   hinge.UpperAngle=math.clamp(record.limits.max or 180,-180,180)
+  end
+  hinge.Parent=parent
+  table.insert(objects,hinge)
  end
- constraint.Name="OW_Relationship_"..record.id
- constraint.Parent=parent
- table.insert(out,constraint)
- for _,object in ipairs(Hardware.create(record,a,fa,att0,parent)) do
-  table.insert(out,object)
- end
- return out,nil
+ return objects,nil
 end
-function Compiler.destroy(instances:{Instance}?)
- for _,obj in ipairs(instances or {}) do
+function Compiler.destroy(objects:{Instance}?)
+ for _,obj in ipairs(objects or {}) do
   if obj.Parent then obj:Destroy() end
  end
 end
