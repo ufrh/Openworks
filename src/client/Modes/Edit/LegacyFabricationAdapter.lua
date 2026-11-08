@@ -578,6 +578,11 @@ local snapRow=row(32)
 		if options.onFreeRequested then options.onFreeRequested() end
 		if placementFlow then placementFlow:open() end
 	end)
+ button(row(29),"Save Workshop (FORGE)",0,1,function()
+  local ok,msg=documentBridge:request("SaveNow",true)
+  if ok then message("Workshop saved") else
+   message("Workshop save: "..tostring(msg)) end
+ end)
 	local notesButton=button(row(29),"Notepad (component notes)",0,1,function() end)
 	local notesContainer=row(116)
 	notesContainer.Visible=false
