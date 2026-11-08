@@ -57,6 +57,10 @@ function Debug.start(options:any?)
 	local playerGui = player:WaitForChild("PlayerGui")
 	local document = Document.new()
  local documentBridge=DocumentBridge.new(document,options.documents)
+ local loaded,loadIssue=documentBridge:load()
+ if not loaded then
+  warn("[OPENWORKS] Unable to hydrate server documents: "..tostring(loadIssue))
+ end
 	local characterMode=CharacterMode.new(player)
 	local editorActive=false
  local previewOnly=false
