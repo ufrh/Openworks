@@ -73,6 +73,7 @@ function Graph:restore(source:any)
     a={componentId=j.a.componentId,featureId=j.a.featureId},
     b={componentId=j.b.componentId,featureId=j.b.featureId},
     limits=if type(j.limits)=="table" then table.clone(j.limits) else {},
+    relativePose=if typeof(j.relativePose)=="CFrame" then j.relativePose else nil,
     installed=true,
     actuation=if type(j.actuation)=="table" then table.clone(j.actuation)
      else {enabled=false,speed=0,torque=0},
