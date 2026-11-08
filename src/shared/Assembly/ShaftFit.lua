@@ -41,7 +41,10 @@ function Fit.validate(fa:any,fb:any,relativeB:CFrame,
  local frameB=relativeB*sourceB:Inverse()*Matcher.frame(fb)
  local axis=shaftRelative.XVector.Unit
  local center=shaftRelative.Position
- for _,bore in ipairs({frameA,frameB}) do
+ for _,pair in ipairs({
+  {frame=frameA,feature=fa},{frame=frameB,feature=fb},
+ }) do
+  local bore=pair.frame
   local boreAxis=bore.ZVector.Unit
   local angle=math.acos(math.clamp(math.abs(axis:Dot(boreAxis)),-1,1))
   if angle>Fit.MAX_ANGULAR_ERROR then
@@ -50,12 +53,19 @@ function Fit.validate(fa:any,fb:any,relativeB:CFrame,
   local separation=bore.Position-center
   local along=separation:Dot(axis)
   local radial=(separation-axis*along).Magnitude
-  if radial>math.min(Fit.MAX_CENTER_ERROR,
-    math.max(Fit.MIN_CLEARANCE/2,(bore==frameA and fa or fb).diameter*.5-diameter*.5)) then
+  local radialLimit=math.min(Fit.MAX_CENTER_ERROR,
+   math.max(Fit.MIN_CLEARANCE/2,pair.feature.diameter*.5-diameter*.5))
+  if radial>radialLimit then
    return false,"Shaft centerline misses a bore; use precision handles"
   end
-  if math.abs(along)>length*.5-.01 then
-   return false,"Manufactured shaft does not extend through both bore openings"
+  -- Merely touching the hole opening is not shaft engagement. The
+  -- manufactured cylinder must reach inward along both drilled bores.
+  local engagement=math.min(pair.feature.depth*.5,.15)
+  local inside=bore.Position+boreAxis*engagement
+  local insideAlong=(inside-center):Dot(axis)
+  if math.abs(along)>length*.5-.01
+   or math.abs(insideAlong)>length*.5-.01 then
+   return false,"Shaft does not physically enter both bores deeply enough"
   end
  end
  return true,nil
