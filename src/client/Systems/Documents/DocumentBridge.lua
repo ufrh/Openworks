@@ -30,13 +30,23 @@ end
 
 function DocumentBridge:load(): (boolean,string?)
  if not self.remote then return true,nil end
- local ok,snapshots=self:request("ListSnapshots")
- if not ok then return false,tostring(snapshots) end
- if type(snapshots)~="table" then return false,"Invalid server document listing" end
- for _,snapshot in ipairs(snapshots) do
-  local component,err=self.document:adoptSnapshot(snapshot)
-  if not component then return false,tostring(err) end
- end
+ local index=nil
+ local pages=0
+ repeat
+  local ok,payload=self:request("ListSnapshots",index)
+  if not ok then return false,tostring(payload) end
+  if type(payload)~="table" or type(payload.items)~="table" then
+   return false,"Invalid server document listing"
+  end
+  for _,snapshot in ipairs(payload.items) do
+   local component,err=self.document:adoptSnapshot(snapshot)
+   if not component then return false,tostring(err) end
+  end
+  index=payload.nextAfter
+  pages+=1
+  if pages>32 then return false,"Document paging limit exceeded" end
+  if index then task.wait(.1) end
+ until index==nil
  return true,nil
 end
 
