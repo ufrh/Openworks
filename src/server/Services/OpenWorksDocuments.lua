@@ -148,6 +148,9 @@ function Service:Changed(player:Player,id:number?,geometry:boolean?)
  end
 end
 function Service:SaveNow(player:Player)
+ if self.dirty[player]==false and self.savedAt[player] then
+  return true,"No unsaved changes"
+ end
  local doc=self.documents[player]
  if not doc then return true,"Nothing to save" end
  local components={}
@@ -319,6 +322,10 @@ function Service:DeleteComponent(player:Player,id:any,revision:any)
  local doc,component,err=selected(self,player,id,revision)
  if not doc then return false,err end
  doc:removeComponent(component.id)
+ local world=FORGE:GetService("OpenWorksWorld")
+ if world and world.RemoveComponent then world:RemoveComponent(player,id) end
+ local assembly=FORGE:GetService("OpenWorksAssembly")
+ if assembly and assembly.RemoveComponent then assembly:RemoveComponent(player,id) end
  local byPlayer=self.history[player]
  if byPlayer then byPlayer[id]=nil end
  self:Changed(player,id,false)
