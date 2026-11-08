@@ -50,6 +50,17 @@ function Assist:guide(partA:BasePart,partB:BasePart,
  local match=result.pairs[1]
  if self.active and self.active.a==partA and self.active.b==partB
   and self.active.fa==match.a.id and self.active.fb==match.b.id then
+  -- A second spaced hole resolves twist, but still through ONE bounded
+  -- orientation constraint, never one aligner per individual hole.
+  local orient=self.active.orient
+  local anchor=self.active.rb
+  orient.PrimaryAxisOnly=not result.hasTwistAnchor
+  if result.hasTwistAnchor then
+   local desiredB=result.targetPose*sourceB
+   anchor.CFrame=desiredB:ToObjectSpace(self.active.ra.WorldCFrame)
+  else
+   anchor.CFrame=featureFrame(partB,componentB,match.b,true)
+  end
   return result,nil
  end
  self:release()
@@ -91,13 +102,17 @@ function Assist:guide(partA:BasePart,partB:BasePart,
  orient.Attachment0=ra
  orient.Attachment1=rb
  orient.RigidityEnabled=false
- orient.PrimaryAxisOnly=true -- Never force twist for a single hole pair
+ orient.PrimaryAxisOnly=not result.hasTwistAnchor
+ if result.hasTwistAnchor then
+  rb.CFrame=(result.targetPose*sourceB):ToObjectSpace(ra.WorldCFrame)
+ end
  orient.MaxTorque=math.max(80,self.force*.6)
  orient.MaxAngularVelocity=4
  orient.Responsiveness=10
  orient.Parent=partA
  self.objects={a,b,ra,rb,translate,orient}
- self.active={a=partA,b=partB,fa=match.a.id,fb=match.b.id}
+ self.active={a=partA,b=partB,fa=match.a.id,fb=match.b.id,
+  orient=orient,ra=ra,rb=rb}
  return result,nil
 end
 function Assist:Destroy()self:release()end
