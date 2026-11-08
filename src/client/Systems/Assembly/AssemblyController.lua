@@ -143,7 +143,8 @@ function Controller:install(kind:string)
  if not self.remote then return self:_report("FORGE Assembly service unavailable") end
  local pair=result.pairs[1]
  local ok,accepted,record=pcall(function()
-  return self.remote:Install(kind,self.a,pair.a.id,self.b,pair.b.id)
+  return self.remote:Install(kind,self.a,pair.a.id,self.b,pair.b.id,
+   c.pa.CFrame:ToObjectSpace(c.pb.CFrame))
  end)
  if not ok or not accepted then
   return self:_report("Installation rejected: "..tostring(if ok then record else accepted))
