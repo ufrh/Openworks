@@ -29,6 +29,9 @@ function Graph:add(kind:string,a:any,b:any,limits:any?,shaftId:number?):(any?,st
   return nil,"Manufactured independent shaft required for connection"
  end
  for _,joint in pairs(self.joints) do
+  if shaftId and joint.shaftId==shaftId then
+   return nil,"This manufactured shaft is already installed in another joint"
+  end
   if (joint.a.componentId==a.componentId and
    joint.b.componentId==b.componentId) or
    (joint.a.componentId==b.componentId and
