@@ -361,14 +361,18 @@ function Service:GetSnapshot(player:Player,id:any)
  return true,Document.snapshot(component)
 end
 
-function Service:ListSnapshots(player:Player)
+function Service:ListSnapshots(player:Player,afterIndex:any)
  local doc=getDocument(self,player)
+ local start=if typeof(afterIndex)=="number" and afterIndex%1==0
+  then math.clamp(afterIndex,0,#doc.order) else 0
  local result={}
- for _,id in ipairs(doc.order) do
-  local component=doc.components[id]
+ local last=start
+ for index=start+1,math.min(start+4,#doc.order) do
+  local component=doc.components[doc.order[index]]
   if component then table.insert(result,Document.snapshot(component)) end
+  last=index
  end
- return true,result
+ return true,{items=result,nextAfter=if last<#doc.order then last else nil}
 end
 
 function Service:SaveAll()
