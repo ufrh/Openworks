@@ -66,7 +66,7 @@ and matchmaking server plugins when they are not installed.
 physically simulated, draggable manufactured components. Their shapes are
 rebuilt from FORM's latest accepted geometry whenever a cut finishes.
 **Edit:** fixed 40 × 40 × 20 stud **fully sealed, opaque** midnight-steel/cyan box with the workspace grid at its exact vertical center (10 studs above the floor and 10 below the ceiling); the CAD camera stays inside this box and an ambient blue backdrop provides fallback coverage; the component's grid is based on
-the **user-entered X/Z dimensions**, not chamber size. Press **P** (or the
+the **selected workspace preset**, not chamber size. Press **P** (or the
 PREVIEW button) to toggle a clean model-only view: all OpenWorks edit GUIs,
 sketch adornments, construction grids, transform gizmos, and tool visualizers
 are hidden, and unfinished sketches are paused and preserved. Press P again
@@ -80,7 +80,7 @@ dragging, but they are not yet synchronized across players or persisted on
 the server. Only OpenWorks components use this drag/physics system; other
 Workspace objects are unaffected.
 
-The first component starts from a closed sketch, not a primitive block.
+Components can start from a closed sketch OR a native manufactured cylinder (shaft stock).
 Workspace height defaults to **1,000 mm** and is independent from the
 first sketch extrusion depth (**56 mm**).
 
@@ -119,8 +119,7 @@ required.
 
 The bottom-right build badge should report
 `FORGE 4.4.1 / Free · Edit · Assembly`. The top-center Mode Bar switches
-between modes. FORGE receives mode transition timing/failure metrics. Create a component in Free Mode by specifying its X/Z
-workspace and placing the grid on the ground, then enter Edit.
+between modes. FORGE receives mode transition timing/failure metrics. Create a component in Free Mode by choosing a sketch-workspace preset or a cylinder diameter/length preset, then placing it on the ground.
 
 ## Studio verification
 
@@ -155,23 +154,44 @@ For the sealed-room and sketch visual checks, run `scripts/VERIFY_EDIT_CHAMBER.l
 - `scripts/VERIFY_FORM_SKETCH_REMOVAL.lua` — centered Boolean cutter and compiled result.
 
 
-## Q3 assembly implementation
+## Q3 Assembly — manufactured mechanical connections
 
-Assembly Mode supports physically draggable workpieces and **explicit
-two-hole selection**: click the glowing marker on the first component,
-then the marker on a second component. If the bore diameters are compatible
-and their centers are within 0.75 studs (210 mm), the second click snaps
-the two hole axes into alignment. There is no automatic/magnetic alignment
-force. The aligned pair is held temporarily until the user installs a
-**Bolt/Rigid** or **Pin/Revolute** joint, or starts dragging again. A fit
-never creates a joint on its own. Joint removal and hinge motor controls
-remain available. The server validates actual manufactured
-hole source frames before accepting installation. The relationship graph
-also models prismatic/cylindrical/ball joints, whose player controls
-are not yet exposed. Bolts/pins have simplified metallic visuals;
-threaded physical engagement is not simulated.
+A two-hole match **never** snaps bodies together or generates any
+hardware. Components are spawned in separate stage slots so same-origin
+workpieces do not initially interpenetrate. A click/drag selects a body.
+The panel's **Move handles** and **Rotate handles** drive real
+`AlignPosition`/`AlignOrientation` actuators at bounded force and
+speed; their targets do not teleport parts through other solids.
+Movement is quantized to 1 mm and rotation to 5 degrees.
 
-[Q3 Architecture](docs/Q3_ASSEMBLY_ARCHITECTURE.md) ·
+Create a separate **Cylinder / Shaft** component using the restored
+primitive presets. Drill two compatible through-bores in two different
+components. In Assembly, select the first and second blue bore markers.
+Choose the cylinder body and press **Use selected cylinder as shaft**,
+then manually position the shaft through both holes with dragging or
+physics-based precision handles. The client and server both validate the
+two bores, shaft diameter/clearance, shaft pose, and length. The server
+also tests authoritative collision solids for intersections and rejects
+an overlapping installation. **Install shaft · Rigid** fixes the actual
+cylinder to both bodies; **Install shaft · Revolute** fixes it to the
+first body and forms a revolute bearing against the second.
+
+No procedural bolt/pin models are created. The rigid option is an
+*idealized locked through-shaft*, not simulated threads, clamp preload,
+nuts or press-fit deformation. Future hardware modeling must add those
+mechanics before it can claim true bolt fastening.
+
+**Roblox collision limitation:** CSG collision hulls can misrepresent
+small bores even at PreciseConvexDecomposition. Physics solvers also
+allow small penetrations under high force. The server rejects detected
+intersections at installation but cannot guarantee perfect collision
+geometry throughout continuous player manipulation. If an otherwise
+valid cylinder is rejected, check the actual collision fidelity and
+material geometry instead of turning collisions off.
+
+Old two-hole saved joints without an explicit manufactured shaft are
+not restored. They must be rebuilt under the current physical contract.
+
 [Q3 Studio Verification](scripts/VERIFY_Q3_ASSEMBLY.lua)
 
 ## Q4 world physics and saving
