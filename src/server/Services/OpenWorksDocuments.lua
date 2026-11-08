@@ -377,6 +377,8 @@ function Service:ListSnapshots(player:Player,afterIndex:any)
 end
 
 function Service:SaveAll()
+ if self.savedDuringShutdown then return end
+ self.savedDuringShutdown=true
  for player in pairs(self.documents) do
   self:SaveNow(player,true)
  end
