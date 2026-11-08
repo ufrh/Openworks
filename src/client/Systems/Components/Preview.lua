@@ -105,6 +105,7 @@ function Preview:replace(component, part: BasePart, key: string, madeWithCSG: bo
 	local targetFrame = Compiler.pose(component.nodes[1]) * localFrame
 	local targetSize = part.Size
 	part.CFrame=targetFrame
+ part:SetAttribute("OWSourceLocalFrame",localFrame)
 	if previous and previous.part then previous.part:Destroy() end
 	part.Parent = model
 	self.states[id] = {
