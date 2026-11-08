@@ -1,19 +1,23 @@
 --!strict
--- Q3 Assembly: deliberately pick two visible drilled holes to align.
--- Body dragging remains independent; nothing auto-fastens.
+-- Physical Q3 assembly. Holes are selection references, NOT magnetic
+-- snap points. A user-manufactured cylinder must already occupy both
+-- bores before any rigid or revolute joint can be installed.
 local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
-local Features=require(RS:WaitForChild("Openworks"):WaitForChild("FORM").Features)
-local Matcher=require(RS.Openworks.Assembly.FeatureMatcher)
-local MAX_PAIR_DISTANCE=.75 -- studs (210 mm), measured between bore centers
-local Compiler=require(RS.Openworks.Assembly.ConstraintCompiler)
+local FORM=RS:WaitForChild("Openworks"):WaitForChild("FORM")
+local Assembly=RS.Openworks:WaitForChild("Assembly")
+local Features=require(FORM.Features)
+local Fit=require(Assembly.ShaftFit)
+local Compiler=require(Assembly.ConstraintCompiler)
+local Manipulator=require(script.Parent.PrecisionManipulator)
 local Controller={}
 Controller.__index=Controller
+
 local function button(parent:Instance,caption:string,y:number,action:()->())
  local b=Instance.new("TextButton")
  b.Name=caption:gsub("%W","")
  b.Position=UDim2.fromOffset(10,y)
- b.Size=UDim2.new(1,-20,0,29)
+ b.Size=UDim2.new(1,-20,0,30)
  b.BackgroundColor3=Color3.fromRGB(39,63,74)
  b.BorderSizePixel=0
  b.Text=caption b.TextColor3=Color3.fromRGB(229,241,246)
@@ -24,10 +28,10 @@ local function button(parent:Instance,caption:string,y:number,action:()->())
  corner.CornerRadius=UDim.new(0,5) corner.Parent=b
  return b
 end
-local function label(parent:Instance,value:string,y:number):TextLabel
+local function label(parent:Instance,value:string,y:number,height:number):TextLabel
  local l=Instance.new("TextLabel")
  l.Position=UDim2.fromOffset(10,y)
- l.Size=UDim2.new(1,-20,0,42)
+ l.Size=UDim2.new(1,-20,0,height)
  l.TextWrapped=true l.Text=value
  l.TextColor3=Color3.fromRGB(197,222,232)
  l.TextSize=12 l.Font=Enum.Font.Gotham
@@ -40,6 +44,15 @@ local function solid(entry:any):BasePart?
  local part=model and model:FindFirstChild("Solid",true)
  return if part and part:IsA("BasePart") then part else nil
 end
+local function sourceFrame(part:BasePart):CFrame
+ local f=part:GetAttribute("OWSourceLocalFrame")
+ return if typeof(f)=="CFrame" then f else CFrame.identity
+end
+local function holeWorld(part:BasePart,feature:any):Vector3
+ return (part.CFrame*sourceFrame(part):Inverse()):PointToWorldSpace(
+  feature.componentLocalCenter)
+end
+
 function Controller.new(bridge:any,remote:any,documents:any,world:any)
  local gui=Instance.new("ScreenGui")
  gui.Name="OPENWORKS_AssemblyControls"
@@ -49,88 +62,95 @@ function Controller.new(bridge:any,remote:any,documents:any,world:any)
  panel.Name="AssemblyPanel"
  panel.AnchorPoint=Vector2.new(1,0)
  panel.Position=UDim2.new(1,-14,0,70)
- panel.Size=UDim2.fromOffset(290,425)
+ panel.Size=UDim2.fromOffset(310,525)
  panel.BorderSizePixel=0
  panel.BackgroundColor3=Color3.fromRGB(22,35,44)
  panel.Parent=gui
- local round=Instance.new("UICorner")
- round.CornerRadius=UDim.new(0,8) round.Parent=panel
- local heading=label(panel,"ASSEMBLY  /  FEATURE FIT",12)
- heading.TextColor3=Color3.fromRGB(102,226,245)
- local choices=label(panel,"Click a hole on A, then a hole on B.",52)
- local status=label(panel,"Hole markers align on second click; bolt or pin is explicit.",98)
- status.Size=UDim2.new(1,-20,0,44)
- local self=setmetatable({bridge=bridge,remote=remote,
-  gui=gui,choices=choices,status=status,
-  documents=documents,world=world,
-  a=nil,b=nil,active=false,step=0,lastMatch=nil,lastJoint=nil,
-  pickedHole=nil,markers={},markerRoot=nil,fitFreeze=nil,fixtures={}},Controller)
- button(panel,"Install Bolt  ·  Rigid",154,function()self:install("Rigid")end)
- button(panel,"Install Pin  ·  Revolute",189,function()self:install("Revolute")end)
- button(panel,"Start hinge motor",224,function()self:motor(true)end)
- button(panel,"Stop hinge motor",259,function()self:motor(false)end)
- button(panel,"Remove last joint",294,function()self:removeLast()end)
- button(panel,"Save Workshop",329,function()self:save()end)
- button(panel,"World / Physics Status",364,function()self:stats()end)
+ local corner=Instance.new("UICorner")
+ corner.CornerRadius=UDim.new(0,8) corner.Parent=panel
+ local header=label(panel,"ASSEMBLY  /  PHYSICAL FIT",11,26)
+ header.TextColor3=Color3.fromRGB(102,226,245)
+ local choices=label(panel,"Pick two bores + designate a manufactured shaft.",43,54)
+ local status=label(panel,"No automatic align. Move solids without penetrating their walls.",103,50)
+ local self=setmetatable({
+  bridge=bridge,remote=remote,documents=documents,world=world,
+  gui=gui,choices=choices,status=status,active=false,step=0,
+  a=nil,b=nil,shaftId=nil,selectedId=nil,
+  markers={},markerRoot=nil,fixtures={},lastJoint=nil,
+  manipulator=Manipulator.new(),
+ },Controller)
+ button(panel,"Move handles  ·  1 mm steps",161,function()
+  self.manipulator:setMode("Move")
+  self:_report("Drag axis arrows to move with collision-aware physics forces.")
+ end)
+ button(panel,"Rotate handles  ·  5° steps",195,function()
+  self.manipulator:setMode("Rotate")
+  self:_report("Drag rotation rings. Bodies rotate through physics, not teleportation.")
+ end)
+ button(panel,"Use selected cylinder as shaft",229,function()self:selectShaft()end)
+ button(panel,"Install shaft  ·  Rigid",263,function()self:install("Rigid")end)
+ button(panel,"Install shaft  ·  Revolute",297,function()self:install("Revolute")end)
+ button(panel,"Start hinge motor",331,function()self:motor(true)end)
+ button(panel,"Stop hinge motor",365,function()self:motor(false)end)
+ button(panel,"Remove last joint",399,function()self:removeLast()end)
+ button(panel,"Save Workshop",433,function()self:save()end)
+ button(panel,"World / Physics Status",467,function()self:stats()end)
  return self
 end
 function Controller:_report(msg:string)
  self.status.Text=msg
 end
--- Keep the just-aligned pose stable until installation or another drag.
-function Controller:_releaseFitFreeze()
- local freeze=self.fitFreeze
- if not freeze then return end
- self.fitFreeze=nil
- for part,anchored in pairs(freeze) do
-  if part.Parent then part.Anchored=anchored end
+function Controller:_state():any?
+ if not self.active then return nil end
+ return self.bridge.getAssemblyState()
+end
+function Controller:_choiceText()
+ self.choices.Text="Hole A: "..tostring(self.a and self.a.id or "—")..
+  "   Hole B: "..tostring(self.b and self.b.id or "—")..
+  "\nShaft: "..tostring(self.shaftId or "—")..
+  "   Moving: "..tostring(self.selectedId or "—")
+end
+function Controller:select(id:number)
+ local state=self:_state()
+ if not state then return end
+ self.selectedId=id
+ self.manipulator:select(solid(state.projection.cache[id]))
+ self:_choiceText()
+ self:_report("Workpiece selected. Move or rotate with handles; drag body to position it.")
+end
+function Controller:selectShaft()
+ local state=self:_state()
+ if not state or not self.selectedId then
+  self:_report("Click or drag your manufactured cylinder first.")
+  return
  end
-end
-
-function Controller:select(_id:number)
- if not self.active then return end
- self:_releaseFitFreeze()
- self.lastMatch=nil
- self:_report("Body moved. Click the two hole markers again to align.")
-end
-
-local function sourceFrame(part:BasePart):CFrame
- local frame=part:GetAttribute("OWSourceLocalFrame")
- return if typeof(frame)=="CFrame" then frame else CFrame.identity
-end
-local function componentPose(part:BasePart):CFrame
- return part.CFrame*sourceFrame(part):Inverse()
-end
-local function holeWorld(part:BasePart,feature:any):Vector3
- return componentPose(part):PointToWorldSpace(feature.componentLocalCenter)
-end
-local function rotateAxis(from:Vector3,to:Vector3):CFrame
- local dot=math.clamp(from.Unit:Dot(to.Unit),-1,1)
- if dot>.99999 then return CFrame.identity end
- local cross=from:Cross(to)
- if cross.Magnitude<.00001 then
-  local perpendicular=from:Cross(Vector3.yAxis)
-  if perpendicular.Magnitude<.01 then perpendicular=from:Cross(Vector3.xAxis) end
-  return CFrame.fromAxisAngle(perpendicular.Unit,math.pi)
+ local component=state.document.components[self.selectedId]
+ if not component or component.nodes[1].kind~="Cylinder"
+  or #component.operations>0 then
+  self:_report("Shaft must be a separate, uncut manufactured cylinder.")
+  return
  end
- return CFrame.fromAxisAngle(cross.Unit,math.acos(dot))
+ if (self.a and self.a.id==self.selectedId)
+  or (self.b and self.b.id==self.selectedId) then
+  self:_report("The shaft must be a third component, not a drilled body.")
+  return
+ end
+ self.shaftId=self.selectedId
+ self:_choiceText()
+ self:_report("Shaft selected. Physically insert it through both bores.")
 end
-
 function Controller:_clearMarkers()
  if self.markerRoot then self.markerRoot:Destroy() end
  self.markerRoot=nil
  table.clear(self.markers)
 end
-
 function Controller:_refreshMarkers()
- if not self.active then return end
- local state=self.bridge.getAssemblyState()
+ local state=self:_state()
  if not state then return end
  if not self.markerRoot then
-  local root=Instance.new("Folder")
-  root.Name="OPENWORKS_AssemblyHoleMarkers"
-  root.Parent=workspace
-  self.markerRoot=root
+  self.markerRoot=Instance.new("Folder")
+  self.markerRoot.Name="OPENWORKS_AssemblyHoleSelectors"
+  self.markerRoot.Parent=workspace
  end
  local live={}
  for id,component in pairs(state.document.components) do
@@ -142,30 +162,28 @@ function Controller:_refreshMarkers()
    local marker=self.markers[key]
    if not marker then
     marker=Instance.new("Part")
-    marker.Name="Hole_"..key
+    marker.Name="OW_Bore_"..key
     marker.Shape=Enum.PartType.Ball
     marker.Anchored=true
-    marker.CanCollide=false
-    marker.CanTouch=false
+    marker.CanCollide=false marker.CanTouch=false
     marker.CanQuery=true
-    marker.CastShadow=false
     marker.Material=Enum.Material.Neon
-    marker.Transparency=.15
+    marker.Transparency=.2
     marker.Parent=self.markerRoot
     self.markers[key]=marker
    end
-   marker.Size=Vector3.one*math.clamp(feature.diameter*1.35,.16,.28)
+   marker.Size=Vector3.one*math.clamp(feature.diameter*1.25,.13,.23)
    marker.Position=holeWorld(part,feature)
-   marker.Color=if self.pickedHole and self.pickedHole.id==id
-    and self.pickedHole.featureId==feature.id
-    then Color3.fromRGB(255,198,83) else Color3.fromRGB(90,225,255)
+   local chosen=(self.a and self.a.id==id and self.a.featureId==feature.id)
+    or (self.b and self.b.id==id and self.b.featureId==feature.id)
+   marker.Color=if chosen then Color3.fromRGB(255,190,90)
+    else Color3.fromRGB(90,225,255)
   end
  end
  for key,marker in pairs(self.markers) do
   if not live[key] then marker:Destroy() self.markers[key]=nil end
  end
 end
-
 function Controller:_pickRay(ray:Ray):boolean
  if not self.active or not self.markerRoot then return false end
  local params=RaycastParams.new()
@@ -186,227 +204,185 @@ function Controller:_pickRay(ray:Ray):boolean
  end
  return false
 end
-
 function Controller:pickHole(id:number,featureId:string)
- if not self.active then return end
- if self.fitFreeze then self:_releaseFitFreeze() self.lastMatch=nil end
- local state=self.bridge.getAssemblyState()
+ local state=self:_state()
  if not state then return end
  local component=state.document.components[id]
- local feature=component and Features.get(component,featureId)
- local part=solid(state.projection.cache[id])
- if not feature or not part then return end
- if not self.pickedHole then
-  self.pickedHole={id=id,featureId=featureId}
-  self.a=id self.b=nil self.lastMatch=nil
-  self.choices.Text="A: "..tostring(id).." / "..featureId.."   B: —"
-  self:_report("First hole selected. Click a hole on a DIFFERENT component.")
-  self:_refreshMarkers()
+ if not component or not Features.get(component,featureId) then return end
+ if self.shaftId==id then
+  self:_report("A shaft cannot also be one of the drilled bodies.")
   return
  end
- local first=self.pickedHole
- if first.id==id then
-  self.pickedHole={id=id,featureId=featureId}
-  self:_report("First hole updated. Choose a hole on another component.")
-  self:_refreshMarkers()
-  return
+ if not self.a or self.b then
+  self.a={id=id,featureId=featureId}
+  self.b=nil
+  self:_report("Bore A selected. Click a hole on another manufactured body.")
+ elseif self.a.id==id then
+  self.a={id=id,featureId=featureId}
+  self:_report("Bore A changed. Select B on a different body.")
+ else
+  self.b={id=id,featureId=featureId}
+  self:_report("Both bores selected. Insert your separate shaft manually, then install.")
  end
- local ca=state.document.components[first.id]
- local fa=ca and Features.get(ca,first.featureId)
- local pa=solid(state.projection.cache[first.id])
- if not fa or not pa then
-  self.pickedHole=nil self.lastMatch=nil
-  self:_report("First hole is no longer available. Select it again.")
-  return
- end
- local distance=(holeWorld(pa,fa)-holeWorld(part,feature)).Magnitude
- if distance>MAX_PAIR_DISTANCE then
-  self:_report(string.format("Holes are %.0f mm apart; bring within %.0f mm.",
-   distance*280,MAX_PAIR_DISTANCE*280))
-  return
- end
- if not Matcher.compatible(fa,feature) then
-  self:_report("These hole diameters are incompatible. Choose another hole.")
-  return
- end
- -- Snap only on the SECOND explicit click. No continuous attraction,
- -- AlignPosition, or AlignOrientation constraints are created.
- local poseA=componentPose(pa)
- local poseB=componentPose(part)
- local axisA=poseA:VectorToWorldSpace(fa.componentLocalAxis).Unit
- local axisB=poseB:VectorToWorldSpace(feature.componentLocalAxis).Unit
- local rotation=rotateAxis(axisB,axisA)
- local centerA=poseA:PointToWorldSpace(fa.componentLocalCenter)
- local centerB=poseB:PointToWorldSpace(feature.componentLocalCenter)
- local targetPose=CFrame.new(centerA)*rotation*CFrame.new(-centerB)*poseB
- part.AssemblyLinearVelocity=Vector3.zero
- part.AssemblyAngularVelocity=Vector3.zero
- part.CFrame=targetPose*sourceFrame(part)
- self.fitFreeze={[pa]=pa.Anchored,[part]=part.Anchored}
- pa.Anchored=true
- part.Anchored=true
- self.a=first.id self.b=id
- self.lastMatch={pairs={{a=fa,b=feature,distance=0}},targetPose=targetPose}
- self.pickedHole=nil
- self.choices.Text="A: "..tostring(self.a).." / "..fa.id..
-  "   B: "..tostring(self.b).." / "..feature.id
- self:_report("Holes aligned. Install Bolt (rigid) or Pin (hinge) to connect.")
+ self:_choiceText()
  self:_refreshMarkers()
 end
-
 function Controller:Enter()
- self.active=true self.step=0 self.a=nil self.b=nil
- self:_releaseFitFreeze()
- self.pickedHole=nil self.lastMatch=nil self.gui.Enabled=true
+ self.active=true self.step=0
+ self.a=nil self.b=nil self.shaftId=nil self.selectedId=nil
+ self.gui.Enabled=true
  self.bridge.enterAssembly()
- self.choices.Text="Click a hole on A, then a hole on B."
- self:_report("Drag bodies freely, then click two blue hole markers to align.")
- local state=self.bridge.getAssemblyState()
+ self:_choiceText()
+ self:_report("Select and position the solids. No automatic hole snapping.")
+ local state=self:_state()
  if state then
   state.projection.holePicker=function(ray:Ray):boolean return self:_pickRay(ray) end
  end
  self:_refreshMarkers()
- -- Restore explicit joint graph into the local stage on each re-entry.
- if self.remote then
-  local success,ok,records=pcall(function()return self.remote:ListJoints()end)
-  if success and ok and type(records)=="table" then
-   local state=self.bridge.getAssemblyState()
-   for _,joint in ipairs(records) do
+ -- Recreate only actual hardware-backed saved relationships.
+ if self.remote and state then
+  local success,ok,joints=pcall(function()return self.remote:ListJoints()end)
+  if success and ok and type(joints)=="table" then
+   for _,joint in ipairs(joints) do
+    if not joint.shaftId or typeof(joint.relativePose)~="CFrame"
+     or typeof(joint.shaftRelative)~="CFrame" then continue end
     local ca=state.document.components[joint.a.componentId]
     local cb=state.document.components[joint.b.componentId]
-    local entryA=state.projection.cache[joint.a.componentId]
-    local entryB=state.projection.cache[joint.b.componentId]
-    local partA,partB=solid(entryA),solid(entryB)
-    if not ca or not cb or not partA or not partB then continue end
-    if typeof(joint.relativePose)=="CFrame" then
-     partB.Anchored=true
-     partB.CFrame=partA.CFrame*joint.relativePose
-     partB.Anchored=false
-    end
-    local featureA=Features.get(ca,joint.a.featureId)
-    local featureB=Features.get(cb,joint.b.featureId)
-    if not featureA or not featureB then continue end
-    local instances=Compiler.compile(joint,
-     {[ca.id]=partA,[cb.id]=partB},
-     {[ca.id]=ca,[cb.id]=cb},
-     {[ca.id]={[featureA.id]=featureA},
-      [cb.id]={[featureB.id]=featureB}},partA.Parent)
-    if instances then self.fixtures[joint.id]=instances end
+    local cs=state.document.components[joint.shaftId]
+    local pa=solid(state.projection.cache[joint.a.componentId])
+    local pb=solid(state.projection.cache[joint.b.componentId])
+    local ps=solid(state.projection.cache[joint.shaftId])
+    if not ca or not cb or not cs or not pa or not pb or not ps then continue end
+    pb.Anchored=true ps.Anchored=true
+    pb.CFrame=pa.CFrame*joint.relativePose
+    ps.CFrame=pa.CFrame*joint.shaftRelative
+    pb.Anchored=false ps.Anchored=false
+    local fa=Features.get(ca,joint.a.featureId)
+    local fb=Features.get(cb,joint.b.featureId)
+    if not fa or not fb then continue end
+    local objects=Compiler.compile(joint,
+     {[ca.id]=pa,[cb.id]=pb,[cs.id]=ps},
+     {[ca.id]=ca,[cb.id]=cb,[cs.id]=cs},
+     {[ca.id]={[fa.id]=fa},[cb.id]={[fb.id]=fb}},pa.Parent)
+    if objects then self.fixtures[joint.id]=objects end
     self.lastJoint=joint.id
    end
   end
  end
 end
 function Controller:Exit()
- self.active=false self.gui.Enabled=false
+ self.active=false
+ self.gui.Enabled=false
  local state=self.bridge.getAssemblyState()
  if state then state.projection.holePicker=nil end
+ self.manipulator:select(nil)
  self:_clearMarkers()
- self.pickedHole=nil self.lastMatch=nil
- self:_releaseFitFreeze()
  for _,objects in pairs(self.fixtures) do Compiler.destroy(objects) end
  table.clear(self.fixtures)
  self.bridge.leaveAssembly()
 end
-function Controller:_context():any?
- if not self.active or not self.a or not self.b then return nil end
- local state=self.bridge.getAssemblyState()
- if not state then return nil end
- local aa=state.document.components[self.a]
- local bb=state.document.components[self.b]
- local ea=state.projection.cache[self.a]
- local eb=state.projection.cache[self.b]
- local pa,pb=solid(ea),solid(eb)
- if not aa or not bb or not pa or not pb then return nil end
- return {a=aa,b=bb,pa=pa,pb=pb,
-  holesA=Features.list(aa),holesB=Features.list(bb),projection=state.projection}
-end
 function Controller:Update(dt:number)
  if not self.active then return end
  self.step+=dt
- if self.step<.05 then return end
+ if self.step<.08 then return end
  self.step=0
  self:_refreshMarkers()
+ if self.selectedId then
+  local state=self:_state()
+  local part=state and solid(state.projection.cache[self.selectedId])
+  if part~=self.manipulator.part then self.manipulator:select(part) end
+ end
 end
 function Controller:install(kind:string)
- local c=self:_context()
- if not c then return self:_report("Click one hole on each component to align first.") end
- local result=self.lastMatch
- if not result then
-  return self:_report("Pick two nearby compatible hole markers first.")
+ local state=self:_state()
+ if not state or not self.a or not self.b or not self.shaftId then
+  return self:_report("Choose two bores AND an independently made cylinder shaft.")
  end
- local fa,fb=result.pairs[1].a,result.pairs[1].b
- local dist=(holeWorld(c.pa,fa)-holeWorld(c.pb,fb)).Magnitude
- if dist>.12 then
-  self.lastMatch=nil
-  return self:_report("Holes moved apart. Click both holes to realign.")
+ local ca=state.document.components[self.a.id]
+ local cb=state.document.components[self.b.id]
+ local cs=state.document.components[self.shaftId]
+ local pa=solid(state.projection.cache[self.a.id])
+ local pb=solid(state.projection.cache[self.b.id])
+ local ps=solid(state.projection.cache[self.shaftId])
+ if not ca or not cb or not cs or not pa or not pb or not ps then
+  return self:_report("A selected workpiece has no valid manufactured solid.")
  end
- if not self.remote then return self:_report("FORGE Assembly service unavailable") end
- local pair=result.pairs[1]
+ local fa=Features.get(ca,self.a.featureId)
+ local fb=Features.get(cb,self.b.featureId)
+ if not fa or not fb then return self:_report("A selected hole no longer exists.") end
+ if cs.nodes[1].kind~="Cylinder" or #cs.operations>0 then
+  return self:_report("Connector must be an uncut manufactured cylinder.")
+ end
+ local relativeB=pa.CFrame:ToObjectSpace(pb.CFrame)
+ local relativeS=pa.CFrame:ToObjectSpace(ps.CFrame)
+ local fitting,reason=Fit.validate(fa,fb,relativeB,
+  sourceFrame(pa),sourceFrame(pb),cs.nodes[1].size,relativeS)
+ if not fitting then return self:_report("Cannot install: "..tostring(reason)) end
+ if not self.remote then return self:_report("FORGE Assembly service unavailable.") end
  local ok,accepted,record=pcall(function()
-  return self.remote:Install(kind,self.a,pair.a.id,self.b,pair.b.id,
-   c.pa.CFrame:ToObjectSpace(c.pb.CFrame))
+  return self.remote:Install(kind,self.a.id,fa.id,self.b.id,fb.id,
+   self.shaftId,relativeB,relativeS)
  end)
  if not ok or not accepted then
   return self:_report("Installation rejected: "..tostring(if ok then record else accepted))
  end
- self.lastJoint=record.id
- self.lastMatch=nil
- -- The stage receives the same physical relation as the published world.
- local features={
-  [self.a]={[pair.a.id]=pair.a},
-  [self.b]={[pair.b.id]=pair.b},
- }
- local components={[self.a]=c.a,[self.b]=c.b}
- local parts={[self.a]=c.pa,[self.b]=c.pb}
- local objects,reason=Compiler.compile(record,parts,components,features,
-  c.pa.Parent)
+ local objects,problem=Compiler.compile(record,
+  {[ca.id]=pa,[cb.id]=pb,[cs.id]=ps},
+  {[ca.id]=ca,[cb.id]=cb,[cs.id]=cs},
+  {[ca.id]={[fa.id]=fa},[cb.id]={[fb.id]=fb}},pa.Parent)
  if objects then self.fixtures[record.id]=objects end
- self:_releaseFitFreeze()
+ self.lastJoint=record.id
+ self.a=nil self.b=nil self.shaftId=nil
+ self:_choiceText()
  self:_report(if objects then
-  "Installed "..kind.." relationship #"..record.id else
-  "Server joint stored; local preview: "..tostring(reason))
+  "Installed actual "..kind.." shaft #"..record.id else
+  "Joint accepted; stage compile: "..tostring(problem))
 end
 function Controller:motor(on:boolean)
- if not self.lastJoint then return self:_report("Install a hinge first.") end
- if not self.remote then return self:_report("Assembly service unavailable") end
- local success,ok,result=pcall(function()
+ if not self.lastJoint or not self.remote then
+  return self:_report("Install a revolute shaft joint first.")
+ end
+ local success,ok,response=pcall(function()
   return self.remote:SetActuator(self.lastJoint,
-   if on then 2.0 else 0,if on then 220 else 0)
+   if on then 2 else 0,if on then 220 else 0)
  end)
- if success and ok then
-  self:_report(if on then "Hinge motor on · 2 rad/s" else "Hinge motor off")
- else self:_report("Actuation rejected: "..tostring(if success then result else ok)) end
+ self:_report(if success and ok then
+  (if on then "Hinge motor enabled" else "Hinge motor disabled")
+  else "Motor rejected: "..tostring(if success then response else ok))
 end
 function Controller:removeLast()
  if not self.lastJoint or not self.remote then
-  return self:_report("No installed joint selected")
+  return self:_report("No joint to remove")
  end
  local id=self.lastJoint
- local success,ok,result=pcall(function()return self.remote:Remove(id)end)
+ local success,ok,response=pcall(function()return self.remote:Remove(id)end)
  if success and ok then
   Compiler.destroy(self.fixtures[id])
   self.fixtures[id]=nil self.lastJoint=nil
-  self:_report("Removed relationship #"..id)
- else self:_report("Removal rejected: "..tostring(if success then result else ok)) end
+  self:_report("Removed physical connection #"..id)
+ else
+  self:_report("Removal rejected: "..tostring(if success then response else ok))
+ end
 end
 function Controller:save()
- if not self.documents then return self:_report("Document service unavailable") end
- local success,ok,msg=pcall(function()return self.documents:SaveNow(true)end)
+ if not self.documents then return self:_report("Save service unavailable") end
+ local success,ok,response=pcall(function()return self.documents:SaveNow(true)end)
  self:_report(if success and ok then "Workshop saved" else
-  "Save unavailable: "..tostring(if success then msg else ok))
+  "Save rejected: "..tostring(if success then response else ok))
 end
 function Controller:stats()
- if not self.world then return self:_report("World service unavailable") end
+ if not self.world then return self:_report("Physics service unavailable") end
  local success,ok,data=pcall(function()return self.world:GetStats()end)
  if not success or not ok or type(data)~="table" then
-  return self:_report("Cannot read world diagnostics")
+  return self:_report("Cannot read physics diagnostics")
  end
- self:_report(string.format("%d published parts, %d joints. %s",
+ self:_report(string.format("%d published bodies · %d hardware joints · %s",
   data.published or 0,data.joints or 0,
-  if data.busy then "Manufacturing..." else data.error or "Idle"))
+  if data.busy then "Manufacturing" else data.error or "Idle"))
 end
 function Controller:Destroy()
- self:Exit() self.gui:Destroy()
+ self:Exit()
+ self.manipulator:Destroy()
+ self.gui:Destroy()
 end
 return Controller
