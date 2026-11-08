@@ -17,8 +17,8 @@ function Environment:show()
  floor.CanQuery=false
  floor.CanTouch=false
  floor.CastShadow=false
- floor.Color=Color3.fromRGB(28,37,43)
- floor.Material=Enum.Material.SmoothPlastic
+ floor.Color=Color3.fromRGB(51,88,130)
+ floor.Material=Enum.Material.Neon
  floor.Parent=root
  self.root=root
 end
