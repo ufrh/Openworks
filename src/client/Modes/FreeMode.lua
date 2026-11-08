@@ -6,7 +6,7 @@ local FreeMode={}
 FreeMode.__index=FreeMode
 local FIXED_ZOOM=12
 function FreeMode.new(bridge:any)
- return setmetatable({bridge=bridge,savedZoom=nil},FreeMode)
+ return setmetatable({bridge=bridge,savedZoom=nil,elapsed=0},FreeMode)
 end
 function FreeMode:Enter(_context:any)
  self.bridge.enterFree()
@@ -29,5 +29,11 @@ function FreeMode:Exit()
  player.CameraMaxZoomDistance=limits.max
  self.savedZoom=nil
 end
-function FreeMode:Update(_dt:number) end
+function FreeMode:Update(dt:number)
+ self.elapsed+=dt
+ if self.elapsed>=.8 then
+  self.elapsed=0
+  if self.bridge.refreshFree then self.bridge.refreshFree() end
+ end
+end
 return FreeMode
