@@ -354,6 +354,17 @@ function Controller:motor(on:boolean)
   return self.remote:SetActuator(self.lastJoint,
    if on then 2 else 0,if on then 220 else 0)
  end)
+ if success and ok then
+  for _,obj in ipairs(self.fixtures[self.lastJoint] or {}) do
+   if obj:IsA("HingeConstraint") then
+    obj.ActuatorType=if on then Enum.ActuatorType.Motor
+     else Enum.ActuatorType.None
+    obj.AngularVelocity=if on then 2 else 0
+    obj.MotorMaxTorque=if on then 220 else 0
+    obj.MotorMaxAcceleration=50
+   end
+  end
+ end
  self:_report(if success and ok then
   (if on then "Hinge motor enabled" else "Hinge motor disabled")
   else "Motor rejected: "..tostring(if success then response else ok))
