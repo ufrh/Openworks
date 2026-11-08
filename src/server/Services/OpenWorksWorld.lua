@@ -266,62 +266,9 @@ function Service:RemoveComponent(player:Player,id:number)
  self:RefreshJoints(player)
 end
 function Service:RefreshJoints(player:Player)
- for _,objects in pairs(self.jointInstances[player] or {}) do
-  JointCompiler.destroy(objects)
- end
+ for _,objects in pairs(self.jointInstances[player] or {}) do JointCompiler.destroy(objects) end
  self.jointInstances[player]={}
- local assembly=FORGE:GetService("OpenWorksAssembly")
- local graph=assembly and assembly.graphs[player]
- local docs=FORGE:GetService("OpenWorksDocuments")
- local document=docs and docs.documents[player]
- local records=self.records[player]
- if not graph or not document or not records then return end
- local parts,features={},{}
- for id,item in pairs(records) do
-  parts[id]=item.part
-  local component=document.components[id]
-  if component then
-   local lookup={}
-   for _,feature in ipairs(Features.list(component)) do
-    lookup[feature.id]=feature
-   end
-   features[id]=lookup
-  end
- end
- local out=self.jointInstances[player]
- local applied=self.appliedJoints[player] or {}
- self.appliedJoints[player]=applied
- for id in pairs(applied) do
-  if not graph.joints[id] then applied[id]=nil end
- end
- for _,joint in ipairs(graph:list()) do
-  local a,b=parts[joint.a.componentId],parts[joint.b.componentId]
-  local shaft=parts[joint.shaftId]
-  if not a or not b or not shaft then continue end
-  local previous=applied[joint.id]
-  if typeof(joint.relativePose)=="CFrame"
-   and typeof(joint.shaftRelative)=="CFrame"
-   and (not previous or previous.a~=a or previous.b~=b
-    or previous.shaft~=shaft) then
-   -- Reconstruct the already-validated physical assembly in the
-   -- published world, including its player-manufactured third part.
-   b.Anchored=true shaft.Anchored=true
-   b.CFrame=a.CFrame*joint.relativePose
-   shaft.CFrame=a.CFrame*joint.shaftRelative
-   b.Anchored=false shaft.Anchored=false
-   pcall(function()b:SetNetworkOwner(nil)end)
-   pcall(function()shaft:SetNetworkOwner(nil)end)
-   applied[joint.id]={a=a,b=b,shaft=shaft}
-  end
-  local objects,reason=JointCompiler.compile(joint,parts,
-   document.components,features,self:bucket(player))
-  if objects then
-   out[joint.id]=objects
-   self:ApplyActuation(player,joint.id)
-  else
-   warn("[OPENWORKS] Cannot compile joint "..joint.id..": "..tostring(reason))
-  end
- end
+ self.appliedJoints[player]={}
 end
 function Service:ApplyActuation(player:Player,id:number)
  local assembly=FORGE:GetService("OpenWorksAssembly")
@@ -366,3 +313,4 @@ function Service:Stop()
  for player in pairs(self.records) do self:RemovePlayer(player) end
 end
 return Service
+

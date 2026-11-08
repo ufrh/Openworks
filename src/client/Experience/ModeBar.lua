@@ -12,7 +12,7 @@ function ModeBar.new(gui:PlayerGui,onSwitch:(string)->())
  root.Name="ModeBar"
  root.AnchorPoint=Vector2.new(.5,0)
  root.Position=UDim2.new(.5,0,0,12)
- root.Size=UDim2.fromOffset(335,42)
+ root.Size=UDim2.fromOffset(445,42)
  root.BackgroundColor3=Color3.fromRGB(18,27,34)
  root.BorderSizePixel=0
  root.Parent=screen
@@ -20,11 +20,11 @@ function ModeBar.new(gui:PlayerGui,onSwitch:(string)->())
  corner.CornerRadius=UDim.new(0,8)
  corner.Parent=root
  local buttons={}
- for i,name in ipairs({"Free","Edit","Assembly"}) do
+ for i,name in ipairs({"Free","Edit","Assembly","Simulation"}) do
   local button=Instance.new("TextButton")
   button.Name=name
-  button.Size=UDim2.new(1/3,-8,1,-8)
-  button.Position=UDim2.new((i-1)/3,4,0,4)
+  button.Size=UDim2.new(1/4,-8,1,-8)
+  button.Position=UDim2.new((i-1)/4,4,0,4)
   button.BackgroundColor3=Color3.fromRGB(44,60,69)
   button.TextColor3=Color3.fromRGB(226,239,243)
   button.TextSize=13
@@ -51,3 +51,4 @@ function ModeBar:setActive(name:string)
 end
 function ModeBar:destroy() self.gui:Destroy() end
 return ModeBar
+

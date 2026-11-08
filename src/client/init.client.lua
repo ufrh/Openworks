@@ -5,7 +5,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local BUILD = "2026.11.08.Q3-PHYSICAL-SHAFT.1"
+local BUILD = "2026.11.08.CAD-ASSEMBLY.1"
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local oldBadge = playerGui:FindFirstChild("OPENWORKS_BuildStamp")
@@ -130,3 +130,4 @@ end
 gui:SetAttribute("FORGEVersion",tostring(FORGE.Version))
 displayStatus("READY","FORGE "..tostring(FORGE.Version).." / Free · Edit · Assembly",false)
 print("[OPENWORKS] BUILD "..BUILD.." / FORGE "..tostring(FORGE.Version).." READY")
+

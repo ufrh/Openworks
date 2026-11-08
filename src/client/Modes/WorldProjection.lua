@@ -4,7 +4,6 @@
 -- Q2/Q4 will replace this local representation with server-owned bodies.
 local Players=game:GetService("Players")
 local UserInputService=game:GetService("UserInputService")
-local RunService=game:GetService("RunService")
 local WorldProjection={}
 WorldProjection.__index=WorldProjection
 
@@ -14,7 +13,7 @@ local function setBodyMode(entry:any,simulated:boolean)
    part.Anchored=not simulated
    part.CanCollide=simulated
    part.CanTouch=simulated
-   part.CanQuery=simulated
+   part.CanQuery=true
    if simulated then
     if entry.dragMode=="Assembly" then
      -- Workshop metal: high static friction, almost no bounce.
@@ -32,7 +31,7 @@ local function setBodyMode(entry:any,simulated:boolean)
    end
   end
  end
- -- Assembly has its own viewport picker/force drag. Native detectors
+ -- Assembly has its own viewport picker. Native detectors
  -- remain exclusive to Free Mode to prevent competing input controllers.
  if entry.detector then entry.detector.Enabled=simulated and entry.dragMode~="Assembly" end
 end
@@ -42,7 +41,7 @@ function WorldProjection.new(onSelect:((number)->())?)
  root.Name="OPENWORKS_LocalWorldComponents"
  return setmetatable({
   root=root,cache={},published={},mode=nil,onSelect=onSelect,
-  assemblyDrag=nil,dragConnections={},holePicker=nil,
+  dragConnections={},
   precisionManipulating=false,
  },WorldProjection)
 end
@@ -64,12 +63,16 @@ end
 
 function WorldProjection:show(preview:any,document:any,workspaceData:any,
  targetCorner:Vector3?,simulateAssembly:boolean?)
+ if self.simulating then return end
+ if self.precisionManipulating or self.placementPending then
+  self.deferredShow={preview,document,workspaceData,targetCorner,simulateAssembly}
+  return
+ end
  if not workspaceData then self:clear() return end
  self:_savePositions()
  local free=targetCorner==nil
- -- Assembly is always a physical staging mode. A late CSG refresh must
- -- never silently anchor workpieces or disable their DragDetectors.
- local simulated=true
+
+ local simulated=free
  local live={}
  self.root.Parent=workspace
  local serverRoot=workspace:FindFirstChild("OPENWORKS_Published")
@@ -189,6 +192,13 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,
    setBodyMode(entry,simulated)
   end
   if entry.detector then entry.detector.Enabled=free end
+  if not free and self.assemblyPoses and self.assemblyPoses[tostring(component.id)] then
+   local solid=entry.model:FindFirstChild("Solid",true)
+   if solid and solid:IsA("BasePart") then
+    local sourceFrame=solid:GetAttribute("OWSourceLocalFrame") or CFrame.identity
+    solid.CFrame=self.assemblyPoses[tostring(component.id)]*sourceFrame
+   end
+  end
   live[component.id]=true
  end
  for id,entry in pairs(self.cache) do
@@ -198,27 +208,26 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,
   end
  end
  self.mode=if free then "Free" else "Assembly"
- if free then self:_stopAssemblyDrag() else self:_ensureAssemblyInput() end
+ if not free then self:_ensureAssemblyInput() end
 end
 
-function WorldProjection:_stopAssemblyDrag()
- local drag=self.assemblyDrag
- if not drag then return end
- self.assemblyDrag=nil
- if drag.align then drag.align:Destroy() end
- if drag.attachment then drag.attachment:Destroy() end
- if drag.target then drag.target:Destroy() end
+function WorldProjection:flush()
+ local pending=self.deferredShow
+ if not pending then return end
+ self.deferredShow=nil
+ self:show(table.unpack(pending,1,5))
 end
 
 function WorldProjection:_beginAssemblyDrag()
- if self.mode~="Assembly" or self.assemblyDrag or self.precisionManipulating then return end
+ if self.mode~="Assembly" or self.precisionManipulating then return end
+ if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+  or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+  or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton3) then return end
  local mouse=UserInputService:GetMouseLocation()
  local camera=workspace.CurrentCamera
  if not camera then return end
+ if self.gizmoPicker and self.gizmoPicker(mouse) then return end
  local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
- -- Hole indicators have priority over body dragging. A marker click is
- -- an intentional mating selection, never the start of a physical drag.
- if self.holePicker and self.holePicker(ray) then return end
  local params=RaycastParams.new()
  params.FilterType=Enum.RaycastFilterType.Include
  params.FilterDescendantsInstances={self.root}
@@ -235,46 +244,8 @@ function WorldProjection:_beginAssemblyDrag()
  end
  if not selectedId or not selectedPart or not selectedPart:IsA("BasePart") then return end
  if self.onSelect then self.onSelect(selectedId,"Assembly") end
- -- Selecting a body may release a temporary hole-fit freeze.
- if selectedPart.Anchored then return end
- local target=Instance.new("Part")
- target.Name="OW_AssemblyDragTarget"
- target.Size=Vector3.new(.1,.1,.1)
- target.Transparency=1
- target.Anchored=true
- target.CanCollide=false
- target.CanTouch=false
- target.CanQuery=false
- target.CFrame=CFrame.new(result.Position)
- target.Parent=self.root
- local attachment=Instance.new("Attachment")
- attachment.Name="OW_AssemblyDragAnchor"
- attachment.Position=selectedPart.CFrame:PointToObjectSpace(result.Position)
- attachment.Parent=selectedPart
- local targetAttachment=Instance.new("Attachment")
- targetAttachment.Parent=target
- local align=Instance.new("AlignPosition")
- align.Name="OW_AssemblyManualDrag"
- align.Attachment0=attachment
- align.Attachment1=targetAttachment
- align.Mode=Enum.PositionAlignmentMode.TwoAttachment
- align.MaxForce=math.clamp(selectedPart:GetMass()*900,120,18000)
- align.MaxVelocity=3
- align.Responsiveness=10
- align.RigidityEnabled=false
- align.Parent=selectedPart
- self.assemblyDrag={target=target,attachment=attachment,
-  align=align,depth=(result.Position-ray.Origin).Magnitude}
-end
+ if self.facePicker then self.facePicker(selectedId,result) end
 
-function WorldProjection:_updateAssemblyDrag()
- local drag=self.assemblyDrag
- if not drag or self.mode~="Assembly" then return end
- local camera=workspace.CurrentCamera
- if not camera then return end
- local mouse=UserInputService:GetMouseLocation()
- local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
- drag.target.Position=ray.Origin+ray.Direction*drag.depth
 end
 
 function WorldProjection:_ensureAssemblyInput()
@@ -285,18 +256,11 @@ function WorldProjection:_ensureAssemblyInput()
    self:_beginAssemblyDrag()
   end
  end))
- table.insert(self.dragConnections,UserInputService.InputEnded:Connect(function(input)
-  if input.UserInputType==Enum.UserInputType.MouseButton1 then
-   self:_stopAssemblyDrag()
-  end
- end))
- table.insert(self.dragConnections,RunService.RenderStepped:Connect(function()
-  self:_updateAssemblyDrag()
- end))
+
 end
 
 function WorldProjection:clear()
- self:_stopAssemblyDrag()
+ self.deferredShow=nil
  self:_savePositions()
  self.mode=nil
  -- Suspend physics while in Edit, preserving its last world-space pose.
@@ -319,3 +283,4 @@ function WorldProjection:Destroy()
  self.root:Destroy()
 end
 return WorldProjection
+

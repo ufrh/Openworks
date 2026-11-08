@@ -1597,6 +1597,10 @@ local snapRow=row(32)
  end)
 	message("Character mode · Create Component places a new sketch workspace")
 	return {
+  setSimulationFocus=function(center)
+   cameraController:setFocusTarget(center)
+   cameraController:frameBounds(CFrame.new(center),Vector3.new(12,8,12))
+  end,
   getAssemblyState=function()
    return {document=document,projection=worldProjection}
   end,
@@ -1646,7 +1650,7 @@ local snapRow=row(32)
 			cameraController:frameBounds(CFrame.new(AssemblyEnvironment.Center),
 				Vector3.new(12,8,12))
 			cameraController:setActive(true)
-			message("Assembly Mode · drag components, align drilled holes, install hardware")
+			message("Assembly Mode · position solids and align source references")
 		end,
 		leaveAssembly=function()
 			assemblyEnvironment:hide()
@@ -1681,3 +1685,4 @@ local snapRow=row(32)
 end
 
 return Debug
+

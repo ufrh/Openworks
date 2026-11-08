@@ -12,7 +12,9 @@ end
 function AssemblyMode:Exit()
  self.assembly:Exit()
 end
+function AssemblyMode:CleanupFailedEnter() self.assembly:Exit() end
 function AssemblyMode:Update(dt:number)
  self.assembly:Update(dt)
 end
 return AssemblyMode
+
