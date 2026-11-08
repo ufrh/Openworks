@@ -3,14 +3,16 @@
 -- feature alignment and physical relationship services.
 local AssemblyMode={}
 AssemblyMode.__index=AssemblyMode
-function AssemblyMode.new(bridge:any)
-	return setmetatable({bridge=bridge},AssemblyMode)
+function AssemblyMode.new(bridge:any,assembly:any)
+ return setmetatable({bridge=bridge,assembly=assembly},AssemblyMode)
 end
 function AssemblyMode:Enter(_context:any)
-	self.bridge.enterAssembly()
+ self.assembly:Enter()
 end
 function AssemblyMode:Exit()
-	self.bridge.leaveAssembly()
+ self.assembly:Exit()
 end
-function AssemblyMode:Update(_dt:number) end
+function AssemblyMode:Update(dt:number)
+ self.assembly:Update(dt)
+end
 return AssemblyMode
