@@ -139,10 +139,10 @@ workspace and placing the grid on the ground, then enter Edit.
 
 **Studio runtime tests have not been executed by the GitHub-only coding
 workflow.** Do not treat code commits as a verified playable build.
-Q2 is underway with a server-owned operation-history pipeline, but
-runtime verification, complete tool-module extraction and CSG acceptance
-are still pending. Q3 covers physical assembly/relationships. Q4 covers integrated physics,
-actuation, diagnostics and persistence.
+Q2 source-document validation is integrated. Q3 and Q4 systems are
+implemented in source but still require Studio acceptance testing,
+especially GeometryService CSG, joint behavior, network replication and
+DataStore permissions.
 
 Architecture decisions: [Q1 FORGE Architecture](docs/Q1_FORGE_ARCHITECTURE.md).
 
@@ -153,3 +153,47 @@ For the sealed-room and sketch visual checks, run `scripts/VERIFY_EDIT_CHAMBER.l
 - `scripts/VERIFY_Q2_MANUFACTURING.lua` — snap, source coordinates and features.
 - `scripts/VERIFY_Q2_FORGE_DOCUMENTS.lua` — actual server RPC, stale revisions, notes and rollback.
 - `scripts/VERIFY_FORM_SKETCH_REMOVAL.lua` — centered Boolean cutter and compiled result.
+
+
+## Q3 assembly implementation
+
+Assembly Mode now supports physically draggable workpieces, force-limited
+hole alignment, **explicit** Bolt/Rigid and Pin/Revolute installation,
+multi-hole matching, joint removal and hinge motor controls. A match
+never creates a joint on its own. The server validates actual manufactured
+hole source frames before accepting installation. The relationship graph
+also models prismatic/cylindrical/ball joints, whose player controls
+are not yet exposed. Bolts/pins have simplified metallic visuals;
+threaded physical engagement is not simulated.
+
+[Q3 Architecture](docs/Q3_ASSEMBLY_ARCHITECTURE.md) ·
+[Q3 Studio Verification](scripts/VERIFY_Q3_ASSEMBLY.lua)
+
+## Q4 world physics and saving
+
+The server now rebuilds published component geometry from authoritative
+FORM operation history and publishes physical bodies under
+`Workspace.OPENWORKS_Published`, with owner-restricted replicated
+DragDetector interaction. Client Free Mode drops its local duplicate when
+that server body arrives. Published bodies preserve pose/velocity when
+manufacturing geometry changes; installed relationships compile into
+physical constraints, and revolute motors accept bounded actuation.
+
+Workshop source snapshots, installed joints and physical poses use
+per-player DataStore persistence, a tagged geometry codec, 120-second
+autosaving, manual Save Workshop, PlayerRemoving and BindToClose saving.
+**Studio DataStore writes are off by default**; enable explicitly by
+setting `OpenworksEnableStudioDataStore=true` on `game` before Play
+and enabling Studio API access.
+
+Run `scripts/VERIFY_Q4_PERSISTENCE.lua` on the Studio SERVER command bar
+and `scripts/VERIFY_Q4_WORLD.lua` on the CLIENT command bar.
+Manually verify installed hinges, rigid fasteners, physics motion,
+re-compilation and reconnection.
+
+[Q4 Physics and Persistence](docs/Q4_SIMULATION_PERSISTENCE.md)
+
+**Not yet Studio-verified.** CSG permission/runtime availability,
+collision fidelity, large-history networking, save behavior in a published
+experience, and high-load physics still require real Play tests. Q3/Q4
+are implementation milestones, not production certification.
