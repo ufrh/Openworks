@@ -38,7 +38,7 @@ function Manipulator.new()
  rotate.Parent=ui
  local self=setmetatable({
   part=nil,mode="Move",move=move,rotate=rotate,
-  drag=nil,connections={},
+  drag=nil,connections={},onActiveChanged=nil,
  },Manipulator)
  table.insert(self.connections,move.MouseButton1Down:Connect(function(face)
   self:_start("Move",face)
@@ -66,6 +66,7 @@ function Manipulator:_stop()
  self.drag=nil
  if drag.drive then drag.drive:Destroy() end
  if drag.attachment then drag.attachment:Destroy() end
+ if self.onActiveChanged then self.onActiveChanged(false) end
 end
 function Manipulator:select(part:BasePart?)
  self:_stop()
@@ -117,6 +118,7 @@ function Manipulator:_start(kind:string,axis:any)
  drive.Parent=part
  self.drag={drive=drive,attachment=attachment,part=part,
   start=part.CFrame,kind=kind,axis=axis}
+ if self.onActiveChanged then self.onActiveChanged(true) end
 end
 function Manipulator:_move(face:Enum.NormalId,distance:number)
  local drag=self.drag
