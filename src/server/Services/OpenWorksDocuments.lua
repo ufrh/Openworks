@@ -132,8 +132,9 @@ function Service:Start()
    task.wait(120)
    if not self.running then break end
    for player in pairs(self.documents) do
-    if player.Parent and self.dirty[player] then
-     self:SaveNow(player)
+    if player.Parent then
+     -- Persist world physics even if no source-document property changed.
+     self:SaveNow(player,true)
     end
    end
   end
@@ -147,8 +148,8 @@ function Service:Changed(player:Player,id:number?,geometry:boolean?)
   if world and world.QueuePublish then world:QueuePublish(player,id) end
  end
 end
-function Service:SaveNow(player:Player)
- if self.dirty[player]==false and self.savedAt[player] then
+function Service:SaveNow(player:Player,force:any?)
+ if not force and self.dirty[player]==false and self.savedAt[player] then
   return true,"No unsaved changes"
  end
  local doc=self.documents[player]
@@ -377,7 +378,7 @@ end
 
 function Service:SaveAll()
  for player in pairs(self.documents) do
-  self:SaveNow(player)
+  self:SaveNow(player,true)
  end
 end
 function Service:Stop()
