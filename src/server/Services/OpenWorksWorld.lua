@@ -80,7 +80,7 @@ function Service:_compile(player:Player,id:number)
   angular=previous.part.AssemblyAngularVelocity
  end
  local restored=self.restored[player]
- if restored and typeof(restored[id])=="CFrame" and not previous then
+ if restored and typeof(restored[tostring(id)])=="CFrame" and not previous then
   delta=restored[id]*base:Inverse()
  end
  part.Name="Component_"..id
