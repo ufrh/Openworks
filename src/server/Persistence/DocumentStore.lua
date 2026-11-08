@@ -9,6 +9,10 @@ Store.__index=Store
 local NAME="OPENWORKS_MANUFACTURING_V1"
 local RETRIES=3
 function Store.new()
+ if RunService:IsStudio()
+  and game:GetAttribute("OpenworksEnableStudioDataStore")~=true then
+  return setmetatable({dataStore=nil,disabled=true},Store)
+ end
  local ok,result=pcall(function()
   return DataStoreService:GetDataStore(NAME)
  end)
@@ -18,6 +22,7 @@ function Store.new()
  },Store)
 end
 function Store:load(userId:number):(any?,string?)
+ if self.disabled then return nil,nil end
  if not self.dataStore then return nil,self.lastError or "DataStore unavailable" end
  local key="u:"..userId
  for attempt=1,RETRIES do
@@ -37,6 +42,7 @@ function Store:load(userId:number):(any?,string?)
  return nil,self.lastError
 end
 function Store:save(userId:number,payload:any):(boolean,string?)
+ if self.disabled then return false,"Studio persistence disabled by default" end
  if not self.dataStore then
   return false,self.lastError or "DataStore unavailable"
  end
