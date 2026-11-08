@@ -93,6 +93,9 @@ function Service:Install(player:Player,kind:any,idA:any,featureA:any,
  local fitting,whyFit=ShaftFit.validate(fa,fb,relativePose,
   frameA,frameB,shaft.nodes[1].size,shaftRelative)
  if not fitting then return false,whyFit end
+ local clear,collisionProblem=world:ValidateAssemblyClearance(player,
+  idA,idB,shaftId,relativePose,shaftRelative)
+ if not clear then return false,collisionProblem end
  local graph=graphFor(self,player)
  if #graph:list()>=MAX_JOINTS then
   return false,"Assembly relationship limit reached"
