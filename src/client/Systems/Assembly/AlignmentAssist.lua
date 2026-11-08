@@ -5,11 +5,20 @@ local Matcher=require(game:GetService("ReplicatedStorage")
  :WaitForChild("Openworks"):WaitForChild("Assembly").FeatureMatcher)
 local Assist={}
 Assist.__index=Assist
-local function featureFrame(part:BasePart,component:any,feature:any):CFrame
- local node=component.nodes[1]
+local function featureFrame(part:BasePart,component:any,
+ feature:any,primaryAxis:boolean):CFrame
  local source=part:GetAttribute("OWSourceLocalFrame")
  if typeof(source)~="CFrame" then source=CFrame.identity end
- return source:Inverse()*Matcher.frame(feature)
+ local frame=Matcher.frame(feature) -- Z is the bore axis for lateral force
+ if primaryAxis then
+  local axis=feature.componentLocalAxis.Unit
+  local y=axis:Cross(Vector3.yAxis)
+  if y.Magnitude<.02 then y=axis:Cross(Vector3.zAxis) end
+  y=y.Unit
+  frame=CFrame.fromMatrix(feature.componentLocalCenter,axis,y,
+   axis:Cross(y).Unit)
+ end
+ return source:Inverse()*frame
 end
 function Assist.new()
  return setmetatable({objects={},active=nil,enabled=true,force=450},Assist)
@@ -46,11 +55,11 @@ function Assist:guide(partA:BasePart,partB:BasePart,
  self:release()
  local a=Instance.new("Attachment")
  a.Name="OW_AlignmentProbe"
- a.CFrame=featureFrame(partA,componentA,match.a)
+ a.CFrame=featureFrame(partA,componentA,match.a,false)
  a.Parent=partA
  local b=Instance.new("Attachment")
  b.Name="OW_AlignmentTarget"
- b.CFrame=featureFrame(partB,componentB,match.b)
+ b.CFrame=featureFrame(partB,componentB,match.b,false)
  b.Parent=partB
  local translate=Instance.new("AlignPosition")
  translate.Name="OW_TemporaryLateralAlignment"
@@ -66,17 +75,28 @@ function Assist:guide(partA:BasePart,partB:BasePart,
  translate.Responsiveness=10
  translate.ReactionForceEnabled=false
  translate.Parent=partA
+ -- The orientation aligner has its own X-axis-aligned attachment pair.
+ -- AlignPosition needs bore=Z for zero axial force; AlignOrientation
+ -- PrimaryAxisOnly needs bore=X to leave twist physically unconstrained.
+ local ra=Instance.new("Attachment")
+ ra.Name="OW_BoreAxisGuideA"
+ ra.CFrame=featureFrame(partA,componentA,match.a,true)
+ ra.Parent=partA
+ local rb=Instance.new("Attachment")
+ rb.Name="OW_BoreAxisGuideB"
+ rb.CFrame=featureFrame(partB,componentB,match.b,true)
+ rb.Parent=partB
  local orient=Instance.new("AlignOrientation")
  orient.Name="OW_TemporaryAxisAlignment"
- orient.Attachment0=a
- orient.Attachment1=b
+ orient.Attachment0=ra
+ orient.Attachment1=rb
  orient.RigidityEnabled=false
  orient.PrimaryAxisOnly=true -- Never force twist for a single hole pair
  orient.MaxTorque=math.max(80,self.force*.6)
  orient.MaxAngularVelocity=4
  orient.Responsiveness=10
  orient.Parent=partA
- self.objects={a,b,translate,orient}
+ self.objects={a,b,ra,rb,translate,orient}
  self.active={a=partA,b=partB,fa=match.a.id,fb=match.b.id}
  return result,nil
 end
