@@ -23,6 +23,7 @@ function Service:Init()
  self.records={} self.folders={} self.pending={} self.workers={}
  self.enabled={} self.jointInstances={} self.errors={}
  self.restored={}
+ self.appliedJoints={}
  self:Expose("PublishAll")
  self:Expose("GetStats")
  self:Track(Players.PlayerRemoving:Connect(function(p)self:RemovePlayer(p)end))
@@ -114,6 +115,25 @@ function Service:_compile(player:Player,id:number)
  FORGE.Metric("OpenWorks.World.Published"):Add(1)
  FORGE.Pulse("OpenWorks","World","Published",{Id=id,Revision=snapshot.revision})
 end
+-- Obtain the real manufactured part's source-local frame. This is
+-- required for validating offset CSG cutters and hole centerlines.
+function Service:SourceFrame(player:Player,id:number,component:any):CFrame?
+ local current=self.records[player] and self.records[player][id]
+ if current and current.revision==component.revision and current.part then
+  local frame=current.part:GetAttribute("OWSourceLocalFrame")
+  if typeof(frame)=="CFrame" then return frame end
+ end
+ local doc=Document.snapshot(component)
+ local ok,part=pcall(function()
+  if Fabricator.requiresCompile(doc) then return Fabricator.compile(doc) end
+  return Compiler.nativePart(doc.nodes[1])
+ end)
+ if not ok or not part then return nil end
+ local frame=part.CFrame
+ part:Destroy()
+ return frame
+end
+
 function Service:QueuePublish(player:Player,id:number)
  if not self.enabled[player] or not player.Parent then return end
  local queue=self.pending[player] or {}
@@ -186,13 +206,23 @@ function Service:RefreshJoints(player:Player)
   end
  end
  local out=self.jointInstances[player]
+ local applied=self.appliedJoints[player] or {}
+ self.appliedJoints[player]=applied
+ for id in pairs(applied) do
+  if not graph.joints[id] then applied[id]=nil end
+ end
  for _,joint in ipairs(graph:list()) do
   local a,b=parts[joint.a.componentId],parts[joint.b.componentId]
   if not a or not b then continue end
-  if typeof(joint.relativePose)=="CFrame" then
+  local previous=applied[joint.id]
+  if typeof(joint.relativePose)=="CFrame"
+   and (not previous or previous.a~=a or previous.b~=b) then
+   -- Only move into the authored installed pose once, or when one
+   -- of the manufactured physical bodies is actually replaced.
    b.Anchored=true b.CFrame=a.CFrame*joint.relativePose
    b.Anchored=false
    pcall(function()b:SetNetworkOwner(nil)end)
+   applied[joint.id]={a=a,b=b}
   end
   local objects,reason=JointCompiler.compile(joint,parts,
    document.components,features,self:bucket(player))
@@ -235,6 +265,7 @@ function Service:RemovePlayer(player:Player)
  self.enabled[player]=nil self.pending[player]=nil
  for _,objects in pairs(self.jointInstances[player] or {}) do JointCompiler.destroy(objects) end
  self.jointInstances[player]=nil
+ self.appliedJoints[player]=nil
  for _,item in pairs(self.records[player] or {}) do
   if item.part then item.part:Destroy() end
  end
