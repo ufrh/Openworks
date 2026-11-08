@@ -8,6 +8,7 @@ local Assembly=RS.Openworks:WaitForChild("Assembly")
 local Fabricator=require(FORM.Fabricator)
 local Compiler=require(FORM.Compiler)
 local Document=require(FORM.Document)
+local MaterialVolume=require(FORM.MaterialVolume)
 local Features=require(FORM.Features)
 local JointCompiler=require(Assembly.ConstraintCompiler)
 local Service=FORGE.Service("OpenWorksWorld")
@@ -62,6 +63,13 @@ function Service:_compile(player:Player,id:number)
   FORGE.Metric("OpenWorks.World.CSGFailures"):Add(1)
   return
  end
+ local volume,exact=MaterialVolume.fromPartAsync(part)
+ if not MaterialVolume.within(volume) then
+  part:Destroy()
+  self.errors[player]="Manufactured solid exceeds material budget: "..id
+  FORGE.Metric("OpenWorks.World.VolumeRejects"):Add(1)
+  return
+ end
  if not doc.components[id] or doc.components[id].revision~=snapshot.revision then
   part:Destroy()
   if doc.components[id] then self:QueuePublish(player,id) end
@@ -82,7 +90,7 @@ function Service:_compile(player:Player,id:number)
  end
  local restored=self.restored[player]
  if restored and typeof(restored[tostring(id)])=="CFrame" and not previous then
-  delta=restored[id]*base:Inverse()
+  delta=restored[tostring(id)]*base:Inverse()
  end
  part.Name="Component_"..id
  part:SetAttribute("OWComponentId",id)
@@ -165,7 +173,8 @@ function Service:PublishAll(player:Player)
  self.records[player]=self.records[player] or {}
  for _,id in ipairs(doc.order) do
   local existing=self.records[player][id]
-  if not existing or existing.revision~=doc.components[id].revision then
+  if not existing or not existing.part or not existing.part.Parent
+   or existing.revision~=doc.components[id].revision then
    self:QueuePublish(player,id)
   end
  end
