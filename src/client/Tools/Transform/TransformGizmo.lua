@@ -453,7 +453,8 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange, options)
 	centerOrigin.Parent=folder
 	local centerMarker = newCenterMarker(playerGui,centerOrigin)
 	local self = setmetatable({
-		document = document, onChange = onChange, folder = folder, options=options or {},
+		document = document, onChange = onChange, folder = folder,
+		options = options or {},
 		adornmentOrigin=adornmentOrigin,
 		
 		grips = {}, lookup = {}, connections = {},
@@ -597,13 +598,22 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange, options)
 			-- preserves correct behavior after multiple-axis rotations.
 			-- Snap the ANGLE around the selected axis, not each
 			-- resulting Euler component. This preserves the local axis.
-			local snappedRadians=math.rad(Quantize.snap(math.deg(radians),self.options.rotationStep or Quantize.Rotation))
+			local snappedRadians = math.rad(Quantize.snap(
+				math.deg(radians), self.options.rotationStep or Quantize.Rotation))
 			start.lastRotationAngle = snappedRadians
 			if self.options.world then
-    local initial=CFrame.fromOrientation(math.rad(start.rotation.X),math.rad(start.rotation.Y),math.rad(start.rotation.Z))
-    local x,y,z=(CFrame.fromAxisAngle(start.grip.normal,snappedRadians)*initial):ToOrientation()
-    rotation=Vector3.new(math.deg(x),math.deg(y),math.deg(z))
-   else rotation = rotateLocal(start.rotation,start.grip.normal,snappedRadians) end
+				local initial = CFrame.fromOrientation(
+					math.rad(start.rotation.X),
+					math.rad(start.rotation.Y),
+					math.rad(start.rotation.Z)
+				)
+				local x, y, z = (
+					CFrame.fromAxisAngle(start.grip.normal, snappedRadians) * initial
+				):ToOrientation()
+				rotation = Vector3.new(math.deg(x), math.deg(y), math.deg(z))
+			else
+				rotation = rotateLocal(start.rotation, start.grip.normal, snappedRadians)
+			end
 		end
 		local ok = document:applyTransform(start.component, start.index, position, size, rotation,
 			self.mode == "Scale", self.mode == "Rotate",SnapSettings.get())
@@ -644,11 +654,15 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange, options)
 
 	connect(UserInputService.InputBegan, function(input, processed)
 		if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1 or self.dragStart then return end
-		if UserInputService:GetFocusedTextBox() or UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
-   or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-   or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton3) then return end
-  local point = UserInputService:GetMouseLocation()
-  local grip = pick(point)
+		if UserInputService:GetFocusedTextBox()
+			or UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+			or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+			or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+			or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton3) then
+			return
+		end
+		local point = UserInputService:GetMouseLocation()
+		local grip = pick(point)
 		if grip and grip.mode == self.mode then
 			begin(grip, point)
 		end
@@ -673,7 +687,7 @@ function TransformGizmo.new(playerGui: PlayerGui, document, onChange, options)
 		self:refresh(dt)
 	end)
 	self._pick = pick
- self.finish = finish
+	self.finish = finish
 	return self
 end
 
@@ -717,7 +731,8 @@ end
 function TransformGizmo:refresh(dt:number?)
 	local node=if self.component and self.index then
 		self.component.nodes[self.index] else nil
-	local targetFrame=if node then (if self.options.world then CFrame.new(node.position) else frame(node)) else nil
+	local targetFrame = if node then
+		(if self.options.world then CFrame.new(node.position) else frame(node)) else nil
 	local cf=targetFrame
 	self.centerMarker.Enabled=(node~=nil and not self.hidden and self.mode=="Move")
 	local size=if node then node.size else nil
@@ -774,7 +789,9 @@ function TransformGizmo:refresh(dt:number?)
 				basis=CFrame.new(start.position)*CFrame.fromOrientation(
 					math.rad(start.rotation.X),math.rad(start.rotation.Y),
 					math.rad(start.rotation.Z))
-				if self.options.world then basis=CFrame.new(start.position) end
+				if self.options.world then
+					basis = CFrame.new(start.position)
+				end
 				dimensions=start.size
 			end
 			local radius=ringRadius(dimensions,unit)
