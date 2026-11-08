@@ -3,6 +3,8 @@
 -- stays in Edit coordinates; this layer owns separate world/assembly copies.
 -- Q2/Q4 will replace this local representation with server-owned bodies.
 local Players=game:GetService("Players")
+local UserInputService=game:GetService("UserInputService")
+local RunService=game:GetService("RunService")
 local WorldProjection={}
 WorldProjection.__index=WorldProjection
 
@@ -26,7 +28,9 @@ local function setBodyMode(entry:any,simulated:boolean)
    end
   end
  end
- if entry.detector then entry.detector.Enabled=simulated end
+ -- Assembly has its own viewport picker/force drag. Native detectors
+ -- remain exclusive to Free Mode to prevent competing input controllers.
+ if entry.detector then entry.detector.Enabled=simulated and entry.dragMode~="Assembly" end
 end
 
 function WorldProjection.new(onSelect:((number)->())?)
@@ -34,6 +38,7 @@ function WorldProjection.new(onSelect:((number)->())?)
  root.Name="OPENWORKS_LocalWorldComponents"
  return setmetatable({
   root=root,cache={},published={},mode=nil,onSelect=onSelect,
+  assemblyDrag=nil,dragConnections={},
  },WorldProjection)
 end
 
@@ -148,7 +153,8 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,
   local matchingMode=self.mode==(if free then "Free" else "Assembly")
   local sameBase=if free then entry.basePivot==desiredBase
    else entry.stageBasePivot==desiredBase
-  if not (matchingMode and simulated and entry.detector.Enabled and sameBase) then
+  entry.dragMode=if free then "Free" else "Assembly"
+  if not (matchingMode and simulated and sameBase) then
    -- Freeze before moving; otherwise teleporting an unanchored body
    -- between the world and Assembly would inject unwanted impulses.
    setBodyMode(entry,false)
@@ -157,6 +163,7 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,
    else entry.stageBasePivot=desiredBase end
    setBodyMode(entry,simulated)
   end
+  if entry.detector then entry.detector.Enabled=free end
   live[component.id]=true
  end
  for id,entry in pairs(self.cache) do
@@ -166,9 +173,101 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,
   end
  end
  self.mode=if free then "Free" else "Assembly"
+ if free then self:_stopAssemblyDrag() else self:_ensureAssemblyInput() end
+end
+
+function WorldProjection:_stopAssemblyDrag()
+ local drag=self.assemblyDrag
+ if not drag then return end
+ self.assemblyDrag=nil
+ if drag.align then drag.align:Destroy() end
+ if drag.attachment then drag.attachment:Destroy() end
+ if drag.target then drag.target:Destroy() end
+end
+
+function WorldProjection:_beginAssemblyDrag()
+ if self.mode~="Assembly" or self.assemblyDrag then return end
+ local mouse=UserInputService:GetMouseLocation()
+ local camera=workspace.CurrentCamera
+ if not camera then return end
+ local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
+ local params=RaycastParams.new()
+ params.FilterType=Enum.RaycastFilterType.Include
+ params.FilterDescendantsInstances={self.root}
+ local result=workspace:Raycast(ray.Origin,ray.Direction*5000,params)
+ if not result then return end
+ local selectedId=nil
+ local selectedPart=nil
+ for id,entry in pairs(self.cache) do
+  if entry.model:IsAncestorOf(result.Instance) then
+   selectedId=id
+   selectedPart=entry.model:FindFirstChild("Solid",true)
+   break
+  end
+ end
+ if not selectedId or not selectedPart or not selectedPart:IsA("BasePart") then return end
+ if selectedPart.Anchored then return end
+ if self.onSelect then self.onSelect(selectedId,"Assembly") end
+ local target=Instance.new("Part")
+ target.Name="OW_AssemblyDragTarget"
+ target.Size=Vector3.new(.1,.1,.1)
+ target.Transparency=1
+ target.Anchored=true
+ target.CanCollide=false
+ target.CanTouch=false
+ target.CanQuery=false
+ target.CFrame=CFrame.new(result.Position)
+ target.Parent=self.root
+ local attachment=Instance.new("Attachment")
+ attachment.Name="OW_AssemblyDragAnchor"
+ attachment.Position=selectedPart.CFrame:PointToObjectSpace(result.Position)
+ attachment.Parent=selectedPart
+ local targetAttachment=Instance.new("Attachment")
+ targetAttachment.Parent=target
+ local align=Instance.new("AlignPosition")
+ align.Name="OW_AssemblyManualDrag"
+ align.Attachment0=attachment
+ align.Attachment1=targetAttachment
+ align.Mode=Enum.PositionAlignmentMode.TwoAttachment
+ align.MaxForce=math.clamp(selectedPart:GetMass()*20000,2000,500000)
+ align.MaxVelocity=80
+ align.Responsiveness=30
+ align.RigidityEnabled=false
+ align.Parent=selectedPart
+ self.assemblyDrag={target=target,attachment=attachment,
+  align=align,depth=(result.Position-ray.Origin).Magnitude}
+end
+
+function WorldProjection:_updateAssemblyDrag()
+ local drag=self.assemblyDrag
+ if not drag or self.mode~="Assembly" then return end
+ local camera=workspace.CurrentCamera
+ if not camera then return end
+ local mouse=UserInputService:GetMouseLocation()
+ local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
+ drag.target.Position=ray.Origin+ray.Direction*drag.depth
+end
+
+function WorldProjection:_ensureAssemblyInput()
+ if #self.dragConnections>0 then return end
+ table.insert(self.dragConnections,UserInputService.InputBegan:Connect(function(input,processed)
+  if processed or UserInputService:GetFocusedTextBox() then return end
+  if input.UserInputType==Enum.UserInputType.MouseButton1 then
+   self:_beginAssemblyDrag()
+  end
+ end))
+ table.insert(self.dragConnections,UserInputService.InputEnded:Connect(function(input)
+  if input.UserInputType==Enum.UserInputType.MouseButton1 then
+   self:_stopAssemblyDrag()
+  end
+ end))
+ table.insert(self.dragConnections,RunService.RenderStepped:Connect(function()
+  self:_updateAssemblyDrag()
+ end))
 end
 
 function WorldProjection:clear()
+ self:_stopAssemblyDrag()
  self:_savePositions()
  self.mode=nil
  -- Suspend physics while in Edit, preserving its last world-space pose.
@@ -178,6 +277,8 @@ end
 
 function WorldProjection:Destroy()
  self:clear()
+ for _,connection in ipairs(self.dragConnections) do connection:Disconnect() end
+ table.clear(self.dragConnections)
  for _,item in pairs(self.published) do
   if item.connection then item.connection:Disconnect() end
  end
