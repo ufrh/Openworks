@@ -29,7 +29,7 @@ function Service:Init()
  self:Expose("SetActuator")
  self:Track(Players.PlayerRemoving:Connect(function(player)
   local documents=FORGE:GetService("OpenWorksDocuments")
-  if documents and documents.SaveNow then documents:SaveNow(player) end
+  if documents and documents.SaveNow then documents:SaveNow(player,true) end
   self.graphs[player]=nil
  end))
 end
