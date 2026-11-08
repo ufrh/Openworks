@@ -5,14 +5,14 @@
 local WorldProjection={}
 WorldProjection.__index=WorldProjection
 
-local function setBodyMode(entry:any,free:boolean)
+local function setBodyMode(entry:any,simulated:boolean)
  for _,part in ipairs(entry.model:GetDescendants()) do
   if part:IsA("BasePart") then
-   part.Anchored=not free
-   part.CanCollide=free
-   part.CanTouch=free
-   part.CanQuery=free
-   if free then
+   part.Anchored=not simulated
+   part.CanCollide=simulated
+   part.CanTouch=simulated
+   part.CanQuery=simulated
+   if simulated then
     if part:IsA("MeshPart") or part:IsA("PartOperation") then
      -- Hull would fill openings. Roblox collision is still approximate.
      pcall(function()
@@ -25,7 +25,7 @@ local function setBodyMode(entry:any,free:boolean)
    end
   end
  end
- if entry.detector then entry.detector.Enabled=free end
+ if entry.detector then entry.detector.Enabled=simulated end
 end
 
 function WorldProjection.new(onSelect:((number)->())?)
@@ -36,21 +36,27 @@ function WorldProjection.new(onSelect:((number)->())?)
  },WorldProjection)
 end
 
-function WorldProjection:_saveFreePositions()
- if self.mode~="Free" or self.root.Parent==nil then return end
+function WorldProjection:_savePositions()
+ if self.root.Parent==nil then return end
  for _,entry in pairs(self.cache) do
   if entry.model.Parent==self.root then
    -- Store displacement/rotation relative to the component's *unmoved*
    -- world pose, so a recompilation can replace the solid in place.
-   entry.freeDelta=entry.model:GetPivot()*entry.basePivot:Inverse()
+   if self.mode=="Free" and entry.basePivot then
+    entry.freeDelta=entry.model:GetPivot()*entry.basePivot:Inverse()
+   elseif self.mode=="Assembly" and entry.stageBasePivot then
+    entry.stageDelta=entry.model:GetPivot()*entry.stageBasePivot:Inverse()
+   end
   end
  end
 end
 
-function WorldProjection:show(preview:any,document:any,workspaceData:any,targetCorner:Vector3?)
+function WorldProjection:show(preview:any,document:any,workspaceData:any,
+ targetCorner:Vector3?,simulateAssembly:boolean?)
  if not workspaceData then self:clear() return end
- self:_saveFreePositions()
+ self:_savePositions()
  local free=targetCorner==nil
+ local simulated=free or simulateAssembly==true
  local live={}
  self.root.Parent=workspace
  for _,component in pairs(document.components) do
@@ -61,7 +67,8 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,targetC
   if not sourceModel or not source or not source.Parent then continue end
 
   local entry=self.cache[component.id]
-  local delta=entry and entry.freeDelta or CFrame.identity
+  local delta=entry and (if free then entry.freeDelta else entry.stageDelta)
+   or CFrame.identity
   if entry and entry.source~=source then
    entry.model:Destroy()
    self.cache[component.id]=nil
@@ -90,13 +97,14 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,targetC
    detector.Parent=solid
    local componentId=component.id
    detector.DragStart:Connect(function()
-    if self.mode=="Free" and self.onSelect then
-     self.onSelect(componentId)
+    if (self.mode=="Free" or self.mode=="Assembly") and self.onSelect then
+     self.onSelect(componentId,self.mode)
     end
    end)
    entry={
     model=model,detector=detector,source=source,
-    basePivot=model:GetPivot(),freeDelta=delta,
+    basePivot=model:GetPivot(),freeDelta=if free then delta else CFrame.identity,
+    stageBasePivot=model:GetPivot(),stageDelta=if not free then delta else CFrame.identity,
    }
    self.cache[component.id]=entry
   end
@@ -111,14 +119,17 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,targetC
   local desiredBase=CFrame.new(offset)*sourceModel:GetPivot()
   -- On an unchanged Free body, leave physics completely untouched. Other
   -- CSG jobs finishing must not interrupt an active physical drag.
-  if not (free and self.mode=="Free" and entry.detector.Enabled
-    and entry.basePivot==desiredBase) then
+  local matchingMode=self.mode==(if free then "Free" else "Assembly")
+  local sameBase=if free then entry.basePivot==desiredBase
+   else entry.stageBasePivot==desiredBase
+  if not (matchingMode and simulated and entry.detector.Enabled and sameBase) then
    -- Freeze before moving; otherwise teleporting an unanchored body
    -- between the world and Assembly would inject unwanted impulses.
    setBodyMode(entry,false)
-   entry.model:PivotTo(if free then entry.freeDelta*desiredBase else desiredBase)
-   if free then entry.basePivot=desiredBase end
-   setBodyMode(entry,free)
+   entry.model:PivotTo(delta*desiredBase)
+   if free then entry.basePivot=desiredBase
+   else entry.stageBasePivot=desiredBase end
+   setBodyMode(entry,simulated)
   end
   live[component.id]=true
  end
@@ -132,7 +143,7 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,targetC
 end
 
 function WorldProjection:clear()
- self:_saveFreePositions()
+ self:_savePositions()
  self.mode=nil
  -- Suspend physics while in Edit, preserving its last world-space pose.
  for _,entry in pairs(self.cache) do setBodyMode(entry,false) end
