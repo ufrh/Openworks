@@ -76,7 +76,8 @@ function Graph:restore(source:any)
    and type(j.id)=="number" and j.id>0 and j.id%1==0
    and not self.joints[j.id]
    and ((j.kind~="Rigid" and j.kind~="Revolute")
-    or (type(j.shaftId)=="number" and j.shaftId%1==0
+    or (typeof(j.shaftRelative)=="CFrame"
+     and type(j.shaftId)=="number" and j.shaftId%1==0
      and j.shaftId~=j.a.componentId and j.shaftId~=j.b.componentId)) then
    self.joints[j.id]={
     id=j.id,kind=j.kind,shaftId=j.shaftId,
