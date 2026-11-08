@@ -188,7 +188,7 @@ function Service:ValidateAssemblyClearance(player:Player,idA:number,
   part.Parent=workspace
  end
  -- Keep validation bodies away from live workshop physics.
- local origin=CFrame.new(0,100000,0)
+ local origin=CFrame.new(0,2000,0)
  parts[1].CFrame=origin
  parts[2].CFrame=origin*relativeB
  parts[3].CFrame=origin*relativeS
