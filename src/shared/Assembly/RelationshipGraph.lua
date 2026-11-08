@@ -64,12 +64,20 @@ function Graph:restore(source:any)
  if type(source)~="table" then return end
  for _,j in ipairs(source) do
   if type(j)=="table" and Graph.Types[j.kind]
-   and validRef(j.a) and validRef(j.b) then
-   local copy=self:add(j.kind,j.a,j.b,j.limits)
-   if copy then
-    copy.actuation=if type(j.actuation)=="table"
-     then table.clone(j.actuation) else copy.actuation
-   end
+   and validRef(j.a) and validRef(j.b)
+   and j.a.componentId~=j.b.componentId
+   and type(j.id)=="number" and j.id>0 and j.id%1==0
+   and not self.joints[j.id] then
+   self.joints[j.id]={
+    id=j.id,kind=j.kind,
+    a={componentId=j.a.componentId,featureId=j.a.featureId},
+    b={componentId=j.b.componentId,featureId=j.b.featureId},
+    limits=if type(j.limits)=="table" then table.clone(j.limits) else {},
+    installed=true,
+    actuation=if type(j.actuation)=="table" then table.clone(j.actuation)
+     else {enabled=false,speed=0,torque=0},
+   }
+   self.nextId=math.max(self.nextId,j.id)
   end
  end
 end
