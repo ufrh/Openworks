@@ -2,6 +2,7 @@
 -- Client-local physical bodies in Free Mode. FORM's authoritative CAD mesh
 -- stays in Edit coordinates; this layer owns separate world/assembly copies.
 -- Q2/Q4 will replace this local representation with server-owned bodies.
+local Players=game:GetService("Players")
 local WorldProjection={}
 WorldProjection.__index=WorldProjection
 
@@ -32,7 +33,7 @@ function WorldProjection.new(onSelect:((number)->())?)
  local root=Instance.new("Folder")
  root.Name="OPENWORKS_LocalWorldComponents"
  return setmetatable({
-  root=root,cache={},mode=nil,onSelect=onSelect,
+  root=root,cache={},published={},mode=nil,onSelect=onSelect,
  },WorldProjection)
 end
 
@@ -59,7 +60,30 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,
  local simulated=free or simulateAssembly==true
  local live={}
  self.root.Parent=workspace
+ local serverRoot=workspace:FindFirstChild("OPENWORKS_Published")
+ local serverBucket=serverRoot and
+  serverRoot:FindFirstChild(tostring(Players.LocalPlayer.UserId))
  for _,component in pairs(document.components) do
+  -- Prefer replicated server-owned physics to local cloned Free bodies.
+  local replicated=if free and serverBucket then
+   serverBucket:FindFirstChild("Component_"..component.id) else nil
+  if replicated and replicated:IsA("BasePart") then
+   local prior=self.cache[component.id]
+   if prior then prior.model:Destroy() self.cache[component.id]=nil end
+   local tracked=self.published[component.id]
+   if not tracked or tracked.part~=replicated or not tracked.connection then
+    if tracked and tracked.connection then tracked.connection:Disconnect() end
+    local detector=replicated:FindFirstChildOfClass("DragDetector")
+    local connection=if detector then detector.DragStart:Connect(function()
+     if self.mode=="Free" and self.onSelect then
+      self.onSelect(component.id,"Free")
+     end
+    end) else nil
+    self.published[component.id]={part=replicated,connection=connection}
+   end
+   live[component.id]=true
+   continue
+  end
   local state=preview.states[component.id]
   local source=state and state.part
   local sourceModel=preview:getModel(component.id)
@@ -152,6 +176,10 @@ end
 
 function WorldProjection:Destroy()
  self:clear()
+ for _,item in pairs(self.published) do
+  if item.connection then item.connection:Disconnect() end
+ end
+ table.clear(self.published)
  for id,entry in pairs(self.cache) do
   entry.model:Destroy()
   self.cache[id]=nil
