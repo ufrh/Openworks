@@ -35,7 +35,7 @@ function Service:ListJoints(player:Player)
  return true,graphFor(self,player):list()
 end
 function Service:Install(player:Player,kind:any,idA:any,featureA:any,
- idB:any,featureB:any)
+ idB:any,featureB:any,relativePose:any)
  if typeof(kind)~="string" or typeof(idA)~="number"
   or typeof(idB)~="number" or idA%1~=0 or idB%1~=0
   or idA==idB or typeof(featureA)~="string"
@@ -52,6 +52,14 @@ function Service:Install(player:Player,kind:any,idA:any,featureA:any,
   return false,"Only compatible drilled features can be mated"
  end
  if not Graph.Types[kind] then return false,"Unknown mechanical relationship" end
+ if typeof(relativePose)~="CFrame" or relativePose.Position.Magnitude>16 then
+  return false,"Install needs a valid relative physical assembly pose"
+ end
+ for _,value in ipairs({relativePose:GetComponents()}) do
+  if value~=value or value==math.huge or value==-math.huge then
+   return false,"Invalid component pose"
+  end
+ end
  if (kind=="Rigid" or kind=="Revolute") and
   (not fa.through or not fb.through) then
   return false,"Bolt/pin installation currently requires through holes"
@@ -64,6 +72,7 @@ function Service:Install(player:Player,kind:any,idA:any,featureA:any,
   {componentId=idA,featureId=featureA},
   {componentId=idB,featureId=featureB})
  if not joint then return false,why end
+ joint.relativePose=relativePose
  local world=FORGE:GetService("OpenWorksWorld")
  if world and world.RefreshJoints then
   task.defer(function()world:RefreshJoints(player)end)
