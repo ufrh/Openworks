@@ -5,7 +5,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local BUILD = "2026.11.07.Q2-FORGE.1"
+local BUILD = "2026.11.07.Q4-INTEGRATION.1"
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local oldBadge = playerGui:FindFirstChild("OPENWORKS_BuildStamp")
