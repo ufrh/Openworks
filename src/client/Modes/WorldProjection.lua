@@ -16,6 +16,10 @@ local function setBodyMode(entry:any,simulated:boolean)
    part.CanTouch=simulated
    part.CanQuery=simulated
    if simulated then
+    if entry.dragMode=="Assembly" then
+     -- Workshop metal: high static friction, almost no bounce.
+     part.CustomPhysicalProperties=PhysicalProperties.new(2.5,.8,.02,100,100)
+    end
     if part:IsA("MeshPart") or part:IsA("PartOperation") then
      -- Hull would fill openings. Roblox collision is still approximate.
      pcall(function()
