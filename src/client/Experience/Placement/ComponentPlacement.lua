@@ -12,6 +12,12 @@ ComponentPlacement.__index=ComponentPlacement
 local MM=280
 local WORKSPACE_HEIGHT_MM=1000 -- Construction-space limit, never sketch depth
 -- Fixed construction workspaces; this does not restrict manufactured geometry.
+local SHAFT_PRESETS={
+ {label="14 mm Ø × 140 mm",diameter=14,length=140},
+ {label="28 mm Ø × 140 mm",diameter=28,length=140},
+ {label="56 mm Ø × 280 mm",diameter=56,length=280},
+ {label="84 mm Ø × 560 mm",diameter=84,length=560},
+}
 local PRESETS={
  {label="Small  ·  140 × 140 mm",x=140,z=140},
  {label="Medium  ·  280 × 280 mm",x=280,z=280},
@@ -60,7 +66,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		Name="ComponentSpecification",Visible=false,
 		BackgroundColor3=Color3.fromRGB(24,30,35),
 		BorderSizePixel=0,AnchorPoint=Vector2.new(.5,.5),
-		Position=UDim2.fromScale(.5,.5),Size=UDim2.fromOffset(346,340),
+		Position=UDim2.fromScale(.5,.5),Size=UDim2.fromOffset(346,375),
 	},ui)
 	make("UICorner",{CornerRadius=UDim.new(0,8)},form)
 	label(form,"CREATE COMPONENT",12,24)
@@ -84,12 +90,14 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		return input
 	end
 	local nameBox=box("ComponentName","",70)
-	label(form,"SKETCH WORKSPACE PRESET",108,19)
+	local kindButton=button(form,"TYPE: Sketch",UDim2.fromOffset(16,105),UDim2.fromOffset(314,29))
+ local mode="Sketch"
+ local sizeTitle=label(form,"SKETCH WORKSPACE PRESET",137,19)
  local selectedPreset=2
  local presetButtons={}
  for index,preset in ipairs(PRESETS) do
   local control=button(form,preset.label,
-   UDim2.fromOffset(16,132+(index-1)*35),UDim2.fromOffset(314,31))
+   UDim2.fromOffset(16,160+(index-1)*35),UDim2.fromOffset(314,31))
   table.insert(presetButtons,control)
   control.Activated:Connect(function()
    selectedPreset=index
@@ -100,11 +108,24 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
   end)
  end
  presetButtons[selectedPreset].BackgroundColor3=Color3.fromRGB(34,112,137)
- local feedback=label(form,"Workspace height: 1,000 mm (automatic)",278,27)
+ local nextStep:TextButton
+ local function renderType()
+  kindButton.Text="TYPE: "..(if mode=="Sketch" then "Sketch" else "Cylinder / Shaft")
+  sizeTitle.Text=if mode=="Sketch" then "SKETCH WORKSPACE PRESET" else "CYLINDER DIAMETER × LENGTH"
+  for i,item in ipairs(presetButtons) do
+   item.Text=if mode=="Sketch" then PRESETS[i].label else SHAFT_PRESETS[i].label
+  end
+  nextStep.Text=if mode=="Sketch" then "Place Sketch Grid" else "Place Cylinder"
+ end
+ kindButton.Activated:Connect(function()
+  mode=if mode=="Sketch" then "Cylinder" else "Sketch"
+  renderType()
+ end)
+ local feedback=label(form,"Workspace height: 1,000 mm (automatic)",305,27)
 	feedback.TextSize=11
-	local cancel=button(form,"Cancel",UDim2.fromOffset(16,301),
+	local cancel=button(form,"Cancel",UDim2.fromOffset(16,336),
 		UDim2.fromOffset(150,32))
-	local nextStep=button(form,"Place Sketch Grid",UDim2.fromOffset(172,301),
+	nextStep=button(form,"Place Sketch Grid",UDim2.fromOffset(172,336),
 		UDim2.fromOffset(158,32))
 	local hint=label(ui,"Place sketch grid • Left click to confirm • Esc to cancel",
 		0,30)
@@ -118,6 +139,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		ui=ui,launch=launch,form=form,hint=hint,
 		grid=grid,placing=false,showLaunch=true,
 		size=Vector3.new(1,WORKSPACE_HEIGHT_MM/MM,1),name="",
+  kind="Sketch",shaftDiameter=0,shaftLength=0,
 		lastPosition=nil,onPlace=onPlace,onStatus=onStatus,onCancel=onCancel,
 	},ComponentPlacement)
 	local function groundPoint():Vector3?
@@ -177,7 +199,9 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 	cancel.MouseButton1Click:Connect(function()self:close()end)
 	nextStep.MouseButton1Click:Connect(function()
 		local preset=PRESETS[selectedPreset]
-  local x,z=preset.x,preset.z
+  local shaft=SHAFT_PRESETS[selectedPreset]
+  local x,z=if mode=="Sketch" then preset.x else math.max(280,shaft.diameter*2),
+   if mode=="Sketch" then preset.z else math.max(280,shaft.diameter*2)
 		local y=WORKSPACE_HEIGHT_MM
 		if not x or not z or not Quantize.isFinite(x)
 			or not Quantize.isFinite(z) then
@@ -195,6 +219,9 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 			return
 		end
 		self.size=size
+  self.kind=mode
+  self.shaftDiameter=shaft.diameter/MM
+  self.shaftLength=shaft.length/MM
 		self.name=string.sub(nameBox.Text,1,64)
 		self.placing=true
 		self.lastPosition=nil
@@ -202,7 +229,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		launch.Visible=false
 		hint.Visible=true
 		grid:setVisible(false)
-		onStatus("Position the sketch grid over the ground and click")
+		onStatus("Place the "..(if self.kind=="Sketch" then "sketch grid" else "cylinder").." on the ground")
 	end)
 	RunService:BindToRenderStep("FORM_PlaceSketchGrid",
 		Enum.RenderPriority.Camera.Value+3,function()
@@ -231,7 +258,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		grid:update(at,self.size)
 		grid:setVisible(true)
 		close(true)
-		onPlace(self.name,self.size,at)
+		onPlace(self.name,self.size,at,self.kind,self.shaftDiameter,self.shaftLength)
 	end)
 	return self
 end
