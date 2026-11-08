@@ -64,7 +64,7 @@ function Controller.new(bridge:any,remote:any,documents:any,world:any)
   gui=gui,choices=choices,status=status,
   documents=documents,world=world,
   a=nil,b=nil,active=false,step=0,lastMatch=nil,lastJoint=nil,
-  pickedHole=nil,markers={},markerRoot=nil,fixtures={}},Controller)
+  pickedHole=nil,markers={},markerRoot=nil,fitFreeze=nil,fixtures={}},Controller)
  button(panel,"Install Bolt  ·  Rigid",154,function()self:install("Rigid")end)
  button(panel,"Install Pin  ·  Revolute",189,function()self:install("Revolute")end)
  button(panel,"Start hinge motor",224,function()self:motor(true)end)
@@ -77,11 +77,21 @@ end
 function Controller:_report(msg:string)
  self.status.Text=msg
 end
--- A drag moves a body; only a deliberate hole marker click selects a fit.
-function Controller:select(_id:number)
- if self.active and not self.pickedHole then
-  self:_report("Click a highlighted hole to select the mating pair.")
+-- Keep the just-aligned pose stable until installation or another drag.
+function Controller:_releaseFitFreeze()
+ local freeze=self.fitFreeze
+ if not freeze then return end
+ self.fitFreeze=nil
+ for part,anchored in pairs(freeze) do
+  if part.Parent then part.Anchored=anchored end
  end
+end
+
+function Controller:select(_id:number)
+ if not self.active then return end
+ self:_releaseFitFreeze()
+ self.lastMatch=nil
+ self:_report("Body moved. Click the two hole markers again to align.")
 end
 
 local function sourceFrame(part:BasePart):CFrame
@@ -179,6 +189,7 @@ end
 
 function Controller:pickHole(id:number,featureId:string)
  if not self.active then return end
+ if self.fitFreeze then self:_releaseFitFreeze() self.lastMatch=nil end
  local state=self.bridge.getAssemblyState()
  if not state then return end
  local component=state.document.components[id]
@@ -231,6 +242,9 @@ function Controller:pickHole(id:number,featureId:string)
  part.AssemblyLinearVelocity=Vector3.zero
  part.AssemblyAngularVelocity=Vector3.zero
  part.CFrame=targetPose*sourceFrame(part)
+ self.fitFreeze={[pa]=pa.Anchored,[part]=part.Anchored}
+ pa.Anchored=true
+ part.Anchored=true
  self.a=first.id self.b=id
  self.lastMatch={pairs={{a=fa,b=feature,distance=0}},targetPose=targetPose}
  self.pickedHole=nil
@@ -242,6 +256,7 @@ end
 
 function Controller:Enter()
  self.active=true self.step=0 self.a=nil self.b=nil
+ self:_releaseFitFreeze()
  self.pickedHole=nil self.lastMatch=nil self.gui.Enabled=true
  self.bridge.enterAssembly()
  self.choices.Text="Click a hole on A, then a hole on B."
@@ -288,6 +303,7 @@ function Controller:Exit()
  if state then state.projection.holePicker=nil end
  self:_clearMarkers()
  self.pickedHole=nil self.lastMatch=nil
+ self:_releaseFitFreeze()
  for _,objects in pairs(self.fixtures) do Compiler.destroy(objects) end
  table.clear(self.fixtures)
  self.bridge.leaveAssembly()
@@ -346,6 +362,7 @@ function Controller:install(kind:string)
  local objects,reason=Compiler.compile(record,parts,components,features,
   c.pa.Parent)
  if objects then self.fixtures[record.id]=objects end
+ self:_releaseFitFreeze()
  self:_report(if objects then
   "Installed "..kind.." relationship #"..record.id else
   "Server joint stored; local preview: "..tostring(reason))
