@@ -1601,6 +1601,11 @@ local snapRow=row(32)
 		end,
 		enterEditor=enterEdit,
 		leaveEditor=function()if leaveEditor then leaveEditor()end end,
+  refreshFree=function()
+   if not editorActive and not assemblyEnvironment.root and currentWorkspace then
+    worldProjection:show(preview,document,currentWorkspace)
+   end
+  end,
 		enterFree=function()
 			if leaveEditor then leaveEditor()end
 			assemblyEnvironment:hide()
