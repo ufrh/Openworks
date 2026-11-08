@@ -424,8 +424,24 @@ local ClientBridge = {} do
 		self._Stats.RPC += 1
 		self:_Pulse('RPC', Route, {Direction = 'Outbound'})
 		assert(self._RPC and self._Token, 'FORGE client bridge is not started.')
-		local Packet, Nonce = self:_Packet(Route, ...)
+		local Arguments = table.pack(...)
+		local Packet, Nonce = self:_Packet(Route, table.unpack(Arguments, 1, Arguments.n))
 		local Response = self._RPC:InvokeServer(Packet)
+		-- A server transport restart can invalidate an existing player session.
+		-- This specific rejection happens before endpoint dispatch, so one
+		-- handshake refresh and retry cannot duplicate a successful operation.
+		if type(Response) == 'table' and Response.ok == false
+			and Response.error == 'session handshake required' then
+			local Refreshed, Reason = self:Refresh()
+			if not Refreshed then
+				error('FORGE session recovery failed: ' .. tostring(Reason), 2)
+			end
+			if not self._ServerReady then
+				error('FORGE session recovery: server is not ready', 2)
+			end
+			Packet, Nonce = self:_Packet(Route, table.unpack(Arguments, 1, Arguments.n))
+			Response = self._RPC:InvokeServer(Packet)
+		end
 		local Packed = self:_DecodeResponse(Response, Nonce, Route)
 		return table.unpack(Packed, 1, Packed.n);
 	end
