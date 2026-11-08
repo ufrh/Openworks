@@ -100,6 +100,36 @@ function Controller:Enter()
  self.bridge.enterAssembly()
  self.choices.Text="Drag first component (A), then second (B)."
  self:_report("Bring matching drilled holes close; install hardware explicitly.")
+ -- Restore explicit joint graph into the local stage on each re-entry.
+ if self.remote then
+  local success,ok,records=pcall(function()return self.remote:ListJoints()end)
+  if success and ok and type(records)=="table" then
+   local state=self.bridge.getAssemblyState()
+   for _,joint in ipairs(records) do
+    local ca=state.document.components[joint.a.componentId]
+    local cb=state.document.components[joint.b.componentId]
+    local entryA=state.projection.cache[joint.a.componentId]
+    local entryB=state.projection.cache[joint.b.componentId]
+    local partA,partB=solid(entryA),solid(entryB)
+    if not ca or not cb or not partA or not partB then continue end
+    if typeof(joint.relativePose)=="CFrame" then
+     partB.Anchored=true
+     partB.CFrame=partA.CFrame*joint.relativePose
+     partB.Anchored=false
+    end
+    local featureA=Features.get(ca,joint.a.featureId)
+    local featureB=Features.get(cb,joint.b.featureId)
+    if not featureA or not featureB then continue end
+    local instances=Compiler.compile(joint,
+     {[ca.id]=partA,[cb.id]=partB},
+     {[ca.id]=ca,[cb.id]=cb},
+     {[ca.id]={[featureA.id]=featureA},
+      [cb.id]={[featureB.id]=featureB}},partA.Parent)
+    if instances then self.fixtures[joint.id]=instances end
+    self.lastJoint=joint.id
+   end
+  end
+ end
 end
 function Controller:Exit()
  self.active=false self.gui.Enabled=false
