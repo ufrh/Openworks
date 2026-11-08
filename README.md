@@ -1,3 +1,5 @@
+> Current assembly architecture: [Stationary CAD Assembly and Simulation](docs/CAD_ASSEMBLY.md). This supersedes older Q3/Q4 joint instructions below. Build `2026.11.08.CAD-ASSEMBLY.1`; Studio acceptance testing is pending.
+
 # OPENWORKS
 
 Open-ended Roblox mechanical engineering and manufacturing sandbox.
@@ -222,3 +224,4 @@ re-compilation and reconnection.
 collision fidelity, large-history networking, save behavior in a published
 experience, and high-load physics still require real Play tests. Q3/Q4
 are implementation milestones, not production certification.
+

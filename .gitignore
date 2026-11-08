@@ -10,3 +10,6 @@ sourcemap.json
 .DS_Store
 Thumbs.db
 .vscode/
+
+
+scripts/tests/node_modules/
