@@ -4,11 +4,13 @@
 local Compiler={}
 local function frame(feature:any):CFrame
  local axis=feature.componentLocalAxis.Unit
- local x=axis:Cross(Vector3.yAxis)
- if x.Magnitude<.02 then x=axis:Cross(Vector3.xAxis) end
- x=x.Unit
- return CFrame.fromMatrix(feature.componentLocalCenter,x,
-  axis:Cross(x).Unit,axis)
+ -- Hinge/Prismatic/Cylindrical constraints operate on Attachment.Axis,
+ -- which is the attachment's local X axis (not local Z).
+ local y=axis:Cross(Vector3.yAxis)
+ if y.Magnitude<.02 then y=axis:Cross(Vector3.zAxis) end
+ y=y.Unit
+ return CFrame.fromMatrix(feature.componentLocalCenter,axis,y,
+  axis:Cross(y).Unit)
 end
 local function attachment(part:BasePart,component:any,feature:any,
  name:string):Attachment
