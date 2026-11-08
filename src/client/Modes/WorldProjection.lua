@@ -209,8 +209,9 @@ function WorldProjection:_beginAssemblyDrag()
   end
  end
  if not selectedId or not selectedPart or not selectedPart:IsA("BasePart") then return end
- if selectedPart.Anchored then return end
  if self.onSelect then self.onSelect(selectedId,"Assembly") end
+ -- Selecting a body may release a temporary hole-fit freeze.
+ if selectedPart.Anchored then return end
  local target=Instance.new("Part")
  target.Name="OW_AssemblyDragTarget"
  target.Size=Vector3.new(.1,.1,.1)
