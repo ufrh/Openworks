@@ -13,7 +13,7 @@ function Environment:show()
  floor.Size=Vector3.new(80,.1,80)
  floor.Position=Environment.Center-Vector3.new(0,.08,0)
  floor.Anchored=true
- floor.CanCollide=false
+ floor.CanCollide=true
  floor.CanQuery=false
  floor.CanTouch=false
  floor.CastShadow=false
