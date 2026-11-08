@@ -39,6 +39,7 @@ function WorldProjection.new(onSelect:((number)->())?)
  return setmetatable({
   root=root,cache={},published={},mode=nil,onSelect=onSelect,
   assemblyDrag=nil,dragConnections={},holePicker=nil,
+  precisionManipulating=false,
  },WorldProjection)
 end
 
@@ -200,7 +201,7 @@ function WorldProjection:_stopAssemblyDrag()
 end
 
 function WorldProjection:_beginAssemblyDrag()
- if self.mode~="Assembly" or self.assemblyDrag then return end
+ if self.mode~="Assembly" or self.assemblyDrag or self.precisionManipulating then return end
  local mouse=UserInputService:GetMouseLocation()
  local camera=workspace.CurrentCamera
  if not camera then return end
