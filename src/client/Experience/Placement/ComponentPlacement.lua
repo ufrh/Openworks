@@ -11,6 +11,13 @@ local ComponentPlacement={}
 ComponentPlacement.__index=ComponentPlacement
 local MM=280
 local WORKSPACE_HEIGHT_MM=1000 -- Construction-space limit, never sketch depth
+-- Fixed construction workspaces; this does not restrict manufactured geometry.
+local PRESETS={
+ {label="Small  ·  140 × 140 mm",x=140,z=140},
+ {label="Medium  ·  280 × 280 mm",x=280,z=280},
+ {label="Large  ·  560 × 560 mm",x=560,z=560},
+ {label="Wide  ·  560 × 280 mm",x=560,z=280},
+}
 ComponentPlacement.WORKSPACE_HEIGHT_MM=WORKSPACE_HEIGHT_MM
 
 local function make(kind:string,properties,parent:Instance)
@@ -53,7 +60,7 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		Name="ComponentSpecification",Visible=false,
 		BackgroundColor3=Color3.fromRGB(24,30,35),
 		BorderSizePixel=0,AnchorPoint=Vector2.new(.5,.5),
-		Position=UDim2.fromScale(.5,.5),Size=UDim2.fromOffset(346,286),
+		Position=UDim2.fromScale(.5,.5),Size=UDim2.fromOffset(346,340),
 	},ui)
 	make("UICorner",{CornerRadius=UDim.new(0,8)},form)
 	label(form,"CREATE COMPONENT",12,24)
@@ -77,14 +84,27 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 		return input
 	end
 	local nameBox=box("ComponentName","",70)
-	label(form,"SKETCH WORKSPACE SIZE (mm)",108,19)
-	local xBox=box("X_mm","280",132)
-	local zBox=box("Z_mm","280",169)
-	local feedback=label(form,"Workspace height: 1,000 mm (automatic)",209,27)
+	label(form,"SKETCH WORKSPACE PRESET",108,19)
+ local selectedPreset=2
+ local presetButtons={}
+ for index,preset in ipairs(PRESETS) do
+  local control=button(form,preset.label,
+   UDim2.fromOffset(16,132+(index-1)*35),UDim2.fromOffset(314,31))
+  table.insert(presetButtons,control)
+  control.Activated:Connect(function()
+   selectedPreset=index
+   for i,item in ipairs(presetButtons) do
+    item.BackgroundColor3=if i==index then Color3.fromRGB(34,112,137)
+     else Color3.fromRGB(52,65,72)
+   end
+  end)
+ end
+ presetButtons[selectedPreset].BackgroundColor3=Color3.fromRGB(34,112,137)
+ local feedback=label(form,"Workspace height: 1,000 mm (automatic)",278,27)
 	feedback.TextSize=11
-	local cancel=button(form,"Cancel",UDim2.fromOffset(16,244),
+	local cancel=button(form,"Cancel",UDim2.fromOffset(16,301),
 		UDim2.fromOffset(150,32))
-	local nextStep=button(form,"Place Sketch Grid",UDim2.fromOffset(172,244),
+	local nextStep=button(form,"Place Sketch Grid",UDim2.fromOffset(172,301),
 		UDim2.fromOffset(158,32))
 	local hint=label(ui,"Place sketch grid • Left click to confirm • Esc to cancel",
 		0,30)
@@ -156,11 +176,12 @@ function ComponentPlacement.new(playerGui:PlayerGui,grid,onPlace,onStatus,onCanc
 	launch.MouseButton1Click:Connect(function()self:open()end)
 	cancel.MouseButton1Click:Connect(function()self:close()end)
 	nextStep.MouseButton1Click:Connect(function()
-		local x,z=tonumber(xBox.Text),tonumber(zBox.Text)
+		local preset=PRESETS[selectedPreset]
+  local x,z=preset.x,preset.z
 		local y=WORKSPACE_HEIGHT_MM
 		if not x or not z or not Quantize.isFinite(x)
 			or not Quantize.isFinite(z) then
-			feedback.Text="Enter valid X and Z grid dimensions in mm"
+			feedback.Text="Invalid workspace preset"
 			return
 		end
 		local size=Quantize.vector(Vector3.new(x,y,z)/MM,Quantize.Size)
