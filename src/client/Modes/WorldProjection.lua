@@ -156,9 +156,15 @@ function WorldProjection:show(preview:any,document:any,workspaceData:any,
    for i,componentId in ipairs(document.order) do
     if componentId==component.id then index=i break end
    end
+   -- Compute vertical height from the actual rotated collision bounds.
+   -- Native cylinders have their long dimension in Part.Size.X.
+   local basis=sourcePivot.Rotation
+   local height=.5*(math.abs(basis.XVector.Y)*source.Size.X+
+    math.abs(basis.YVector.Y)*source.Size.Y+
+    math.abs(basis.ZVector.Y)*source.Size.Z)
    local slot=Vector3.new(
     ((index-1)%3-1)*7,
-    math.max(.3,source.Size.Y*.5+.15),
+    math.max(.3,height+.15),
     math.floor((index-1)/3)*7)
    desiredBase=CFrame.new(targetCorner+Vector3.new(workspaceData.size.X*.5,0,
     workspaceData.size.Z*.5)+slot)*sourcePivot.Rotation
