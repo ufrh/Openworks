@@ -38,7 +38,7 @@ function WorldProjection.new(onSelect:((number)->())?)
  root.Name="OPENWORKS_LocalWorldComponents"
  return setmetatable({
   root=root,cache={},published={},mode=nil,onSelect=onSelect,
-  assemblyDrag=nil,dragConnections={},
+  assemblyDrag=nil,dragConnections={},holePicker=nil,
  },WorldProjection)
 end
 
@@ -191,6 +191,9 @@ function WorldProjection:_beginAssemblyDrag()
  local camera=workspace.CurrentCamera
  if not camera then return end
  local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
+ -- Hole indicators have priority over body dragging. A marker click is
+ -- an intentional mating selection, never the start of a physical drag.
+ if self.holePicker and self.holePicker(ray) then return end
  local params=RaycastParams.new()
  params.FilterType=Enum.RaycastFilterType.Include
  params.FilterDescendantsInstances={self.root}
