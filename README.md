@@ -18,7 +18,9 @@ src/
 ├── forge-server/
 │   └── Kernel/Networking/     # Original FORGE server bridge
 ├── server/
-│   └── init.server.lua        # FORGE.Start server
+│   ├── init.server.lua        # FORGE.Start server
+│   └── Services/
+│       └── OpenWorksDocuments.lua  # Validated document source authority
 └── client/
     ├── init.client.lua        # Build badge + FORGE.Start
     ├── Controllers/
@@ -40,6 +42,7 @@ src/
     │   └── ModeBar.lua
     ├── Systems/
     │   ├── Components/        # Rendering
+    │   ├── Documents/         # FORGE revision/snapshot bridge
     │   └── Selection/         # Topology and picking
     └── Tools/
         ├── Inspection/
@@ -81,10 +84,31 @@ The first component starts from a closed sketch, not a primitive block.
 Workspace height defaults to **1,000 mm** and is independent from the
 first sketch extrusion depth (**56 mm**).
 
-Existing FORM manufacturing remains accessible through
-`Modes/Edit/LegacyFabricationAdapter.lua` until the full fabrication
-migration in Q2. Its legacy debug UI has not yet been replaced with a
-finished Duotone/FORGE.UI application.
+## Q2 manufacturing — in progress
+
+Edit Mode now includes adjustable construction snapping (1–560 mm) with
+14/28/70/140 mm presets. It applies to sketch placement, face targeting,
+saw cursor picks and Move handles. The component-sized construction grid
+is **visible by default throughout Edit**, including after CSG cuts, unless
+manually hidden or temporarily hidden by the P model-only preview.
+
+Manufacturing source history is now validated by a **FORGE
+OpenWorksDocuments server Service**. The client submits versioned
+operations through `Systems/Documents/DocumentBridge.lua`, adopting
+validated source snapshots. Operations reject stale revisions and can roll
+back to a prior server-issued revision after a failed CSG compile.
+
+`FORM/Features.lua` derives stable, local hole centerlines and diameters
+from drill history, establishing Q3 mating-interface candidates.
+
+The fabrication UI and native CSG compilation remain in
+`Modes/Edit/LegacyFabricationAdapter.lua` while they are migrated to
+dedicated Q2 tool modules. Component documents are server-authoritative
+**for the current session**, but CSG visual meshes are still client-side.
+Durable saving and multiplayer world-body replication are not implemented
+yet. Actual Studio Play verification is required before Q2 is complete.
+
+[Q2 technical design](docs/Q2_MANUFACTURING_ARCHITECTURE.md).
 
 ## Start locally
 
@@ -115,10 +139,17 @@ workspace and placing the grid on the ground, then enter Edit.
 
 **Studio runtime tests have not been executed by the GitHub-only coding
 workflow.** Do not treat code commits as a verified playable build.
-Q2 covers manufacturing completion and server-authoritative documents.
-Q3 covers physical assembly/relationships. Q4 covers integrated physics,
+Q2 is underway with a server-owned operation-history pipeline, but
+runtime verification, complete tool-module extraction and CSG acceptance
+are still pending. Q3 covers physical assembly/relationships. Q4 covers integrated physics,
 actuation, diagnostics and persistence.
 
 Architecture decisions: [Q1 FORGE Architecture](docs/Q1_FORGE_ARCHITECTURE.md).
 
 For the sealed-room and sketch visual checks, run `scripts/VERIFY_EDIT_CHAMBER.lua` and `scripts/VERIFY_SKETCH_GRID_ALIGNMENT.lua` in the Studio client Command Bar. The latter confirms small vertices and sketch strokes lie directly on the construction grid.
+
+## Q2 Play checks
+
+- `scripts/VERIFY_Q2_MANUFACTURING.lua` — snap, source coordinates and features.
+- `scripts/VERIFY_Q2_FORGE_DOCUMENTS.lua` — actual server RPC, stale revisions, notes and rollback.
+- `scripts/VERIFY_FORM_SKETCH_REMOVAL.lua` — centered Boolean cutter and compiled result.
