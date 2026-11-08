@@ -1524,11 +1524,21 @@ local snapRow=row(32)
 		message("Edit Chamber · sketch/fabrication workspace")
 	end
 	placementFlow=ComponentPlacement.new(playerGui,grid,
-		function(name,size,ground)
+		function(name,size,ground,kind,diameter,length)
 			local workspaceData=EditWorkspace.new(ground,size,name)
+   if kind=="Cylinder" then
+    local component,reason=documentBridge:createCylinder(name,ground,
+     workspaceData.editCorner,size,diameter,length)
+    if not component then message("Cylinder rejected: "..tostring(reason)) return end
+    pendingSketch=nil
+    currentWorkspace=workspaceData
+    selectComponent(component.id)
+    changed(component)
+   else
 			pendingSketch={name=name,corner=workspaceData.editCorner,
 				worldCorner=ground,size=size}
 			currentWorkspace=workspaceData
+   end
 			if options.onEditRequested then
 				options.onEditRequested(workspaceData)
 			else
