@@ -41,6 +41,16 @@ function Controller:Start()
    FORGE.Metric("OpenWorks.Mode.Failures"):Add(1)
    warn("[OPENWORKS] Cannot enter "..name..": "..tostring(reason))
   else
+   if name=="Free" and self.worldService then
+    task.spawn(function()
+     local success,ok,reason=pcall(function()
+      return self.worldService:PublishAll()
+     end)
+     if not success or not ok then
+      warn("[OPENWORKS] Physical publish: "..tostring(if success then reason else ok))
+     end
+    end)
+   end
    -- FORGE.Signal dispatches listeners asynchronously. Update the
    -- authoritative mode UI/tool permissions synchronously, in order.
    self.modeBar:setActive(name)
@@ -52,6 +62,7 @@ function Controller:Start()
  -- The client retains local CSG only as a visual/physics preview.
  self.documents=FORGE:GetService("OpenWorksDocuments")
  self.assemblyService=FORGE:GetService("OpenWorksAssembly")
+ self.worldService=FORGE:GetService("OpenWorksWorld")
  assert(self.documents and self.documents.CreateSketchBody,
   "OpenWorksDocuments FORGE service missing from server startup")
  self.bridge=Editor.start({
@@ -96,6 +107,16 @@ function Controller:Start()
  assert(ok,"OpenWorks mode startup failed: "..tostring(reason))
  self.modeBar:setActive("Free")
  self.tools:setMode("Free")
+ if self.worldService then
+  task.spawn(function()
+   local ok,success,reason=pcall(function()
+    return self.worldService:PublishAll()
+   end)
+   if not ok or not success then
+    warn("[OPENWORKS] First physical publication: "..tostring(if ok then reason else success))
+   end
+  end)
+ end
 end
 function Controller:Stop()
  if self.modeManager then self.modeManager:destroy() end
