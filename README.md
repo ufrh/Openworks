@@ -165,19 +165,23 @@ orientation, numeric transforms, reference-driven concentric/face alignment,
 and server-validated interference checks operate without physics forces.
 Invalid placements roll back. Undo/redo works on accepted placements.
 
-The Assembly panel uses **Components**, **Move**, **Align**, and **Joints**.
-Geometric alignment never installs a mechanical connection. Joints must
-be supported by explicitly manufactured components and verified feature
-geometry. Supported models include unretained and retained cylindrical
-bearings, X/Y linear guides with optional travel stops, and retained
-revolute pivots made from two drilled links, a pin, and two separate end
-caps. Multiple independent pin pivots can connect to one linking rod.
+The five-page Assembly workbench uses **Parts**, **Move**, **Install**,
+**Align**, and **Joints**. The Install workflow handles actual bore-first
+shaft installation and retained pin pivots: select manufactured members,
+adjust axial depth and (for pivots) relative phase, preview finished-solid
+interference, then Finalize atomically. Generic alignment creates no
+mechanical connection. Existing manual tools still support X/Y/Z guides,
+retained/unretained bearings and dual-pin rigid couplings; hardware is
+always physically authored rather than silently generated.
 
 OPENWORKS provides **mechanical construction tools, not a premade
-mechanism workflow**. Use New Component and Edit Selected to manufacture
-your own links, pins, bearing housings, rails and end stops. Use Align
-for geometric references and measurements; use Joints to pick distinct
-member bores, physical hardware and motion limits. Existing models
+mechanism workflow**. Create starting stock as a dimensioned **Block**,
+**Cylinder**, or optional **Sketch**. Add block/cylinder material within
+an existing component and edit its dimensions; server-authoritative CSG
+rejects disconnected solids. Manufacture your own links, pins, bearing
+housings, rails and end stops. Use Install
+for bearing/pivot fit, Align for arbitrary references and measurements,
+and Joints for other physically supported relationships and limits. Existing models
 include retained pin pivots, multi-hole bearing housings, all three local
 linear-guide axes, and rigid dual-pin couplings. The mechanical graph
 supports multiple independent pivots along a connecting rod.
@@ -203,7 +207,7 @@ is required. Unverifiable penetration is rejected rather than silently
 turning collisions off.
 
 [Mechanical architecture](docs/CAD_ASSEMBLY.md) ·
-[End-to-end slider-crank Studio test](scripts/VERIFY_SLIDER_CRANK.lua)
+[Bore-first Studio verification](scripts/VERIFY_BORE_FIRST_INSTALL.lua)
 
 ## Q4 world physics and saving
 
