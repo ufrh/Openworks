@@ -15,14 +15,11 @@ function References.list(component: any): { any }
 			feature = f,
 		})
 	end
-	local uncut = true
-	for _, op in ipairs(component.operations or {}) do
-		if op.enabled ~= false then
-			uncut = false
-			break
-		end
-	end
-	if node.kind == "Cylinder" and uncut then
+	-- A shaft datum belongs to the original cylindrical material axis, not
+	-- to its entire finished bounding volume. Shoulders, grooves and other
+	-- manufacturing operations must remain selectable; final-solid CSG
+	-- interference at the chosen offset decides whether they can be inserted.
+	if node.kind == "Cylinder" then
 		table.insert(out, {
 			id = "shaft",
 			kind = "Axis",
