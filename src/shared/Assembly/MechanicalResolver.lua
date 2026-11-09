@@ -2,6 +2,7 @@
 local References = require(script.Parent.GeometryReferences)
 local Geometry = require(script.Parent.SupportGeometry)
 local PinnedPivot = require(script.Parent.PinnedPivot)
+local DualPinCoupling = require(script.Parent.DualPinCoupling)
 local Resolver = {}
 Resolver.MinClearance = 1 / 280
 Resolver.MaxClearance = 4 / 280
@@ -14,7 +15,7 @@ function Resolver.dependencies(record: any): { number }
 		end
 	end
 	for _, ids in ipairs({ record.guideIds or {}, record.stopIds or {},
-		{record.pinId or 0} }) do
+		record.pinIds or {}, {record.pinId or 0} }) do
 		for _, id in ipairs(ids) do
 			if id ~= 0 then table.insert(out, id) end
 		end
@@ -192,6 +193,8 @@ function Resolver.resolve(record: any, components: any, poses: any, grounded: an
 		relation, reason = bore(record, components, poses)
 	elseif record.model == "RetainedPivotV1" then
 		relation, reason = PinnedPivot.resolve(record, components, poses)
+	elseif record.model == "DualPinRigidV1" then
+		relation, reason = DualPinCoupling.resolve(record, components, poses)
 	elseif record.model == "LinearGuideV1" or record.model == "LimitedGuideV1" then
 		relation, reason = guide(record, components, poses, ground)
 	else
