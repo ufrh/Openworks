@@ -3,6 +3,7 @@ local Players, RS = game:GetService("Players"), game:GetService("ReplicatedStora
 local Shared = RS:WaitForChild("Openworks"):WaitForChild("Assembly")
 local References = require(Shared.GeometryReferences)
 local Alignment = require(Shared.Alignment)
+local FitInspection = require(Shared.FitInspection)
 local Catalog = require(Shared.RelationshipCatalog)
 local Resolver = require(Shared.MechanicalResolver)
 local SupportGeometry = require(Shared.SupportGeometry)
@@ -189,6 +190,9 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	Panel.label(align, "GEOMETRIC REFERENCES")
 	self.refsRoot = Panel.list(align)
 	self.offset = Panel.input(align, "Face spacing / offset (mm)", "0")
+	Panel.button(align, "Measure selected references", function()
+		self:measureFit()
+	end)
 	for _, item in ipairs({
 		{ "Concentric", "Concentric axes" },
 		{ "Coincident", "Coincident faces" },
@@ -264,6 +268,9 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	self.jointReferencesRoot = Panel.list(mechanics)
 	Panel.button(mechanics, "Register joint", function()
 		self:registerSupport()
+	end)
+	Panel.button(mechanics, "Measure joint references", function()
+		self:measureFit()
 	end)
 	Panel.button(mechanics, "Check assembly", function()
 		self:validate()
@@ -675,6 +682,29 @@ function Controller:place(pose: CFrame, historyAction: boolean?)
 	end
 	return ok and accepted
 end
+function Controller:measureFit()
+	if not self.a or not self.b or not self.layout then
+		return self:_report("Select reference A and reference B to measure their fit")
+	end
+	local state = self.bridge.getAssemblyState()
+	local componentA = state.document.components[self.a.id]
+	local componentB = state.document.components[self.b.id]
+	local poseA = self.layout.poses[tostring(self.a.id)]
+	local poseB = self.layout.poses[tostring(self.b.id)]
+	if not componentA or not componentB or not poseA or not poseB then
+		return self:_report("Referenced geometry or positioning is no longer available")
+	end
+	local refA = References.get(componentA, self.a.ref)
+	local refB = References.get(componentB, self.b.ref)
+	if not refA or not refB then
+		return self:_report("Choose valid manufactured datum references")
+	end
+	local measure, reason = FitInspection.measure(
+		References.world(refA, poseA), References.world(refB, poseB)
+	)
+	self:_report(if measure then FitInspection.describe(measure) else tostring(reason))
+end
+
 function Controller:align(kind: string)
 	if self.pending or not self.a or not self.b or self.a.id == self.b.id then
 		self:_report("Set A and B on different components")
