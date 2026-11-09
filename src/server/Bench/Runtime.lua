@@ -16,6 +16,21 @@ local function csvCell(value)
 	return '"' .. s:gsub('"', '""') .. '"'
 end
 
+local function steppingMode()
+	-- PhysicsSteppingMethod is Studio-configured and can be inaccessible from Luau.
+	local ok, value = pcall(function()
+		return Workspace.PhysicsSteppingMethod.Name
+	end)
+	return if ok then value else "RECORD_MANUALLY"
+end
+
+local function physicsThrottle()
+	local ok, value = pcall(function()
+		return Workspace:GetPhysicsThrottling()
+	end)
+	return if ok then value else -1
+end
+
 local function titleFor(index)
 	local t = Config.Tests[index]
 	return if t then t[1] .. " " .. t[2] else "Unknown"
@@ -55,7 +70,7 @@ function Runtime:status(message)
 		test = titleFor(self.index),
 		running = self.running,
 		totalRows = #self.rows,
-		stepping = Workspace.PhysicsSteppingMethod.Name,
+		stepping = steppingMode(),
 	})
 end
 
@@ -208,7 +223,7 @@ local function record(g, data, candidate, dt, includeMotors)
 	data.maxAngle = math.max(data.maxAngle, maxAngle)
 	data.sumFrame += dt
 	data.maxFrame = math.max(data.maxFrame, dt)
-	data.throttleSum += Workspace:GetPhysicsThrottling()
+	data.throttleSum += physicsThrottle()
 	if includeMotors then
 		for _, motor in ipairs(g.motors) do
 			local c = motor.instance
@@ -283,7 +298,7 @@ function Runtime:runPhase(phase, trial)
 		local m = metrics[i]
 		local count = math.max(1, m.samples)
 		local row = {
-			titleFor(self.index), candidate, Workspace.PhysicsSteppingMethod.Name,
+			titleFor(self.index), candidate, steppingMode(),
 			Workspace.Gravity, phase, trial,
 			m.samples, m.sumJoint / count, m.maxJoint,
 			m.sumAngle / count, m.maxAngle,
