@@ -82,6 +82,7 @@ function Debug.start(options: any?)
 	local historyInfo: any = nil
 	local volumeInfo: any = nil
 	local historyRows = {}
+	local selectedAdditiveId: number? = nil
 	local sketchEditor: any = nil
 	local toolVisualizer = ToolVisualizer.new(playerGui)
 	local placementFlow: any = nil
@@ -306,7 +307,12 @@ function Debug.start(options: any?)
 			entry.container.Visible = operation ~= nil
 			if operation then
 				local description
-				if operation.kind == "SketchExtrude" then
+				if operation.kind == "AddPrimitive" then
+					description = string.format("%s %.0f × %.0f × %.0f mm",
+						string.upper(operation.primitive),
+						operation.size.X * 280, operation.size.Y * 280,
+						operation.size.Z * 280)
+				elseif operation.kind == "SketchExtrude" then
 					description = "SKETCH "
 						.. string.upper(operation.mode)
 						.. " ("
@@ -986,6 +992,7 @@ function Debug.start(options: any?)
 		if not accepted then
 			return message("Material addition rejected: " .. tostring(reason))
 		end
+		selectedAdditiveId = component.operations[#component.operations].id
 		changed(component)
 		message(kind .. " merged into connected material")
 	end
@@ -993,6 +1000,74 @@ function Debug.start(options: any?)
 		"Add Block", function() addStock("Block") end,
 		"Add Cylinder", function() addStock("Cylinder") end
 	)
+	local selectedAddedLabel = line("Selected additive: —", 25)
+	local function selectAddedPrimitive(operation: any)
+		if not operation or operation.kind ~= "AddPrimitive" then
+			return message("Choose a BLOCK or CYLINDER feature in history")
+		end
+		selectedAdditiveId = operation.id
+		selectedAddedLabel.Text = string.format(
+			"Editing %s · feature #%d", operation.primitive, operation.id
+		)
+		if operation.primitive == "Cylinder" then
+			cylinderDimensions.Text = string.format("%.2f, %.2f",
+				operation.size.X * 280, operation.size.Y * 280)
+		else
+			blockDimensions.Text = string.format("%.2f, %.2f, %.2f",
+				operation.size.X * 280, operation.size.Y * 280,
+				operation.size.Z * 280)
+		end
+		local component = selectedComponent()
+		local baseSize = component.nodes[1].size
+		local defaultCenter = Vector3.new(
+			0, (baseSize.Y + operation.size.Y) * 0.5 - 1 / 280, 0
+		)
+		local offset = (operation.position - defaultCenter) * 280
+		additiveOffset.Text = string.format("%.2f, %.2f, %.2f",
+			offset.X, offset.Y, offset.Z)
+	end
+	button(row(29), "Update Selected Added Stock", 0, 1, function()
+		local component = selectedComponent()
+		if not component or not selectedAdditiveId then
+			return message("Select an additive feature in history first")
+		end
+		local operation = nil
+		for _, item in ipairs(component.operations) do
+			if item.id == selectedAdditiveId and item.kind == "AddPrimitive" then
+				operation = item
+				break
+			end
+		end
+		if not operation then
+			return message("The selected additive feature no longer exists")
+		end
+		local dimensions = parseValues(
+			if operation.primitive == "Block" then blockDimensions.Text
+				else cylinderDimensions.Text,
+			if operation.primitive == "Block" then 3 else 2
+		)
+		local offset = parseValues(additiveOffset.Text, 3)
+		if not dimensions or not offset then
+			return message("Enter valid dimensions and three position offsets")
+		end
+		local size = if operation.primitive == "Block" then
+			Vector3.new(table.unpack(dimensions)) / 280
+			else Vector3.new(dimensions[1], dimensions[2], dimensions[1]) / 280
+		local base = component.nodes[1].size
+		local center = Vector3.new(
+			0, (base.Y + size.Y) * 0.5 - 1 / 280, 0
+		) + Vector3.new(table.unpack(offset)) / 280
+		local accepted, why = document:editAddedPrimitive(
+			component, operation.id, size, center, operation.rotation
+		)
+		if not accepted then
+			return message("Added stock update rejected: " .. tostring(why))
+		end
+		changed(component)
+		message("Additive geometry updated and revalidated as one solid")
+	end)
+	-- History rows below bind their labels to this operation picker.
+	local loadAddedPrimitive = selectAddedPrimitive
 
 	line("3D TRANSFORM HANDLES")
 	local transformStatus = line("Mode: MOVE (G)")
@@ -1131,8 +1206,9 @@ function Debug.start(options: any?)
 	line("FEATURE HISTORY  /  LAST 6")
 	for slot = 1, 6 do
 		local entry = row(27)
-		local label = make("TextLabel", {
+		local label = make("TextButton", {
 			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
 			Text = "",
 			Font = Enum.Font.Code,
 			TextSize = 11,
@@ -1140,6 +1216,11 @@ function Debug.start(options: any?)
 			TextXAlignment = Enum.TextXAlignment.Left,
 			Size = UDim2.new(0.64, 0, 1, 0),
 		}, entry)
+		label.Activated:Connect(function()
+			local component = selectedComponent()
+			local operation = component and component.operations[#component.operations - slot + 1]
+			loadAddedPrimitive(operation)
+		end)
 		local toggle = button(entry, "ON", 0.65, 0.18, function()
 			local component = selectedComponent()
 			local operation = component and component.operations[#component.operations - slot + 1]
