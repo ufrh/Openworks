@@ -377,29 +377,54 @@ function Service:EditAddedPrimitive(player: Player, id: any, revision: any,
  return true, Document.snapshot(component)
 end
 
-function Service:SetOperationEnabled(player:Player,id:any,revision:any,
- operationId:any,enabled:any)
- local doc,component,err=selected(self,player,id,revision)
- if not doc then return false,err end
- if typeof(operationId)~="number" or typeof(enabled)~="boolean" then
-  return false,"Invalid feature operation"
+-- Every source-history edit that changes material is validated against
+-- the complete manufactured solid before it mutates saved document state.
+local function commitConnectedEdit(self: any, player: Player, doc: any,
+ component: any, operation: (any) -> (boolean, string?))
+ if self.mutating[player] then
+  return false, "Manufacturing is already validating another feature"
  end
- remember(self,player,component)
- local ok,reason=doc:setOperationEnabled(component,operationId,enabled)
- if not ok then return false,reason end
- self:Changed(player,component.id,true)
- return true,Document.snapshot(component)
+ self.mutating[player] = true
+ local trial = Document.snapshot(component)
+ local worked, accepted, reason = pcall(operation, trial)
+ if not worked or not accepted then
+  self.mutating[player] = nil
+  return false, tostring(if worked then reason else accepted)
+ end
+ local compiled, result = pcall(Fabricator.compile, trial)
+ if compiled and result then result:Destroy() end
+ self.mutating[player] = nil
+ if not compiled or not result then
+  return false, "Operation would disconnect or invalidate manufactured material: "
+   .. tostring(result)
+ end
+ remember(self, player, component)
+ component.operations = trial.operations
+ component.revision = trial.revision
+ self:Changed(player, component.id, true)
+ return true, Document.snapshot(component)
 end
 
-function Service:RemoveOperation(player:Player,id:any,revision:any,operationId:any)
- local doc,component,err=selected(self,player,id,revision)
- if not doc then return false,err end
- if typeof(operationId)~="number" then return false,"Invalid feature ID" end
- remember(self,player,component)
- local ok,reason=doc:removeOperation(component,operationId)
- if not ok then return false,reason end
- self:Changed(player,component.id,true)
- return true,Document.snapshot(component)
+function Service:SetOperationEnabled(player: Player, id: any, revision: any,
+ operationId: any, enabled: any)
+ local doc, component, err = selected(self, player, id, revision)
+ if not doc then return false, err end
+ if type(operationId) ~= "number" or typeof(enabled) ~= "boolean" then
+  return false, "Invalid feature operation"
+ end
+ return commitConnectedEdit(self, player, doc, component, function(trial)
+  return doc:setOperationEnabled(trial, operationId, enabled)
+ end)
+end
+
+function Service:RemoveOperation(player: Player, id: any,
+ revision: any, operationId: any)
+ local doc, component, err = selected(self, player, id, revision)
+ if not doc then return false, err end
+ if type(operationId) ~= "number" then return false, "Invalid feature ID" end
+ return commitConnectedEdit(self, player, doc, component, function(trial)
+  return doc:removeOperation(trial, operationId)
+ end)
 end
 
 function Service:ApplyTransform(player:Player,id:any,revision:any,
@@ -456,14 +481,12 @@ function Service:SetNotes(player:Player,id:any,revision:any,notes:any)
  return true,Document.snapshot(component)
 end
 
-function Service:UndoOperation(player:Player,id:any,revision:any)
- local doc,component,err=selected(self,player,id,revision)
- if not doc then return false,err end
- remember(self,player,component)
- local ok,reason=doc:undoOperation(component)
- if not ok then return false,reason end
- self:Changed(player,component.id,true)
- return true,Document.snapshot(component)
+function Service:UndoOperation(player: Player, id: any, revision: any)
+ local doc, component, err = selected(self, player, id, revision)
+ if not doc then return false, err end
+ return commitConnectedEdit(self, player, doc, component, function(trial)
+  return doc:undoOperation(trial)
+ end)
 end
 
 function Service:DeleteComponent(player:Player,id:any,revision:any)
