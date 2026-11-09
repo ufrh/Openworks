@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Determine the smallest *practically stable* OPENWORKS mechanical construction scale. Every one of the 17 mechanisms is generated at the same five reference sizes: **0.375 / 0.50 / 0.75 / 1.00 / 1.50 studs**. The reference is the nominal 1-unit structural dimension in the fixture, not necessarily the thickness of every beam or shaft. The smaller decorative/shaft dimensions are scaled proportionally.
+Determine the smallest *practically stable* OPENWORKS mechanical construction scale. Every one of the 17 mechanisms is generated at the same five reference sizes: **0.375 / 0.25 / 0.1875 / 0.125 / 0.0625 studs**. 0.375 studs is the largest candidate after encouraging preliminary hands-on testing; the new comparison searches downward for the first unstable scale. The reference is the nominal 1-unit structural dimension in the fixture, not necessarily the thickness of every beam or shaft. The smaller decorative/shaft dimensions are scaled proportionally.
 
 **Scope:** native Roblox constraints exclusively. WeldConstraints are used to make rigid multipart assemblies; no custom force/kinematic solvers, runtime CSG, or procedural mesh generation.
 
@@ -54,7 +54,7 @@ For each mechanism and each of the five scale variants, the system records the f
 - **Heavy:** enables physical ballast plus controlled external impulses;
 - **Extreme:** high angular speed, reversals, extra loads, and stronger impulses.
 
-Fresh rigs are rebuilt for every phase and trial, eliminating accumulated state. Candidate/reference controls are stored in `src/server/Bench/Config.lua`. Motor force/torque and spring parameters use documented scaling approximations, with **constant density and unchanged global gravity**. These are *comparison heuristics*, not strict physical similarity under gravity. Some phenomena (e.g. spring natural frequency, fixed RPM, collision speed) cannot all be dynamically similar at once.
+Fresh rigs are rebuilt for every phase and trial, eliminating accumulated state. The `ReferenceScale` remains **0.75** specifically to preserve the geometric meaning of the previous 0.375-stud candidate; changing it would silently enlarge all five rigs and invalidate the comparison. Candidate/reference controls are stored in `src/server/Bench/Config.lua`. Motor force/torque and spring parameters use documented scaling approximations, with **constant density and unchanged global gravity**. These are *comparison heuristics*, not strict physical similarity under gravity. Some phenomena (e.g. spring natural frequency, fixed RPM, collision speed) cannot all be dynamically similar at once.
 
 The tests intentionally disable inter-part collision in most fixtures so constraint instability is distinguishable from mesh contact. The suspension has a physical wheel-to-floor collision. Real-world collisions, teeth meshing, and user-built complex machines need a later, separate test campaign.
 
