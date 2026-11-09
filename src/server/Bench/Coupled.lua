@@ -106,7 +106,7 @@ function M.build(index, g)
 		local cf = CFrame.new(g:at(wheelPos)) * CFrame.Angles(math.pi / 2, 0, 0)
 		local wheel = g:part("Suspended wheel", wheelPos, V(2, 0.7, 2), false, GOLD,
 			Enum.PartType.Cylinder, cf)
-		hinge(g, carrier, wheel, wheelPos, Z)
+		motor(g, carrier, wheel, wheelPos, Z)
 		local floor = support(g, V(0, 1.2, 0), V(9, 0.4, 9))
 		floor.Name = "Impact floor"
 		floor.CanCollide = true
