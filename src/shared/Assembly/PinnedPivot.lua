@@ -4,6 +4,7 @@
 -- geometric material clearance is audited independently by FORM.
 local References = require(script.Parent.GeometryReferences)
 local Geometry = require(script.Parent.SupportGeometry)
+local BoreIntegrity = require(script.Parent.BoreIntegrity)
 
 local Pivot = {}
 local MM = 1 / 280
@@ -38,15 +39,14 @@ local function checkBore(ref: any, component: any, pose: CFrame, shaft: any): (b
 	if radial > math.min(MAX_RADIAL_ERROR, clearance * 0.5 + 0.0001) then
 		return false, "Pin is not inside the bore centerline clearance"
 	end
+	local intact, why = BoreIntegrity.check(component, ref)
+	if not intact then return false, why end
 	local localMin, localMax = Geometry.boreSpan(
 		component.nodes[1],
 		ref.point,
 		ref.direction,
 		ref.diameter * 0.5 + Geometry.Wall
 	)
-	if not localMin or not localMax then
-		return false, "Pivot bore lacks a continuous surrounding wall"
-	end
 	local inner = world.point + world.direction * math.min((localMax - localMin) * 0.5, ref.feature.depth * 0.5)
 	local innerAxial = (inner - shaft.point):Dot(shaft.direction)
 	if math.abs(axial) > shaft.length * 0.5 - MM or math.abs(innerAxial) > shaft.length * 0.5 - MM then
