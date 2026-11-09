@@ -7,6 +7,7 @@ local Players=game:GetService("Players")
 local FORGE=require(ReplicatedStorage:WaitForChild("FORGE"))
 local FORM=ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("FORM")
 local Document=require(FORM.Document)
+local Fabricator = require(FORM.Fabricator)
 local Quantize=require(FORM.Quantize)
 local Store=require(script.Parent.Parent.Persistence.DocumentStore)
 local HttpService=game:GetService("HttpService")
@@ -96,6 +97,7 @@ end
 function Service:Init()
  self.documents={}
  self.history={}
+ self.mutating={}
  self.loading={}
  self.dirty={}
  self.sequence={}
@@ -295,21 +297,50 @@ function Service:CreateCylinder(player:Player,name:any,worldOrigin:any,
  return true,Document.snapshot(component)
 end
 
-function Service:ApplyOperation(player:Player,id:any,revision:any,kind:any,data:any)
- local doc,component,err=selected(self,player,id,revision)
- if not doc then return false,err end
- if typeof(kind)~="string" or typeof(data)~="table"
-  or #component.operations>=MAX_OPERATIONS then
-  return false,"Invalid fabrication operation or operation limit reached"
+function Service:ApplyOperation(player: Player, id: any, revision: any,
+ kind: any, data: any)
+ if self.mutating[player] then
+  return false, "Manufacturing operation is already being validated"
  end
- remember(self,player,component)
- local ok,valid,reason=pcall(function()
-  return doc:addOperation(component,kind,data)
- end)
- if not ok then return false,tostring(valid) end
- if not valid then return false,reason end
- self:Changed(player,component.id,true)
- return true,Document.snapshot(component)
+ local doc, component, err = selected(self, player, id, revision)
+ if not doc then return false, err end
+ if typeof(kind) ~= "string" or typeof(data) ~= "table"
+  or #component.operations >= MAX_OPERATIONS then
+  return false, "Invalid fabrication operation or operation limit reached"
+ end
+ local mustRemainConnected = kind == "AddPrimitive"
+  or (kind == "SketchExtrude" and data.mode == "Add")
+ if mustRemainConnected then
+  -- Evaluate the new operation on a detached snapshot. Invalid unions
+  -- never change the authoritative manufacturing document or revision.
+  self.mutating[player] = true
+  local trial = Document.snapshot(component)
+  local accepted, ok, reason = pcall(function()
+   return doc:addOperation(trial, kind, data)
+  end)
+  if not accepted or not ok then
+   self.mutating[player] = nil
+   return false, tostring(if accepted then reason else ok)
+  end
+  local compiled, result = pcall(Fabricator.compile, trial)
+  if compiled and result then result:Destroy() end
+  self.mutating[player] = nil
+  if not compiled then
+   return false, "Added material must form one connected solid: " .. tostring(result)
+  end
+  remember(self, player, component)
+  component.operations = trial.operations
+  component.revision = trial.revision
+ else
+  remember(self, player, component)
+  local accepted, ok, reason = pcall(function()
+   return doc:addOperation(component, kind, data)
+  end)
+  if not accepted then return false, tostring(ok) end
+  if not ok then return false, reason end
+ end
+ self:Changed(player, component.id, true)
+ return true, Document.snapshot(component)
 end
 
 function Service:SetOperationEnabled(player:Player,id:any,revision:any,
