@@ -7,6 +7,7 @@ local Catalog = require(Shared.RelationshipCatalog)
 local Layout = require(Shared.AssemblyLayout)
 local Panel = require(script.Parent.Parent.Parent.Experience.UI.WorkbenchPanel)
 local Manipulator = require(script.Parent.PrecisionManipulator)
+local Presets = require(script.Parent.Presets)
 local Controller = {}
 Controller.__index = Controller
 local function solid(state: any, id: number): BasePart?
@@ -59,6 +60,34 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		"Select a part here or click its solid. [Fixed] means attached to the external bench.",
 		48
 	)
+	for _, preset in ipairs({ "Bearing", "Linear guide" }) do
+		Panel.button(parts, "Create preset: " .. preset, function()
+			if self.pending or self.manipulator.gizmo:isDragging() then
+				return
+			end
+			self.pending = true
+			self.manipulator.gizmo:setHidden(true)
+			self:_report("Building " .. preset .. " preset…")
+			local callOk, ok, result = pcall(Presets.build, documents, remote, preset)
+			self.pending = false
+			local refreshed, issue = pcall(function()
+				self:reload()
+			end)
+			self.manipulator.gizmo:setHidden(false)
+			if callOk and ok and refreshed then
+				self.selectedId = result
+				self:select(result)
+				bridge.frameAssembly(result)
+				self:_report(
+					"Preset assembled. Open Mechanics → Start simulation, then select the mover in Test."
+				)
+			else
+				self:_report(
+					tostring(if not callOk then ok elseif not refreshed then issue else result)
+				)
+			end
+		end)
+	end
 	self.partsRoot = Panel.list(parts)
 	Panel.button(parts, "Frame all (Home)", function()
 		bridge.frameAssembly(nil)
