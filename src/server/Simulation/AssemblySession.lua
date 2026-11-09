@@ -225,6 +225,12 @@ function Session.update(session: any, dt: number?)
 	end
 	for i = #session.relations, 1, -1 do
 		local item = session.relations[i]
+		-- Captured pins are secured by manufactured caps and active joints.
+		-- Rechecking micron-scale concentricity each physics frame would
+		-- incorrectly destroy a hinge because of solver jitter.
+		if item.relation.model == "RetainedPivotV1" then
+			continue
+		end
 		if not Resolver.resolve(item.record, session.source, poses, session.grounded) then
 			Constraints.destroy(item.objects)
 			session.drives[item.index] = nil
