@@ -783,6 +783,12 @@ function Controller:mutate(method: string, ...: any)
 		end)
 		if not refreshed then
 			accepted, why = false, problem
+		elseif method == "RegisterRelationship" then
+			-- The installed pin and its retainers now belong to this joint.
+			-- Clear the fixture picker for the next independent connection.
+			self.fixtures = {}
+			self.selectionIntent = nil
+			self:mechanicsText()
 		end
 	end
 	self.pending = false
