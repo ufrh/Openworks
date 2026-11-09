@@ -1,6 +1,6 @@
 # Mechanical workbench
 
-Build: `2026.11.09.WORKBENCH.2`. See [the exact build-and-test recipe](MECHANICAL_QUICKSTART.md).
+Active development: mechanical workbench, retained pivots, X/Y guides, and external test-bench drives. Studio Play acceptance remains required.
 
 ## Ownership and modes
 
@@ -14,12 +14,12 @@ The document DataStore envelope remains version 1; the assembly payload remains 
 
 ## Controls
 
-Assembly has four tabs:
+Assembly uses a shared four-page workbench. The page names and controls are:
 
-- **Parts:** named selection with fixed/free state, frame all, reset view, save.
+- **Components:** component selection, fixed/free state, parametric mechanism examples, frame all, reset view, save.
 - **Move:** W/E move/rotate, local/world axes, adjustable mm/degree snap, numeric position relative to the stage center, rotation, placement undo/redo, frame selected.
 - **Align:** choose mover A, pick target B, select source planes/bore/shaft references, then align axes, mate faces, make parallel, or set spacing. Offsets are millimeters. Alignment positions geometry; it installs no joint.
-- **Mechanics:** explicitly fix/release a component to the external bench, choose a mover and housing where needed, choose a relationship, add the required manufactured fixtures, validate, remove relationships, start simulation.
+- **Joints:** fix/release bench fixtures, select source bores, register real hardware-supported relationships, validate clearance, remove joints, and start simulation. For pivot joints, an optional geometric lookup can identify the manufactured pin and end caps; it never fabricates hardware.
 
 References are manufacturing datums, not persistent rendered triangle IDs. A source plane can remain useful after machining removes part of that face; placement is still checked against the final solid. Concentric alignment preserves axial depth; adjust insertion with Move if the support validator requests more engagement.
 
@@ -27,7 +27,7 @@ Move previews immediately. On release, server clearance validation either accept
 
 In Assembly and Simulation, RMB orbits, MMB pans, wheel zooms, F frames selection, and Home frames all. Reset view restores the stage/session focus, orbit angles, projection, and zoom. Edit retains its fixed workspace pivot. Free restores character camera/control and the previous FOV. Camera mouse state is released on focus/mode changes, and an active manipulator captures its drag.
 
-Simulation has **Run**, **Test**, and **Parts** tabs. Pause freezes bodies and preserves velocities; Resume restores them. Reset restores initial positions, zeroes velocities, rebuilds released relationships, and preserves paused/running state. Stop returns to Assembly. Test applies a bounded one-shot spin or push to an ungrounded selected body along the relationship's motion axis or a chosen world axis. This is external bench input, not a fabricated motor. The spin value is nominal because inertia and collision response affect actual speed. A surface marker on cylinder ends makes rotation visible.
+Simulation has **Run**, **Drive**, **Test**, and **Parts** tabs. Pause freezes bodies and preserves velocities; Resume restores them. Reset restores initial positions, zeroes velocities, rebuilds released relationships, and preserves paused/running state. Stop returns to Assembly. Test applies a bounded one-shot spin or push to an ungrounded selected body along the relationship's motion axis or a chosen world axis. The Drive page independently controls bounded continuous motors, direction reversal, or position servos on an accepted joint. This is external bench equipment, not an installed manufactured motor. The spin value is nominal because inertia and collision response affect actual speed. A surface marker on cylinder ends makes rotation visible.
 
 ## Supported relationships
 
@@ -36,15 +36,15 @@ Simulation has **Run**, **Test**, and **Parts** tabs. Pause freezes bodies and p
 | Sliding bearing (`BoreSupportV1`) | Uncut cylinder in one through-drilled convex housing | Axial slide and rotation; no retention |
 | Retained bearing (`RetainedBoreV1`) | Same, with fixed housing and two separate fixed rectangular end plates covering shaft ends | Rotation and measured axial endplay |
 | Linear guide (`LinearGuideV1`) | Uncut rectangular carriage surrounded on four sides by separate fixed rectangular rails | Axial slide, no rotation |
-| Linear guide + stops (`LimitedGuideV1`) | Same four rails, plus two separate fixed rectangular end plates | Slide within measured stroke, no rotation |
+| Linear guide + stops (`LimitedGuideV1`) | Same four rails, plus two separate fixed rectangular end plates | Slide within measured stroke, no rotation |\n| Retained pin pivot (`RetainedPivotV1`) | Through-drilled links, separate cylindrical pin and two manufactured end caps | One rotational DOF, no axial release |
 
 Bearings accept both legacy `Drill` and the UI's `DrillFace`, including side-face bores. The one active drill must be through, with a continuous surrounding wall in block or convex sketch stock. Shaft/bore diametral clearance is 1–4 mm. Unsupported additional machining, loose fits, insufficient wall, misalignment, or insufficient axial engagement fails validation.
 
-Linear rails must be uncut rectangles aligned with the carriage axes, cover all four local X/Z sides, provide 0.5–2 mm clearance per side, and retain sufficient axial overlap. Travel is local Y. End plates must be grounded, square to travel, cover the mover end, and enclose it without penetration. Bounds come from actual plate faces. Travel that would lose bearing/rail engagement before reaching a stop is rejected.
+Linear rails must be uncut rectangles aligned with the carriage axes, cover all four local X/Z sides, provide 0.5–2 mm clearance per side, and retain sufficient axial overlap. Travel may follow the moving carriage's local X or Y axis. End plates must be grounded, square to travel, cover the mover end, and enclose it without penetration. Bounds come from actual plate faces. Travel that would lose bearing/rail engagement before reaching a stop is rejected.
 
-All movers must be free from the bench. One relationship per mover avoids redundant ideal constraints. Compiled constraints are passive Cylindrical or Prismatic constraints; collisions remain enabled. Cylindrical inclination is zero so rotation and translation share the axis. Constraints are removed when support engagement is lost, and Reset restores the original validated arrangement. No screws, welds, hidden retainers, or rail geometry are generated.
+All movers must be free from the bench. Crank–rod–slider examples now use three separate retained-pin hinges and a physically bounded X-axis prismatic guide. Guides and conventional bearings remain limited to one relationship per mover. Retained pin pivots allow multiple independent link references on one manufactured component; each pivot needs its own pin and retainers. Compiled constraints are Cylindrical, Prismatic, or Hinge constraints, with collisions enabled. Continuous motor and servo actuation are available in the separate test bench. Cylindrical inclination is zero so rotation and translation share the axis. Constraints are removed when support engagement is lost, and Reset restores the original validated arrangement. No screws, welds, hidden retainers, or rail geometry are generated.
 
-These are idealized bench mechanism models, not stress/contact engineering analysis. Rigid fasteners, spherical joints, gearing, belts, screw drives, multiple bearing supports on one shaft, and powered actuators remain unsupported. The legacy motor endpoint explicitly rejects requests. The bench fixture is external support, not a connection between manufactured parts.
+These are idealized bench mechanism models, not stress/contact engineering analysis. Threads, clamp preload, stress/fatigue, spherical bearings, gearing, belts, screw transmissions, and fully manufactured electrical actuator hardware remain unsupported. The bench drive is a controllable external input rather than a fabricated motor. The legacy motor endpoint explicitly rejects requests. The bench fixture is external support, not a connection between manufactured parts.
 
 ## Clearance and limits
 
@@ -63,3 +63,28 @@ Studio acceptance:
 5. Follow [the manual recipe](MECHANICAL_QUICKSTART.md): visually verify rotation/sliding/stops, released supports, collision behavior, mode/camera restoration, failed transitions, and respawn. Repeat to check for leaked folders, attachments, or controls.
 
 Host compilation and 60 assertions passed. Studio Play, dynamic physics, CSG collision fidelity, UI usability, and actual DataStore reload have not been executed in this environment. This build is ready for that acceptance pass; those runtime checks are not represented as passed.
+
+
+## Slider–crank acceptance target
+
+The slider–crank diagram's mechanism is represented by a **crank pivot**,
+**two connecting-rod pivots**, and a **prismatic slider guide**. The
+`Slider-crank assembly` command creates 19 authored FORM parts:
+four motion/structure pieces, three manufactured pins, six end caps,
+four linear rails, and two travel stops. No invisible mechanical hardware
+is added. The actual joint constraints are compiled only in Simulation.
+
+Use **Simulation → Drive** to choose the crank Revolute joint, set RPM and
+maximum torque, and start/reverse/stop the external motor. **Position servo**
+targets an angle in degrees, or a distance in millimeters for a slider
+guide. These commands don't create a motor or change the manufacturing
+history. Stopping simulation restores CAD poses; Reset rebuilds constraints
+at the original poses.
+
+A Studio Play end-to-end test is in `scripts/VERIFY_SLIDER_CRANK.lua`.
+It creates a persistent example and checks geometry, all four mechanical
+relationships, validation, motor, Reset, and CAD-pose preservation. It must
+be run in a clean stage with supported CSG permissions. Source-only
+verification is not a substitute for Studio's live collision and solver
+behavior; an unsupported fit fails closed rather than silently disabling
+collisions.
