@@ -280,8 +280,17 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 			self.onSimulate()
 		end
 	end)
-	Panel.label(mechanics, "Installed relationships (click to remove)", 40)
+	Panel.label(mechanics, "MECHANICAL CONNECTIONS", 26)
+	self.relationshipDetail = Panel.label(mechanics, "Select a relationship to inspect", 56)
 	self.relationshipsRoot = Panel.list(mechanics)
+	Panel.button(mechanics, "Remove selected relationship", function()
+		local index = self.jointIndex
+		if not index or not self.layout or not self.layout.supports[index] then
+			return self:_report("Select the mechanical relationship to remove")
+		end
+		self.jointIndex = nil
+		self:mutate("RemoveSupport", index, self.layout.revision)
+	end)
 	self:mechanicsText()
 	self.manipulator.onCommit = function(frame)
 		local state = bridge.getAssemblyState()
@@ -410,21 +419,42 @@ function Controller:refreshLists()
 			else Color3.fromRGB(43, 65, 79)
 	end
 	Panel.clear(self.relationshipsRoot)
+	if self.jointIndex and not self.layout.supports[self.jointIndex] then
+		self.jointIndex = nil
+	end
 	for i, record in ipairs(self.layout.supports) do
-		local name = record.model
+		local specName = record.model
 		for _, spec in ipairs(Catalog) do
-			if spec.model == name then
-				name = spec.name
+			if spec.model == record.model then
+				specName = spec.name
 				break
 			end
 		end
-		Panel.button(
+		local item = Panel.button(
 			self.relationshipsRoot,
-			name .. ": " .. self:name(record.movingId or record.shaftId) .. " ×",
+			string.format("#%d  %s  ·  %s", i, specName,
+				self:name(record.movingId or record.shaftId)),
 			function()
-				self:mutate("RemoveSupport", i, self.layout.revision)
+				self.jointIndex = i
+				self:refreshLists()
+				self:_report("Relationship selected. Inspect its members or remove explicitly.")
 			end
 		)
+		item.BackgroundColor3 = if self.jointIndex == i
+			then Color3.fromRGB(27, 119, 135)
+			else Color3.fromRGB(43, 65, 79)
+	end
+	local selected = self.jointIndex and self.layout.supports[self.jointIndex]
+	if selected then
+		self.relationshipDetail.Text =
+			string.format("#%d  %s\nA: %s   B: %s",
+				self.jointIndex, selected.model,
+				self:name(selected.movingId or selected.shaftId),
+				self:name(selected.bodyId))
+	else
+		self.relationshipDetail.Text =
+			if #self.layout.supports == 0 then "No registered relationships"
+			else "Select a relationship to inspect"
 	end
 end
 
