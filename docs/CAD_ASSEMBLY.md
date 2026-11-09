@@ -52,7 +52,7 @@ Broad phase uses oriented bounds and 0.0001-stud linear tolerance. Block overlap
 
 ## Verification
 
-`cd scripts/tests && npm ci && npm test` compiles all source/verification Lua with Luau WASM and runs 78 domain assertions covering references, placement math, DrillFace and side bores, bearing retention, rail/stops validation, compiler configuration, pause/reset, and mode rollback/cleanup with Free fallback. Vector/CFrame/Instance doubles exercise real module logic; they do not simulate Roblox physics or execute live CSG/UI/DataStores.
+`cd scripts/tests && npm ci && npm test` compiles all source/verification Lua with Luau WASM and runs 113 domain assertions covering references, placement math, DrillFace and side bores, bearing retention, rail/stops validation, compiler configuration, pause/reset, and mode rollback/cleanup with Free fallback. Vector/CFrame/Instance doubles exercise real module logic; they do not simulate Roblox physics or execute live CSG/UI/DataStores.
 
 Studio acceptance:
 
@@ -62,7 +62,7 @@ Studio acceptance:
 4. Run `scripts/VERIFY_Q4_PERSISTENCE.lua` server-side for codec round-trips. Separately enable Studio DataStore access and verify save → stop Play → restart preserves all supported relationship types and fixtures.
 5. Follow [the manual recipe](MECHANICAL_QUICKSTART.md): visually verify rotation/sliding/stops, released supports, collision behavior, mode/camera restoration, failed transitions, and respawn. Repeat to check for leaked folders, attachments, or controls.
 
-GitHub Actions compiled 173 Luau files and passed 78 domain assertions. Studio Play, dynamic physics, CSG collision fidelity, UI usability, and actual DataStore reload have not been executed in this environment. This build is ready for that acceptance pass; those runtime checks are not represented as passed.
+GitHub Actions compiled 180 Luau files and passed 113 domain assertions. Studio Play, dynamic physics, CSG collision fidelity, UI usability, and actual DataStore reload have not been executed in this environment. This build is ready for that acceptance pass; those runtime checks are not represented as passed.
 
 
 ## Slider–crank acceptance target
