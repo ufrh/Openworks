@@ -35,7 +35,7 @@ local function numbers(text: string, count: number): { number }?
 end
 function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	local panel = Panel.new("Assembly", { "Parts", "Move", "Install", "Align", "Mechanics" })
-	panel.tabs.Parts.Text = "Components"
+	panel.tabs.Parts.Text = "Parts"
 	panel.tabs.Align.Text = "Align"
 	panel.tabs.Mechanics.Text = "Joints"
 	local self = setmetatable({
@@ -80,7 +80,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	self.pivotPanel.Visible = false
 	Panel.label(
 		parts,
-		"Create and machine components, position them in CAD, then validate physical joints. Nothing connects automatically.",
+		"Create or machine material, position components, then install mechanical connections from their manufactured geometry.",
 		48
 	)
 	Panel.button(parts, "+ New manufactured component", function()
@@ -97,6 +97,11 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		self.panel:show("Install")
 		self.selectionIntent = "installBore"
 		self:_report("Select the housing with the bore you want to use")
+	end)
+	Panel.button(parts, "Install pin pivot", function()
+		self:setInstallMode("Pivot")
+		self.selectionIntent = "pivotBody"
+		self:_report("Select the first drilled link")
 	end)
 	Panel.button(parts, "▶ Simulate", function()
 		if not self.pending and self.onSimulate then
