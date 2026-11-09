@@ -53,6 +53,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		layout = nil,
 		highlights = {},
 		fixtures = {},
+		partButtons = {},
 		modelIndex = 1,
 		travelAxis = "Y",
 		history = {},
@@ -366,14 +367,19 @@ end
 function Controller:refreshLists()
 	local state = self.bridge.getAssemblyState()
 	Panel.clear(self.partsRoot)
+	table.clear(self.partButtons)
 	for _, id in ipairs(state.document.order) do
 		local label = self:name(id)
 		if self.layout.grounded[tostring(id)] then
 			label ..= " [Fixed]"
 		end
-		Panel.button(self.partsRoot, label, function()
+		local item = Panel.button(self.partsRoot, label, function()
 			self:select(id)
 		end)
+		self.partButtons[id] = item
+		item.BackgroundColor3 = if id == self.selectedId
+			then Color3.fromRGB(27, 119, 135)
+			else Color3.fromRGB(43, 65, 79)
 	end
 	Panel.clear(self.relationshipsRoot)
 	for i, record in ipairs(self.layout.supports) do
@@ -501,6 +507,11 @@ function Controller:select(id: number)
 		self.refIndex = 1
 	end
 	self.selectedId = id
+	for componentId, button in pairs(self.partButtons) do
+		button.BackgroundColor3 = if componentId == id
+			then Color3.fromRGB(27, 119, 135)
+			else Color3.fromRGB(43, 65, 79)
+	end
 	self.manipulator:select(part)
 	self:clearHighlights()
 	self:highlight(id, Color3.fromRGB(90, 220, 240))
