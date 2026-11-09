@@ -112,6 +112,7 @@ function Service:Init()
  self:Expose("GetSnapshot")
  self:Expose("ListSnapshots")
  self:Expose("ApplyOperation")
+ self:Expose("EditAddedPrimitive")
  self:Expose("SetOperationEnabled")
  self:Expose("RemoveOperation")
  self:Expose("ApplyTransform")
@@ -339,6 +340,38 @@ function Service:ApplyOperation(player: Player, id: any, revision: any,
   if not accepted then return false, tostring(ok) end
   if not ok then return false, reason end
  end
+ self:Changed(player, component.id, true)
+ return true, Document.snapshot(component)
+end
+
+function Service:EditAddedPrimitive(player: Player, id: any, revision: any,
+ featureId: any, size: any, position: any, rotation: any)
+ if self.mutating[player] then
+  return false, "Manufacturing operation is already being validated"
+ end
+ local doc, component, reason = selected(self, player, id, revision)
+ if not doc then return false, reason end
+ if type(featureId) ~= "number" or featureId % 1 ~= 0 then
+  return false, "Invalid additive feature"
+ end
+ self.mutating[player] = true
+ local trial = Document.snapshot(component)
+ local accepted, ok, problem = pcall(function()
+  return doc:editAddedPrimitive(trial, featureId, size, position, rotation)
+ end)
+ if not accepted or not ok then
+  self.mutating[player] = nil
+  return false, tostring(if accepted then problem else ok)
+ end
+ local compiled, result = pcall(Fabricator.compile, trial)
+ if compiled and result then result:Destroy() end
+ self.mutating[player] = nil
+ if not compiled then
+  return false, "Revised material would be disconnected or invalid: " .. tostring(result)
+ end
+ remember(self, player, component)
+ component.operations = trial.operations
+ component.revision = trial.revision
  self:Changed(player, component.id, true)
  return true, Document.snapshot(component)
 end
