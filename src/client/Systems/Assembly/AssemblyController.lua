@@ -53,6 +53,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		highlights = {},
 		fixtures = {},
 		partButtons = {},
+		selectionIntent = nil,
 		modelIndex = 1,
 		travelAxis = "Y",
 		history = {},
@@ -172,11 +173,12 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		52
 	)
 	Panel.button(align, "Set moving component (A)", function()
-		self:setReference("a")
+		self.selectionIntent = "a"
+		self:_report("Select component A in the viewport or Components")
 	end)
-	Panel.button(align, "Choose target component (B)", function()
-		self.pickTarget = true
-		self:_report("Select the target component in the viewport or Components.")
+	Panel.button(align, "Set target component (B)", function()
+		self.selectionIntent = "b"
+		self:_report("Select component B in the viewport or Components")
 	end)
 	self.choices = Panel.label(align, "Moving part: — / Target: —", 52)
 	Panel.label(align, "GEOMETRIC REFERENCES")
@@ -193,7 +195,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		end)
 	end
 	Panel.button(align, "Clear chosen parts", function()
-		self.a, self.b, self.pickTarget = nil, nil, false
+		self.a, self.b, self.selectionIntent = nil, nil, nil
 		self:choiceText()
 	end)
 	Panel.label(align, "Alignment positions geometry. It creates no joint.", 40)
@@ -210,17 +212,19 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	end)
 	self.mechanicalChoices = Panel.label(mechanics, "Moving: — / Housing: —", 52)
 	Panel.button(mechanics, "Set joint member (A)", function()
-		self:setReference("a")
+		self.selectionIntent = "a"
+		self:_report("Select joint member A and its bore")
 	end)
-	Panel.button(mechanics, "Choose joint partner (B)", function()
-		self.pickTarget = true
-		self:_report("Select the second link or housing.")
+	Panel.button(mechanics, "Set joint member (B)", function()
+		self.selectionIntent = "b"
+		self:_report("Select member B and its bore")
 	end)
 	self.modelButton = Panel.label(mechanics, "", 32)
 	for index, spec in ipairs(Catalog) do
 		Panel.button(mechanics, spec.name, function()
 			self.modelIndex = index
 			self.fixtures = {}
+			self.selectionIntent = nil
 			self:mechanicsText()
 		end)
 	end
@@ -232,21 +236,21 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	Panel.button(mechanics, "Identify positioned pivot hardware", function()
 		self:detectPivotHardware()
 	end)
-	Panel.button(mechanics, "Add hardware / fixture", function()
-		local id = self.selectedId
-		if not id then
-			return self:_report("Select a fixture first")
+	Panel.button(mechanics, "Pick hardware / fixture", function()
+		if Catalog[self.modelIndex].fixtures == 0 then
+			return self:_report("This joint uses only its source components")
 		end
-		if table.find(self.fixtures, id) then
-			return self:_report("Fixture already added")
-		end
-		if #self.fixtures >= Catalog[self.modelIndex].fixtures then
-			return self:_report("Required fixtures already selected")
-		end
-		table.insert(self.fixtures, id)
+		self.selectionIntent = "fixture"
+		self:_report("Select hardware in order: " .. self:fixtureDescription())
+	end)
+	Panel.button(mechanics, "Clear hardware selection", function()
+		self.fixtures = {}
+		self.selectionIntent = nil
 		self:mechanicsText()
 	end)
 	self.fixturesRoot = Panel.list(mechanics)
+	Panel.label(mechanics, "BORE REFERENCES", 26)
+	self.jointReferencesRoot = Panel.list(mechanics)
 	Panel.button(mechanics, "Register joint", function()
 		self:registerSupport()
 	end)
