@@ -1,0 +1,27 @@
+name: Mechanical CAD validation
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+jobs:
+  luau-domain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: scripts/tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scripts/tests/package-lock.json
+      - name: Install Luau host runtime
+        run: npm ci
+      - name: Compile source and run domain assertions
+        run: npm test
