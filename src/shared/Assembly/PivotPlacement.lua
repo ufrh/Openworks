@@ -65,7 +65,10 @@ function PivotPlacement.propose(
 	local center = pinWorld.point
 	local axis = pinWorld.direction
 	local pinLength = shaft.length
-	local alignedCap = Geometry.axisFrame(Vector3.zero, axis).Rotation
+	local capBasis = Geometry.axisFrame(Vector3.zero, axis)
+	local alignedCap = CFrame.fromMatrix(
+		Vector3.zero, capBasis.XVector, capBasis.YVector, capBasis.ZVector
+	)
 	local proposed = table.clone(poses)
 	proposed[tostring(movingId)] = candidate
 	proposed[tostring(pinId)] = pinPose
