@@ -80,12 +80,18 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 				self.manipulator.gizmo:setHidden(true)
 				self:_report("Building " .. preset .. " preset…")
 				local callOk, ok, result = pcall(Presets.build, documents, remote, preset)
-				self.pending = false
+				local hydrated, hydrationProblem = true, nil
+				if callOk and ok and bridge.syncAssemblyDocuments then
+					local ran, accepted, message = pcall(bridge.syncAssemblyDocuments)
+					hydrated = ran and accepted == true
+					hydrationProblem = if ran then message else accepted
+				end
 				local refreshed, issue = pcall(function()
 					self:reload()
 				end)
+				self.pending = false
 				self.manipulator.gizmo:setHidden(false)
-				if callOk and ok and refreshed then
+				if callOk and ok and hydrated and refreshed then
 					self.selectedId = result
 					self:select(result)
 					bridge.frameAssembly(nil)
@@ -93,9 +99,12 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 						"Assembly created. Inspect the joints or switch to Simulation."
 					)
 				else
-					self:_report(
-						tostring(if not callOk then ok elseif not refreshed then issue else result)
-					)
+					self:_report(tostring(
+						if not callOk then ok
+						elseif not ok then result
+						elseif not hydrated then hydrationProblem
+						else issue
+					))
 				end
 			end
 		)
