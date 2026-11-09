@@ -417,7 +417,8 @@ function Service:ListDriveTargets(player: Player)
 	return true, list
 end
 
-function Service:SetBenchDrive(player: Player, index: any, speed: any, effort: any)
+function Service:SetBenchDrive(player: Player, index: any, speed: any, effort: any,
+	mode: any?, target: any?)
 	local session = self.sessions[player]
 	if not session or self.busy[player] then
 		return false, "Start the simulation first"
@@ -426,11 +427,13 @@ function Service:SetBenchDrive(player: Player, index: any, speed: any, effort: a
 		or type(speed) ~= "number" or type(effort) ~= "number" then
 		return false, "Invalid drive target or parameters"
 	end
-	local ok, reason = Session.drive(session, index, speed, effort)
+	local ok, reason = Session.drive(session, index, speed, effort, mode, target)
 	if not ok then
 		return false, reason
 	end
-	return true, if speed == 0 or effort == 0 then "Drive disengaged" else "Bench drive engaged"
+	return true, if effort == 0 then "Drive disengaged"
+		elseif mode == "Servo" then "Servo target applied"
+		else "Bench motor engaged"
 end
 
 function Service:TestImpulse(player: Player, id: any, kind: any, axisName: any, amount: any)
