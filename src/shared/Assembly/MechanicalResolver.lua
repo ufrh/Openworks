@@ -114,12 +114,16 @@ local function guide(record: any, components: any, poses: any, grounded: any): (
 	-- is the desired travel direction. This supports horizontal sliders
 	-- without rotating the drilled slider body or its pivot bore.
 	local axis = record.travelAxis or "Y"
-	if axis ~= "Y" and axis ~= "X" then
-		return nil, "Supported guide travel axes: X and Y"
+	if axis ~= "Y" and axis ~= "X" and axis ~= "Z" then
+		return nil, "Guide travel axis must be X, Y, or Z"
 	end
+	-- Rotate the guide datum so its Y axis follows the requested travel
+	-- axis; the four-rail fit test remains independent of chosen direction.
 	local basis = if axis == "X" then pose * CFrame.Angles(0, 0, -math.pi / 2)
+		elseif axis == "Z" then pose * CFrame.Angles(math.pi / 2, 0, 0)
 		else pose
 	local size = if axis == "X" then Vector3.new(nativeSize.Y, nativeSize.X, nativeSize.Z)
+		elseif axis == "Z" then Vector3.new(nativeSize.X, nativeSize.Z, nativeSize.Y)
 		else nativeSize
 	if type(record.guideIds) ~= "table" or #record.guideIds ~= 4 then
 		return nil, "Choose four surrounding guide rails"
