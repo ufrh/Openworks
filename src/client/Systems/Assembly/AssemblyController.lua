@@ -314,9 +314,50 @@ function Controller:choiceText()
 		.. (if self.b then " · " .. self.b.ref else "")
 end
 
+function Controller:fixtureDescription(): string
+	local model = Catalog[self.modelIndex].model
+	if model == "RetainedPivotV1" then
+		return "pin → lower retainer → upper retainer"
+	elseif model == "RetainedBoreV1" then
+		return "first end stop → second end stop"
+	elseif model == "LinearGuideV1" then
+		return "four surrounding rails"
+	elseif model == "LimitedGuideV1" then
+		return "four rails → two travel stops"
+	end
+	return "no separate fixtures"
+end
+
+function Controller:addFixture(id: number)
+	local spec = Catalog[self.modelIndex]
+	if spec.fixtures == 0 then
+		self.selectionIntent = nil
+		return self:_report("This relationship does not require hardware")
+	end
+	if (self.a and id == self.a.id) or (self.b and id == self.b.id) then
+		return self:_report("Joint members cannot also be their own fixtures")
+	end
+	if table.find(self.fixtures, id) then
+		return self:_report("That component is already selected as hardware")
+	end
+	if #self.fixtures >= spec.fixtures then
+		self.selectionIntent = nil
+		return self:_report("Hardware selection is complete")
+	end
+	table.insert(self.fixtures, id)
+	self:mechanicsText()
+	if #self.fixtures == spec.fixtures then
+		self.selectionIntent = nil
+		self:_report("Hardware selected. Register Joint validates the complete physical fit.")
+	else
+		self:_report(string.format("%d/%d hardware parts. Select the next: %s",
+			#self.fixtures, spec.fixtures, self:fixtureDescription()))
+	end
+end
+
 function Controller:mechanicsText()
 	local item = Catalog[self.modelIndex]
-	self.modelButton.Text = "Selected: " .. item.name
+	self.modelButton.Text = "Joint model: " .. item.name
 	self.modelHelp.Text = item.motion .. "\n" .. item.help
 	self.travelAxisButton.Visible = item.model == "LinearGuideV1" or item.model == "LimitedGuideV1"
 	Panel.clear(self.fixturesRoot)
@@ -328,8 +369,8 @@ function Controller:mechanicsText()
 	end
 	Panel.label(
 		self.fixturesRoot,
-		string.format("%d / %d physical fixtures selected%s", #self.fixtures, item.fixtures,
-		if item.model == "RetainedPivotV1" then " (pin, cap A, cap B)" else "")
+		string.format("%d / %d fixtures · %s", #self.fixtures, item.fixtures,
+			self:fixtureDescription())
 	)
 end
 
@@ -472,10 +513,24 @@ function Controller:select(id: number)
 		self.manipulator:select(nil)
 		return self:_report("Component geometry is still compiling or no longer exists")
 	end
-	if id ~= self.selectedId then
+	if id ~= self.selectedId and not self.selectionIntent then
 		self.refIndex = 1
 	end
 	self.selectedId = id
+	local intent = self.selectionIntent
+	if intent == "a" or intent == "b" then
+		local refs = References.list(state.document.components[id])
+		local preferred = 1
+		for index, ref in ipairs(refs) do
+			if ref.feature or ref.id == "shaft" then
+				preferred = index
+				break
+			end
+		end
+		self.refIndex = preferred
+	elseif id ~= self.selectedId then
+		self.refIndex = 1
+	end
 	for componentId, button in pairs(self.partButtons) do
 		button.BackgroundColor3 = if componentId == id
 			then Color3.fromRGB(27, 119, 135)
@@ -496,19 +551,14 @@ function Controller:select(id: number)
 		then "Release " .. self:name(id) .. " from bench"
 		else "Fix " .. self:name(id) .. " to bench"
 	self.bridge.setAssemblySelection(id)
-	if self.pickTarget then
-		self.pickTarget = false
-		local refs = References.list(state.document.components[id])
-		for index, ref in ipairs(refs) do
-			if ref.feature then
-				self.refIndex = index
-				break
-			end
-		end
-		self:setReference("b")
-		self.justPickedTarget = id
-		self:cycleReference(0)
-		self.panel:show("Align")
+	if intent == "a" or intent == "b" then
+		self:setReference(intent)
+		self.selectionIntent = nil
+		self:choiceText()
+		self:_report("Member " .. string.upper(intent)
+			.. " selected. Choose the drilled reference if needed.")
+	elseif intent == "fixture" then
+		self:addFixture(id)
 	end
 end
 function Controller:cycleReference(delta: number?)
@@ -516,8 +566,10 @@ function Controller:cycleReference(delta: number?)
 	local component = self.selectedId and state.document.components[self.selectedId]
 	local refs = component and References.list(component) or {}
 	Panel.clear(self.refsRoot)
+	Panel.clear(self.jointReferencesRoot)
 	if #refs == 0 then
 		Panel.label(self.refsRoot, "No source references")
+		Panel.label(self.jointReferencesRoot, "Select a manufactured part")
 		return
 	end
 	self.refIndex = (self.refIndex - 1 + (delta or 1)) % #refs + 1
@@ -540,6 +592,20 @@ function Controller:cycleReference(delta: number?)
 				self:cycleReference(0)
 			end
 		)
+		if ref.feature or ref.id == "shaft" then
+			Panel.button(self.jointReferencesRoot, caption .. "  →  A", function()
+				self.refIndex = index
+				self:setReference("a")
+				self:cycleReference(0)
+				self:choiceText()
+			end)
+			Panel.button(self.jointReferencesRoot, caption .. "  →  B", function()
+				self.refIndex = index
+				self:setReference("b")
+				self:cycleReference(0)
+				self:choiceText()
+			end)
+		end
 	end
 end
 function Controller:setReference(slot: string)
