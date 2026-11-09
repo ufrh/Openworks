@@ -2310,6 +2310,9 @@ function Debug.start(options: any?)
 			end
 			return true, nil
 		end,
+		openComponentCreator = function()
+			placementFlow:open()
+		end,
 		getAssemblyState = function()
 			return { document = document, projection = worldProjection }
 		end,
