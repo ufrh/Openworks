@@ -6,7 +6,7 @@ local Simulation = {}
 Simulation.__index = Simulation
 
 function Simulation.new(bridge: any, remote: any, onStop: () -> ())
-	local panel = Panel.new("Simulation", { "Run", "Test", "Parts" })
+	local panel = Panel.new("Simulation", { "Run", "Drive", "Test", "Parts" })
 	local self = setmetatable({
 		bridge = bridge,
 		remote = remote,
@@ -16,38 +16,68 @@ function Simulation.new(bridge: any, remote: any, onStop: () -> ())
 		paused = false,
 		selectedId = nil,
 		axisIndex = 1,
+		driveTargets = {},
+		driveIndex = nil,
+		driveKind = nil,
 		elapsed = 0,
 		generation = 0,
 	}, Simulation)
-	local run, test, parts = panel.pages.Run, panel.pages.Test, panel.pages.Parts
+	local run, drive, test, parts = panel.pages.Run, panel.pages.Drive, panel.pages.Test, panel.pages.Parts
 	Panel.label(
 		run,
-		"Simulation uses a separate copy. Stop returns to your saved assembly layout.",
+		"Physics runs on a separate copy. Stopping restores the saved CAD layout.",
 		48
 	)
 	self.pauseButton = Panel.button(run, "Pause", function()
 		self:control(if self.paused then "Resume" else "Pause")
 	end)
-	Panel.button(run, "Start over", function()
+	Panel.button(run, "Reset simulation", function()
 		self:control("Reset")
 	end)
-	Panel.button(run, "Back to building", function()
+	Panel.button(run, "Return to assembly", function()
 		if not self.pending then
 			onStop()
 		end
 	end)
-	Panel.button(run, "Frame all (Home)", function()
+	Panel.button(run, "Frame mechanism (Home)", function()
 		bridge.frameAssembly(nil)
 	end)
 	Panel.button(run, "Reset view", function()
 		bridge.resetAssemblyCamera()
 	end)
+	Panel.label(drive, "EXTERNAL TEST-BENCH ACTUATORS", 26)
+	Panel.label(
+		drive,
+		"Drive an installed revolute, cylindrical, or prismatic joint. This is external test equipment, not a manufactured motor.",
+		58
+	)
+	self.driveRoot = Panel.list(drive)
+	self.driveSelection = Panel.label(drive, "Select a joint", 40)
+	self.driveSpeed = Panel.input(drive, "Speed (RPM for pivots / mm/s for slides)", "15")
+	self.driveEffort = Panel.input(drive, "Torque (N·stud) / linear force", "220")
+	Panel.button(drive, "Run drive", function()
+		self:drive(true)
+	end)
+	Panel.button(drive, "Reverse direction", function()
+		local speed = tonumber(self.driveSpeed.Text)
+		if speed and speed ~= 0 then
+			self.driveSpeed.Text = tostring(-speed)
+			self:drive(true)
+		end
+	end)
+	Panel.button(drive, "Stop drive", function()
+		self:drive(false)
+	end)
+	Panel.button(drive, "Refresh joint list", function()
+		self:refreshDriveTargets()
+	end)
+
 	Panel.label(
 		test,
-		"External bench tests: apply a one-shot impulse to the selected body. These controls do not install a motor.",
+		"Apply transient forces to a selected body. Use Drive for continuous controlled motion.",
 		64
 	)
-	self.selection = Panel.label(test, "Choose a body in Parts", 40)
+	self.selection = Panel.label(test, "Select a body in Components", 40)
 	self.axis = Panel.button(test, "Axis: Motion / local Y", function()
 		self.axisIndex = self.axisIndex % 4 + 1
 		self.axis.Text = "Axis: "
@@ -69,7 +99,7 @@ function Simulation.new(bridge: any, remote: any, onStop: () -> ())
 	end)
 	Panel.label(
 		test,
-		"The shaft end marker makes axial rotation visible. Spin response depends on inertia and collisions.",
+		"Rotation markers display angular motion. Response depends on inertia, constraints, and contact.",
 		52
 	)
 	self.partsRoot = Panel.list(parts)
@@ -156,6 +186,70 @@ function Simulation:control(action: string)
 	end
 end
 
+function Simulation:refreshDriveTargets()
+	if not self.active then
+		return
+	end
+	local success, accepted, targets = pcall(function()
+		return self.remote:ListDriveTargets()
+	end)
+	if not success or not accepted then
+		return self:report(tostring(if success then targets else accepted))
+	end
+	self.driveTargets = targets
+	Panel.clear(self.driveRoot)
+	local components = self.bridge.getAssemblyState().document.components
+	for _, target in ipairs(targets) do
+		local mover = components[target.movingId]
+		local name = if mover then mover.name else "Component " .. tostring(target.movingId)
+		Panel.button(self.driveRoot,
+			string.format("#%d  %s  ·  %s", target.index, name, target.kind),
+			function()
+				self.driveIndex = target.index
+				self.driveKind = target.kind
+				self.driveSelection.Text = string.format("Joint #%d · %s · %s",
+					target.index, name, target.kind)
+				self.driveSpeed.Text = if target.kind == "Prismatic" then "80" else "15"
+			end
+		)
+	end
+	if #targets == 0 then
+		Panel.label(self.driveRoot, "No active mechanical joints")
+	end
+	if not self.driveIndex or not table.find(
+		(function()
+			local ids = {}
+			for _, target in ipairs(targets) do table.insert(ids, target.index) end
+			return ids
+		end)(), self.driveIndex) then
+		self.driveIndex = nil
+		self.driveKind = nil
+		self.driveSelection.Text = "Select a joint"
+	end
+end
+
+function Simulation:drive(enabled: boolean)
+	if not self.active or self.pending then
+		return
+	end
+	if not self.driveIndex then
+		return self:report("Select the joint to drive")
+	end
+	local speed, effort = tonumber(self.driveSpeed.Text), tonumber(self.driveEffort.Text)
+	if enabled and (not speed or not effort or speed ~= speed or effort ~= effort) then
+		return self:report("Enter finite speed and effort values")
+	end
+	local value = if not enabled then 0 elseif self.driveKind == "Prismatic"
+		then speed / 280 else speed * (2 * math.pi / 60)
+	local force = if enabled then effort else 0
+	self.pending = true
+	local ok, accepted, message = pcall(function()
+		return self.remote:SetBenchDrive(self.driveIndex, value, force)
+	end)
+	self.pending = false
+	self:report(if ok and accepted then message else tostring(if ok then message else accepted))
+end
+
 function Simulation:impulse(kind: string, sign: number)
 	if not self.active or self.pending then
 		return
@@ -165,7 +259,7 @@ function Simulation:impulse(kind: string, sign: number)
 		return self:report("Enter a strength from 1 to 360")
 	end
 	if not self.selectedId then
-		return self:report("Select a body in Parts first")
+		return self:report("Select a body in Components first")
 	end
 	self.pending = true
 	local ok, accepted, message = pcall(function()
@@ -200,7 +294,8 @@ function Simulation:Enter()
 	self.bridge.setSimulationFocus(center)
 	self.panel.gui.Enabled = true
 	self.pauseButton.Text = "Pause"
-	self:report("Running · select a body in Parts, then use Test to spin or push it.")
+	self:report("Simulation running. Use Drive for motors or Loads for impulses.")
+	self:refreshDriveTargets()
 	Panel.clear(self.partsRoot)
 	local doc = self.bridge.getAssemblyState().document
 	self.selectedId = self.bridge.getAssemblySelection() or self.selectedId
