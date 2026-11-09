@@ -3,6 +3,7 @@
 -- Bench configuration is intentionally independent of the live construction game.
 return {
 	ReferenceScale = 0.75, -- Preserve existing fixture geometry and comparison normalization.
+	TargetMinimumStuds = 0.25, -- Selected OPENWORKS mechanical construction target, pending full suite validation.
 	Scales = { 0.375, 0.25, 0.1875, 0.125, 0.0625 },
 	Trials = 3,
 	SecondsPerPhase = 7,
