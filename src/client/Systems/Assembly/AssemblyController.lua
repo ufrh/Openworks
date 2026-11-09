@@ -230,7 +230,8 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	end
 	self.modelHelp = Panel.label(mechanics, "", 84)
 	self.travelAxisButton = Panel.button(mechanics, "Guide travel axis: Y", function()
-		self.travelAxis = if self.travelAxis == "Y" then "X" else "Y"
+		self.travelAxis = if self.travelAxis == "Y" then "X"
+			elseif self.travelAxis == "X" then "Z" else "Y"
 		self.travelAxisButton.Text = "Guide travel axis: " .. self.travelAxis
 	end)
 	Panel.button(mechanics, "Identify positioned pivot hardware", function()
