@@ -34,6 +34,8 @@ try {
     'Assembly/GeometryReferences',
     'Assembly/Alignment',
     'Assembly/SupportGeometry',
+    'Assembly/PinnedPivot',
+    'Assembly/BenchDrive',
     'Assembly/MechanicalResolver',
     'Assembly/AssemblyLayout',
     'Assembly/ConstraintCompiler',
