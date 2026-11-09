@@ -54,6 +54,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		highlights = {},
 		fixtures = {},
 		modelIndex = 1,
+		travelAxis = "Y",
 		history = {},
 		redo = {},
 		connections = {},
@@ -249,6 +250,10 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		end)
 	end
 	self.modelHelp = Panel.label(mechanics, "", 84)
+	self.travelAxisButton = Panel.button(mechanics, "Guide travel axis: Y", function()
+		self.travelAxis = if self.travelAxis == "Y" then "X" else "Y"
+		self.travelAxisButton.Text = "Guide travel axis: " .. self.travelAxis
+	end)
 	Panel.button(mechanics, "Identify positioned pivot hardware", function()
 		self:detectPivotHardware()
 	end)
@@ -334,6 +339,7 @@ function Controller:mechanicsText()
 	local item = Catalog[self.modelIndex]
 	self.modelButton.Text = "Selected: " .. item.name
 	self.modelHelp.Text = item.motion .. "\n" .. item.help
+	self.travelAxisButton.Visible = item.model == "LinearGuideV1" or item.model == "LimitedGuideV1"
 	Panel.clear(self.fixturesRoot)
 	for i, id in ipairs(self.fixtures) do
 		Panel.button(self.fixturesRoot, i .. ". " .. self:name(id) .. " ×", function()
@@ -760,7 +766,9 @@ function Controller:registerSupport()
 		if self.b then self.b.ref else "",
 		self.fixtures,
 		self.layout.revision,
-		if spec.model == "RetainedPivotV1" then self.a.ref else nil
+		if spec.model == "RetainedPivotV1" then self.a.ref else nil,
+		if spec.model == "LinearGuideV1" or spec.model == "LimitedGuideV1"
+			then self.travelAxis else nil
 	)
 end
 function Controller:Enter()
