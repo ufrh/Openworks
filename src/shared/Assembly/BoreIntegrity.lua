@@ -47,6 +47,17 @@ function Integrity.check(component: any, reference: any): (boolean, string?)
 	if not low or not high then
 		return false, "Bore lacks a continuous surrounding wall"
 	end
+	-- Source-only wall certification is valid for additional drilled
+	-- openings. Saw, file, groove, and extrusion histories can reshape
+	-- the supporting wall; reject those until final-solid wall analysis
+	-- can certify the surviving material.
+	for _, operation in ipairs(component.operations or {}) do
+		if operation.enabled ~= false and operation.kind ~= "Drill"
+			and operation.kind ~= "DrillFace" then
+			return false,
+				"Bore support cannot be certified after other material-removal operations"
+		end
+	end
 	local startA = reference.point
 	local endA = startA + reference.direction.Unit * reference.feature.depth
 	for _, other in ipairs(References.list(component)) do
