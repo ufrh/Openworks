@@ -3,6 +3,10 @@
 > **Experimental branch:** `experiments/physics-constraint-scale-bench` (from `dev`).
 > Nothing in this branch is intended for merging into the clean rebuild until measurements justify it.
 
+## Selected construction target
+
+**0.25 studs** is the chosen OPENWORKS minimum mechanical construction target. This is a user-selected design baseline, **not yet a measured stability guarantee**. Retain the five-scale sweep (including 0.375 above it and 0.1875 / 0.125 / 0.0625 below it) to assess the 0.25 result and how much safety margin exists below it. The clean `dev` branch has no game construction editor to configure yet; the experiment branch stores the target in `Config.TargetMinimumStuds` for future reference.
+
 ## Purpose
 
 Determine the smallest *practically stable* OPENWORKS mechanical construction scale. Every one of the 17 mechanisms is generated at the same five reference sizes: **0.375 / 0.25 / 0.1875 / 0.125 / 0.0625 studs**. 0.375 studs is the largest candidate after encouraging preliminary hands-on testing; the new comparison searches downward for the first unstable scale. The reference is the nominal 1-unit structural dimension in the fixture, not necessarily the thickness of every beam or shaft. The smaller decorative/shaft dimensions are scaled proportionally.
