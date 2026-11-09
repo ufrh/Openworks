@@ -5,11 +5,13 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local BUILD = "2026.11.08.CAD-ASSEMBLY.1"
+local BUILD = "2026.11.09.WORKBENCH.2"
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local oldBadge = playerGui:FindFirstChild("OPENWORKS_BuildStamp")
-if oldBadge then oldBadge:Destroy() end
+if oldBadge then
+	oldBadge:Destroy()
+end
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "OPENWORKS_BuildStamp"
@@ -66,7 +68,8 @@ status.Text = "STARTING CLIENT..."
 
 local function displayStatus(state: string, description: string, problem: boolean)
 	status.Text = state .. "  /  " .. description
-	status.TextColor3 = if problem then Color3.fromRGB(255, 149, 142)
+	status.TextColor3 = if problem
+		then Color3.fromRGB(255, 149, 142)
 		else Color3.fromRGB(139, 216, 169)
 	gui:SetAttribute("State", state)
 end
@@ -75,7 +78,9 @@ print("[OPENWORKS] CLIENT BUILD " .. BUILD .. " loaded from StarterPlayerScripts
 
 -- Check the actual loaded gizmo ModuleScript, not a claim about the
 -- GitHub branch. This exposes Rojo sync and require-cache mismatches.
-local gizmoModule = script:FindFirstChild("Tools") and script.Tools:FindFirstChild("Transform") and script.Tools.Transform:FindFirstChild("TransformGizmo")
+local gizmoModule = script:FindFirstChild("Tools")
+	and script.Tools:FindFirstChild("Transform")
+	and script.Tools.Transform:FindFirstChild("TransformGizmo")
 if gizmoModule and gizmoModule:IsA("ModuleScript") then
 	local ok, loaded = pcall(require, gizmoModule)
 	if ok and typeof(loaded) == "table" then
@@ -96,38 +101,37 @@ end
 
 -- FORGE is the application runtime. Controllers are discovered through its
 -- actual Loader/Registry/DependencyGraph/Lifecycle, not manual require().
-local ReplicatedStorage=game:GetService("ReplicatedStorage")
-local forgeModule=ReplicatedStorage:WaitForChild("FORGE",15)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local forgeModule = ReplicatedStorage:WaitForChild("FORGE", 15)
 if not forgeModule then
-	displayStatus("BOOT ERROR","FORGE not synced to ReplicatedStorage",true)
+	displayStatus("BOOT ERROR", "FORGE not synced to ReplicatedStorage", true)
 	return
 end
-local loaded,FORGE=pcall(require,forgeModule)
+local loaded, FORGE = pcall(require, forgeModule)
 if not loaded then
-	displayStatus("BOOT ERROR","FORGE require failed",true)
-	warn("[OPENWORKS] FORGE require failed: "..tostring(FORGE))
+	displayStatus("BOOT ERROR", "FORGE require failed", true)
+	warn("[OPENWORKS] FORGE require failed: " .. tostring(FORGE))
 	return
 end
-local controllerRoot=script:WaitForChild("Controllers",10)
+local controllerRoot = script:WaitForChild("Controllers", 10)
 if not controllerRoot then
-	displayStatus("BOOT ERROR","OpenWorks FORGE Controllers missing",true)
+	displayStatus("BOOT ERROR", "OpenWorks FORGE Controllers missing", true)
 	return
 end
-local started,errorMessage=pcall(function()
-	FORGE.Start({Roots={controllerRoot}})
+local started, errorMessage = pcall(function()
+	FORGE.Start({ Roots = { controllerRoot } })
 end)
 if not started then
-	displayStatus("BOOT ERROR","FORGE.Start failed",true)
-	warn("[OPENWORKS] FORGE startup failed: "..tostring(errorMessage))
+	displayStatus("BOOT ERROR", "FORGE.Start failed", true)
+	warn("[OPENWORKS] FORGE startup failed: " .. tostring(errorMessage))
 	return
 end
-local runtime=FORGE:GetController("OpenWorksRuntime")
+local runtime = FORGE:GetController("OpenWorksRuntime")
 if not runtime or runtime._Failed then
-	displayStatus("BOOT ERROR","OpenWorksRuntime controller failed",true)
+	displayStatus("BOOT ERROR", "OpenWorksRuntime controller failed", true)
 	warn("[OPENWORKS] FORGE controller not initialized; inspect FORGE boot report")
 	return
 end
-gui:SetAttribute("FORGEVersion",tostring(FORGE.Version))
-displayStatus("READY","FORGE "..tostring(FORGE.Version).." / Free · Edit · Assembly",false)
-print("[OPENWORKS] BUILD "..BUILD.." / FORGE "..tostring(FORGE.Version).." READY")
-
+gui:SetAttribute("FORGEVersion", tostring(FORGE.Version))
+displayStatus("READY", "FORGE " .. tostring(FORGE.Version) .. " / Free · Edit · Assembly", false)
+print("[OPENWORKS] BUILD " .. BUILD .. " / FORGE " .. tostring(FORGE.Version) .. " READY")

@@ -25,7 +25,7 @@ function ModeBar.new(gui: PlayerGui, onSwitch: (string) -> ())
 	corner.Parent = root
 
 	local buttons = {}
-	for i, name in ipairs({"Free", "Edit", "Assembly", "Simulation"}) do
+	for i, name in ipairs({ "Free", "Edit", "Assembly", "Simulation" }) do
 		local button = Instance.new("TextButton")
 		button.Name = name
 		button.Size = UDim2.new(1 / 4, -8, 1, -8)
@@ -48,7 +48,19 @@ function ModeBar.new(gui: PlayerGui, onSwitch: (string) -> ())
 		buttons[name] = button
 	end
 
-	local self = setmetatable({gui = screen, buttons = buttons}, ModeBar)
+	local feedback = Instance.new("TextLabel")
+	feedback.AnchorPoint = Vector2.new(0.5, 1)
+	feedback.Position = UDim2.new(0.5, 0, 1, -20)
+	feedback.Size = UDim2.new(0.6, 0, 0, 48)
+	feedback.BackgroundColor3 = Color3.fromRGB(30, 40, 50)
+	feedback.BackgroundTransparency = 0.1
+	feedback.TextColor3 = Color3.fromRGB(255, 220, 160)
+	feedback.TextWrapped = true
+	feedback.TextSize = 14
+	feedback.Visible = false
+	feedback.Parent = screen
+	local self =
+		setmetatable({ gui = screen, buttons = buttons, feedback = feedback, notice = 0 }, ModeBar)
 	self:setActive("Free")
 	return self
 end
@@ -59,6 +71,18 @@ function ModeBar:setActive(name: string)
 			then Color3.fromRGB(27, 119, 135)
 			else Color3.fromRGB(44, 60, 69)
 	end
+end
+
+function ModeBar:report(message: string)
+	self.notice += 1
+	local notice = self.notice
+	self.feedback.Text = message
+	self.feedback.Visible = true
+	task.delay(8, function()
+		if self.gui.Parent and self.notice == notice then
+			self.feedback.Visible = false
+		end
+	end)
 end
 
 function ModeBar:destroy()

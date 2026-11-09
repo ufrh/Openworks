@@ -12,6 +12,7 @@ function Manipulator.new()
 		component = nil,
 		options = {
 			translationStep = 1 / 280,
+			cancelOnFocusLoss = true,
 			rotationStep = 5,
 			world = false,
 		},
@@ -19,7 +20,13 @@ function Manipulator.new()
 
 	local document = {}
 
-	function document:applyTransform(component: any, _index: number, position: Vector3?, _size: any, rotation: Vector3?): boolean
+	function document:applyTransform(
+		component: any,
+		_index: number,
+		position: Vector3?,
+		_size: any,
+		rotation: Vector3?
+	): boolean
 		local node = component.nodes[1]
 		node.position = position or node.position
 		node.rotation = rotation or node.rotation
@@ -93,7 +100,12 @@ function Manipulator:capturesPoint(point: Vector2): boolean
 	return self.gizmo:capturesPoint(point)
 end
 
+function Manipulator:cancel()
+	self.gizmo.cancel()
+end
+
 function Manipulator:Destroy()
+	self:cancel()
 	self.gizmo:destroy()
 end
 

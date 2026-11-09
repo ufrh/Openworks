@@ -17,20 +17,29 @@ local MAX_DISTANCE = 2000
 -- While Edit Mode is active, keep the camera physically inside its
 -- closed room. A high zoom-out distance otherwise places it behind the
 -- opaque walls and makes the room disappear from view.
-local function roomDistanceLimit(self:any, direction:Vector3):number
- local bounds=self.roomBounds
- if not bounds then return MAX_DISTANCE end
- local relative=self.target-bounds.center
- local half=bounds.size*0.5
- local function limit(h:number,offset:number,velocity:number):number
-  if math.abs(velocity)<1e-5 then return MAX_DISTANCE end
-  local available=(if velocity>0 then h-offset else h+offset)-0.8
-  return available/math.abs(velocity)
- end
- return math.clamp(math.min(
-  limit(half.X,relative.X,direction.X),
-  limit(half.Y,relative.Y,direction.Y),
-  limit(half.Z,relative.Z,direction.Z)),MIN_DISTANCE,MAX_DISTANCE)
+local function roomDistanceLimit(self: any, direction: Vector3): number
+	local bounds = self.roomBounds
+	if not bounds then
+		return MAX_DISTANCE
+	end
+	local relative = self.target - bounds.center
+	local half = bounds.size * 0.5
+	local function limit(h: number, offset: number, velocity: number): number
+		if math.abs(velocity) < 1e-5 then
+			return MAX_DISTANCE
+		end
+		local available = (if velocity > 0 then h - offset else h + offset) - 0.8
+		return available / math.abs(velocity)
+	end
+	return math.clamp(
+		math.min(
+			limit(half.X, relative.X, direction.X),
+			limit(half.Y, relative.Y, direction.Y),
+			limit(half.Z, relative.Z, direction.Z)
+		),
+		MIN_DISTANCE,
+		MAX_DISTANCE
+	)
 end
 local MIN_ORTHO_HEIGHT = 0.06
 local MAX_ORTHO_HEIGHT = 2000
@@ -59,7 +68,9 @@ end
 
 local function mouseDragMode(_button: Enum.UserInputType?): string
 	-- The workspace pivot is locked. MMB/RMB orbit; Ctrl+MMB zooms.
-	if isCtrlDown() then return "Zoom" end
+	if isCtrlDown() then
+		return "Zoom"
+	end
 	return "Orbit"
 end
 
@@ -70,8 +81,8 @@ end
 function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	local self = setmetatable({
 		target = Vector3.zero,
-		active=false,
-		sketchMode=false,
+		active = false,
+		sketchMode = false,
 		displayedTarget = Vector3.zero,
 		displayedYaw = math.rad(40),
 		displayedPitch = math.rad(30),
@@ -82,7 +93,7 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 		pitch = math.rad(30),
 		roll = 0,
 		distance = 8,
-  roomBounds=nil,
+		roomBounds = nil,
 		fov = INITIAL_FOV,
 		displayedFov = INITIAL_FOV,
 		orthographicHeight = 2 * 8 * PERSPECTIVE_TAN,
@@ -107,15 +118,25 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	end
 
 	connect(UserInputService.InputBegan, function(input, processed)
-		if not self.active then return end
+		if not self.active then
+			return
+		end
 		local kind = input.UserInputType
-		if kind == Enum.UserInputType.MouseButton3
+		if
+			kind == Enum.UserInputType.MouseButton3
 			or kind == Enum.UserInputType.MouseButton2
-			or (kind == Enum.UserInputType.MouseButton1 and isAltDown()) then
+			or (kind == Enum.UserInputType.MouseButton1 and isAltDown())
+		then
 			-- Roblox's default camera can mark RMB/MMB processed; navigation still owns them.
-			if UserInputService:GetFocusedTextBox() then return end
-			if processed and kind == Enum.UserInputType.MouseButton1 then return end
-			if self.dragging then return end
+			if UserInputService:GetFocusedTextBox() then
+				return
+			end
+			if processed and kind == Enum.UserInputType.MouseButton1 then
+				return
+			end
+			if self.dragging or (self.inputCaptured and self.inputCaptured()) then
+				return
+			end
 			self.dragging = true
 			self.dragButton = kind
 			self.savedMouseBehavior = UserInputService.MouseBehavior
@@ -123,8 +144,12 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			return
 		end
 
-		if processed or UserInputService:GetFocusedTextBox() then return end
-		if kind ~= Enum.UserInputType.Keyboard then return end
+		if processed or UserInputService:GetFocusedTextBox() then
+			return
+		end
+		if kind ~= Enum.UserInputType.Keyboard then
+			return
+		end
 		local key = input.KeyCode
 		local shift = isShiftDown()
 		local ctrl = isCtrlDown()
@@ -146,10 +171,24 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			self.pitch = math.clamp(-self.pitch, -POLE_LIMIT, POLE_LIMIT)
 			self.roll = 0
 			self.axisView = nil
-		elseif key == Enum.KeyCode.KeypadFour or key == Enum.KeyCode.KeypadSix
-			or key == Enum.KeyCode.KeypadTwo or key == Enum.KeyCode.KeypadEight then
-			local dx = (if key == Enum.KeyCode.KeypadFour then -1 elseif key == Enum.KeyCode.KeypadSix then 1 else 0)
-			local dy = (if key == Enum.KeyCode.KeypadEight then 1 elseif key == Enum.KeyCode.KeypadTwo then -1 else 0)
+		elseif
+			key == Enum.KeyCode.KeypadFour
+			or key == Enum.KeyCode.KeypadSix
+			or key == Enum.KeyCode.KeypadTwo
+			or key == Enum.KeyCode.KeypadEight
+		then
+			local dx = (
+				if key == Enum.KeyCode.KeypadFour
+					then -1
+					elseif key == Enum.KeyCode.KeypadSix then 1
+					else 0
+			)
+			local dy = (
+				if key == Enum.KeyCode.KeypadEight
+					then 1
+					elseif key == Enum.KeyCode.KeypadTwo then -1
+					else 0
+			)
 			if shift and not ctrl and dx ~= 0 then
 				self.roll += dx * SNAP_ANGLE
 			elseif ctrl or shift then
@@ -173,22 +212,34 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	end)
 
 	connect(UserInputService.InputChanged, function(input, processed)
-		if not self.active then return end
-		if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+		if not self.active then
+			return
+		end
+		if input.UserInputType ~= Enum.UserInputType.MouseWheel then
+			return
+		end
 		local steps = input.Position.Z
 		-- Roblox GUI may mark wheel events processed while the sketch
 		-- dock is visible. Sketch mode owns zoom explicitly, even then.
 		if self.sketchMode then
-			if UserInputService:GetFocusedTextBox() then return end
-			self:zoom(math.pow(0.76,steps))
+			if UserInputService:GetFocusedTextBox() then
+				return
+			end
+			self:zoom(math.pow(0.76, steps))
 			self:snapNow()
 			return
 		end
-		if processed then return end
-		if steps == 0 then return end
+		if processed then
+			return
+		end
+		if steps == 0 then
+			return
+		end
 		-- Precision fabrication tools get the wheel before the camera;
 		-- this is a direct callback, no double-zoom or delayed event race.
-		if self.onWheel and self.onWheel(steps) then return end
+		if self.onWheel and self.onWheel(steps) then
+			return
+		end
 		-- Wheel zoom must not alter the orbit pivot, view orientation or grid origin.
 		self:zoom(math.pow(0.86, steps))
 	end)
@@ -204,9 +255,13 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 	end)
 
 	RunService:BindToRenderStep(RENDER_NAME, Enum.RenderPriority.Camera.Value + 2, function(dt)
-		if not self.active then return end
+		if not self.active then
+			return
+		end
 		local camera = workspace.CurrentCamera
-		if not camera then return end
+		if not camera then
+			return
+		end
 		if camera ~= self.camera then
 			self.camera = camera
 			self.projectionDirty = true
@@ -218,8 +273,26 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			end
 			local delta = UserInputService:GetMouseDelta()
 			if delta.Magnitude > 0 then
-				local mode = mouseDragMode(self.dragButton)
-				if mode == "Orbit" then
+				local mode = if self.allowPan
+						and self.dragButton == Enum.UserInputType.MouseButton3
+						and not isCtrlDown()
+					then "Pan"
+					else mouseDragMode(self.dragButton)
+				if mode == "Pan" then
+					local scale = 2
+						* self.displayedDistance
+						* halfTan(self.displayedFov)
+						/ math.max(1, camera.ViewportSize.Y)
+					local target = self.target
+						+ (
+								-camera.CFrame.RightVector * delta.X
+								+ camera.CFrame.UpVector * delta.Y
+							)
+							* scale
+					if (target - self.navigationOrigin).Magnitude < 500 then
+						self:setFocusTarget(target)
+					end
+				elseif mode == "Orbit" then
 					self:orbitDelta(delta)
 				else
 					self:zoom(math.exp(delta.Y * 0.012))
@@ -254,7 +327,6 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			camera.OrthographicSize = self.displayedOrthoHeight
 		end
 
-
 		-- Orbit around the active component workspace origin, which moves
 		-- to the clicked placement point when a component is created.
 		local yawDelta = (self.yaw - self.displayedYaw + math.pi) % (2 * math.pi) - math.pi
@@ -268,10 +340,10 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			math.sin(self.displayedPitch),
 			math.cos(self.displayedPitch) * math.cos(self.displayedYaw)
 		)
-  -- Angle interpolation can move the viewpoint through a wall even
-  -- if the target distance is capped. Clamp the displayed pose too.
-  self.displayedDistance=math.min(self.displayedDistance,
-   roomDistanceLimit(self,direction))
+		-- Angle interpolation can move the viewpoint through a wall even
+		-- if the target distance is capped. Clamp the displayed pose too.
+		self.displayedDistance =
+			math.min(self.displayedDistance, roomDistanceLimit(self, direction))
 		local upVector = Vector3.yAxis
 		if self.axisView == "Top" and math.abs(self.displayedPitch - math.pi / 2) < 0.05 then
 			upVector = -Vector3.zAxis
@@ -279,13 +351,15 @@ function BlenderCamera.new(getSelectedBounds, getSceneBounds)
 			upVector = Vector3.zAxis
 		end
 		local frame = CFrame.lookAt(
-			self.target+direction * self.displayedDistance,
+			self.target + direction * self.displayedDistance,
 			self.target,
 			upVector
 		) * CFrame.Angles(0, 0, self.displayedRoll)
 		camera.CFrame = frame
 		camera.Focus = CFrame.new(self.target)
-		if self.onFrame then self.onFrame(frame, self:viewLabel()) end
+		if self.onFrame then
+			self.onFrame(frame, self:viewLabel())
+		end
 	end)
 
 	return self
@@ -296,7 +370,9 @@ function BlenderCamera:orbitDelta(delta: Vector2)
 	self.yaw -= delta.X * ORBIT_SENSITIVITY
 	self.pitch = math.clamp(self.pitch + delta.Y * ORBIT_SENSITIVITY, -POLE_LIMIT, POLE_LIMIT)
 	self.roll = 0
-	if self.autoOrthographic then self:setProjection(false) end
+	if self.autoOrthographic then
+		self:setProjection(false)
+	end
 	self.axisView = nil
 end
 
@@ -307,79 +383,94 @@ end
 -- Entering workspace is a mode switch, not an animated camera flight.
 -- Snap both internal interpolants AND the actual CurrentCamera now.
 function BlenderCamera:snapNow()
-	self.displayedYaw=self.yaw
-	self.displayedPitch=self.pitch
-	self.displayedRoll=self.roll
-	self.displayedDistance=self.distance
-	self.displayedFov=self.fov
-	self.displayedOrthoHeight=self.orthographicHeight
-	self.displayedTarget=self.target
-	local camera=workspace.CurrentCamera
-	if not camera or not self.active then return end
-	self.camera=camera
-	camera.CameraType=Enum.CameraType.Scriptable
-	camera.FieldOfView=self.fov
-	local ok=pcall(function()
-		camera.OrthographicMode=Enum.OrthographicMode.Vertical
-		camera.ProjectionType=if self.orthographic
+	self.displayedYaw = self.yaw
+	self.displayedPitch = self.pitch
+	self.displayedRoll = self.roll
+	self.displayedDistance = self.distance
+	self.displayedFov = self.fov
+	self.displayedOrthoHeight = self.orthographicHeight
+	self.displayedTarget = self.target
+	local camera = workspace.CurrentCamera
+	if not camera or not self.active then
+		return
+	end
+	self.camera = camera
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.FieldOfView = self.fov
+	local ok = pcall(function()
+		camera.OrthographicMode = Enum.OrthographicMode.Vertical
+		camera.ProjectionType = if self.orthographic
 			then Enum.ProjectionType.Orthographic
 			else Enum.ProjectionType.Perspective
 	end)
-	self.nativeOrtho=ok
-	self.projectionDirty=false
+	self.nativeOrtho = ok
+	self.projectionDirty = false
 	if ok and self.orthographic then
-		camera.OrthographicSize=self.orthographicHeight
+		camera.OrthographicSize = self.orthographicHeight
 	end
 	if not ok and self.orthographic then
-		self.orthographic=false
-		self.autoOrthographic=false
+		self.orthographic = false
+		self.autoOrthographic = false
 	end
-	local direction=Vector3.new(
-		math.cos(self.pitch)*math.sin(self.yaw),
+	local direction = Vector3.new(
+		math.cos(self.pitch) * math.sin(self.yaw),
 		math.sin(self.pitch),
-		math.cos(self.pitch)*math.cos(self.yaw))
- self.distance=math.min(self.distance,roomDistanceLimit(self,direction))
- self.displayedDistance=self.distance
-	local up=Vector3.yAxis
-	if self.axisView=="Top" then up=-Vector3.zAxis
-	elseif self.axisView=="Bottom" then up=Vector3.zAxis end
-	local frame=CFrame.lookAt(self.target+direction*self.distance,
-		self.target,up)*CFrame.Angles(0,0,self.roll)
-	camera.CFrame=frame
-	camera.Focus=CFrame.new(self.target)
-	if self.onFrame then self.onFrame(frame,self:viewLabel()) end
+		math.cos(self.pitch) * math.cos(self.yaw)
+	)
+	self.distance = math.min(self.distance, roomDistanceLimit(self, direction))
+	self.displayedDistance = self.distance
+	local up = Vector3.yAxis
+	if self.axisView == "Top" then
+		up = -Vector3.zAxis
+	elseif self.axisView == "Bottom" then
+		up = Vector3.zAxis
+	end
+	local frame = CFrame.lookAt(self.target + direction * self.distance, self.target, up)
+		* CFrame.Angles(0, 0, self.roll)
+	camera.CFrame = frame
+	camera.Focus = CFrame.new(self.target)
+	if self.onFrame then
+		self.onFrame(frame, self:viewLabel())
+	end
 end
 
-function BlenderCamera:setSketchMode(enabled:boolean)
-	self.sketchMode=enabled
+function BlenderCamera:setSketchMode(enabled: boolean)
+	self.sketchMode = enabled
 end
 
-function BlenderCamera:setActive(active:boolean)
-	if self.active==active then return end
-	self.active=active
+function BlenderCamera:setActive(active: boolean)
+	if self.active == active then
+		return
+	end
+	self.active = active
 	if active then
-		self.projectionDirty=true
+		local camera = workspace.CurrentCamera
+		self.savedFov = camera and camera.FieldOfView or 70
+		self.projectionDirty = true
 		self:snapNow()
 	else
-		self.sketchMode=false
+		self.sketchMode = false
 		self:releaseMouse()
-		local camera=workspace.CurrentCamera
+		local camera = workspace.CurrentCamera
 		if camera then
-			camera.CameraType=Enum.CameraType.Custom
-			pcall(function()camera.ProjectionType=Enum.ProjectionType.Perspective end)
+			camera.CameraType = Enum.CameraType.Custom
+			camera.FieldOfView = self.savedFov or 70
+			pcall(function()
+				camera.ProjectionType = Enum.ProjectionType.Perspective
+			end)
 		end
 	end
 end
 
-function BlenderCamera:setFocusTarget(point:Vector3)
- self.target=point
- self.displayedTarget=point
+function BlenderCamera:setFocusTarget(point: Vector3)
+	self.target = point
+	self.displayedTarget = point
 end
 
 -- A camera bound belongs to the active mode, never to its world placement.
 -- Pass nil on exit so Assembly Mode can use its independent stage freely.
-function BlenderCamera:setRoomBounds(center:Vector3?,size:Vector3?)
- self.roomBounds=if center and size then {center=center,size=size} else nil
+function BlenderCamera:setRoomBounds(center: Vector3?, size: Vector3?)
+	self.roomBounds = if center and size then { center = center, size = size } else nil
 end
 
 function BlenderCamera:viewLabel(): string
@@ -388,7 +479,9 @@ function BlenderCamera:viewLabel(): string
 end
 
 function BlenderCamera:releaseMouse()
-	if not self.dragging then return end
+	if not self.dragging then
+		return
+	end
 	self.dragging = false
 	self.dragButton = nil
 	UserInputService.MouseBehavior = self.savedMouseBehavior
@@ -403,11 +496,18 @@ function BlenderCamera:setWheelHandler(callback)
 end
 
 function BlenderCamera:setProjection(enabled: boolean)
-	if self.orthographic == enabled then return end
+	if self.orthographic == enabled then
+		return
+	end
 	if enabled then
-		self.orthographicHeight = math.clamp(2 * self.distance * halfTan(self.fov), MIN_ORTHO_HEIGHT, MAX_ORTHO_HEIGHT)
+		self.orthographicHeight =
+			math.clamp(2 * self.distance * halfTan(self.fov), MIN_ORTHO_HEIGHT, MAX_ORTHO_HEIGHT)
 	else
-		self.distance = math.clamp(self.orthographicHeight / (2 * halfTan(self.fov)), MIN_DISTANCE, MAX_DISTANCE)
+		self.distance = math.clamp(
+			self.orthographicHeight / (2 * halfTan(self.fov)),
+			MIN_DISTANCE,
+			MAX_DISTANCE
+		)
 	end
 	self.orthographic = enabled
 	self.projectionDirty = true
@@ -428,7 +528,9 @@ function BlenderCamera:setView(view: string)
 		Bottom = { 0, -math.pi / 2 },
 	}
 	local angles = cardinal[view]
-	if not angles then return end
+	if not angles then
+		return
+	end
 	self.yaw = angles[1]
 	self.pitch = angles[2]
 	self.roll = 0
@@ -443,40 +545,49 @@ function BlenderCamera:zoom(factor: number)
 	factor = math.clamp(factor, 0.05, 20)
 	-- Sketch-mode zoom should get close enough for individual 0.05-stud
 	-- grid points; ordinary workspace zoom retains its prior limits.
-	local minimumOrtho=if self.sketchMode then 0.012 else MIN_ORTHO_HEIGHT
-	local minimumDistance=if self.sketchMode then 0.075 else MIN_DISTANCE
+	local minimumOrtho = if self.sketchMode then 0.012 else MIN_ORTHO_HEIGHT
+	local minimumDistance = if self.sketchMode then 0.075 else MIN_DISTANCE
 	if self.orthographic and self.nativeOrtho then
-		self.orthographicHeight = math.clamp(self.orthographicHeight * factor,
-			minimumOrtho, MAX_ORTHO_HEIGHT)
+		self.orthographicHeight =
+			math.clamp(self.orthographicHeight * factor, minimumOrtho, MAX_ORTHO_HEIGHT)
 		return
 	end
 	local desiredScale = self.distance * halfTan(self.fov) * factor
-	local dollyDistance = math.clamp(self.distance * math.pow(factor, 0.6), minimumDistance, MAX_DISTANCE)
+	local dollyDistance =
+		math.clamp(self.distance * math.pow(factor, 0.6), minimumDistance, MAX_DISTANCE)
 	local desiredFov = math.deg(2 * math.atan(desiredScale / dollyDistance))
 	local fov = math.clamp(desiredFov, MIN_FOV, MAX_FOV)
 	local distance = math.clamp(desiredScale / halfTan(fov), minimumDistance, MAX_DISTANCE)
 	self.fov = fov
- local direction=Vector3.new(
-  math.cos(self.pitch)*math.sin(self.yaw),
-  math.sin(self.pitch),
-  math.cos(self.pitch)*math.cos(self.yaw))
-	self.distance = math.min(distance,roomDistanceLimit(self,direction))
+	local direction = Vector3.new(
+		math.cos(self.pitch) * math.sin(self.yaw),
+		math.sin(self.pitch),
+		math.cos(self.pitch) * math.cos(self.yaw)
+	)
+	self.distance = math.min(distance, roomDistanceLimit(self, direction))
 end
 
 function BlenderCamera:frameBounds(frame: CFrame?, size: Vector3?)
-	if not frame or not size then return false end
+	if not frame or not size then
+		return false
+	end
 	-- Frame adjusts zoom relative to the current component workspace pivot.
-	local radius = (frame.Position-self.target).Magnitude + boundsRadius(size)
+	if self.allowPan then
+		self:setFocusTarget(frame.Position)
+	end
+	local radius = (frame.Position - self.target).Magnitude + boundsRadius(size)
 	local camera = workspace.CurrentCamera
 	local viewport = if camera then camera.ViewportSize else Vector2.new(1920, 1080)
 	local aspect = viewport.X / math.max(1, viewport.Y)
 	local effectiveHalfFov = math.atan(halfTan(self.fov) * math.min(1, aspect))
-	local desiredDistance = math.clamp(radius / math.sin(effectiveHalfFov) * 1.25, MIN_DISTANCE, MAX_DISTANCE)
- local direction=Vector3.new(
-  math.cos(self.pitch)*math.sin(self.yaw),
-  math.sin(self.pitch),
-  math.cos(self.pitch)*math.cos(self.yaw))
-	self.distance = math.min(desiredDistance,roomDistanceLimit(self,direction))
+	local desiredDistance =
+		math.clamp(radius / math.sin(effectiveHalfFov) * 1.25, MIN_DISTANCE, MAX_DISTANCE)
+	local direction = Vector3.new(
+		math.cos(self.pitch) * math.sin(self.yaw),
+		math.sin(self.pitch),
+		math.cos(self.pitch) * math.cos(self.yaw)
+	)
+	self.distance = math.min(desiredDistance, roomDistanceLimit(self, direction))
 	self.orthographicHeight = math.clamp(radius * 2.8, MIN_ORTHO_HEIGHT, MAX_ORTHO_HEIGHT)
 	return true
 end
@@ -491,13 +602,31 @@ function BlenderCamera:frameAll(): boolean
 	return self:frameBounds(frame, size)
 end
 
+function BlenderCamera:resetNavigation(center: Vector3, allowPan: boolean)
+	self:releaseMouse()
+	self.allowPan = allowPan
+	self.navigationOrigin = center
+	self:setFocusTarget(center)
+	self.yaw, self.pitch, self.roll = math.rad(40), math.rad(25), 0
+	self.fov, self.distance = INITIAL_FOV, 8
+	self.orthographic, self.autoOrthographic, self.axisView = false, false, nil
+	self.sketchMode = false
+	self.projectionDirty = true
+	self:snapNow()
+end
+
 function BlenderCamera:destroy()
+	self:setActive(false)
 	self:releaseMouse()
 	RunService:UnbindFromRenderStep(RENDER_NAME)
-	for _, connection in ipairs(self.connections) do connection:Disconnect() end
+	for _, connection in ipairs(self.connections) do
+		connection:Disconnect()
+	end
 	local camera = workspace.CurrentCamera
 	if camera then
-		pcall(function() camera.ProjectionType = Enum.ProjectionType.Perspective end)
+		pcall(function()
+			camera.ProjectionType = Enum.ProjectionType.Perspective
+		end)
 		camera.CameraType = Enum.CameraType.Custom
 	end
 end

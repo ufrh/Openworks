@@ -1,21 +1,21 @@
 local nativeTypeof = typeof
 
 local function typeof(v)
-	return type(v) == 'table' and v._type or nativeTypeof(v)
+	return type(v) == "table" and v._type or nativeTypeof(v)
 end
 
 local Vector3 = {}
 local V = {}
 
 function Vector3.new(x, y, z)
-	return setmetatable({_type = 'Vector3', X = x or 0, Y = y or 0, Z = z or 0}, V)
+	return setmetatable({ _type = "Vector3", X = x or 0, Y = y or 0, Z = z or 0 }, V)
 end
 
 function V.__index(v, k)
-	if k == 'Magnitude' then
+	if k == "Magnitude" then
 		return math.sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z)
 	end
-	if k == 'Unit' then
+	if k == "Unit" then
 		return v / v.Magnitude
 	end
 	return V[k]
@@ -34,7 +34,7 @@ function V.__unm(a)
 end
 
 function V.__mul(a, b)
-	if type(a) == 'number' then
+	if type(a) == "number" then
 		return b * a
 	end
 	return Vector3.new(a.X * b, a.Y * b, a.Z * b)
@@ -64,8 +64,8 @@ Vector3.zAxis = Vector3.new(0, 0, 1)
 
 local Vector2 = {
 	new = function(x, y)
-		return {X = x, Y = y}
-	end
+		return { X = x, Y = y }
+	end,
 }
 
 local CFrame = {}
@@ -74,17 +74,17 @@ C.__index = C
 
 function CFrame.fromMatrix(p, x, y, z)
 	return setmetatable({
-		_type = 'CFrame',
+		_type = "CFrame",
 		Position = p,
 		XVector = x,
 		YVector = y,
-		ZVector = z or x:Cross(y)
+		ZVector = z or x:Cross(y),
 	}, C)
 end
 
 function CFrame.new(x, y, z)
 	return CFrame.fromMatrix(
-		if typeof(x) == 'Vector3' then x else Vector3.new(x, y, z),
+		if typeof(x) == "Vector3" then x else Vector3.new(x, y, z),
 		Vector3.xAxis,
 		Vector3.yAxis,
 		Vector3.zAxis
@@ -139,3 +139,27 @@ function C:GetComponents()
 end
 
 CFrame.identity = CFrame.new()
+
+function C:VectorToObjectSpace(v)
+	return Vector3.new(v:Dot(self.XVector), v:Dot(self.YVector), v:Dot(self.ZVector))
+end
+function C:Inverse()
+	local x, y, z = self.XVector, self.YVector, self.ZVector
+	return CFrame.fromMatrix(
+		-self:VectorToObjectSpace(self.Position),
+		Vector3.new(x.X, y.X, z.X),
+		Vector3.new(x.Y, y.Y, z.Y),
+		Vector3.new(x.Z, y.Z, z.Z)
+	)
+end
+function C:ToObjectSpace(other)
+	return self:Inverse() * other
+end
+function C:PointToObjectSpace(v)
+	return self:VectorToObjectSpace(v - self.Position)
+end
+CFrame.Angles = function(x, y, z)
+	return CFrame.fromAxisAngle(Vector3.xAxis, x)
+		* CFrame.fromAxisAngle(Vector3.yAxis, y)
+		* CFrame.fromAxisAngle(Vector3.zAxis, z)
+end

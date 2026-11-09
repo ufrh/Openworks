@@ -1,80 +1,227 @@
 --!strict
 local References = require(script.Parent.GeometryReferences)
-local Profile = require(script.Parent.Parent.FORM.SketchBodyProfile)
+local Geometry = require(script.Parent.SupportGeometry)
 local Resolver = {}
-Resolver.MinClearance = 1/280
-Resolver.MaxClearance = 4/280
-function Resolver.resolve(record:any, components:any, poses:any):(any?, string?)
-	if type(record) ~= 'table' or record.model ~= 'BoreSupportV1' then
-		return nil, 'Unverified legacy connection; manufacture and validate support again'
+Resolver.MinClearance = 1 / 280
+Resolver.MaxClearance = 4 / 280
+
+function Resolver.dependencies(record: any): { number }
+	local out = {}
+	for _, id in ipairs({ record.bodyId or 0, record.shaftId or record.movingId or 0 }) do
+		if id ~= 0 then
+			table.insert(out, id)
+		end
 	end
+	for _, ids in ipairs({ record.guideIds or {}, record.stopIds or {} }) do
+		for _, id in ipairs(ids) do
+			table.insert(out, id)
+		end
+	end
+	return out
+end
+
+local function bore(record: any, components: any, poses: any): (any?, string?)
 	local body, shaft = components[record.bodyId], components[record.shaftId]
 	if not body or not shaft or body.id == shaft.id then
-		return nil, 'Missing independent body or shaft'
+		return nil, "Choose a housing and a separate shaft"
 	end
-	local bore = References.get(body, record.featureId)
-	local cylinder = References.get(shaft, 'shaft')
-	if not bore or not bore.feature or not cylinder then
-		return nil, 'Missing bore or uncut cylindrical shaft'
+	local hole = References.get(body, record.featureId)
+	local cylinder = References.get(shaft, "shaft")
+	if not hole or not hole.feature or not cylinder then
+		return nil, "Select a through-hole and an uncut cylindrical shaft"
 	end
-	local node = body.nodes[1]
 	local active = {}
-	for _, op in ipairs(body.operations) do if op.enabled ~= false then table.insert(active, op) end end
-	if #active ~= 1 or active[1].kind ~= 'Drill' or not bore.feature.through then
-		return nil, 'Support currently requires one through-drill in unmodified stock'
-	end
-	local center = bore.point
-	local radius = bore.diameter*.5+Resolver.MinClearance
-	if node.kind == 'Block' then
-		if math.abs(center.X)+radius>node.size.X*.5 or math.abs(center.Z)+radius>node.size.Z*.5 then
-			return nil, 'Bore lacks a continuous surrounding wall'
+	for _, op in ipairs(body.operations) do
+		if op.enabled ~= false then
+			table.insert(active, op)
 		end
-	elseif node.kind == 'SketchBody' then
-		local ring = Profile.outline(node)
-		local orientation = 0
-		for i, p in ipairs(ring) do local q = ring[i%#ring+1]
-			orientation += p.X*q.Y-q.X*p.Y end
-		for i, p in ipairs(ring) do
-			local q = ring[i%#ring+1]
-			local e = q-p
-			local distance = (e.X*(center.Z-p.Y)-e.Y*(center.X-p.X))*(if orientation>0 then 1 else -1)/e.Magnitude
-			if distance<radius then
-				return nil, 'Bore support requires continuous convex stock around the hole'
+	end
+	if
+		#active ~= 1
+		or (active[1].kind ~= "Drill" and active[1].kind ~= "DrillFace")
+		or not hole.feature.through
+	then
+		return nil, "Bearing housing needs one through-drill in otherwise unmodified stock"
+	end
+	local low, high = Geometry.boreSpan(
+		body.nodes[1],
+		hole.point,
+		hole.direction,
+		hole.diameter * 0.5 + Geometry.Wall
+	)
+	if not low or not high then
+		return nil, "Bore needs a continuous surrounding wall in convex stock"
+	end
+	local clearance = hole.diameter - cylinder.diameter
+	if clearance < Resolver.MinClearance - 1e-6 then
+		return nil, "Shaft needs at least 1 mm diametral clearance"
+	end
+	if clearance > Resolver.MaxClearance + 1e-6 then
+		return nil, "Bearing fit is too loose: maximum diametral clearance is 4 mm"
+	end
+	local pa, pb = poses[tostring(body.id)], poses[tostring(shaft.id)]
+	if not pa or not pb then
+		return nil, "Missing assembly placement"
+	end
+	local a, b = References.world(hole, pa), References.world(cylinder, pb)
+	local cosine = math.abs(a.direction:Dot(b.direction))
+	if cosine < 0.999999 then
+		return nil, "Align the shaft and bore axes first"
+	end
+	local delta = b.point - a.point
+	local axial = delta:Dot(a.direction)
+	local radial = (delta - a.direction * axial).Magnitude
+	if
+		radial + math.sqrt(math.max(0, 1 - cosine * cosine)) * cylinder.length * 0.5
+		> clearance * 0.5 - 1e-5
+	then
+		return nil, "Shaft centerline is outside its radial clearance"
+	end
+	local overlap = math.min(high, axial + cylinder.length * 0.5)
+		- math.max(low, axial - cylinder.length * 0.5)
+	if overlap < math.min((high - low) * 0.5, cylinder.diameter) then
+		return nil, "Insert the shaft farther into its bore"
+	end
+	return {
+		kind = "Cylindrical",
+		model = record.model,
+		bodyId = body.id,
+		shaftId = shaft.id,
+		movingId = shaft.id,
+		featureId = record.featureId,
+		point = b.point,
+		direction = a.direction,
+		translation = 1,
+		rotation = 1,
+		retained = false,
+		basis = Geometry.axisFrame(b.point, a.direction),
+		halfSize = Vector3.new(cylinder.diameter, cylinder.length, cylinder.diameter) * 0.5,
+	},
+		nil
+end
+
+local function guide(record: any, components: any, poses: any, grounded: any): (any?, string?)
+	local mover = components[record.movingId]
+	local size = Geometry.box(mover)
+	local pose = poses[tostring(record.movingId)]
+	if not size or not pose then
+		return nil, "Linear guides need an uncut rectangular carriage"
+	end
+	if type(record.guideIds) ~= "table" or #record.guideIds ~= 4 then
+		return nil, "Choose four surrounding guide rails"
+	end
+	local sides, seen = {}, {}
+	for _, id in ipairs(record.guideIds) do
+		if id == record.movingId or seen[id] then
+			return nil, "Guide rails must be four distinct components"
+		end
+		seen[id] = true
+		if not grounded[tostring(id)] then
+			return nil, "Fix each guide rail to the bench first"
+		end
+		local pp = poses[tostring(id)]
+		local p, h = nil, nil
+		if pp then
+			p, h = Geometry.relativeBox(components[id], pp, pose)
+		end
+		if not p or not h then
+			return nil, "Guide rails must be uncut rectangular stock aligned with the carriage"
+		end
+		local overlap = math.min(size.Y * 0.5, p.Y + h.Y) - math.max(-size.Y * 0.5, p.Y - h.Y)
+		if overlap < math.min(size.Y * 0.5, 0.1) then
+			return nil, "Carriage has insufficient engagement with a guide rail"
+		end
+		local side = nil
+		for _, axis in ipairs({ "X", "Z" }) do
+			local other = if axis == "X" then "Z" else "X"
+			local gap = math.abs(p[axis]) - h[axis] - size[axis] * 0.5
+			if
+				gap >= Geometry.Wall * 0.5 - 1e-5
+				and gap <= Geometry.Clearance * 0.5 + 1e-5
+				and h[other] - math.abs(p[other]) >= size[other] * 0.5 - 1e-5
+			then
+				side = axis .. tostring(math.sign(p[axis]))
 			end
 		end
+		if not side or sides[side] then
+			return nil, "Rails must cover all four X/Z sides with 0.5–2 mm clearance per side"
+		end
+		sides[side] = true
+	end
+	return {
+		kind = "Prismatic",
+		model = record.model,
+		bodyId = record.guideIds[1],
+		movingId = mover.id,
+		point = pose.Position,
+		direction = pose.YVector,
+		translation = 1,
+		rotation = 0,
+		retained = false,
+		basis = pose,
+		halfSize = size * 0.5,
+	},
+		nil
+end
+
+function Resolver.resolve(record: any, components: any, poses: any, grounded: any?): (any?, string?)
+	if type(record) ~= "table" then
+		return nil, "Invalid relationship"
+	end
+	local ground = grounded or {}
+	local relation, reason
+	if record.model == "BoreSupportV1" or record.model == "RetainedBoreV1" then
+		relation, reason = bore(record, components, poses)
+	elseif record.model == "LinearGuideV1" or record.model == "LimitedGuideV1" then
+		relation, reason = guide(record, components, poses, ground)
 	else
-		return nil, 'Unsupported housing stock for bearing validation'
+		return nil, "Unsupported relationship; legacy joints are not activated"
 	end
-	local clearance = bore.diameter-cylinder.diameter
-	if clearance<Resolver.MinClearance then
-		return nil, 'Oversized shaft or insufficient clearance (minimum 1 mm)'
+	if not relation then
+		return nil, reason
 	end
-	if clearance>Resolver.MaxClearance then
-		return nil, 'Loose fit exceeds 4 mm diametral bearing approximation'
+	if ground[tostring(relation.movingId)] then
+		return nil, "Release the moving component from the bench first"
 	end
-	local bodyPose, shaftPose = poses[tostring(body.id)], poses[tostring(shaft.id)]
-	if not bodyPose or not shaftPose then
-		return nil, 'Missing authored placement'
+	if record.model == "RetainedBoreV1" or record.model == "LimitedGuideV1" then
+		if not ground[tostring(relation.bodyId)] then
+			return nil, "A retained bench mechanism needs a fixed housing or guide"
+		end
+		local low, high, problem = Geometry.stops(
+			record.stopIds,
+			components,
+			poses,
+			ground,
+			relation.basis,
+			relation.halfSize
+		)
+		if not low or not high then
+			return nil, problem
+		end
+		for _, id in ipairs(record.stopIds) do
+			if
+				id == relation.movingId
+				or id == relation.bodyId
+				or table.find(record.guideIds or {}, id)
+			then
+				return nil, "End-stop plates must be separate from the shaft, housing, and rails"
+			end
+		end
+		for _, distance in ipairs({ low, high }) do
+			local atLimit = table.clone(poses)
+			atLimit[tostring(relation.movingId)] = poses[tostring(relation.movingId)]
+				+ relation.direction * distance
+			local supported = if relation.kind == "Cylindrical"
+				then bore(record, components, atLimit)
+				else guide(record, components, atLimit, ground)
+			if not supported then
+				return nil,
+					"End-stop travel lets the moving part leave its support; move the stops inward"
+			end
+		end
+		relation.limits = { min = low, max = high }
+		relation.retained = true
 	end
-	local a = References.world(bore, bodyPose)
-	local b = References.world(cylinder, shaftPose)
-	local cosine = math.abs(a.direction:Dot(b.direction))
-	if cosine<.999999 then
-		return nil, 'Shaft and bore axes are not parallel'
-	end
-	local delta = b.point-a.point
-	local axial = delta:Dot(a.direction)
-	local radial = (delta-a.direction*axial).Magnitude
-	if radial+math.sqrt(math.max(0, 1-cosine*cosine))*cylinder.length*.5>clearance*.5-1e-5 then
-		return nil, 'Shaft centerline exceeds radial clearance'
-	end
-	local low = math.max(0, axial-cylinder.length*.5)
-	local high = math.min(node.size.Y, axial+cylinder.length*.5)
-	if high-low<math.min(node.size.Y*.5, cylinder.diameter) then
-		return nil, 'Insufficient axial engagement; shaft has left its support'
-	end
-	return {kind = 'Cylindrical', model = 'BoreSupportV1', bodyId = body.id, shaftId = shaft.id,
-		featureId = record.featureId, point = a.point, direction = a.direction,
-		translation = 1, rotation = 1, retained = false}, nil
+	return relation, nil
 end
 return Resolver

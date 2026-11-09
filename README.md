@@ -1,4 +1,4 @@
-> Current assembly architecture: [Stationary CAD Assembly and Simulation](docs/CAD_ASSEMBLY.md). This supersedes older Q3/Q4 joint instructions below. Build `2026.11.08.CAD-ASSEMBLY.1`; Studio acceptance testing is pending.
+> Current workbench: [CAD Assembly and Simulation](docs/CAD_ASSEMBLY.md) · [Exact mechanical test builds](docs/MECHANICAL_QUICKSTART.md). Supersedes older Q3/Q4 joint instructions below. Build `2026.11.09.WORKBENCH.2`; host checks pass, Studio acceptance remains pending.
 
 # OPENWORKS
 
