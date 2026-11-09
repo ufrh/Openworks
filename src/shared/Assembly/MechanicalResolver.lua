@@ -3,6 +3,7 @@ local References = require(script.Parent.GeometryReferences)
 local Geometry = require(script.Parent.SupportGeometry)
 local PinnedPivot = require(script.Parent.PinnedPivot)
 local DualPinCoupling = require(script.Parent.DualPinCoupling)
+local BoreIntegrity = require(script.Parent.BoreIntegrity)
 local Resolver = {}
 Resolver.MinClearance = 1 / 280
 Resolver.MaxClearance = 4 / 280
@@ -33,27 +34,9 @@ local function bore(record: any, components: any, poses: any): (any?, string?)
 	if not hole or not hole.feature or not cylinder then
 		return nil, "Select a through-hole and an uncut cylindrical shaft"
 	end
-	local active = {}
-	for _, op in ipairs(body.operations) do
-		if op.enabled ~= false then
-			table.insert(active, op)
-		end
-	end
-	if
-		#active ~= 1
-		or (active[1].kind ~= "Drill" and active[1].kind ~= "DrillFace")
-		or not hole.feature.through
-	then
-		return nil, "Bearing housing needs one through-drill in otherwise unmodified stock"
-	end
-	local low, high = Geometry.boreSpan(
-		body.nodes[1],
-		hole.point,
-		hole.direction,
-		hole.diameter * 0.5 + Geometry.Wall
-	)
-	if not low or not high then
-		return nil, "Bore needs a continuous surrounding wall in convex stock"
+	local intact, integrityReason = BoreIntegrity.check(body, hole)
+	if not intact then
+		return nil, integrityReason
 	end
 	local clearance = hole.diameter - cylinder.diameter
 	if clearance < Resolver.MinClearance - 1e-6 then
