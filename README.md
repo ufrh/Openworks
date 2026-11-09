@@ -119,8 +119,8 @@ to `localhost:34872`, and press Play. The project includes the FORGE
 source and secure server transport: no separate Ruckus Rojo session is
 required.
 
-The bottom-right build badge should report
-`FORGE 4.4.1 / Free · Edit · Assembly`. The top-center Mode Bar switches
+The bottom-right build badge should report the active build and FORGE
+version; the Mode Bar includes Free, Edit, Assembly, and Simulation. The top-center Mode Bar switches
 between modes. FORGE receives mode transition timing/failure metrics. Create a component in Free Mode by choosing a sketch-workspace preset or a cylinder diameter/length preset, then placing it on the ground.
 
 ## Studio verification
@@ -156,55 +156,57 @@ For the sealed-room and sketch visual checks, run `scripts/VERIFY_EDIT_CHAMBER.l
 - `scripts/VERIFY_FORM_SKETCH_REMOVAL.lua` — centered Boolean cutter and compiled result.
 
 
-## Q3 Assembly — manufactured mechanical connections
+## Q3 Assembly and Simulation — current mechanical workbench
 
-A two-hole match **never** snaps bodies together or generates any
-hardware. Components are spawned in separate stage slots so same-origin
-workpieces do not initially interpenetrate. A click/drag selects a body.
-The panel's **Move handles** and **Rotate handles** drive real
-`AlignPosition`/`AlignOrientation` actuators at bounded force and
-speed; their targets do not teleport parts through other solids.
-Movement is quantized to 1 mm and rotation to 5 degrees.
+Assembly is a **stationary CAD workspace**, separate from live physics.
+Components keep persistent assembly poses independently of FORM manufacturing
+history. Component selection, precise move/rotate gizmos, local/world
+orientation, numeric transforms, reference-driven concentric/face alignment,
+and server-validated interference checks operate without physics forces.
+Invalid placements roll back. Undo/redo works on accepted placements.
 
-Create a separate **Cylinder / Shaft** component using the restored
-primitive presets. Drill two compatible through-bores in two different
-components. In Assembly, select the first and second blue bore markers.
-Choose the cylinder body and press **Use selected cylinder as shaft**,
-then manually position the shaft through both holes with dragging or
-physics-based precision handles. The client and server both validate the
-two bores, shaft diameter/clearance, shaft pose, and length. The server
-also tests authoritative collision solids for intersections and rejects
-an overlapping installation. **Install shaft · Rigid** fixes the actual
-cylinder to both bodies; **Install shaft · Revolute** fixes it to the
-first body and forms a revolute bearing against the second.
+The Assembly panel uses **Components**, **Move**, **Align**, and **Joints**.
+Geometric alignment never installs a mechanical connection. Joints must
+be supported by explicitly manufactured components and verified feature
+geometry. Supported models include unretained and retained cylindrical
+bearings, X/Y linear guides with optional travel stops, and retained
+revolute pivots made from two drilled links, a pin, and two separate end
+caps. Multiple independent pin pivots can connect to one linking rod.
 
-No procedural bolt/pin models are created. The rigid option is an
-*idealized locked through-shaft*, not simulated threads, clamp preload,
-nuts or press-fit deformation. Future hardware modeling must add those
-mechanics before it can claim true bolt fastening.
+**Slider-crank assembly** is a manufactured, 19-part linkage example:
+grounded crank mount, crank, connecting rod, horizontal slider, three
+pins with six retainers, four guide rails, and two travel stops. It creates
+three pin pivots and one prismatic guide. See
+`scripts/VERIFY_SLIDER_CRANK.lua` for a full Studio Play acceptance
+script.
 
-**Roblox collision limitation:** CSG collision hulls can misrepresent
-small bores even at PreciseConvexDecomposition. Physics solvers also
-allow small penetrations under high force. The server rejects detected
-intersections at installation but cannot guarantee perfect collision
-geometry throughout continuous player manipulation. If an otherwise
-valid cylinder is rejected, check the actual collision fidelity and
-material geometry instead of turning collisions off.
+**Simulation** compiles separate server-owned physical bodies and
+constraints from the validated assembly. Its **Run**, **Drive**, **Test**
+and **Parts** controls support pause, reset, external motor drive,
+position servo, direction reversal, and limited test impulses. The
+motor/servo controls represent **external test-bench equipment**;
+manufactured electromechanical motors, wiring, gearing, stress and
+deformation are not yet simulated. Stopping Simulation restores authored
+CAD poses without rewriting FORM geometry.
 
-Old two-hole saved joints without an explicit manufactured shaft are
-not restored. They must be rebuilt under the current physical contract.
+Roblox's CSG collision hulls and contact solver remain approximate,
+especially around drilled cavities. A source-level implementation is
+not a guarantee of precise physical contact; real Studio Play acceptance
+is required. Unverifiable penetration is rejected rather than silently
+turning collisions off.
 
-[Q3 Studio Verification](scripts/VERIFY_Q3_ASSEMBLY.lua)
+[Mechanical architecture](docs/CAD_ASSEMBLY.md) ·
+[End-to-end slider-crank Studio test](scripts/VERIFY_SLIDER_CRANK.lua)
 
 ## Q4 world physics and saving
 
-The server now rebuilds published component geometry from authoritative
+The Free world publisher rebuilds geometry from authoritative
 FORM operation history and publishes physical bodies under
 `Workspace.OPENWORKS_Published`, with owner-restricted replicated
 DragDetector interaction. Client Free Mode drops its local duplicate when
 that server body arrives. Published bodies preserve pose/velocity when
-manufacturing geometry changes; installed relationships compile into
-physical constraints, and revolute motors accept bounded actuation.
+manufacturing geometry changes; the separate Simulation mode compiles approved mechanical relationships
+into physical constraints with optional bounded external drives.
 
 Workshop source snapshots, installed joints and physical poses use
 per-player DataStore persistence, a tagged geometry codec, 120-second
@@ -213,10 +215,10 @@ autosaving, manual Save Workshop, PlayerRemoving and BindToClose saving.
 setting `OpenworksEnableStudioDataStore=true` on `game` before Play
 and enabling Studio API access.
 
-Run `scripts/VERIFY_Q4_PERSISTENCE.lua` on the Studio SERVER command bar
-and `scripts/VERIFY_Q4_WORLD.lua` on the CLIENT command bar.
-Manually verify installed hinges, rigid fasteners, physics motion,
-re-compilation and reconnection.
+Run `scripts/VERIFY_Q4_PERSISTENCE.lua` on the Studio SERVER command bar,
+`scripts/VERIFY_Q4_WORLD.lua` on the CLIENT command bar, and
+`scripts/VERIFY_SLIDER_CRANK.lua` on the CLIENT command bar. Confirm all
+pin pivots and guides move without invalid penetration or constraint release.
 
 [Q4 Physics and Persistence](docs/Q4_SIMULATION_PERSISTENCE.md)
 
