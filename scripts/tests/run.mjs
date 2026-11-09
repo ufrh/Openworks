@@ -63,6 +63,7 @@ try {
     ['MechanicalWorkflows.spec.lua', 'MechanicalResolver,SupportGeometry'],
     ['MechanicsExtensions.spec.lua', 'MechanicalResolver,SupportGeometry,PinnedPivot,BenchDrive'],
     ['GeneralMechanisms.spec.lua', 'MechanicalResolver,DualPinCoupling,FitInspection,ConstraintCompiler'],
+    ['BoreIntegrity.spec.lua', 'BoreIntegrity,GeometryReferences,MechanicalResolver'],
     ['SimulationLifecycle.spec.lua', 'AssemblySession,ConstraintCompiler,Instance'],
     ['ModeLifecycle.spec.lua', 'ModeManager'],
   ];
