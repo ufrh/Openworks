@@ -554,6 +554,34 @@ function Document:removeOperation(component, id: number)
 	return false, "Fabrication feature no longer exists"
 end
 
+-- Edit a previously joined stock feature while preserving its source
+-- identity. The server will compile a trial before accepting a new revision.
+function Document:editAddedPrimitive(component, id: number,
+	size: Vector3, position: Vector3, rotation: Vector3)
+	for _, operation in ipairs(component.operations) do
+		if operation.id ~= id then continue end
+		if operation.kind ~= "AddPrimitive" then
+			return false, "Select an additive block or cylinder feature"
+		end
+		if typeof(size) ~= "Vector3" or typeof(position) ~= "Vector3"
+			or typeof(rotation) ~= "Vector3" then
+			return false, "Size, position and rotation must be Vector3 values"
+		end
+		local valid, problem = validateTransform(position, size, rotation)
+		if not valid then return false, problem end
+		if operation.primitive == "Cylinder"
+			and math.abs(size.X - size.Z) > 1e-5 then
+			return false, "Cylinder X and Z diameters must match"
+		end
+		operation.size = size
+		operation.position = position
+		operation.rotation = rotation
+		component.revision += 1
+		return true, nil
+	end
+	return false, "Added stock feature no longer exists"
+end
+
 function Document:undoOperation(component)
 	if #component.operations == 0 then return false, "No cuts to undo" end
 	table.remove(component.operations)
