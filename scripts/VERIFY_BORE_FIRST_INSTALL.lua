@@ -73,7 +73,7 @@ local success, result = xpcall(function()
 		"Preview must not move authored shaft pose")
 
 	local penetrating, interference = assembly:PreviewBearingPlacement(
-		housing.id, featureId, shaft.id, -98, before.revision
+		housing.id, featureId, shaft.id, -128, before.revision
 	)
 	assert(not penetrating,
 		"Shoulder penetrating finished housing geometry was incorrectly accepted")
