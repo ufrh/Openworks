@@ -54,7 +54,11 @@ function Simulation.new(bridge: any, remote: any, onStop: () -> ())
 	self.driveRoot = Panel.list(drive)
 	self.driveSelection = Panel.label(drive, "Select a joint", 40)
 	self.driveSpeed = Panel.input(drive, "Speed (RPM for pivots / mm/s for slides)", "15")
-	self.driveEffort = Panel.input(drive, "Torque (N·stud) / linear force", "220")
+	self.driveEffort = Panel.input(drive, "Max torque / linear force (Roblox units)", "220")
+	self.servoTarget = Panel.input(drive, "Servo angle (deg) / translation (mm)", "45")
+	Panel.button(drive, "Move to servo target", function()
+		self:drive(true, "Servo")
+	end)
 	Panel.button(drive, "Run drive", function()
 		self:drive(true)
 	end)
@@ -246,7 +250,7 @@ function Simulation:refreshDriveTargets()
 	end
 end
 
-function Simulation:drive(enabled: boolean)
+function Simulation:drive(enabled: boolean, mode: string?)
 	if not self.active or self.pending then
 		return
 	end
@@ -257,12 +261,18 @@ function Simulation:drive(enabled: boolean)
 	if enabled and (not speed or not effort or speed ~= speed or effort ~= effort) then
 		return self:report("Enter finite speed and effort values")
 	end
+	local target = tonumber(self.servoTarget.Text)
+	if enabled and mode == "Servo" and (not target or target ~= target) then
+		return self:report("Enter a finite servo position")
+	end
 	local value = if not enabled then 0 elseif self.driveKind == "Prismatic"
 		then speed / 280 else speed * (2 * math.pi / 60)
+	local position = if mode == "Servo" and self.driveKind == "Prismatic"
+		then target / 280 else target
 	local force = if enabled then effort else 0
 	self.pending = true
 	local ok, accepted, message = pcall(function()
-		return self.remote:SetBenchDrive(self.driveIndex, value, force)
+		return self.remote:SetBenchDrive(self.driveIndex, value, force, mode, position)
 	end)
 	self.pending = false
 	self:report(if ok and accepted then message else tostring(if ok then message else accepted))
