@@ -15,32 +15,45 @@ local function axisRotation(from: Vector3, to: Vector3): CFrame
 	return CFrame.fromAxisAngle(cross.Unit, math.acos(dot))
 end
 
-function Placement.solve(
-	shaftPose: CFrame, shaftAxis: any,
-	housingPose: CFrame, boreAxis: any, offsetMM: number
+function Placement.alignAxes(
+	moverPose: CFrame, moverAxis: any,
+	targetPose: CFrame, targetAxis: any, offsetMM: number
 ): (CFrame?, string?)
-	if typeof(shaftPose) ~= "CFrame" or typeof(housingPose) ~= "CFrame"
-		or not shaftAxis or shaftAxis.kind ~= "Axis" or shaftAxis.id ~= "shaft"
-		or not boreAxis or boreAxis.kind ~= "Axis" or not boreAxis.feature then
-		return nil, "Select a manufactured housing bore and a shaft"
+	if typeof(moverPose) ~= "CFrame" or typeof(targetPose) ~= "CFrame"
+		or not moverAxis or moverAxis.kind ~= "Axis"
+		or not targetAxis or targetAxis.kind ~= "Axis" then
+		return nil, "Select two manufactured cylindrical references"
 	end
 	if type(offsetMM) ~= "number" or offsetMM ~= offsetMM
 		or math.abs(offsetMM) > Placement.MaxOffsetMM then
 		return nil, "Axial offset is outside the supported range"
 	end
-	local aPoint = shaftPose:PointToWorldSpace(shaftAxis.point)
-	local aDirection = shaftPose:VectorToWorldSpace(shaftAxis.direction).Unit
-	local bPoint = housingPose:PointToWorldSpace(boreAxis.point)
-	local bDirection = housingPose:VectorToWorldSpace(boreAxis.direction).Unit
+	local aPoint = moverPose:PointToWorldSpace(moverAxis.point)
+	local aDirection = moverPose:VectorToWorldSpace(moverAxis.direction).Unit
+	local bPoint = targetPose:PointToWorldSpace(targetAxis.point)
+	local bDirection = targetPose:VectorToWorldSpace(targetAxis.direction).Unit
 	-- Preserve the nearest orientation when axes are parallel but opposite.
 	local target = if aDirection:Dot(bDirection) < 0 then -bDirection else bDirection
 	local turn = axisRotation(aDirection, target)
-	local rotated = CFrame.new(aPoint) * turn * CFrame.new(-aPoint) * shaftPose
-	local alignedPoint = rotated:PointToWorldSpace(shaftAxis.point)
+	local rotated = CFrame.new(aPoint) * turn * CFrame.new(-aPoint) * moverPose
+	local alignedPoint = rotated:PointToWorldSpace(moverAxis.point)
 	local delta = bPoint - alignedPoint
 	local radial = delta - bDirection * delta:Dot(bDirection)
 	local axial = bDirection * (delta:Dot(bDirection) + offsetMM / 280)
 	return rotated + radial + axial, nil
+end
+
+-- Shaft-specific selection guard. All mechanical installations share the
+-- same axis/offset math; the domain decides which datums are compatible.
+function Placement.solve(shaftPose: CFrame, shaftAxis: any,
+	housingPose: CFrame, boreAxis: any, offsetMM: number): (CFrame?, string?)
+	if not shaftAxis or shaftAxis.id ~= "shaft"
+		or not boreAxis or not boreAxis.feature then
+		return nil, "Select a manufactured housing bore and shaft"
+	end
+	return Placement.alignAxes(
+		shaftPose, shaftAxis, housingPose, boreAxis, offsetMM
+	)
 end
 
 return Placement
