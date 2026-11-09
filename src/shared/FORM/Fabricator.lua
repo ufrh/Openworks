@@ -65,6 +65,10 @@ function Fabricator.geometryKey(component): string
 			table.insert(pieces, string.format("IF|%.6f|%.6f|%s",
 				op.margin,op.depth,vectorKey(op.normal)))
 			for _,point in ipairs(op.points) do table.insert(pieces,vectorKey(point)) end
+		elseif op.kind == "AddPrimitive" then
+			table.insert(pieces, string.format("AP|%s|%s|%s|%s",
+				op.primitive,
+				vectorKey(op.size), vectorKey(op.position), vectorKey(op.rotation)))
 		elseif op.kind == "SketchExtrude" then
 			table.insert(pieces, string.format("E|%s|%.4f|%s",
 				op.mode, op.depth, tostring(op.through)))
@@ -190,10 +194,22 @@ local function compileUnlocked(component): (BasePart, string)
 			pausedInsideFiles+=1
 			continue
 		end
-		if op.kind == "SketchExtrude" or op.kind == "File"
+		if op.kind == "SketchExtrude" or op.kind == "AddPrimitive" or op.kind == "File"
 			or op.kind == "FileMesh" or op.kind == "InsetFace"
 			or op.kind == "SmoothInside" then
 			local function createTool()
+				if op.kind == "AddPrimitive" then
+					local primitive = Compiler.nativePart({
+						kind = op.primitive,
+						size = op.size,
+					})
+					local rotation = op.rotation
+					primitive.CFrame = CFrame.new(op.position)
+						* CFrame.fromOrientation(
+							math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
+						* primitive.CFrame
+					return primitive, function() primitive:Destroy() end
+				end
 				if op.kind == "File" then
 					if miterByOperation[op] then
 						local spec=CornerTriangle.fileSpec(node,op)
@@ -226,7 +242,8 @@ local function compileUnlocked(component): (BasePart, string)
 				error("Sketch extrusion " .. tostring(op.id) .. ": " .. tostring(cutter), 0)
 			end
 			-- Exterior filing ONLY. No additive wedges or corner patch.
-			local mode = if op.kind == "SketchExtrude" then op.mode
+			local mode = if op.kind == "AddPrimitive" then "Add"
+				elseif op.kind == "SketchExtrude" then op.mode
 				elseif op.kind=="SmoothInside" then "Add" else "Remove"
 			local success, result = combine(current, cutter, mode)
 			release()
