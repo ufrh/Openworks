@@ -14,14 +14,14 @@ The document DataStore envelope remains version 1; the assembly payload remains 
 
 ## Controls
 
-Assembly uses a shared four-page workbench. The page names and controls are:
+Assembly uses a shared five-page workbench. The page names and controls are:
 
-- **Components:** component selection, New Component, Edit Selected, frame all, reset view, save. No mechanism preset is offered as the default building workflow.
+- **Parts:** select existing components, New Component (dimensioned Block/Cylinder/Sketch), Edit Selected, enter bearing/pivot installation, frame/reset view, and save. Mechanism presets are test fixtures, not the building workflow.
 - **Move:** W/E move/rotate, local/world axes, adjustable mm/degree snap, numeric position relative to the stage center, rotation, placement undo/redo, frame selected.
-- **Align:** choose A and B, select source planes/bore/shaft references, measure radial offset and diameter clearance, then align axes, mate faces, make parallel, or set spacing. Offsets are millimeters. Alignment positions geometry; it installs no joint.
+- **Install:** choose **Bearing** or **Pin pivot**, select the manufactured bore(s) and hardware in the viewport/Parts list, then adjust axial offset and—on a pin pivot—initial phase. Preview validates the actual finished solid at the requested position; Finalize commits poses and the mechanically supported relationship atomically. Existing parts are not automatically created.\n- **Align:** choose A and B, select source planes/bore/shaft references, measure radial offset and diameter clearance, then align axes, mate faces, make parallel, or set spacing. Offsets are millimeters. Alignment positions geometry; it installs no joint.
 - **Joints:** fix/release bench fixtures, select source bores, select manufactured pins/retainers or guide rails in order, register verified mechanical relationships, inspect registered joints, remove selected joint explicitly, and start simulation. For pivot joints, an optional geometric lookup can identify the manufactured pin and end caps; it never fabricates hardware.
 
-References are manufacturing datums, not persistent rendered triangle IDs. A source plane can remain useful after machining removes part of that face; placement is still checked against the final solid. Concentric alignment preserves axial depth; adjust insertion with Move if the support validator requests more engagement.
+References are manufacturing datums, not persistent rendered triangle IDs. A source plane can remain useful after machining removes part of that face; placement is still checked against the final solid. The dedicated Install flow handles bore axis alignment and axial insertion without manually creating a mate or joint record. Generic Align remains available for arbitrary geometry positioning.
 
 Move previews immediately. On release, server clearance validation either accepts it or rolls back and highlights conflicts. Escape or losing window focus cancels an Assembly drag. Mode changes finish an active drag and wait for its validation; a pending request blocks a transition. Ctrl+Z/Y undo/redo accepted placements (up to 64); they do not undo manufacturing, fixture state, or relationship installation.
 
@@ -33,12 +33,12 @@ Simulation has **Run**, **Drive**, **Test**, and **Parts** tabs. Pause freezes b
 
 | Model | Required manufactured geometry | Allowed motion |
 | --- | --- | --- |
-| Sliding bearing (`BoreSupportV1`) | Uncut cylinder in one through-drilled convex housing | Axial slide and rotation; no retention |
+| Sliding bearing (`BoreSupportV1`) | Cylindrical source stock, including supported additive shoulders, in a through-drilled housing | Axial slide and rotation; no retention |
 | Retained bearing (`RetainedBoreV1`) | Same, with fixed housing and two separate fixed rectangular end plates covering shaft ends | Rotation and measured axial endplay |
 | Linear guide (`LinearGuideV1`) | Uncut rectangular carriage surrounded on four sides by separate fixed rectangular rails | Axial slide, no rotation |
 | Linear guide + stops (`LimitedGuideV1`) | Same four rails, plus two separate fixed rectangular end plates | Slide within measured stroke, no rotation |\n| Retained pin pivot (`RetainedPivotV1`) | Two drilled links, one separate cylindrical pin, two manufactured end caps | One rotational DOF, no axial release |\n| Dual-pin rigid coupling (`DualPinRigidV1`) | Two matching pairs of through-bores, two distinct pins and four manufactured retainers | Zero DOF between the coupled members |
 
-Bearings accept both legacy `Drill` and the UI's `DrillFace`, including side-face bores. The selected drill must be through, with surrounding wall material in convex stock. Additional independent drilled holes are accepted when their source paths do not merge or leave under 1 mm of material. Other machining operations still fail closed until the final load-bearing wall can be certified. Shaft/bore diametral clearance is 1–4 mm. Unsupported additional machining, loose fits, insufficient wall, misalignment, or insufficient axial engagement fails validation.
+Bearings accept both legacy `Drill` and the UI's `DrillFace`, including side-face bores. The selected drill must be through, with surrounding wall material in convex stock. Shaft/bore datums describe the fit interface; full CSG solids determine interference at the proposed insertion depth. A shoulder outside the housing need not make a shaft invalid. Additional independent drilled holes are accepted when their source paths do not merge or leave under 1 mm of material. Additive Block/Cylinder features are source-history entries and only commit after CSG confirms a single connected finished solid. Other machining operations still fail closed until the final load-bearing wall can be certified. Shaft/bore diametral clearance is 1–4 mm. Unsupported additional machining, loose fits, insufficient wall, misalignment, or insufficient axial engagement fails validation.
 
 Linear rails must be uncut rectangles aligned with the carriage axes, cover all four local X/Z sides, provide 0.5–2 mm clearance per side, and retain sufficient axial overlap. Travel may follow the moving carriage's local X, Y, or Z axis. End plates must be grounded, square to travel, cover the mover end, and enclose it without penetration. Bounds come from actual plate faces. Travel that would lose bearing/rail engagement before reaching a stop is rejected.
 
@@ -52,9 +52,11 @@ Broad phase uses oriented bounds and 0.0001-stud linear tolerance. Block overlap
 
 ## Verification
 
-`cd scripts/tests && npm ci && npm test` compiles all source/verification Lua with Luau WASM and runs 113 domain assertions covering references, placement math, DrillFace and side bores, bearing retention, rail/stops validation, compiler configuration, pause/reset, and mode rollback/cleanup with Free fallback. Vector/CFrame/Instance doubles exercise real module logic; they do not simulate Roblox physics or execute live CSG/UI/DataStores.
+`cd scripts/tests && npm ci && npm test` compiles all source/verification Lua with Luau WASM and runs domain assertions covering references, placement math, DrillFace and side bores, bearing retention, rail/stops validation, compiler configuration, pause/reset, and mode rollback/cleanup with Free fallback. Vector/CFrame/Instance doubles exercise real module logic; they do not simulate Roblox physics or execute live CSG/UI/DataStores.
 
 Studio acceptance:
+
+0. Run `scripts/VERIFY_BORE_FIRST_INSTALL.lua` in the **client Play** Command Bar in a fresh workspace to exercise dimensioned block stock, additive shaft shoulders, disconnected material rejection, preview-only fitting, shoulder interference, atomic bearing finalization, and simulation. It cleans up its test pieces. Also manually test **Parts → Install shaft in housing** and **Parts → Install pin pivot** in the actual UI.
 
 1. Run `scripts/VERIFY_Q3_ASSEMBLY.lua` in the Command Bar for real Instance/compiler and clearance checks.
 2. In **client Play** Command Bar, run `scripts/VERIFY_CAD_WORKFLOW.lua` in an otherwise valid workshop. It creates/cleans up its parts and tests UI-style drilling, rejected placement, explicit support, spin/push, pause/reset, repeated stop, and unchanged authored history/poses.
@@ -62,14 +64,14 @@ Studio acceptance:
 4. Run `scripts/VERIFY_Q4_PERSISTENCE.lua` server-side for codec round-trips. Separately enable Studio DataStore access and verify save → stop Play → restart preserves all supported relationship types and fixtures.
 5. Follow [the manual recipe](MECHANICAL_QUICKSTART.md): visually verify rotation/sliding/stops, released supports, collision behavior, mode/camera restoration, failed transitions, and respawn. Repeat to check for leaked folders, attachments, or controls.
 
-GitHub Actions compiled 180 Luau files and passed 113 domain assertions. Studio Play, dynamic physics, CSG collision fidelity, UI usability, and actual DataStore reload have not been executed in this environment. This build is ready for that acceptance pass; those runtime checks are not represented as passed.
+GitHub Actions compiles the Luau code and runs mathematical/domain assertions on each dev commit. The latest counts and failures appear in Actions; Studio Play has not been executed here. Studio Play, dynamic physics, CSG collision fidelity, UI usability, and actual DataStore reload have not been executed in this environment. This build is ready for that acceptance pass; those runtime checks are not represented as passed.
 
 
 ## Slider–crank acceptance target
 
 A manually built slider–crank mechanism uses a **grounded crank pivot**,
 **two connecting-rod pivots**, and a **prismatic slider guide**. The
-`scripts/VERIFY_SLIDER_CRANK.lua` retains a 19-part manufactured\n**regression fixture**, not a user-facing preset: it creates
+`scripts/VERIFY_SLIDER_CRANK.lua` retains a 19-part manufactured **regression fixture**, not a user-facing preset: it creates
 four motion/structure pieces, three manufactured pins, six end caps,
 four linear rails, and two travel stops. No invisible mechanical hardware is added. The actual joint constraints are compiled only in Simulation.
 
