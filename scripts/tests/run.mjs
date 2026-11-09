@@ -61,6 +61,7 @@ try {
     ['AssemblyDomain.spec.lua', 'Alignment,GeometryReferences,MechanicalResolver,AssemblyLayout,ConstraintCompiler'],
     ['MechanicalWorkflows.spec.lua', 'MechanicalResolver,SupportGeometry'],
     ['MechanicsExtensions.spec.lua', 'MechanicalResolver,SupportGeometry,PinnedPivot,BenchDrive'],
+    ['GeneralMechanisms.spec.lua', 'MechanicalResolver,DualPinCoupling,FitInspection,ConstraintCompiler'],
     ['SimulationLifecycle.spec.lua', 'AssemblySession,ConstraintCompiler,Instance'],
     ['ModeLifecycle.spec.lua', 'ModeManager'],
   ];
