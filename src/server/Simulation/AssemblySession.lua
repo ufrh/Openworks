@@ -292,7 +292,7 @@ function Session.reset(session: any): (boolean, string?)
 	end
 	session.released = 0
 	for index, drive in pairs(session.drives) do
-		Session.drive(session, index, drive.speed, drive.effort)
+		Session.drive(session, index, drive.speed, drive.effort, drive.mode, drive.target)
 	end
 	if not wasPaused then
 		Session.pause(session, false)
@@ -300,7 +300,8 @@ function Session.reset(session: any): (boolean, string?)
 	return true, nil
 end
 -- The simulation drive is external equipment, never persisted to FORM.
-function Session.drive(session: any, index: number, speed: number, effort: number): (boolean, string?)
+function Session.drive(session: any, index: number, speed: number, effort: number,
+	mode: string?, target: number?): (boolean, string?)
 	local target = nil
 	for _, item in ipairs(session.relations) do
 		if item.index == index then
@@ -311,15 +312,15 @@ function Session.drive(session: any, index: number, speed: number, effort: numbe
 	if not target then
 		return false, "Joint is no longer active; reset the simulation"
 	end
-	local valid, reason = BenchDrive.validate(target.relation, speed, effort)
+	local valid, reason = BenchDrive.validate(target.relation, speed, effort, mode, target)
 	if not valid then
 		return false, reason
 	end
-	BenchDrive.apply(target.objects, target.relation, speed, effort)
-	if speed == 0 or effort == 0 then
+	BenchDrive.apply(target.objects, target.relation, speed, effort, mode, target)
+	if effort == 0 or (mode ~= "Servo" and speed == 0) then
 		session.drives[index] = nil
 	else
-		session.drives[index] = { speed = speed, effort = effort }
+		session.drives[index] = { speed = speed, effort = effort, mode = mode or "Motor", target = target }
 	end
 	return true, nil
 end
