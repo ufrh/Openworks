@@ -139,6 +139,18 @@ function Runtime:drive(phase, reversed)
 	end
 end
 
+function Runtime:reverseLinear(reverse)
+	for _, rig in pairs(self.rigs) do
+		local g = rig.geometry
+		for _, entry in ipairs(g.motors) do
+			if entry.kind == "linear" then
+				local speed = if entry.instance.Velocity == 0 then 0 else math.abs(entry.instance.Velocity)
+				entry.instance.Velocity = (if reverse then -1 else 1) * speed
+			end
+		end
+	end
+end
+
 local function deviation(c)
 	local a, b = c.Attachment0, c.Attachment1
 	if not a or not b or not a.Parent or not b.Parent then
@@ -229,12 +241,20 @@ function Runtime:runPhase(phase, trial)
 	for i = 1, #Config.Scales do
 		metrics[i] = freshStats()
 	end
-	local total, sinceSample, reversed, pulseOne, pulseTwo = 0, 0, false, false, false
+	local total, sinceSample, reversed, linearReverse, pulseOne, pulseTwo = 0, 0, false, false, false, false
 	self:drive(phase, false)
 	while total < Config.SecondsPerPhase and not self.stopRequested do
 		local dt = RunService.Heartbeat:Wait()
 		total += dt
 		sinceSample += dt
+		if phase == "normal" or phase == "heavy" then
+			-- Continuously stroke actuated sliders rather than pinning against end stops.
+			local nextDirection = (math.floor(total / 0.85) % 2 == 1)
+			if nextDirection ~= linearReverse then
+				linearReverse = nextDirection
+				self:reverseLinear(nextDirection)
+			end
+		end
 		if not reversed and total > Config.SecondsPerPhase / 2 then
 			reversed = true
 			if phase == "extreme" then self:drive(phase, true) end
