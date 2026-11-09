@@ -39,6 +39,7 @@ try {
     'Assembly/DualPinCoupling',
     'Assembly/JointIntegrity',
     'Assembly/FitInspection',
+    'Assembly/FitPlacement',
     'Assembly/BenchDrive',
     'Assembly/MechanicalResolver',
     'Assembly/AssemblyLayout',
@@ -66,6 +67,7 @@ try {
     ['GeneralMechanisms.spec.lua', 'MechanicalResolver,DualPinCoupling,FitInspection,ConstraintCompiler'],
     ['BoreIntegrity.spec.lua', 'BoreIntegrity,GeometryReferences,MechanicalResolver'],
     ['JointIntegrity.spec.lua', 'JointIntegrity'],
+    ['FitPlacement.spec.lua', 'FitPlacement,GeometryReferences'],
     ['SimulationLifecycle.spec.lua', 'AssemblySession,ConstraintCompiler,Instance'],
     ['ModeLifecycle.spec.lua', 'ModeManager'],
   ];
