@@ -16,10 +16,6 @@ local function csvCell(value)
 	return '"' .. s:gsub('"', '""') .. '"'
 end
 
-local function n(value)
-	return string.format("%.6f", value or 0)
-end
-
 local function titleFor(index)
 	local t = Config.Tests[index]
 	return if t then t[1] .. " " .. t[2] else "Unknown"
