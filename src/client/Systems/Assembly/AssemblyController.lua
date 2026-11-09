@@ -4,6 +4,8 @@ local Shared = RS:WaitForChild("Openworks"):WaitForChild("Assembly")
 local References = require(Shared.GeometryReferences)
 local Alignment = require(Shared.Alignment)
 local Catalog = require(Shared.RelationshipCatalog)
+local Resolver = require(Shared.MechanicalResolver)
+local SupportGeometry = require(Shared.SupportGeometry)
 local Layout = require(Shared.AssemblyLayout)
 local Panel = require(script.Parent.Parent.Parent.Experience.UI.WorkbenchPanel)
 local Manipulator = require(script.Parent.PrecisionManipulator)
@@ -247,6 +249,9 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		end)
 	end
 	self.modelHelp = Panel.label(mechanics, "", 84)
+	Panel.button(mechanics, "Identify positioned pivot hardware", function()
+		self:detectPivotHardware()
+	end)
 	Panel.button(mechanics, "Add hardware / fixture", function()
 		local id = self.selectedId
 		if not id then
@@ -657,11 +662,88 @@ function Controller:mutate(method: string, ...: any)
 	)
 	self.manipulator.gizmo:setHidden(false)
 end
+-- Detect geometry the player has already manufactured and positioned.
+-- This is a lookup, not a snap, a generated fastener, or an installed joint.
+function Controller:detectPivotHardware(): boolean
+	if not self.layout or not self.a or not self.b
+		or self.a.id == self.b.id then
+		self:_report("Select the two drilled link references first")
+		return false
+	end
+	local state = self.bridge.getAssemblyState()
+	local components = state.document.components
+	local poses = self.layout.poses
+	local candidates = {}
+	for pinId, component in pairs(components) do
+		if pinId == self.a.id or pinId == self.b.id
+			or component.nodes[1].kind ~= "Cylinder"
+			or not poses[tostring(pinId)] then
+			continue
+		end
+		local hasCut = false
+		for _, operation in ipairs(component.operations or {}) do
+			if operation.enabled ~= false then hasCut = true break end
+		end
+		if hasCut then continue end
+		local pose = poses[tostring(pinId)]
+		local half = component.nodes[1].size.Y * 0.5
+		local ends = {}
+		for capId, cap in pairs(components) do
+			if capId == pinId or capId == self.a.id or capId == self.b.id then continue end
+			local capSize = SupportGeometry.box(cap)
+			local capPose = poses[tostring(capId)]
+			if not capSize or not capPose then continue end
+			local difference = capPose.Position - pose.Position
+			local axial = difference:Dot(pose.YVector)
+			local radial = (difference - pose.YVector * axial).Magnitude
+			if radial > 3 / 280 or
+				math.abs(math.abs(axial) - (half + capSize.Y * 0.5)) > 3 / 280 then
+				continue
+			end
+			ends[if axial > 0 then 1 else -1] = capId
+		end
+		if ends[-1] and ends[1] then
+			local record = {
+				model = "RetainedPivotV1",
+				bodyId = self.b.id,
+				movingId = self.a.id,
+				featureId = self.b.ref,
+				movingFeatureId = self.a.ref,
+				pinId = pinId,
+				stopIds = {ends[-1], ends[1]},
+			}
+			local relation = Resolver.resolve(record, components, poses, self.layout.grounded)
+			if relation then
+				table.insert(candidates, {pinId, ends[-1], ends[1]})
+			end
+		end
+	end
+	if #candidates ~= 1 then
+		self:_report(if #candidates == 0 then
+			"No valid positioned pin and end-cap pair found" else
+			"Multiple pin assemblies match; select the intended hardware manually")
+		return false
+	end
+	self.fixtures = candidates[1]
+	for index, spec in ipairs(Catalog) do
+		if spec.model == "RetainedPivotV1" then
+			self.modelIndex = index
+			break
+		end
+	end
+	self:mechanicsText()
+	self:_report("Located manufactured pin and both retainers. Register the pivot to connect.")
+	return true
+end
+
 function Controller:registerSupport()
 	if not self.a then
 		return self:_report("Select the moving part, then click This is the part that moves")
 	end
 	local spec = Catalog[self.modelIndex]
+	if spec.model == "RetainedPivotV1" and #self.fixtures == 0 then
+		self:detectPivotHardware()
+	end
 	if #self.fixtures ~= spec.fixtures then
 		return self:_report("This relationship requires " .. spec.fixtures .. " fixture components")
 	end
