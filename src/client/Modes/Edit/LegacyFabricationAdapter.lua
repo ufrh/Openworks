@@ -2133,9 +2133,21 @@ function Debug.start(options: any?)
 	placementFlow = ComponentPlacement.new(
 		playerGui,
 		grid,
-		function(name, size, ground, kind, diameter, length)
+		function(name, size, ground, kind, diameter, length, blockSize)
 			local workspaceData = EditWorkspace.new(ground, size, name)
-			if kind == "Cylinder" then
+			if kind == "Block" then
+				local component, reason = documentBridge:createBlock(
+					name, ground, workspaceData.editCorner, size, blockSize
+				)
+				if not component then
+					message("Block rejected: " .. tostring(reason))
+					return
+				end
+				pendingSketch = nil
+				currentWorkspace = workspaceData
+				selectComponent(component.id)
+				changed(component)
+			elseif kind == "Cylinder" then
 				local component, reason = documentBridge:createCylinder(
 					name,
 					ground,
@@ -2239,7 +2251,7 @@ function Debug.start(options: any?)
 			togglePreview()
 		end
 	end)
-	message("Character mode · Create Component places a new sketch workspace")
+	message("Create a block, cylinder or custom sketch in FORM")
 	return {
 		setAssemblySelection = function(id)
 			assemblySelectedId = id
