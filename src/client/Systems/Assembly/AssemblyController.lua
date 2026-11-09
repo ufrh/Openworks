@@ -334,14 +334,14 @@ function Controller:name(id: number?): string
 end
 
 function Controller:choiceText()
-	self.choices.Text = "Moving part: "
-		.. self:name(self.a and self.a.id)
-		.. "\nTarget: "
-		.. self:name(self.b and self.b.id)
-	self.mechanicalChoices.Text = "Moving: "
-		.. self:name(self.a and self.a.id)
-		.. "\nHousing: "
-		.. self:name(self.b and self.b.id)
+	self.choices.Text = "A  " .. self:name(self.a and self.a.id)
+		.. (if self.a then " · " .. self.a.ref else "")
+		.. "\nB  " .. self:name(self.b and self.b.id)
+		.. (if self.b then " · " .. self.b.ref else "")
+	self.mechanicalChoices.Text = "Member A  " .. self:name(self.a and self.a.id)
+		.. (if self.a then " · " .. self.a.ref else "")
+		.. "\nMember B  " .. self:name(self.b and self.b.id)
+		.. (if self.b then " · " .. self.b.ref else "")
 end
 
 function Controller:mechanicsText()
@@ -828,6 +828,27 @@ function Controller:Enter()
 			return
 		end
 		local refs = References.list(component)
+		-- Picking the rim of a manufactured bore selects its source axis.
+		-- No mesh triangle IDs or hidden collision hit-boxes are involved.
+		local nearestIndex, nearestDistance = nil, math.huge
+		for index, ref in ipairs(refs) do
+			if ref.feature then
+				local worldRef = References.world(ref, pose)
+				local distance = (hit.Position - worldRef.point).Magnitude
+				if distance < math.max(0.11, ref.diameter * 0.9)
+					and distance < nearestDistance then
+					nearestIndex, nearestDistance = index, distance
+				end
+			end
+		end
+		if nearestIndex then
+			self.refIndex = nearestIndex
+			if self.a and self.a.id == id then self.a.ref = refs[nearestIndex].id end
+			if self.b and self.b.id == id then self.b.ref = refs[nearestIndex].id end
+			self:cycleReference(0)
+			self:choiceText()
+			return
+		end
 		for index, ref in ipairs(refs) do
 			local world = References.world(ref, pose)
 			if
