@@ -31,6 +31,9 @@ local function numbers(text: string, count: number): { number }?
 end
 function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	local panel = Panel.new("Assembly", { "Parts", "Move", "Align", "Mechanics" })
+	panel.tabs.Parts.Text = "Build"
+	panel.tabs.Align.Text = "Line up"
+	panel.tabs.Mechanics.Text = "Connect"
 	local self = setmetatable({
 		bridge = bridge,
 		remote = remote,
@@ -57,37 +60,47 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		panel.pages.Parts, panel.pages.Move, panel.pages.Align, panel.pages.Mechanics
 	Panel.label(
 		parts,
-		"Select a part here or click its solid. [Fixed] means attached to the external bench.",
+		"Start with a ready-made mechanism, or select one of your parts below. Then Move → Line up → Connect → Test.",
 		48
 	)
 	for _, preset in ipairs({ "Bearing", "Linear guide" }) do
-		Panel.button(parts, "Create preset: " .. preset, function()
-			if self.pending or self.manipulator.gizmo:isDragging() then
-				return
+		Panel.button(
+			parts,
+			if preset == "Bearing" then "＋ Add a spinning shaft" else "＋ Add a sliding carriage",
+			function()
+				if self.pending or self.manipulator.gizmo:isDragging() then
+					return
+				end
+				self.pending = true
+				self.manipulator.gizmo:setHidden(true)
+				self:_report("Building " .. preset .. " preset…")
+				local callOk, ok, result = pcall(Presets.build, documents, remote, preset)
+				self.pending = false
+				local refreshed, issue = pcall(function()
+					self:reload()
+				end)
+				self.manipulator.gizmo:setHidden(false)
+				if callOk and ok and refreshed then
+					self.selectedId = result
+					self:select(result)
+					bridge.frameAssembly(result)
+					self:_report(
+						"Ready! Click Test my build. Your moving part will be selected automatically."
+					)
+				else
+					self:_report(
+						tostring(if not callOk then ok elseif not refreshed then issue else result)
+					)
+				end
 			end
-			self.pending = true
-			self.manipulator.gizmo:setHidden(true)
-			self:_report("Building " .. preset .. " preset…")
-			local callOk, ok, result = pcall(Presets.build, documents, remote, preset)
-			self.pending = false
-			local refreshed, issue = pcall(function()
-				self:reload()
-			end)
-			self.manipulator.gizmo:setHidden(false)
-			if callOk and ok and refreshed then
-				self.selectedId = result
-				self:select(result)
-				bridge.frameAssembly(result)
-				self:_report(
-					"Preset assembled. Open Mechanics → Start simulation, then select the mover in Test."
-				)
-			else
-				self:_report(
-					tostring(if not callOk then ok elseif not refreshed then issue else result)
-				)
-			end
-		end)
+		)
 	end
+	Panel.button(parts, "▶ Test my build", function()
+		if not self.pending and self.onSimulate then
+			self.onSimulate()
+		end
+	end)
+	Panel.label(parts, "Your parts · [Fixed] parts stay still", 30)
 	self.partsRoot = Panel.list(parts)
 	Panel.button(parts, "Frame all (Home)", function()
 		bridge.frameAssembly(nil)
@@ -118,7 +131,16 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	Panel.button(move, "Rotate (E)", function()
 		self.manipulator:setMode("Rotate")
 	end)
-	self.orientation = Panel.button(move, "Axes: Local", function()
+	local precision = Panel.list(move)
+	precision.Visible = false
+	local precisionToggle
+	precisionToggle = Panel.button(move, "Show exact measurements", function()
+		precision.Visible = not precision.Visible
+		precisionToggle.Text = if precision.Visible
+			then "Hide exact measurements"
+			else "Show exact measurements"
+	end)
+	self.orientation = Panel.button(precision, "Axes: Local", function()
 		if self.pending or self.manipulator.gizmo:isDragging() then
 			return
 		end
@@ -127,7 +149,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 			.. (if self.manipulator.options.world then "World" else "Local")
 		self.manipulator.gizmo:refresh()
 	end)
-	self.snap = Panel.input(move, "Snap: millimeters, degrees", "1, 5")
+	self.snap = Panel.input(precision, "Snap: millimeters, degrees", "1, 5")
 	self.snap.FocusLost:Connect(function()
 		local n = numbers(self.snap.Text, 2)
 		if not n or n[1] <= 0 or n[1] > 280 or n[2] <= 0 or n[2] > 180 then
@@ -143,9 +165,9 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		self.manipulator.options.translationStep, self.manipulator.options.rotationStep =
 			n[1] / 280, n[2]
 	end)
-	self.position = Panel.input(move, "Position X, Y, Z (mm from stage center)", "0, 0, 0")
-	self.rotation = Panel.input(move, "Rotation X, Y, Z (degrees)", "0, 0, 0")
-	Panel.button(move, "Apply position + rotation", function()
+	self.position = Panel.input(precision, "Position X, Y, Z (mm from stage center)", "0, 0, 0")
+	self.rotation = Panel.input(precision, "Rotation X, Y, Z (degrees)", "0, 0, 0")
+	Panel.button(precision, "Apply position + rotation", function()
 		local pos, rot = numbers(self.position.Text, 3), numbers(self.rotation.Text, 3)
 		if not pos or not rot then
 			return self:_report("Enter three numbers in each field")
@@ -166,25 +188,23 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	end)
 	Panel.label(
 		align,
-		"1. Select the moving part and its reference.\n2. Pick the target part. 3. Choose an alignment.",
+		"Pick the part you want to move, then the part it should line up with. For a shaft, its centerline is selected automatically.",
 		52
 	)
-	Panel.button(align, "Use selection as moving part A", function()
+	Panel.button(align, "1. Move this part", function()
 		self:setReference("a")
 	end)
-	Panel.button(align, "Pick target part B in viewport / Parts", function()
+	Panel.button(align, "2. Pick the part to line up with", function()
 		self.pickTarget = true
-		self:_report(
-			"Click the target part. Its first bore or source face becomes B; change the reference below if needed."
-		)
+		self:_report("Click the other part. A hole is selected automatically when available.")
 	end)
-	self.choices = Panel.label(align, "A: — / B: —", 52)
-	Panel.label(align, "References on selected part")
+	self.choices = Panel.label(align, "Moving part: — / Target: —", 52)
+	Panel.label(align, "Choose a face or centerline")
 	self.refsRoot = Panel.list(align)
 	self.offset = Panel.input(align, "Face spacing / offset (mm)", "0")
 	for _, item in ipairs({
-		{ "Concentric", "Align axes (concentric)" },
-		{ "Coincident", "Mate faces" },
+		{ "Concentric", "Center shaft in hole" },
+		{ "Coincident", "Put faces together" },
 		{ "Parallel", "Make parallel" },
 		{ "Distance", "Set face spacing" },
 	}) do
@@ -192,7 +212,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 			self:align(item[1])
 		end)
 	end
-	Panel.button(align, "Clear A / B", function()
+	Panel.button(align, "Clear chosen parts", function()
 		self.a, self.b, self.pickTarget = nil, nil, false
 		self:choiceText()
 	end)
@@ -209,10 +229,10 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		)
 	end)
 	self.mechanicalChoices = Panel.label(mechanics, "Moving: — / Housing: —", 52)
-	Panel.button(mechanics, "Use selected part as mover", function()
+	Panel.button(mechanics, "This is the part that moves", function()
 		self:setReference("a")
 	end)
-	Panel.button(mechanics, "Pick bearing housing / bore", function()
+	Panel.button(mechanics, "Pick the part with the hole", function()
 		self.pickTarget = true
 		self:_report("Click the housing. Its first bore becomes the bearing reference.")
 	end)
@@ -225,7 +245,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		end)
 	end
 	self.modelHelp = Panel.label(mechanics, "", 84)
-	Panel.button(mechanics, "Add selected part as fixture", function()
+	Panel.button(mechanics, "Add this rail or stop plate", function()
 		local id = self.selectedId
 		if not id then
 			return self:_report("Select a fixture first")
@@ -240,13 +260,13 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		self:mechanicsText()
 	end)
 	self.fixturesRoot = Panel.list(mechanics)
-	Panel.button(mechanics, "Add validated relationship", function()
+	Panel.button(mechanics, "Connect these parts", function()
 		self:registerSupport()
 	end)
 	Panel.button(mechanics, "Check assembly", function()
 		self:validate()
 	end)
-	Panel.button(mechanics, "Start simulation", function()
+	Panel.button(mechanics, "▶ Test my build", function()
 		if self.onSimulate then
 			self.onSimulate()
 		end
@@ -293,9 +313,9 @@ function Controller:name(id: number?): string
 end
 
 function Controller:choiceText()
-	self.choices.Text = "A: "
+	self.choices.Text = "Moving part: "
 		.. self:name(self.a and self.a.id)
-		.. "\nB: "
+		.. "\nTarget: "
 		.. self:name(self.b and self.b.id)
 	self.mechanicalChoices.Text = "Moving: "
 		.. self:name(self.a and self.a.id)
@@ -500,9 +520,9 @@ function Controller:cycleReference(delta: number?)
 	self.refIndex = (self.refIndex - 1 + (delta or 1)) % #refs + 1
 	for index, ref in ipairs(refs) do
 		local caption = if ref.id == "shaft"
-			then "Shaft axis"
-			elseif ref.feature then "Bore Ø" .. string.format("%.1f mm", ref.diameter * 280)
-			else "Source plane " .. ref.id
+			then "Shaft centerline"
+			elseif ref.feature then "Hole Ø" .. string.format("%.1f mm", ref.diameter * 280)
+			else "Face " .. ref.id
 		Panel.button(
 			self.refsRoot,
 			(if index == self.refIndex then "● " else "○ ") .. caption,
@@ -562,7 +582,7 @@ function Controller:place(pose: CFrame, historyAction: boolean?)
 			end
 			table.clear(self.redo)
 		end
-		self:_report("Placement accepted. No joint created.")
+		self:_report("Part moved. Use Connect when you want to control how it moves during a test.")
 	else
 		part.CFrame = self.layout.poses[tostring(id)] * source(part)
 		self:_report("Rejected: " .. tostring(if ok then result else accepted))
@@ -636,7 +656,7 @@ function Controller:mutate(method: string, ...: any)
 end
 function Controller:registerSupport()
 	if not self.a then
-		return self:_report("Select the moving part, then click Use selected part as mover")
+		return self:_report("Select the moving part, then click This is the part that moves")
 	end
 	local spec = Catalog[self.modelIndex]
 	if #self.fixtures ~= spec.fixtures then

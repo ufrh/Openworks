@@ -28,10 +28,10 @@ function Simulation.new(bridge: any, remote: any, onStop: () -> ())
 	self.pauseButton = Panel.button(run, "Pause", function()
 		self:control(if self.paused then "Resume" else "Pause")
 	end)
-	Panel.button(run, "Reset motion and positions", function()
+	Panel.button(run, "Start over", function()
 		self:control("Reset")
 	end)
-	Panel.button(run, "Stop → Assembly", function()
+	Panel.button(run, "Back to building", function()
 		if not self.pending then
 			onStop()
 		end
@@ -53,14 +53,14 @@ function Simulation.new(bridge: any, remote: any, onStop: () -> ())
 		self.axis.Text = "Axis: "
 			.. ({ "Motion / local Y", "World X", "World Y", "World Z" })[self.axisIndex]
 	end)
-	self.spin = Panel.input(test, "Spin strength (nominal degrees/sec, 1–360)", "90")
+	self.spin = Panel.input(test, "Spin strength (1–360)", "90")
 	Panel.button(test, "Spin +", function()
 		self:impulse("Spin", 1)
 	end)
 	Panel.button(test, "Spin −", function()
 		self:impulse("Spin", -1)
 	end)
-	self.push = Panel.input(test, "Push speed increment (mm/sec, 1–360)", "100")
+	self.push = Panel.input(test, "Push strength (1–360)", "100")
 	Panel.button(test, "Push +", function()
 		self:impulse("Push", 1)
 	end)
@@ -203,6 +203,7 @@ function Simulation:Enter()
 	self:report("Running · select a body in Parts, then use Test to spin or push it.")
 	Panel.clear(self.partsRoot)
 	local doc = self.bridge.getAssemblyState().document
+	self.selectedId = self.bridge.getAssemblySelection() or self.selectedId
 	for _, id in ipairs(doc.order) do
 		local component = doc.components[id]
 		Panel.button(
