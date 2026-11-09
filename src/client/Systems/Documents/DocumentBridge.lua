@@ -61,6 +61,10 @@ function DocumentBridge:attach()
   return bridge:adopt(bridge:request("SetOperationEnabled",
    component.id,component.revision,id,enabled))
  end
+ function document:editAddedPrimitive(component, featureId, size, position, rotation)
+  return bridge:adopt(bridge:request("EditAddedPrimitive",
+   component.id, component.revision, featureId, size, position, rotation))
+ end
  function document:removeOperation(component,id)
   return bridge:adopt(bridge:request("RemoveOperation",
    component.id,component.revision,id))
