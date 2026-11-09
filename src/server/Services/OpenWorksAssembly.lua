@@ -7,6 +7,8 @@ local Layout = require(Shared.AssemblyLayout)
 local Resolver = require(Shared.MechanicalResolver)
 local Catalog = require(Shared.RelationshipCatalog)
 local JointIntegrity = require(Shared.JointIntegrity)
+local References = require(Shared.GeometryReferences)
+local FitPlacement = require(Shared.FitPlacement)
 local Session = require(script.Parent.Parent.Simulation.AssemblySession)
 local Service = FORGE.Service("OpenWorksAssembly")
 local function document(player: Player): any
@@ -31,6 +33,8 @@ function Service:Init()
 	self.characterConnections = {}
 	for _, name in ipairs({
 		"GetLayout",
+		"PreviewBearingPlacement",
+		"FinalizeBearingPlacement",
 		"SetPose",
 		"SetGrounded",
 		"RegisterSupport",
@@ -199,6 +203,132 @@ function Service:SetGrounded(player: Player, id: any, revision: any, enabled: an
 	changed(player)
 	return true, state.revision
 end
+-- Bore-first installation. A preview never mutates the authoritative
+-- layout. Finalize atomically commits the accepted pose + physical relation.
+-- The compiled CSG solids (including shoulders and additive geometry) are
+-- checked at this exact offset; source nominal diameter is not a bounding
+-- diameter test for the whole manufactured shaft.
+local function bearingCandidate(
+	state: any, doc: any, boreId: number, featureId: string,
+	shaftId: number, offsetMM: number
+): (any?, any?, string?)
+	local housing = doc.components[boreId]
+	local shaft = doc.components[shaftId]
+	if not housing or not shaft or boreId == shaftId then
+		return nil, nil, "Select different manufactured housing and shaft components"
+	end
+	local bore = References.get(housing, featureId)
+	local shaftAxis = References.get(shaft, "shaft")
+	if not bore or not bore.feature or not bore.feature.through then
+		return nil, nil, "Select a manufactured through-bore in the housing"
+	end
+	if not shaftAxis then
+		return nil, nil, "Select a component with a cylindrical shaft datum"
+	end
+	local housingPose = state.poses[tostring(boreId)]
+	local shaftPose = state.poses[tostring(shaftId)]
+	if not housingPose or not shaftPose then
+		return nil, nil, "Missing authored component placement"
+	end
+	local nextPose, problem = FitPlacement.solve(
+		shaftPose, shaftAxis, housingPose, bore, offsetMM
+	)
+	if not nextPose then return nil, nil, problem end
+	if not Layout.validFrame(nextPose) then
+		return nil, nil, "The requested insertion position is outside the workshop"
+	end
+	local record = {
+		model = "BoreSupportV1",
+		bodyId = boreId,
+		shaftId = shaftId,
+		movingId = shaftId,
+		featureId = featureId,
+	}
+	local compatible, conflict = JointIntegrity.canAdd(state.supports, record)
+	if not compatible then return nil, nil, conflict end
+	return nextPose, record, nil
+end
+
+function Service:_bearingInstall(player: Player, boreId: any, featureId: any,
+	shaftId: any, offsetMM: any, revision: any, finalize: boolean)
+	if self:IsBusy(player) then
+		return false, "Assembly is busy; retry after the current operation"
+	end
+	local doc = document(player)
+	local state = self:_layout(player)
+	if not doc or revision ~= state.revision then
+		return false, "Assembly changed; refresh the component positions"
+	end
+	if type(boreId) ~= "number" or boreId % 1 ~= 0
+		or type(shaftId) ~= "number" or shaftId % 1 ~= 0
+		or type(featureId) ~= "string" or #featureId > 96
+		or type(offsetMM) ~= "number" or offsetMM ~= offsetMM
+		or math.abs(offsetMM) > FitPlacement.MaxOffsetMM then
+		return false, "Invalid bore, shaft, or insertion offset"
+	end
+	local pose, relation, reason = bearingCandidate(
+		state, doc, boreId, featureId, shaftId, offsetMM
+	)
+	if not pose then return false, reason end
+	local projected = table.clone(state.poses)
+	projected[tostring(shaftId)] = pose
+	self.busy[player] = true
+	local currentEpoch = self.epochs[player] or 0
+	local parts
+	local success, valid, message = xpcall(function()
+		local problem
+		parts, problem = Session.compile(doc, projected, self:_cache(player))
+		if not parts then return false, problem end
+		local clear, conflict = Session.validate(parts, shaftId)
+		if not clear then return false, conflict end
+		local resolved, unsupported = Resolver.resolve(
+			relation, doc.components, projected, state.grounded
+		)
+		if not resolved then return false, unsupported end
+		if finalize then
+			if not player.Parent or currentEpoch ~= (self.epochs[player] or 0) then
+				return false, "Workshop session changed; retry after respawn"
+			end
+			if #state.supports >= 96 then return false, "Joint limit reached" end
+			state.poses = projected
+			table.insert(state.supports, relation)
+			state.revision += 1
+			changed(player)
+		end
+		return true, "Manufactured fit accepted"
+	end, debug.traceback)
+	if parts then Session.destroy({ parts = parts }) end
+	self.busy[player] = nil
+	if not success then
+		warn("[OPENWORKS] Bearing placement failed: ", valid)
+		return false, "Manufactured solid validation failed; check server diagnostics"
+	end
+	if not valid then
+		return false, message, pose
+	end
+	return true, {
+		pose = pose,
+		revision = state.revision,
+		message = message,
+		clearanceMM = (References.get(doc.components[boreId], featureId).diameter
+			- References.get(doc.components[shaftId], "shaft").diameter) * 280,
+	}
+end
+
+function Service:PreviewBearingPlacement(player: Player,
+	boreId: any, featureId: any, shaftId: any, offsetMM: any, revision: any)
+	return self:_bearingInstall(
+		player, boreId, featureId, shaftId, offsetMM, revision, false
+	)
+end
+
+function Service:FinalizeBearingPlacement(player: Player,
+	boreId: any, featureId: any, shaftId: any, offsetMM: any, revision: any)
+	return self:_bearingInstall(
+		player, boreId, featureId, shaftId, offsetMM, revision, true
+	)
+end
+
 function Service:RegisterSupport(
 	player: Player,
 	bodyId: any,
