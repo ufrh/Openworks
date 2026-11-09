@@ -179,7 +179,7 @@ function Preset.build(documents: any, assembly: any): (boolean, any)
 				Vector3.new(railCenterX, 0.75, sign * (0.12 + 0.05 + gap))
 			))
 		end
-		for _, x in ipairs({-0.85, 2.30}) do
+		for _, x in ipairs({-0.90, 1.85}) do
 			table.insert(rails, rail(
 				"Guide · travel stop",
 				Vector3.new(0.10, 0.34, 0.34),
