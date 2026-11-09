@@ -258,16 +258,25 @@ function Service:RegisterRelationship(
 		seen[id] = true
 	end
 	local record = { model = model, movingId = movingId }
-	if model == "RetainedPivotV1" then
+	if model == "RetainedPivotV1" or model == "DualPinRigidV1" then
 		if type(bodyId) ~= "number" or bodyId == movingId or type(featureId) ~= "string"
-			or type(movingFeatureId) ~= "string" or #featureId > 96 or #movingFeatureId > 96 then
-			return false, "Choose a drilled hole on each of the two links"
+			or type(movingFeatureId) ~= "string" or #featureId > 96 or #movingFeatureId > 96
+			or not doc.components[bodyId] then
+			return false, "Choose a drilled hole on each of the two manufactured links"
+		end
+		if seen[bodyId] then
+			return false, "The second link cannot also be a pin or retainer"
 		end
 		record.bodyId = bodyId
 		record.featureId = featureId
 		record.movingFeatureId = movingFeatureId
-		record.pinId = fixtures[1]
-		record.stopIds = {fixtures[2], fixtures[3]}
+		if model == "RetainedPivotV1" then
+			record.pinId = fixtures[1]
+			record.stopIds = {fixtures[2], fixtures[3]}
+		else
+			record.pinIds = {fixtures[1], fixtures[4]}
+			record.stopIds = {fixtures[2], fixtures[3], fixtures[5], fixtures[6]}
+		end
 	elseif model == "BoreSupportV1" or model == "RetainedBoreV1" then
 		if type(bodyId) ~= "number" or type(featureId) ~= "string" or #featureId > 96 then
 			return false, "Choose a target bore"
@@ -291,27 +300,36 @@ function Service:RegisterRelationship(
 	if not resolved then
 		return false, problem
 	end
+	local function samePair(a: any, b: any): boolean
+		return a.bodyId and b.bodyId
+			and ((a.bodyId == b.bodyId and a.movingId == b.movingId)
+			or (a.bodyId == b.movingId and a.movingId == b.bodyId))
+	end
+	local function hardwareIds(item: any): {number}
+		local out = {}
+		for _, id in ipairs(item.pinIds or {}) do table.insert(out, id) end
+		if item.pinId then table.insert(out, item.pinId) end
+		for _, id in ipairs(item.stopIds or {}) do table.insert(out, id) end
+		return out
+	end
 	for _, prior in ipairs(state.supports) do
-		if model == "RetainedPivotV1" then
-			if prior.model == "RetainedPivotV1" then
-				local occupied = { [prior.pinId] = true }
-				for _, hardwareId in ipairs(prior.stopIds or {}) do
-					occupied[hardwareId] = true
-				end
-				for _, hardwareId in ipairs(fixtures) do
-					if occupied[hardwareId] then
-						return false, "A pin or retainer cannot secure two independent pivots"
-					end
+		local newPivot = model == "RetainedPivotV1" or model == "DualPinRigidV1"
+		local oldPivot = prior.model == "RetainedPivotV1" or prior.model == "DualPinRigidV1"
+		if newPivot and oldPivot then
+			if samePair(record, prior) then
+				return false,
+					"These two bodies already share a physical connection. Remove it before replacing the joint model"
+			end
+			local used = {}
+			for _, id in ipairs(hardwareIds(prior)) do used[id] = true end
+			for _, id in ipairs(hardwareIds(record)) do
+				if used[id] then
+					return false, "A pin or retainer cannot secure two independent joints"
 				end
 			end
-			if prior.model == "RetainedPivotV1"
-				and prior.movingId == movingId and prior.bodyId == bodyId
-				and prior.featureId == featureId and prior.movingFeatureId == movingFeatureId then
-				return false, "This pivot connection already exists"
-			end
-		elseif prior.model ~= "RetainedPivotV1"
+		elseif not newPivot and not oldPivot
 			and (prior.movingId or prior.shaftId) == movingId then
-			return false, "Remove the existing guide/bearing before replacing it"
+			return false, "This mover already has a bearing or guide"
 		end
 	end
 	if #state.supports >= 96 then
@@ -625,10 +643,13 @@ function Service:Restore(player: Player, joints: any, saved: any)
 			if
 				doc
 				and mover
-				and (record.model == "RetainedPivotV1" or not movers[mover])
+				and ((record.model == "RetainedPivotV1" or record.model == "DualPinRigidV1")
+					or not movers[mover])
 				and Resolver.resolve(record, doc.components, state.poses, state.grounded)
 			then
-				if record.model ~= "RetainedPivotV1" then movers[mover] = true end
+				if record.model ~= "RetainedPivotV1" and record.model ~= "DualPinRigidV1" then
+					movers[mover] = true
+				end
 				table.insert(state.supports, record)
 			else
 				table.insert(state.quarantined, record)
