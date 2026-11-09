@@ -936,6 +936,64 @@ function Debug.start(options: any?)
 
 	line("File: convex only. Smooth: concave only; touching File locked.", 24)
 
+	line("ADDITIVE MATERIAL · CONNECTED SOLID")
+	local blockDimensions = toolNumberRow("Block X,Y,Z (mm)", "84,28,84")
+	local cylinderDimensions = toolNumberRow("Cylinder Ø,L (mm)", "28,56")
+	local additiveOffset = toolNumberRow("Offset X,Y,Z (mm)", "0,0,0")
+	line("Material joins at the top face; offsets reposition the new material.", 36)
+	local function parseValues(raw: string, count: number): {number}?
+		local values = {}
+		for word in string.gmatch(raw, "[^,%s]+") do
+			local value = tonumber(word)
+			if not value or value ~= value or math.abs(value) > 35840 then
+				return nil
+			end
+			table.insert(values, value)
+		end
+		return if #values == count then values else nil
+	end
+	local function addStock(kind: string)
+		local component = selectedComponent()
+		if not component then
+			return message("Select a manufactured component first")
+		end
+		local dimensions = parseValues(
+			if kind == "Block" then blockDimensions.Text else cylinderDimensions.Text,
+			if kind == "Block" then 3 else 2
+		)
+		local offset = parseValues(additiveOffset.Text, 3)
+		if not dimensions or not offset then
+			return message("Enter numerical stock dimensions and X,Y,Z offsets")
+		end
+		local size = if kind == "Block" then
+			Vector3.new(dimensions[1], dimensions[2], dimensions[3]) / 280
+			else Vector3.new(dimensions[1], dimensions[2], dimensions[1]) / 280
+		if math.min(size.X, size.Y, size.Z) < Quantize.MinSize then
+			return message("New stock dimensions must be at least 14 mm")
+		end
+		local original = component.nodes[1]
+		-- A small overlapping seam is intentional: the union is one physical
+		-- solid, never two pieces that merely appear to be welded.
+		local center = Vector3.new(
+			0, original.size.Y * 0.5 + size.Y * 0.5 - 1 / 280, 0
+		) + Vector3.new(table.unpack(offset)) / 280
+		local accepted, reason = document:addOperation(component, "AddPrimitive", {
+			kind = kind,
+			size = size,
+			position = center,
+			rotation = Vector3.zero,
+		})
+		if not accepted then
+			return message("Material addition rejected: " .. tostring(reason))
+		end
+		changed(component)
+		message(kind .. " merged into connected material")
+	end
+	pair(
+		"Add Block", function() addStock("Block") end,
+		"Add Cylinder", function() addStock("Cylinder") end
+	)
+
 	line("3D TRANSFORM HANDLES")
 	local transformStatus = line("Mode: MOVE (G)")
 	local function setTransformMode(mode: string)
