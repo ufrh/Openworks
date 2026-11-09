@@ -69,6 +69,24 @@ return function(Resolver, Geometry)
 	parts[3].nodes[1].size = Vector3.new(0.01, 0.1, 0.01)
 	check(Resolver.resolve(retained, parts, poses, ground) == nil, "Undersized stop cap accepted")
 
+	for _, id in ipairs({ 3, 4 }) do
+		parts[id].nodes[1] = {
+			kind = "SketchBody",
+			size = Vector3.new(1, 0.1, 1),
+			profileSize = Vector2.new(1, 1),
+			profilePoints = {
+				Vector2.new(-0.15, -0.15),
+				Vector2.new(0.15, -0.15),
+				Vector2.new(0.15, 0.15),
+				Vector2.new(-0.15, 0.15),
+			},
+		}
+	end
+	check(
+		Resolver.resolve(retained, parts, poses, ground) ~= nil,
+		"Manufactured sketch bearing end plates rejected"
+	)
+
 	local mover = box(10, Vector3.new(0.2, 0.4, 0.2))
 	parts = { [10] = mover }
 	poses, ground = { ["10"] = CFrame.identity }, {}
@@ -122,5 +140,31 @@ return function(Resolver, Geometry)
 		Vector2.new(-0.5, 0.5),
 	}
 	check(Geometry.box(malformed) == nil, "Nonrectangular stock accepted as linear carriage")
+	-- Real CreateSketchBody snapshots retain the workspace envelope in node.size.
+	for _, component in pairs(parts) do
+		local node = component.nodes[1]
+		local size = node.size
+		if node.kind == "Block" then
+			node.kind = "SketchBody"
+			node.profileSize = Vector2.new(1, 1)
+			node.profilePoints = {
+				Vector2.new(-size.X / 2, -size.Z / 2),
+				Vector2.new(size.X / 2, -size.Z / 2),
+				Vector2.new(size.X / 2, size.Z / 2),
+				Vector2.new(-size.X / 2, size.Z / 2),
+			}
+			node.size = Vector3.new(1, size.Y, 1)
+		end
+	end
+	poses["15"], poses["16"] = CFrame.new(0, -0.75, 0), CFrame.new(0, 0.75, 0)
+	check(
+		Resolver.resolve(limited, parts, poses, ground) ~= nil,
+		"Manufactured sketch guide rejected due to workspace envelope"
+	)
+	local plate = Geometry.box(parts[15])
+	check(
+		plate and math.abs(plate.X - 0.2) < 1e-6,
+		"End plate dimensions use workspace instead of material"
+	)
 	return count
 end

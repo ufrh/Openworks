@@ -3,7 +3,9 @@ local Presets = {}
 function Presets.build(docs, assembly, kind)
 	local made = {}
 	local function expect(ok, value)
-		assert(ok, tostring(value))
+		if not ok then
+			error(tostring(value), 0)
+		end
 		return value
 	end
 	local function layout()
@@ -41,20 +43,13 @@ function Presets.build(docs, assembly, kind)
 		local mover
 		if kind == "Bearing" then
 			local housing = box("Preset bearing housing", Vector3.new(0.6, 0.2, 0.6), Vector3.zero)
-			housing = expect(
-				docs:ApplyOperation(
-					housing.id,
-					housing.revision,
-					"DrillFace",
-					{
-						origin = Vector3.new(0, 0.1, 0),
-						normal = Vector3.yAxis,
-						diameter = 31 / 280,
-						depth = 0.2,
-						through = true,
-					}
-				)
-			)
+			housing = expect(docs:ApplyOperation(housing.id, housing.revision, "DrillFace", {
+				origin = Vector3.new(0, 0.1, 0),
+				normal = Vector3.yAxis,
+				diameter = 31 / 280,
+				depth = 0.2,
+				through = true,
+			}))
 			mover = expect(
 				docs:CreateCylinder(
 					"Preset shaft",
@@ -121,7 +116,9 @@ function Presets.build(docs, assembly, kind)
 			)
 		end
 		return mover.id
-	end, debug.traceback)
+	end, function(problem)
+		return tostring(problem)
+	end)
 	if not ok then
 		local failed = {}
 		for _, c in ipairs(made) do

@@ -94,12 +94,17 @@ function Geometry.box(component: any): Vector3?
 	if #points ~= 4 then
 		return nil
 	end
+	local halfX, halfZ = 0, 0
+	for _, p in ipairs(points) do
+		halfX = math.max(halfX, math.abs(p.X))
+		halfZ = math.max(halfZ, math.abs(p.Y))
+	end
+	if halfX < 1e-6 or halfZ < 1e-6 then
+		return nil
+	end
 	local corners = {}
 	for _, p in ipairs(points) do
-		if
-			math.abs(math.abs(p.X) - n.size.X * 0.5) > 1e-5
-			or math.abs(math.abs(p.Y) - n.size.Z * 0.5) > 1e-5
-		then
+		if math.abs(math.abs(p.X) - halfX) > 1e-5 or math.abs(math.abs(p.Y) - halfZ) > 1e-5 then
 			return nil
 		end
 		corners[tostring(math.sign(p.X)) .. ":" .. tostring(math.sign(p.Y))] = true
@@ -108,7 +113,7 @@ function Geometry.box(component: any): Vector3?
 	for _ in pairs(corners) do
 		count += 1
 	end
-	return if count == 4 then n.size else nil
+	return if count == 4 then Vector3.new(halfX * 2, n.size.Y, halfZ * 2) else nil
 end
 
 function Geometry.relativeBox(component: any, pose: CFrame, basis: CFrame): (Vector3?, Vector3?)
