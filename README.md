@@ -173,12 +173,19 @@ bearings, X/Y linear guides with optional travel stops, and retained
 revolute pivots made from two drilled links, a pin, and two separate end
 caps. Multiple independent pin pivots can connect to one linking rod.
 
-**Slider-crank assembly** is a manufactured, 19-part linkage example:
-grounded crank mount, crank, connecting rod, horizontal slider, three
-pins with six retainers, four guide rails, and two travel stops. It creates
-three pin pivots and one prismatic guide. See
-`scripts/VERIFY_SLIDER_CRANK.lua` for a full Studio Play acceptance
-script.
+OPENWORKS provides **mechanical construction tools, not a premade
+mechanism workflow**. Use New Component and Edit Selected to manufacture
+your own links, pins, bearing housings, rails and end stops. Use Align
+for geometric references and measurements; use Joints to pick distinct
+member bores, physical hardware and motion limits. Existing models
+include retained pin pivots, multi-hole bearing housings, all three local
+linear-guide axes, and rigid dual-pin couplings. The mechanical graph
+supports multiple independent pivots along a connecting rod.
+
+The 19-part slider-crank is retained **only as an automated regression
+fixture** (`scripts/VERIFY_SLIDER_CRANK.lua`), not exposed as a
+component-creation shortcut in Assembly. It exercises the same general
+manufacturing and joint APIs as manual construction.
 
 **Simulation** compiles separate server-owned physical bodies and
 constraints from the validated assembly. Its **Run**, **Drive**, **Test**
