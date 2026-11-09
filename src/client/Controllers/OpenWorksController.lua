@@ -126,6 +126,16 @@ function Controller:Start()
 			switch("Assembly")
 		end)
 	)
+	self.assembly.onCreateComponent = function()
+		switch("Free")
+		if manager.currentName == "Free" then
+			self.bridge.openComponentCreator()
+		end
+	end
+	self.assembly.onEditComponent = function(id)
+		self.bridge.setAssemblySelection(id)
+		switch("Edit")
+	end
 	self.assembly.onSimulate = function()
 		switch("Simulation")
 	end
