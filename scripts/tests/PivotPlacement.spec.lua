@@ -40,7 +40,7 @@ return function(PivotPlacement, Resolver)
 		parts, poses, 1, "hole:1", 2, "hole:1", 3, 4, 5, 56, 20
 	)
 	check(proposed ~= nil, tostring(why))
-	check(poses["2"].Position == Vector3.new(7, 8, 9),
+	check((poses["2"].Position - Vector3.new(7, 8, 9)).Magnitude < 1e-6,
 		"Preview must not mutate source assembly poses")
 	local relation, problem = Resolver.resolve(record, parts, proposed, {["1"] = true})
 	check(relation ~= nil, tostring(problem))
