@@ -309,8 +309,9 @@ function Service:ApplyOperation(player: Player, id: any, revision: any,
   or #component.operations >= MAX_OPERATIONS then
   return false, "Invalid fabrication operation or operation limit reached"
  end
- local mustRemainConnected = kind == "AddPrimitive"
-  or (kind == "SketchExtrude" and data.mode == "Add")
+ -- Cuts can split a workpiece into separate islands too. All fabrication
+ -- operations must preserve a single connected manufactured solid.
+ local mustRemainConnected = true
  if mustRemainConnected then
   -- Evaluate the new operation on a detached snapshot. Invalid unions
   -- never change the authoritative manufacturing document or revision.
@@ -327,7 +328,7 @@ function Service:ApplyOperation(player: Player, id: any, revision: any,
   if compiled and result then result:Destroy() end
   self.mutating[player] = nil
   if not compiled then
-   return false, "Added material must form one connected solid: " .. tostring(result)
+   return false, "Manufacturing must leave one connected solid: " .. tostring(result)
   end
   remember(self, player, component)
   component.operations = trial.operations
