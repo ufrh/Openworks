@@ -118,7 +118,7 @@ for i, value in ipairs({ "0.375", "0.25", "0.1875", "0.125", "0.0625" }) do
 		camera.CFrame = CFrame.lookAt(target + Vector3.new(16, 16, 25), target)
 	end)
 end
-local footer = label(root, "5 scales • 4 phases • 3 trials • all native constraints", 26, 12)
+local footer = label(root, "Target: 0.25 studs • 5 scales • 4 phases • 3 trials", 26, 12)
 footer.TextColor3 = Color3.fromRGB(157, 169, 184)
 
 local csvWindow = panel(gui, "CSVWindow", UDim2.new(0.72, 0, 0.62, 0), UDim2.new(0.14, 0, 0.19, 0))
