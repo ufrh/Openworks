@@ -216,15 +216,33 @@ function Simulation:refreshDriveTargets()
 	if #targets == 0 then
 		Panel.label(self.driveRoot, "No active mechanical joints")
 	end
-	if not self.driveIndex or not table.find(
-		(function()
-			local ids = {}
-			for _, target in ipairs(targets) do table.insert(ids, target.index) end
-			return ids
-		end)(), self.driveIndex) then
-		self.driveIndex = nil
-		self.driveKind = nil
-		self.driveSelection.Text = "Select a joint"
+	local selected = nil
+	for _, target in ipairs(targets) do
+		if target.index == self.driveIndex then
+			selected = target
+			break
+		end
+	end
+	if not selected then
+		for _, target in ipairs(targets) do
+			if target.kind == "Revolute" then
+				selected = target
+				break
+			end
+		end
+	end
+	if not selected then
+		selected = targets[1]
+	end
+	self.driveIndex = selected and selected.index or nil
+	self.driveKind = selected and selected.kind or nil
+	if selected then
+		local component = components[selected.movingId]
+		self.driveSelection.Text = string.format("Joint #%d · %s · %s",
+			selected.index, component and component.name or "Component", selected.kind)
+		self.driveSpeed.Text = if selected.kind == "Prismatic" then "80" else "15"
+	else
+		self.driveSelection.Text = "No available drive joint"
 	end
 end
 
@@ -296,6 +314,9 @@ function Simulation:Enter()
 	self.pauseButton.Text = "Pause"
 	self:report("Simulation running. Use Drive for motors or Loads for impulses.")
 	self:refreshDriveTargets()
+	if self.driveKind == "Revolute" then
+		self.panel:show("Drive")
+	end
 	Panel.clear(self.partsRoot)
 	local doc = self.bridge.getAssemblyState().document
 	self.selectedId = self.bridge.getAssemblySelection() or self.selectedId
