@@ -2,12 +2,13 @@
 -- OPENWORKS constraint scale laboratory. All dimensions are reference dimensions in studs.
 -- Bench configuration is intentionally independent of the live construction game.
 return {
-	ReferenceScale = 0.75,
-	Scales = { 0.375, 0.50, 0.75, 1.00, 1.50 },
+	ReferenceScale = 0.75, -- Preserve existing fixture geometry and comparison normalization.
+	Scales = { 0.375, 0.25, 0.1875, 0.125, 0.0625 },
 	Trials = 3,
 	SecondsPerPhase = 7,
 	SampleInterval = 0.10,
 	Phases = { "idle", "normal", "heavy", "extreme" },
+	-- 0.375 is now the largest candidate. Progressively smaller sizes probe the stability floor.
 	-- 1* reference parts track candidate scales; thinner rods are sub-unit geometry.
 	Tests = {
 		{ "01", "Hinged pendulum" },
