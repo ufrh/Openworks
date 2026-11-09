@@ -404,13 +404,16 @@ function Service:ListDriveTargets(player: Player)
 	end
 	local list = {}
 	for _, item in ipairs(session.relations) do
-		table.insert(list, {
-			index = item.index,
-			kind = item.relation.kind,
-			model = item.relation.model,
-			movingId = item.relation.movingId,
-			bodyId = item.relation.bodyId,
-		})
+		local kind = item.relation.kind
+		if kind == "Revolute" or kind == "Cylindrical" or kind == "Prismatic" then
+			table.insert(list, {
+				index = item.index,
+				kind = kind,
+				model = item.relation.model,
+				movingId = item.relation.movingId,
+				bodyId = item.relation.bodyId,
+			})
+		end
 	end
 	return true, list
 end
