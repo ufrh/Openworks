@@ -302,21 +302,21 @@ end
 -- The simulation drive is external equipment, never persisted to FORM.
 function Session.drive(session: any, index: number, speed: number, effort: number,
 	mode: string?, target: number?): (boolean, string?)
-	local target = nil
+	local jointItem = nil
 	for _, item in ipairs(session.relations) do
 		if item.index == index then
-			target = item
+			jointItem = item
 			break
 		end
 	end
-	if not target then
+	if not jointItem then
 		return false, "Joint is no longer active; reset the simulation"
 	end
-	local valid, reason = BenchDrive.validate(target.relation, speed, effort, mode, target)
+	local valid, reason = BenchDrive.validate(jointItem.relation, speed, effort, mode, target)
 	if not valid then
 		return false, reason
 	end
-	BenchDrive.apply(target.objects, target.relation, speed, effort, mode, target)
+	BenchDrive.apply(jointItem.objects, jointItem.relation, speed, effort, mode, target)
 	if effort == 0 or (mode ~= "Servo" and speed == 0) then
 		session.drives[index] = nil
 	else
