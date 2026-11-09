@@ -13,7 +13,10 @@ local SketchBodyProfile=require(script.Parent.SketchBodyProfile)
 local CornerTriangle = require(script.Parent.CornerTriangle)
 
 local Fabricator = {}
-local OPTIONS = { SplitApart = false }
+-- Every component must remain one mechanically connected solid.
+-- SplitApart returns separate CSG pieces for disconnected islands, which
+-- are rejected below rather than silently saved as one component.
+local OPTIONS = { SplitApart = true }
 local function vectorKey(v:Vector3):string
 	return string.format("%.6f,%.6f,%.6f",v.X,v.Y,v.Z)
 end
@@ -100,7 +103,7 @@ local function combine(source: BasePart, cutter: BasePart, mode: string): (boole
 	if typeof(result) ~= "table" then return false, "CSG returned no result list" end
 	if #result ~= 1 then
 		for _, part in ipairs(result) do part:Destroy() end
-		return false, "CSG returned " .. tostring(#result) .. " solids, expected one; empty or separated cuts may need different geometry"
+		return false, "Operation would leave " .. tostring(#result) .. " disconnected solids. Connect material to the existing body or create a separate component."
 	end
 	return true, result[1]
 end
