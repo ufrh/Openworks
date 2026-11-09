@@ -34,6 +34,7 @@ try {
     'Assembly/GeometryReferences',
     'Assembly/Alignment',
     'Assembly/SupportGeometry',
+    'Assembly/BoreIntegrity',
     'Assembly/PinnedPivot',
     'Assembly/DualPinCoupling',
     'Assembly/FitInspection',
