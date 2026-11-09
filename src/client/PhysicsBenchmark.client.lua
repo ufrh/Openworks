@@ -109,8 +109,8 @@ cameras.Parent = root
 local line3 = Instance.new("UIListLayout")
 line3.FillDirection, line3.Padding = Enum.FillDirection.Horizontal, UDim.new(0, 5)
 line3.Parent = cameras
-for i, value in ipairs({ "0.375", "0.5", "0.75", "1.0", "1.5" }) do
-	local b = button(cameras, value, nil, 70)
+for i, value in ipairs({ "0.375", "0.25", "0.1875", "0.125", "0.0625" }) do
+	local b = button(cameras, value, nil, 74)
 	b.Activated:Connect(function()
 		local camera = workspace.CurrentCamera
 		camera.CameraType = Enum.CameraType.Scriptable
