@@ -274,8 +274,9 @@ function Service:RegisterRelationship(
 		end
 		record.bodyId, record.shaftId, record.featureId = bodyId, movingId, featureId
 	else
-		if travelAxis ~= nil and travelAxis ~= "X" and travelAxis ~= "Y" then
-			return false, "Linear guide travel axis must be X or Y"
+		if travelAxis ~= nil and travelAxis ~= "X" and travelAxis ~= "Y"
+			and travelAxis ~= "Z" then
+			return false, "Linear guide travel axis must be X, Y, or Z"
 		end
 		record.travelAxis = travelAxis or "Y"
 		record.guideIds = { fixtures[1], fixtures[2], fixtures[3], fixtures[4] }
