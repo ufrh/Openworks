@@ -224,7 +224,8 @@ function Service:RegisterRelationship(
 	featureId: any,
 	fixtures: any,
 	revision: any,
-	movingFeatureId: any?
+	movingFeatureId: any?,
+	travelAxis: any?
 )
 	if self:IsBusy(player) then
 		return false, "Stop simulation or wait for validation"
@@ -273,6 +274,10 @@ function Service:RegisterRelationship(
 		end
 		record.bodyId, record.shaftId, record.featureId = bodyId, movingId, featureId
 	else
+		if travelAxis ~= nil and travelAxis ~= "X" and travelAxis ~= "Y" then
+			return false, "Linear guide travel axis must be X or Y"
+		end
+		record.travelAxis = travelAxis or "Y"
 		record.guideIds = { fixtures[1], fixtures[2], fixtures[3], fixtures[4] }
 	end
 	if model == "RetainedBoreV1" then
