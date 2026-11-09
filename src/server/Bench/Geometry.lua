@@ -133,6 +133,23 @@ function Geometry:setLoad(enabled)
 end
 
 function Geometry:finish()
+	-- Deterministic fixture preflight: bad attachments must fail the build before
+	-- their errors contaminate the physics/scale comparison.
+	for _, c in ipairs(self.joints) do
+		local a, b = c.Attachment0, c.Attachment1
+		assert(a and b and a.Parent and b.Parent, "Unconnected " .. c.ClassName)
+		if not (c:IsA("RodConstraint") or c:IsA("RopeConstraint") or c:IsA("SpringConstraint")) then
+			local gap = (a.WorldPosition - b.WorldPosition).Magnitude
+			assert(gap < 0.001, string.format("%s attachments start %.5f studs apart", c.ClassName, gap))
+		end
+		if c:IsA("HingeConstraint") or c:IsA("PrismaticConstraint") then
+			assert(math.abs(a.WorldAxis:Dot(b.WorldAxis)) > 0.999,
+				c.ClassName .. " axes are misaligned")
+		elseif c:IsA("UniversalConstraint") then
+			assert(math.abs(a.WorldAxis:Dot(b.WorldAxis)) < 0.001,
+				"UniversalConstraint axes must be perpendicular")
+		end
+	end
 	-- Server-owned assemblies avoid ownership changes between benchmark samples.
 	for _, body in ipairs(self.movers) do
 		if body.Parent and not body.Massless then
