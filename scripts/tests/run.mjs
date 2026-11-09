@@ -40,6 +40,7 @@ try {
     'Assembly/JointIntegrity',
     'Assembly/FitInspection',
     'Assembly/FitPlacement',
+    'Assembly/PivotPlacement',
     'Assembly/BenchDrive',
     'Assembly/MechanicalResolver',
     'Assembly/AssemblyLayout',
@@ -68,6 +69,7 @@ try {
     ['BoreIntegrity.spec.lua', 'BoreIntegrity,GeometryReferences,MechanicalResolver'],
     ['JointIntegrity.spec.lua', 'JointIntegrity'],
     ['FitPlacement.spec.lua', 'FitPlacement,GeometryReferences'],
+    ['PivotPlacement.spec.lua', 'PivotPlacement,MechanicalResolver'],
     ['SimulationLifecycle.spec.lua', 'AssemblySession,ConstraintCompiler,Instance'],
     ['ModeLifecycle.spec.lua', 'ModeManager'],
   ];
