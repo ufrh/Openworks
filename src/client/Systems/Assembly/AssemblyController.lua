@@ -10,6 +10,7 @@ local SupportGeometry = require(Shared.SupportGeometry)
 local Layout = require(Shared.AssemblyLayout)
 local Panel = require(script.Parent.Parent.Parent.Experience.UI.WorkbenchPanel)
 local Manipulator = require(script.Parent.PrecisionManipulator)
+local BearingInstaller = require(script.Parent.BearingInstaller)
 local Controller = {}
 Controller.__index = Controller
 local function solid(state: any, id: number): BasePart?
@@ -32,7 +33,7 @@ local function numbers(text: string, count: number): { number }?
 	return if #out == count then out else nil
 end
 function Controller.new(bridge: any, remote: any, documents: any, _world: any)
-	local panel = Panel.new("Assembly", { "Parts", "Move", "Align", "Mechanics" })
+	local panel = Panel.new("Assembly", { "Parts", "Move", "Install", "Align", "Mechanics" })
 	panel.tabs.Parts.Text = "Components"
 	panel.tabs.Align.Text = "Align"
 	panel.tabs.Mechanics.Text = "Joints"
@@ -61,8 +62,10 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		redo = {},
 		connections = {},
 	}, Controller)
-	local parts, move, align, mechanics =
-		panel.pages.Parts, panel.pages.Move, panel.pages.Align, panel.pages.Mechanics
+	local parts, move, install, align, mechanics =
+		panel.pages.Parts, panel.pages.Move, panel.pages.Install,
+		panel.pages.Align, panel.pages.Mechanics
+	self.installer = BearingInstaller.new(self, install)
 	Panel.label(
 		parts,
 		"Create and machine components, position them in CAD, then validate physical joints. Nothing connects automatically.",
@@ -76,6 +79,11 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		if self.pending or self.manipulator.gizmo:isDragging() then return end
 		if not self.selectedId then return self:_report("Select a component to edit") end
 		if self.onEditComponent then self.onEditComponent(self.selectedId) end
+	end)
+	Panel.button(parts, "Install shaft in housing", function()
+		self.panel:show("Install")
+		self.selectionIntent = "installBore"
+		self:_report("Select the housing with the bore you want to use")
 	end)
 	Panel.button(parts, "▶ Simulate", function()
 		if not self.pending and self.onSimulate then
@@ -607,6 +615,8 @@ function Controller:select(id: number)
 			.. " selected. Choose the drilled reference if needed.")
 	elseif intent == "fixture" then
 		self:addFixture(id)
+	elseif intent == "installBore" or intent == "installShaft" then
+		self.installer:select(id, intent)
 	end
 end
 function Controller:cycleReference(delta: number?)
@@ -966,6 +976,10 @@ function Controller:Enter()
 			end
 		end
 		if nearestIndex then
+			if self.installer and self.installer.housingId == id
+				and self.panel.current == "Install" then
+				self.installer:chooseBore(refs[nearestIndex].id)
+			end
 			self.refIndex = nearestIndex
 			if self.a and self.a.id == id then self.a.ref = refs[nearestIndex].id end
 			if self.b and self.b.id == id then self.b.ref = refs[nearestIndex].id end
@@ -1017,6 +1031,7 @@ function Controller:Exit()
 		error("Wait for placement validation")
 	end
 	self.active = false
+	self.installer:restore()
 	self.selectionIntent = nil
 	self.gui.Enabled = false
 	self.manipulator:select(nil)
