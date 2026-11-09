@@ -85,7 +85,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 				if callOk and ok and refreshed then
 					self.selectedId = result
 					self:select(result)
-					bridge.frameAssembly(result)
+					bridge.frameAssembly(nil)
 					self:_report(
 						"Assembly created. Inspect the joints or switch to Simulation."
 					)
