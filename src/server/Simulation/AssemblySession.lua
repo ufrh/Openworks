@@ -294,7 +294,7 @@ function Session.reset(session: any): (boolean, string?)
 		})
 	end
 	session.released = 0
-	for index, drive in pairs(session.drives) do
+	for index, drive in pairs(session.drives or {}) do
 		Session.drive(session, index, drive.speed, drive.effort, drive.mode, drive.target)
 	end
 	if not wasPaused then
