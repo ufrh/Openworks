@@ -35,6 +35,8 @@ try {
     'Assembly/Alignment',
     'Assembly/SupportGeometry',
     'Assembly/PinnedPivot',
+    'Assembly/DualPinCoupling',
+    'Assembly/FitInspection',
     'Assembly/BenchDrive',
     'Assembly/MechanicalResolver',
     'Assembly/AssemblyLayout',
