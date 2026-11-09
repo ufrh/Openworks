@@ -82,7 +82,7 @@ function Panel.new(name: string, pages: { string })
 	local panel = Instance.new("Frame")
 	panel.AnchorPoint = Vector2.new(1, 0)
 	panel.Position = UDim2.new(1, -12, 0, 66)
-	panel.Size = UDim2.new(0, 330, 1, -82)
+	panel.Size = UDim2.new(0, if #pages >= 5 then 390 else 330, 1, -82)
 	panel.BackgroundColor3 = Color3.fromRGB(22, 35, 44)
 	panel.BorderSizePixel = 0
 	panel.Parent = gui
@@ -103,6 +103,7 @@ function Panel.new(name: string, pages: { string })
 		end)
 		button.Position = UDim2.new((i - 1) / #pages, 0, 0, 0)
 		button.Size = UDim2.new(1 / #pages, -4, 1, 0)
+		button.TextSize = if #pages >= 5 then 11 else 12
 		local scroll = Instance.new("ScrollingFrame")
 		scroll.Position = UDim2.fromOffset(0, 140)
 		scroll.Size = UDim2.new(1, 0, 1, -148)
