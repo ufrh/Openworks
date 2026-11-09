@@ -256,7 +256,7 @@ function Runtime:runPhase(phase, trial)
 	for i = 1, #Config.Scales do
 		metrics[i] = freshStats()
 	end
-	local total, sinceSample, reversed, linearReverse, pulseOne, pulseTwo = 0, 0, false, false, false, false
+	local total, sinceSample, reversed, linearReverse, pulseOne, pulseTwo, normalKick = 0, 0, false, false, false, false, false
 	self:drive(phase, false)
 	while total < Config.SecondsPerPhase and not self.stopRequested do
 		local dt = RunService.Heartbeat:Wait()
@@ -273,6 +273,19 @@ function Runtime:runPhase(phase, trial)
 		if not reversed and total > Config.SecondsPerPhase / 2 then
 			reversed = true
 			if phase == "extreme" then self:drive(phase, true) end
+		end
+		if phase == "normal" and not normalKick and total > 0.35 then
+			normalKick = true
+			-- Passive fixtures still require controlled motion in the normal phase.
+			for _, rig in pairs(self.rigs) do
+				if #rig.geometry.motors == 0 then
+					local g = rig.geometry
+					local body = g.movers[1]
+					if body then
+						body:ApplyImpulse(Vector3.new(2, 0.8, 0) * body.AssemblyMass * g.factor)
+					end
+				end
+			end
 		end
 		if (phase == "heavy" or phase == "extreme") and
 			((not pulseOne and total > Config.SecondsPerPhase * 0.3) or
