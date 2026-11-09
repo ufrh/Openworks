@@ -44,6 +44,18 @@ return function(BoreIntegrity, GeometryReferences, MechanicalResolver)
 	housing.operations[3].enabled = false
 	check(BoreIntegrity.check(housing, hole),
 		"Disabled manufacturing operations must not invalidate bores")
+	table.insert(housing.operations, {
+		id = 4, kind = "AddPrimitive", primitive = "Block",
+		size = Vector3.new(0.4, 0.1, 0.4),
+		position = Vector3.new(0, 0.55, 0), rotation = Vector3.zero,
+	})
+	check(BoreIntegrity.check(housing, hole),
+		"Added housing material must not be mistaken for removed bore wall")
+	housing.operations[4] = {
+		id = 4, kind = "SketchExtrude", mode = "Add", enabled = true,
+	}
+	check(BoreIntegrity.check(housing, hole),
+		"Additive sketches should be allowed before final-solid interference checks")
 
 	return count
 end
