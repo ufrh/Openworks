@@ -292,8 +292,16 @@ function Service:RegisterRelationship(
 	end
 	for _, prior in ipairs(state.supports) do
 		if model == "RetainedPivotV1" then
-			if prior.pinId == record.pinId then
-				return false, "This pin is already assigned to another pivot"
+			if prior.model == "RetainedPivotV1" then
+				local occupied = { [prior.pinId] = true }
+				for _, hardwareId in ipairs(prior.stopIds or {}) do
+					occupied[hardwareId] = true
+				end
+				for _, hardwareId in ipairs(fixtures) do
+					if occupied[hardwareId] then
+						return false, "A pin or retainer cannot secure two independent pivots"
+					end
+				end
 			end
 			if prior.model == "RetainedPivotV1"
 				and prior.movingId == movingId and prior.bodyId == bodyId
