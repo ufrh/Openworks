@@ -6,6 +6,7 @@ local Shared = RS:WaitForChild("Openworks"):WaitForChild("Assembly")
 local Layout = require(Shared.AssemblyLayout)
 local Resolver = require(Shared.MechanicalResolver)
 local Catalog = require(Shared.RelationshipCatalog)
+local JointIntegrity = require(Shared.JointIntegrity)
 local Session = require(script.Parent.Parent.Simulation.AssemblySession)
 local Service = FORGE.Service("OpenWorksAssembly")
 local function document(player: Player): any
@@ -300,38 +301,8 @@ function Service:RegisterRelationship(
 	if not resolved then
 		return false, problem
 	end
-	local function samePair(a: any, b: any): boolean
-		return a.bodyId and b.bodyId
-			and ((a.bodyId == b.bodyId and a.movingId == b.movingId)
-			or (a.bodyId == b.movingId and a.movingId == b.bodyId))
-	end
-	local function hardwareIds(item: any): {number}
-		local out = {}
-		for _, id in ipairs(item.pinIds or {}) do table.insert(out, id) end
-		if item.pinId then table.insert(out, item.pinId) end
-		for _, id in ipairs(item.stopIds or {}) do table.insert(out, id) end
-		return out
-	end
-	for _, prior in ipairs(state.supports) do
-		local newPivot = model == "RetainedPivotV1" or model == "DualPinRigidV1"
-		local oldPivot = prior.model == "RetainedPivotV1" or prior.model == "DualPinRigidV1"
-		if newPivot and oldPivot then
-			if samePair(record, prior) then
-				return false,
-					"These two bodies already share a physical connection. Remove it before replacing the joint model"
-			end
-			local used = {}
-			for _, id in ipairs(hardwareIds(prior)) do used[id] = true end
-			for _, id in ipairs(hardwareIds(record)) do
-				if used[id] then
-					return false, "A pin or retainer cannot secure two independent joints"
-				end
-			end
-		elseif not newPivot and not oldPivot
-			and (prior.movingId or prior.shaftId) == movingId then
-			return false, "This mover already has a bearing or guide"
-		end
-	end
+	local compatible, conflict = JointIntegrity.canAdd(state.supports, record)
+	if not compatible then return false, conflict end
 	if #state.supports >= 96 then
 		return false, "Relationship limit reached"
 	end
@@ -643,8 +614,9 @@ function Service:Restore(player: Player, joints: any, saved: any)
 			if
 				doc
 				and mover
-				and ((record.model == "RetainedPivotV1" or record.model == "DualPinRigidV1")
+				and (record.model == "RetainedPivotV1" or record.model == "DualPinRigidV1"
 					or not movers[mover])
+				and JointIntegrity.canAdd(state.supports, record)
 				and Resolver.resolve(record, doc.components, state.poses, state.grounded)
 			then
 				if record.model ~= "RetainedPivotV1" and record.model ~= "DualPinRigidV1" then
