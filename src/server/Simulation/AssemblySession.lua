@@ -230,6 +230,7 @@ function Session.update(session: any, dt: number?)
 		-- connected unless the user removes the retained relationship.
 		-- Unretained shaft/guide supports still release on disengagement.
 		if item.relation.model == "RetainedPivotV1"
+			or item.relation.model == "DualPinRigidV1"
 			or item.relation.model == "RetainedBoreV1"
 			or item.relation.model == "LimitedGuideV1" then
 			continue
