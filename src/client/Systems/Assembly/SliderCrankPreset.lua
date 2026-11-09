@@ -102,7 +102,7 @@ function Preset.build(documents: any, assembly: any): (boolean, any)
 			local height = point.Y + sign * (length * 0.5 + 0.04)
 			local cap = plate(
 				name .. (if sign < 0 then " · lower cap" else " · upper cap"),
-				Vector3.new(0.23, 0.08, 0.23),
+				Vector3.new(0.20, 0.08, 0.20),
 				CFrame.new(Vector3.new(point.X, height, point.Z))
 			)
 			table.insert(caps, cap.id)
