@@ -38,6 +38,13 @@ local function bore(record: any, components: any, poses: any): (any?, string?)
 	if not intact then
 		return nil, integrityReason
 	end
+	local low, high = Geometry.boreSpan(
+		body.nodes[1], hole.point, hole.direction,
+		hole.diameter * 0.5 + Geometry.Wall
+	)
+	if not low or not high then
+		return nil, "Cannot calculate the remaining bore support length"
+	end
 	local clearance = hole.diameter - cylinder.diameter
 	if clearance < Resolver.MinClearance - 1e-6 then
 		return nil, "Shaft needs at least 1 mm diametral clearance"
