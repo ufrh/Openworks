@@ -2276,6 +2276,40 @@ function Debug.start(options: any?)
 			cameraController:frameBounds(CFrame.new(center), Vector3.new(12, 8, 12))
 			cameraController:snapNow()
 		end,
+		-- Preset manufacturing uses authoritative FORGE endpoints. Sync the
+		-- local document mirror before exposing newly created pieces in CAD.
+		-- This also enables Assembly to start from a previously empty workshop.
+		syncAssemblyDocuments = function()
+			local before = {}
+			for id, component in pairs(document.components) do
+				before[id] = component.revision
+			end
+			local ok, why = documentBridge:load()
+			if not ok then return false, why end
+			for _, id in ipairs(document.order) do
+				local component = document.components[id]
+				if not component then continue end
+				if before[id] ~= component.revision or not preview.states[id] then
+					preview:render(component)
+				end
+				if not currentWorkspace then
+					currentWorkspace = EditWorkspace.new(
+						component.worldOrigin or component.workspaceOrigin or Vector3.zero,
+						component.workspaceSize or component.nodes[1].size,
+						component.name
+					)
+				end
+			end
+			if currentWorkspace and not editorActive and not worldProjection.simulating then
+				local corner = if assemblyEnvironment.root then
+					AssemblyEnvironment.Center - Vector3.new(
+						currentWorkspace.size.X * 0.5, 0, currentWorkspace.size.Z * 0.5
+					) else nil
+				worldProjection:show(preview, document, currentWorkspace,
+					corner, corner ~= nil)
+			end
+			return true, nil
+		end,
 		getAssemblyState = function()
 			return { document = document, projection = worldProjection }
 		end,
