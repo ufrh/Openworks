@@ -39,6 +39,8 @@ function Service:Init()
 		"SimulationControl",
 		"TestImpulse",
 		"SimulationStatus",
+		"SetBenchDrive",
+		"ListDriveTargets",
 		"StartSimulation",
 		"StopSimulation",
 		"ListJoints",
@@ -365,7 +367,44 @@ function Service:SimulationStatus(player: Player)
 		return false, "Simulation stopped"
 	end
 	return true,
-		{ paused = session.paused, supports = #session.relations, released = session.released }
+		{ paused = session.paused, supports = #session.relations,
+			released = session.released, drives = table.clone(session.drives) }
+end
+
+-- Drives are attached to real accepted constraints in the active test.
+-- No fabricated motor is implied, and no drive survives StopSimulation.
+function Service:ListDriveTargets(player: Player)
+	local session = self.sessions[player]
+	if not session then
+		return false, "Start the simulation first"
+	end
+	local list = {}
+	for _, item in ipairs(session.relations) do
+		table.insert(list, {
+			index = item.index,
+			kind = item.relation.kind,
+			model = item.relation.model,
+			movingId = item.relation.movingId,
+			bodyId = item.relation.bodyId,
+		})
+	end
+	return true, list
+end
+
+function Service:SetBenchDrive(player: Player, index: any, speed: any, effort: any)
+	local session = self.sessions[player]
+	if not session or self.busy[player] then
+		return false, "Start the simulation first"
+	end
+	if type(index) ~= "number" or index % 1 ~= 0
+		or type(speed) ~= "number" or type(effort) ~= "number" then
+		return false, "Invalid drive target or parameters"
+	end
+	local ok, reason = Session.drive(session, index, speed, effort)
+	if not ok then
+		return false, reason
+	end
+	return true, if speed == 0 or effort == 0 then "Drive disengaged" else "Bench drive engaged"
 end
 
 function Service:TestImpulse(player: Player, id: any, kind: any, axisName: any, amount: any)
