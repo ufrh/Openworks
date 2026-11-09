@@ -108,6 +108,15 @@ function DocumentBridge:createSketchBody(name:string,worldOrigin:Vector3,
  return body,reason
 end
 
+function DocumentBridge:createBlock(name: string, worldOrigin: Vector3,
+ editOrigin: Vector3, workspaceSize: Vector3, materialSize: Vector3)
+ local ok, snapshot = self:request(
+  "CreateBlock", name, worldOrigin, editOrigin, workspaceSize, materialSize
+ )
+ if not ok then return nil, snapshot end
+ return self.document:adoptSnapshot(snapshot)
+end
+
 function DocumentBridge:createCylinder(name:string,worldOrigin:Vector3,
  editOrigin:Vector3,workspaceSize:Vector3,diameter:number,length:number)
  local ok,snapshot=self:request("CreateCylinder",name,worldOrigin,
