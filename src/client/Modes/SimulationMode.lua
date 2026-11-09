@@ -54,7 +54,7 @@ function Simulation.new(bridge: any, remote: any, onStop: () -> ())
 	self.driveRoot = Panel.list(drive)
 	self.driveSelection = Panel.label(drive, "Select a joint", 40)
 	self.driveSpeed = Panel.input(drive, "Speed (RPM for pivots / mm/s for slides)", "15")
-	self.driveEffort = Panel.input(drive, "Max torque / linear force (Roblox units)", "220")
+	self.driveEffort = Panel.input(drive, "Max torque / linear force (Roblox units)", "3000")
 	self.servoTarget = Panel.input(drive, "Servo angle (deg) / translation (mm)", "45")
 	Panel.button(drive, "Move to servo target", function()
 		self:drive(true, "Servo")
@@ -322,7 +322,7 @@ function Simulation:Enter()
 	self.bridge.setSimulationFocus(center)
 	self.panel.gui.Enabled = true
 	self.pauseButton.Text = "Pause"
-	self:report("Simulation running. Use Drive for motors or Loads for impulses.")
+	self:report("Simulation running. Use Drive for actuators or Test for impulse loads.")
 	self:refreshDriveTargets()
 	if self.driveKind == "Revolute" then
 		self.panel:show("Drive")
