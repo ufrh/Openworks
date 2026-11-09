@@ -28,7 +28,7 @@ function Geometry.planes(node: any): { any }?
 			if edge.Magnitude < 1e-6 then
 				return nil
 			end
-			local normal = edge:Cross(Vector3.yAxis).Unit * (if signed > 0 then 1 else -1)
+			local normal = edge:Cross(Vector3.yAxis).Unit * (if signed > 0 then -1 else 1)
 			local distance = normal:Dot(Vector3.new(p.X, 0, p.Y))
 			for _, vertex in ipairs(ring) do
 				if normal:Dot(Vector3.new(vertex.X, 0, vertex.Y)) > distance + 1e-5 then
