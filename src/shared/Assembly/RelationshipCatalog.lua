@@ -1,6 +1,13 @@
 --!strict
 return {
 	{
+		model = "RetainedPivotV1",
+		name = "Pin pivot",
+		motion = "Revolute · 1 DOF",
+		fixtures = 3,
+		help = "Two through-bores, one clearance pin, and two end caps. The pin is retained; the links rotate relative to one another.",
+	},
+	{
 		model = "BoreSupportV1",
 		name = "Sliding bearing",
 		motion = "Rotate + slide",
