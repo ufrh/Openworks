@@ -9,7 +9,6 @@ local SupportGeometry = require(Shared.SupportGeometry)
 local Layout = require(Shared.AssemblyLayout)
 local Panel = require(script.Parent.Parent.Parent.Experience.UI.WorkbenchPanel)
 local Manipulator = require(script.Parent.PrecisionManipulator)
-local Presets = require(script.Parent.Presets)
 local Controller = {}
 Controller.__index = Controller
 local function solid(state: any, id: number): BasePart?
@@ -64,52 +63,18 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		panel.pages.Parts, panel.pages.Move, panel.pages.Align, panel.pages.Mechanics
 	Panel.label(
 		parts,
-		"Assemble manufactured components, align their reference geometry, and register the hardware-supported relationships.",
+		"Create and machine components, position them in CAD, then validate physical joints. Nothing connects automatically.",
 		48
 	)
-	for _, preset in ipairs({ "Bearing", "Linear guide", "Slider crank" }) do
-		Panel.button(
-			parts,
-			if preset == "Bearing" then "Bearing assembly"
-			elseif preset == "Linear guide" then "Linear guide assembly"
-			else "Slider-crank assembly",
-			function()
-				if self.pending or self.manipulator.gizmo:isDragging() then
-					return
-				end
-				self.pending = true
-				self.manipulator.gizmo:setHidden(true)
-				self:_report("Building " .. preset .. " preset…")
-				local callOk, ok, result = pcall(Presets.build, documents, remote, preset)
-				local hydrated, hydrationProblem = true, nil
-				if callOk and ok and bridge.syncAssemblyDocuments then
-					local ran, accepted, message = pcall(bridge.syncAssemblyDocuments)
-					hydrated = ran and accepted == true
-					hydrationProblem = if ran then message else accepted
-				end
-				local refreshed, issue = pcall(function()
-					self:reload()
-				end)
-				self.pending = false
-				self.manipulator.gizmo:setHidden(false)
-				if callOk and ok and hydrated and refreshed then
-					self.selectedId = result
-					self:select(result)
-					bridge.frameAssembly(nil)
-					self:_report(
-						"Assembly created. Inspect the joints or switch to Simulation."
-					)
-				else
-					self:_report(tostring(
-						if not callOk then ok
-						elseif not ok then result
-						elseif not hydrated then hydrationProblem
-						else issue
-					))
-				end
-			end
-		)
-	end
+	Panel.button(parts, "+ New manufactured component", function()
+		if self.pending or self.manipulator.gizmo:isDragging() then return end
+		if self.onCreateComponent then self.onCreateComponent() end
+	end)
+	Panel.button(parts, "Edit selected component", function()
+		if self.pending or self.manipulator.gizmo:isDragging() then return end
+		if not self.selectedId then return self:_report("Select a component to edit") end
+		if self.onEditComponent then self.onEditComponent(self.selectedId) end
+	end)
 	Panel.button(parts, "▶ Simulate", function()
 		if not self.pending and self.onSimulate then
 			self.onSimulate()
