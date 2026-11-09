@@ -9,6 +9,7 @@ local Catalog = require(Shared.RelationshipCatalog)
 local JointIntegrity = require(Shared.JointIntegrity)
 local References = require(Shared.GeometryReferences)
 local FitPlacement = require(Shared.FitPlacement)
+local PivotPlacement = require(Shared.PivotPlacement)
 local Session = require(script.Parent.Parent.Simulation.AssemblySession)
 local Service = FORGE.Service("OpenWorksAssembly")
 local function document(player: Player): any
@@ -35,6 +36,8 @@ function Service:Init()
 		"GetLayout",
 		"PreviewBearingPlacement",
 		"FinalizeBearingPlacement",
+		"PreviewPivotPlacement",
+		"FinalizePivotPlacement",
 		"SetPose",
 		"SetGrounded",
 		"RegisterSupport",
@@ -326,6 +329,96 @@ function Service:FinalizeBearingPlacement(player: Player,
 	boreId: any, featureId: any, shaftId: any, offsetMM: any, revision: any)
 	return self:_bearingInstall(
 		player, boreId, featureId, shaftId, offsetMM, revision, true
+	)
+end
+
+function Service:_pivotInstall(
+	player: Player, bodyId: any, bodyFeature: any,
+	movingId: any, movingFeature: any, pinId: any,
+	capA: any, capB: any, axialOffset: any, phase: any,
+	revision: any, finalize: boolean
+)
+	if self:IsBusy(player) then
+		return false, "Assembly is already validating or simulating"
+	end
+	local doc, state = document(player), self:_layout(player)
+	if not doc or state.revision ~= revision then
+		return false, "Assembly has changed; refresh the layout"
+	end
+	for _, id in ipairs({bodyId, movingId, pinId, capA, capB}) do
+		if type(id) ~= "number" or id % 1 ~= 0 then
+			return false, "Select all five manufactured components"
+		end
+	end
+	if type(bodyFeature) ~= "string" or #bodyFeature > 96
+		or type(movingFeature) ~= "string" or #movingFeature > 96 then
+		return false, "Select both source through-bores"
+	end
+	local projected, record, reason = PivotPlacement.propose(
+		doc.components, state.poses, bodyId, bodyFeature,
+		movingId, movingFeature, pinId, capA, capB,
+		axialOffset, phase
+	)
+	if not projected then return false, reason end
+	local compatible, conflict = JointIntegrity.canAdd(state.supports, record)
+	if not compatible then return false, conflict end
+	for id, pose in pairs(projected) do
+		if not Layout.validFrame(pose) then
+			return false, "Pivot component " .. id .. " is outside the workshop"
+		end
+	end
+	self.busy[player] = true
+	local epoch = self.epochs[player] or 0
+	local parts
+	local worked, valid, message = xpcall(function()
+		local problem
+		parts, problem = Session.compile(doc, projected, self:_cache(player))
+		if not parts then return false, problem end
+		local clear, interference = Session.validate(parts)
+		if not clear then return false, interference end
+		local resolved, unsupported = Resolver.resolve(
+			record, doc.components, projected, state.grounded
+		)
+		if not resolved then return false, unsupported end
+		if finalize then
+			if not player.Parent or epoch ~= (self.epochs[player] or 0) then
+				return false, "Session changed; retry after respawn"
+			end
+			if #state.supports >= 96 then return false, "Joint limit reached" end
+			state.poses = projected
+			table.insert(state.supports, record)
+			state.revision += 1
+			changed(player)
+		end
+		return true, "Manufactured pivot accepted"
+	end, debug.traceback)
+	if parts then Session.destroy({parts = parts}) end
+	self.busy[player] = nil
+	if not worked then
+		warn("[OPENWORKS] Pivot validation failed: ", valid)
+		return false, "Pivot validation failed; see server diagnostics"
+	end
+	if not valid then return false, message, projected end
+	return true, {poses = projected, revision = state.revision, message = message}
+end
+
+function Service:PreviewPivotPlacement(player: Player,
+	bodyId: any, bodyFeature: any, movingId: any, movingFeature: any,
+	pinId: any, capA: any, capB: any, axialOffset: any, phase: any,
+	revision: any)
+	return self:_pivotInstall(
+		player, bodyId, bodyFeature, movingId, movingFeature,
+		pinId, capA, capB, axialOffset, phase, revision, false
+	)
+end
+
+function Service:FinalizePivotPlacement(player: Player,
+	bodyId: any, bodyFeature: any, movingId: any, movingFeature: any,
+	pinId: any, capA: any, capB: any, axialOffset: any, phase: any,
+	revision: any)
+	return self:_pivotInstall(
+		player, bodyId, bodyFeature, movingId, movingFeature,
+		pinId, capA, capB, axialOffset, phase, revision, true
 	)
 end
 
