@@ -172,11 +172,16 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		"Select the moving component and target reference. Mates position geometry; they do not create joints.",
 		52
 	)
-	Panel.button(align, "Set moving component (A)", function()
-		self.selectionIntent = "a"
-		self:_report("Select component A in the viewport or Components")
+	Panel.button(align, "Use selected component as A", function()
+		if self.selectedId then
+			self:setReference("a")
+			self:_report("Reference A assigned")
+		else
+			self.selectionIntent = "a"
+			self:_report("Select component A in the viewport or Components")
+		end
 	end)
-	Panel.button(align, "Set target component (B)", function()
+	Panel.button(align, "Pick target component (B)", function()
 		self.selectionIntent = "b"
 		self:_report("Select component B in the viewport or Components")
 	end)
@@ -211,11 +216,16 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		)
 	end)
 	self.mechanicalChoices = Panel.label(mechanics, "Moving: — / Housing: —", 52)
-	Panel.button(mechanics, "Set joint member (A)", function()
-		self.selectionIntent = "a"
-		self:_report("Select joint member A and its bore")
+	Panel.button(mechanics, "Use selected component as A", function()
+		if self.selectedId then
+			self:setReference("a")
+			self:_report("Joint member A assigned")
+		else
+			self.selectionIntent = "a"
+			self:_report("Select member A and its bore")
+		end
 	end)
-	Panel.button(mechanics, "Set joint member (B)", function()
+	Panel.button(mechanics, "Pick joint member (B)", function()
 		self.selectionIntent = "b"
 		self:_report("Select member B and its bore")
 	end)
@@ -284,7 +294,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 				or input:IsKeyDown(Enum.KeyCode.RightControl)
 			if key.KeyCode == Enum.KeyCode.Escape then
 				self.manipulator:cancel()
-				self.pickTarget = false
+				self.selectionIntent = nil
 			elseif ctrl and key.KeyCode == Enum.KeyCode.Z then
 				self:undo(false)
 			elseif ctrl and key.KeyCode == Enum.KeyCode.Y then
@@ -529,8 +539,6 @@ function Controller:select(id: number)
 			end
 		end
 		self.refIndex = preferred
-	elseif id ~= self.selectedId then
-		self.refIndex = 1
 	end
 	for componentId, button in pairs(self.partButtons) do
 		button.BackgroundColor3 = if componentId == id
@@ -841,7 +849,7 @@ function Controller:Enter()
 		error(reason)
 	end
 	self.active = true
-	self.pickTarget, self.justPickedTarget = false, nil
+	self.selectionIntent = nil
 	local components = self.bridge.getAssemblyState().document.components
 	if self.a and not components[self.a.id] then
 		self.a = nil
@@ -940,6 +948,7 @@ function Controller:Exit()
 		error("Wait for placement validation")
 	end
 	self.active = false
+	self.selectionIntent = nil
 	self.gui.Enabled = false
 	self.manipulator:select(nil)
 	self:clearHighlights()
