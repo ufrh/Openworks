@@ -7,6 +7,7 @@ local Document = require(Shared.FORM.Document)
 local Interference = require(Shared.Assembly.Interference)
 local Resolver = require(Shared.Assembly.MechanicalResolver)
 local Constraints = require(Shared.Assembly.ConstraintCompiler)
+local BenchDrive = require(Shared.Assembly.BenchDrive)
 local Session = {}
 function Session.compile(document: any, poses: any, cache: any?): (any?, string?)
 	local parts = {}
@@ -132,6 +133,7 @@ function Session.start(
 		grounded = table.clone(layout.grounded),
 		paused = false,
 		released = 0,
+		drives = {},
 		center = Vector3.new(120, 200, 0) + shift,
 	}
 	local root = Instance.new("Folder")
@@ -152,7 +154,7 @@ function Session.start(
 		floor.Color = Color3.fromRGB(51, 88, 130)
 		floor.Material = Enum.Material.SmoothPlastic
 		floor.Parent = root
-		for _, record in ipairs(layout.supports) do
+		for index, record in ipairs(layout.supports) do
 			local relation, reason =
 				Resolver.resolve(record, document.components, poses, layout.grounded)
 			if not relation then
@@ -163,6 +165,7 @@ function Session.start(
 				error(problem)
 			end
 			table.insert(session.relations, {
+				index = index,
 				record = record,
 				objects = objects,
 				relation = relation,
@@ -224,6 +227,7 @@ function Session.update(session: any, dt: number?)
 		local item = session.relations[i]
 		if not Resolver.resolve(item.record, session.source, poses, session.grounded) then
 			Constraints.destroy(item.objects)
+			session.drives[item.index] = nil
 			session.released += 1
 			table.remove(session.relations, i)
 		end
@@ -273,6 +277,7 @@ function Session.reset(session: any): (boolean, string?)
 			return false, problem
 		end
 		table.insert(session.relations, {
+			index = item.index,
 			record = item.record,
 			relation = item.relation,
 			objects = objects,
@@ -280,9 +285,37 @@ function Session.reset(session: any): (boolean, string?)
 		})
 	end
 	session.released = 0
+	for index, drive in pairs(session.drives) do
+		Session.drive(session, index, drive.speed, drive.effort)
+	end
 	if not wasPaused then
 		Session.pause(session, false)
 	end
 	return true, nil
 end
+-- The simulation drive is external equipment, never persisted to FORM.
+function Session.drive(session: any, index: number, speed: number, effort: number): (boolean, string?)
+	local target = nil
+	for _, item in ipairs(session.relations) do
+		if item.index == index then
+			target = item
+			break
+		end
+	end
+	if not target then
+		return false, "Joint is no longer active; reset the simulation"
+	end
+	local valid, reason = BenchDrive.validate(target.relation, speed, effort)
+	if not valid then
+		return false, reason
+	end
+	BenchDrive.apply(target.objects, target.relation, speed, effort)
+	if speed == 0 or effort == 0 then
+		session.drives[index] = nil
+	else
+		session.drives[index] = { speed = speed, effort = effort }
+	end
+	return true, nil
+end
+
 return Session
