@@ -27,6 +27,15 @@ local function jointAt(g, kind, part0, part1, point0, point1, props)
 	end
 	c.Parent = g.container
 	table.insert(g.joints, c)
+	if kind == "RodConstraint" or kind == "RopeConstraint" then
+		local visual = Instance.new("Beam")
+		visual.Name = "Visible " .. kind
+		visual.Attachment0, visual.Attachment1 = a0, a1
+		visual.FaceCamera = true
+		visual.Width0, visual.Width1 = 0.12 * g.factor, 0.12 * g.factor
+		visual.Color = ColorSequence.new(Color3.fromRGB(235, 204, 123))
+		visual.Parent = g.container
+	end
 	return c
 end
 
@@ -90,6 +99,7 @@ function M.build(index, g)
 			LowerLimit = -2 * s,
 			UpperLimit = 2 * s,
 			AngularActuatorType = Enum.ActuatorType.Motor,
+			InclinationAngle = 0, -- spindle rotation axis matches sliding axis
 			AngularVelocity = 0,
 			MotorMaxTorque = 20000 * s ^ 5,
 			MotorMaxAngularAcceleration = 250,
