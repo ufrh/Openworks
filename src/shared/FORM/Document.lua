@@ -457,6 +457,28 @@ function Document:addOperation(component, kind: string, data)
 			return false,"Inset requires positive border and depth"
 		end
 		operation={kind="InsetFace",points=stored,normal=normal.Unit,margin=margin,depth=depth}
+	elseif kind == "AddPrimitive" then
+		local primitive = data.kind
+		local size, position, rotation = data.size, data.position, data.rotation
+		if primitive ~= "Block" and primitive ~= "Cylinder" then
+			return false, "Choose Block or Cylinder stock"
+		end
+		if typeof(size) ~= "Vector3" or typeof(position) ~= "Vector3"
+			or typeof(rotation) ~= "Vector3" then
+			return false, "Primitive requires size, position, and rotation"
+		end
+		local valid, problem = validateTransform(position, size, rotation)
+		if not valid then return false, problem end
+		if primitive == "Cylinder" and math.abs(size.X - size.Z) > 1e-5 then
+			return false, "Cylinder diameter must match across X and Z"
+		end
+		operation = {
+			kind = "AddPrimitive",
+			primitive = primitive,
+			size = size,
+			position = position,
+			rotation = rotation,
+		}
 	elseif kind == "SketchExtrude" then
 		local mode = data.mode
 		if mode ~= "Add" and mode ~= "Remove" and mode ~= "Intersect" then
