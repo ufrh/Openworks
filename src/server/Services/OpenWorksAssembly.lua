@@ -223,7 +223,8 @@ function Service:RegisterRelationship(
 	bodyId: any,
 	featureId: any,
 	fixtures: any,
-	revision: any
+	revision: any,
+	movingFeatureId: any?
 )
 	if self:IsBusy(player) then
 		return false, "Stop simulation or wait for validation"
@@ -256,7 +257,17 @@ function Service:RegisterRelationship(
 		seen[id] = true
 	end
 	local record = { model = model, movingId = movingId }
-	if model == "BoreSupportV1" or model == "RetainedBoreV1" then
+	if model == "RetainedPivotV1" then
+		if type(bodyId) ~= "number" or bodyId == movingId or type(featureId) ~= "string"
+			or type(movingFeatureId) ~= "string" or #featureId > 96 or #movingFeatureId > 96 then
+			return false, "Choose a drilled hole on each of the two links"
+		end
+		record.bodyId = bodyId
+		record.featureId = featureId
+		record.movingFeatureId = movingFeatureId
+		record.pinId = fixtures[1]
+		record.stopIds = {fixtures[2], fixtures[3]}
+	elseif model == "BoreSupportV1" or model == "RetainedBoreV1" then
 		if type(bodyId) ~= "number" or type(featureId) ~= "string" or #featureId > 96 then
 			return false, "Choose a target bore"
 		end
@@ -275,8 +286,18 @@ function Service:RegisterRelationship(
 		return false, problem
 	end
 	for _, prior in ipairs(state.supports) do
-		if (prior.movingId or prior.shaftId) == movingId then
-			return false, "Remove the existing relationship on this mover before replacing it"
+		if model == "RetainedPivotV1" then
+			if prior.pinId == record.pinId then
+				return false, "This pin is already assigned to another pivot"
+			end
+			if prior.model == "RetainedPivotV1"
+				and prior.movingId == movingId and prior.bodyId == bodyId
+				and prior.featureId == featureId and prior.movingFeatureId == movingFeatureId then
+				return false, "This pivot connection already exists"
+			end
+		elseif prior.model ~= "RetainedPivotV1"
+			and (prior.movingId or prior.shaftId) == movingId then
+			return false, "Remove the existing guide/bearing before replacing it"
 		end
 	end
 	if #state.supports >= 96 then
@@ -587,10 +608,10 @@ function Service:Restore(player: Player, joints: any, saved: any)
 			if
 				doc
 				and mover
-				and not movers[mover]
+				and (record.model == "RetainedPivotV1" or not movers[mover])
 				and Resolver.resolve(record, doc.components, state.poses, state.grounded)
 			then
-				movers[mover] = true
+				if record.model ~= "RetainedPivotV1" then movers[mover] = true end
 				table.insert(state.supports, record)
 			else
 				table.insert(state.quarantined, record)
