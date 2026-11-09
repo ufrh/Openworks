@@ -58,6 +58,7 @@ try {
   const specs = [
     ['AssemblyDomain.spec.lua', 'Alignment,GeometryReferences,MechanicalResolver,AssemblyLayout,ConstraintCompiler'],
     ['MechanicalWorkflows.spec.lua', 'MechanicalResolver,SupportGeometry'],
+    ['MechanicsExtensions.spec.lua', 'MechanicalResolver,SupportGeometry,PinnedPivot,BenchDrive'],
     ['SimulationLifecycle.spec.lua', 'AssemblySession,ConstraintCompiler,Instance'],
     ['ModeLifecycle.spec.lua', 'ModeManager'],
   ];
