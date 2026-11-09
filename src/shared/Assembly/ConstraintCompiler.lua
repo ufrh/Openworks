@@ -42,6 +42,40 @@ local function retainedPivot(relation: any, parts: any, parent: Instance): ({ In
 	return objects, nil
 end
 
+local function dualPinRigid(relation: any, parts: any, parent: Instance): ({ Instance }?, string?)
+	local body = parts[relation.bodyId]
+	local mover = parts[relation.movingId]
+	if not body or not mover then
+		return nil, "Missing rigid coupling members"
+	end
+	local fasteners = {}
+	for _, id in ipairs(relation.pinIds or {}) do
+		if not parts[id] then return nil, "Missing manufactured coupling pin" end
+		table.insert(fasteners, parts[id])
+	end
+	for _, id in ipairs(relation.stopIds or {}) do
+		if not parts[id] then return nil, "Missing manufactured pin retainer" end
+		table.insert(fasteners, parts[id])
+	end
+	if #fasteners ~= 6 then return nil, "Rigid coupling requires six manufactured fasteners" end
+	local objects = {}
+	local function join(a: BasePart, b: BasePart, name: string)
+		local weld = Instance.new("WeldConstraint")
+		weld.Name = name
+		weld.Part0 = a
+		weld.Part1 = b
+		weld.Parent = parent
+		table.insert(objects, weld)
+	end
+	-- Two distinct retained pins geometrically eliminate relative rotation
+	-- and translation. No magic hardware is spawned.
+	join(body, mover, "OW_ManufacturedDualPinRigid")
+	for index, fastener in ipairs(fasteners) do
+		join(mover, fastener, "OW_RigidFastener_" .. index)
+	end
+	return objects, nil
+end
+
 function Compiler.compileResolved(
 	relation: any,
 	parts: any,
@@ -49,6 +83,8 @@ function Compiler.compileResolved(
 ): ({ Instance }?, string?)
 	if relation.kind == "Revolute" and relation.model == "RetainedPivotV1" then
 		return retainedPivot(relation, parts, parent)
+	elseif relation.kind == "Rigid" and relation.model == "DualPinRigidV1" then
+		return dualPinRigid(relation, parts, parent)
 	end
 	if relation.kind ~= "Cylindrical" and relation.kind ~= "Prismatic" then
 		return nil, "No mechanically supported compiler for this relationship"
