@@ -399,7 +399,14 @@ local function commitConnectedEdit(self: any, player: Player, doc: any,
    .. tostring(result)
  end
  remember(self, player, component)
+ component.nodes = trial.nodes
  component.operations = trial.operations
+ component.notes = trial.notes
+ component.workspaceOrigin = trial.workspaceOrigin
+ component.workspaceSize = trial.workspaceSize
+ component.worldOrigin = trial.worldOrigin
+ component.materialVolume = trial.materialVolume
+ component.volumeExact = trial.volumeExact
  component.revision = trial.revision
  self:Changed(player, component.id, true)
  return true, Document.snapshot(component)
@@ -427,45 +434,36 @@ function Service:RemoveOperation(player: Player, id: any,
  end)
 end
 
-function Service:ApplyTransform(player:Player,id:any,revision:any,
- nodeId:any,position:any,size:any,rotation:any,faceAnchor:any,rotatePrecision:any,snap:any)
- local doc,component,err=selected(self,player,id,revision)
- if not doc then return false,err end
- if typeof(nodeId)~="number"
-  or (position~=nil and not finiteVector(position))
-  or (size~=nil and not finiteSize(size))
-  or (rotation~=nil and not finiteVector(rotation)) then
-  return false,"Invalid transformation"
+function Service:ApplyTransform(player: Player, id: any, revision: any,
+ nodeId: any, position: any, size: any, rotation: any,
+ faceAnchor: any, rotatePrecision: any, snap: any)
+ local doc, component, err = selected(self, player, id, revision)
+ if not doc then return false, err end
+ if typeof(nodeId) ~= "number"
+  or (position ~= nil and not finiteVector(position))
+  or (size ~= nil and not finiteSize(size))
+  or (rotation ~= nil and not finiteVector(rotation)) then
+  return false, "Invalid transformation"
  end
- local step=if typeof(snap)=="number" and Quantize.isFinite(snap)
-  and snap>=Quantize.Size and snap<=2 then snap else Quantize.Grid
- remember(self,player,component)
- local ok,valid,reason=pcall(function()
-  return doc:applyTransform(component,nodeId,position,size,rotation,
-   faceAnchor==true,rotatePrecision==true,step)
+ local step = if typeof(snap) == "number" and Quantize.isFinite(snap)
+  and snap >= Quantize.Size and snap <= 2 then snap else Quantize.Grid
+ return commitConnectedEdit(self, player, doc, component, function(trial)
+  return doc:applyTransform(trial, nodeId, position, size, rotation,
+   faceAnchor == true, rotatePrecision == true, step)
  end)
- if not ok then return false,tostring(valid) end
- if not valid then return false,reason end
- self:Changed(player,component.id,true)
- return true,Document.snapshot(component)
 end
 
-function Service:EditNode(player:Player,id:any,revision:any,index:any,
- field:any,axis:any,value:any)
- local doc,component,err=selected(self,player,id,revision)
- if not doc then return false,err end
- if typeof(index)~="number" or typeof(field)~="string"
-  or typeof(axis)~="string" or typeof(value)~="number" then
-  return false,"Invalid node edit"
+function Service:EditNode(player: Player, id: any, revision: any,
+ index: any, field: any, axis: any, value: any)
+ local doc, component, err = selected(self, player, id, revision)
+ if not doc then return false, err end
+ if typeof(index) ~= "number" or typeof(field) ~= "string"
+  or typeof(axis) ~= "string" or typeof(value) ~= "number" then
+  return false, "Invalid node edit"
  end
- remember(self,player,component)
- local ok,valid,reason=pcall(function()
-  return doc:editNode(component,index,field,axis,value)
+ return commitConnectedEdit(self, player, doc, component, function(trial)
+  return doc:editNode(trial, index, field, axis, value)
  end)
- if not ok then return false,tostring(valid) end
- if not valid then return false,reason end
- self:Changed(player,component.id,true)
- return true,Document.snapshot(component)
 end
 
 function Service:SetNotes(player:Player,id:any,revision:any,notes:any)
@@ -516,12 +514,12 @@ function Service:RestoreRevision(player:Player,id:any,revision:any,
  if not accepted or targetRevision>component.revision then
   return false,"Rollback revision is not in server history"
  end
- remember(self,player,component)
- if not doc:restoreSnapshot(component,accepted) then
-  return false,"Unable to restore saved component"
- end
- self:Changed(player,component.id,true)
- return true,Document.snapshot(component)
+ return commitConnectedEdit(self, player, doc, component, function(trial)
+  if not doc:restoreSnapshot(trial, accepted) then
+   return false, "Unable to restore saved component"
+  end
+  return true, nil
+ end)
 end
 
 function Service:GetSnapshot(player:Player,id:any)
