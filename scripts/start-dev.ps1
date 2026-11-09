@@ -43,7 +43,7 @@ if ($RemoteSha) {
 }
 Write-Host "[OPENWORKS] Local source: $Branch @ $LocalSha | origin/$Branch @ $RemoteSha"
 if ($Branch -ne 'dev') {
-    Write-Warning "[OPENWORKS] You are running '$Branch', not dev. Recent gizmo fixes were pushed to dev."
+    Write-Warning "[OPENWORKS] You are running '$Branch', not dev. The current OPENWORKS redesign baseline is on dev."
 }
 if ($BehindCount -gt 0) {
     Write-Warning "[OPENWORKS] STALE SOURCE: local '$Branch' is $BehindCount commit(s) behind origin/$Branch."
@@ -60,7 +60,7 @@ if (Test-Path $ClientEntry) {
     if ($Stamp) {
         Write-Host "[OPENWORKS] Local client build marker: $($Stamp.Matches.Groups[1].Value)"
     } else {
-        Write-Warning '[OPENWORKS] No client BUILD marker in local init.client.lua. The viewport version badge is not in this working tree.'
+        Write-Warning '[OPENWORKS] No client BUILD marker in local init.client.lua. Check the source tree and active branch.'
     }
 }
 Write-Host '[OPENWORKS] After Rojo connects, STOP Play and start Play again to reload cached client ModuleScripts.'
