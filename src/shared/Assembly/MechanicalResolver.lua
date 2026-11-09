@@ -104,11 +104,23 @@ end
 
 local function guide(record: any, components: any, poses: any, grounded: any): (any?, string?)
 	local mover = components[record.movingId]
-	local size = Geometry.box(mover)
+	local nativeSize = Geometry.box(mover)
 	local pose = poses[tostring(record.movingId)]
-	if not size or not pose then
+	if not nativeSize or not pose then
 		return nil, "Linear guides need an uncut rectangular carriage"
 	end
+	-- The guide datum can run along a part's X or Y axis. The existing
+	-- four-rail validator always works in a coordinate frame whose Y axis
+	-- is the desired travel direction. This supports horizontal sliders
+	-- without rotating the drilled slider body or its pivot bore.
+	local axis = record.travelAxis or "Y"
+	if axis ~= "Y" and axis ~= "X" then
+		return nil, "Supported guide travel axes: X and Y"
+	end
+	local basis = if axis == "X" then pose * CFrame.Angles(0, 0, -math.pi / 2)
+		else pose
+	local size = if axis == "X" then Vector3.new(nativeSize.Y, nativeSize.X, nativeSize.Z)
+		else nativeSize
 	if type(record.guideIds) ~= "table" or #record.guideIds ~= 4 then
 		return nil, "Choose four surrounding guide rails"
 	end
@@ -124,7 +136,7 @@ local function guide(record: any, components: any, poses: any, grounded: any): (
 		local pp = poses[tostring(id)]
 		local p, h = nil, nil
 		if pp then
-			p, h = Geometry.relativeBox(components[id], pp, pose)
+			p, h = Geometry.relativeBox(components[id], pp, basis)
 		end
 		if not p or not h then
 			return nil, "Guide rails must be uncut rectangular stock aligned with the carriage"
@@ -156,11 +168,11 @@ local function guide(record: any, components: any, poses: any, grounded: any): (
 		bodyId = record.guideIds[1],
 		movingId = mover.id,
 		point = pose.Position,
-		direction = pose.YVector,
+		direction = basis.YVector,
 		translation = 1,
 		rotation = 0,
 		retained = false,
-		basis = pose,
+		basis = basis,
 		halfSize = size * 0.5,
 	},
 		nil
