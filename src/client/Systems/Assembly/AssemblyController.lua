@@ -343,7 +343,9 @@ end
 
 function Controller:fixtureDescription(): string
 	local model = Catalog[self.modelIndex].model
-	if model == "RetainedPivotV1" then
+	if model == "DualPinRigidV1" then
+		return "pin A → caps A1/A2 → pin B → caps B1/B2"
+	elseif model == "RetainedPivotV1" then
 		return "pin → lower retainer → upper retainer"
 	elseif model == "RetainedBoreV1" then
 		return "first end stop → second end stop"
@@ -877,9 +879,9 @@ function Controller:registerSupport()
 	if #self.fixtures ~= spec.fixtures then
 		return self:_report("This relationship requires " .. spec.fixtures .. " fixture components")
 	end
-	if spec.model == "RetainedPivotV1" then
+	if spec.model == "RetainedPivotV1" or spec.model == "DualPinRigidV1" then
 		if not self.b or self.a.id == self.b.id then
-			return self:_report("Select separate drilled links as joint members A and B")
+			return self:_report("Choose two different drilled link members (A and B)")
 		end
 	end
 	self:mutate(
@@ -890,7 +892,8 @@ function Controller:registerSupport()
 		if self.b then self.b.ref else "",
 		self.fixtures,
 		self.layout.revision,
-		if spec.model == "RetainedPivotV1" then self.a.ref else nil,
+		if spec.model == "RetainedPivotV1" or spec.model == "DualPinRigidV1"
+			then self.a.ref else nil,
 		if spec.model == "LinearGuideV1" or spec.model == "LimitedGuideV1"
 			then self.travelAxis else nil
 	)
