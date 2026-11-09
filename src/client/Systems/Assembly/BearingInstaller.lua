@@ -220,6 +220,10 @@ function Installer:preview()
 	if typeof(pose) == "CFrame" then
 		local part = solid(parent, self.shaftId)
 		if part then part.CFrame = pose * source(part) end
+	else
+		-- A rejected request may fail before a candidate pose is available.
+		-- Never leave the last valid ghost displayed as the rejected position.
+		self:restore()
 	end
 	self.previewPose = if valid then pose else nil
 	self.previewValid = valid
