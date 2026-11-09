@@ -8,6 +8,13 @@ return {
 		help = "Two through-bores, one clearance pin, and two end caps. The pin is retained; the links rotate relative to one another.",
 	},
 	{
+		model = "DualPinRigidV1",
+		name = "Dual-pin rigid coupling",
+		motion = "Rigid · 0 DOF",
+		fixtures = 6,
+		help = "Two manufactured through-pins at separate bore centers, each retained by two end caps. Both links become rigidly connected.",
+	},
+	{
 		model = "BoreSupportV1",
 		name = "Sliding bearing",
 		motion = "Rotate + slide",
