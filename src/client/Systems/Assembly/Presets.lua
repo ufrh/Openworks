@@ -1,6 +1,11 @@
 --!strict
 local Presets = {}
+local SliderCrank = require(script.Parent.SliderCrankPreset)
+
 function Presets.build(docs, assembly, kind)
+	if kind == "Slider crank" then
+		return SliderCrank.build(docs, assembly)
+	end
 	local made = {}
 	local function expect(ok, value)
 		if not ok then
