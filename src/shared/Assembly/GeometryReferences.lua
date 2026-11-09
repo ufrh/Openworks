@@ -68,7 +68,7 @@ function References.list(component: any): { any }
 					id = "edge:" .. i,
 					kind = "Plane",
 					point = Vector3.new((p.X + q.X) * 0.5, 0, (p.Y + q.Y) * 0.5),
-					direction = edge:Cross(Vector3.yAxis).Unit * (if signed > 0 then 1 else -1),
+					direction = edge:Cross(Vector3.yAxis).Unit * (if signed > 0 then -1 else 1),
 				})
 			end
 		end
