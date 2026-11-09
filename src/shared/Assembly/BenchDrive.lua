@@ -65,7 +65,7 @@ function BenchDrive.apply(
 			else
 				obj.Velocity = if enabled then speed else 0
 				obj.MotorMaxForce = if enabled then effort else 0
-				obj.MotorMaxAcceleration = 100
+				obj.MotorMaxAcceleration = math.clamp(math.abs(speed) * 6, 1, 25)
 			end
 		elseif relation.kind == "Cylindrical" and obj:IsA("CylindricalConstraint") then
 			obj.AngularActuatorType = if not enabled then Enum.ActuatorType.None
@@ -77,7 +77,7 @@ function BenchDrive.apply(
 			else
 				obj.AngularVelocity = if enabled then speed else 0
 				obj.MotorMaxTorque = if enabled then effort else 0
-				obj.MotorMaxAngularAcceleration = 100
+				obj.MotorMaxAngularAcceleration = math.clamp(math.abs(speed) * 6, 1, 25)
 			end
 		elseif relation.kind == "Revolute" and obj:IsA("HingeConstraint") then
 			obj.ActuatorType = if not enabled then Enum.ActuatorType.None
