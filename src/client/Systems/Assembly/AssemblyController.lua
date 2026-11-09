@@ -11,6 +11,7 @@ local Layout = require(Shared.AssemblyLayout)
 local Panel = require(script.Parent.Parent.Parent.Experience.UI.WorkbenchPanel)
 local Manipulator = require(script.Parent.PrecisionManipulator)
 local BearingInstaller = require(script.Parent.BearingInstaller)
+local PivotInstaller = require(script.Parent.PivotInstaller)
 local Controller = {}
 Controller.__index = Controller
 local function solid(state: any, id: number): BasePart?
@@ -65,7 +66,18 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	local parts, move, install, align, mechanics =
 		panel.pages.Parts, panel.pages.Move, panel.pages.Install,
 		panel.pages.Align, panel.pages.Mechanics
-	self.installer = BearingInstaller.new(self, install)
+	self.installMode = "Bearing"
+	Panel.button(install, "Bearing · bore → shaft", function()
+		self:setInstallMode("Bearing")
+	end)
+	Panel.button(install, "Pin pivot · two bores → hardware", function()
+		self:setInstallMode("Pivot")
+	end)
+	self.bearingPanel = Panel.list(install)
+	self.pivotPanel = Panel.list(install)
+	self.installer = BearingInstaller.new(self, self.bearingPanel)
+	self.pivotInstaller = PivotInstaller.new(self, self.pivotPanel)
+	self.pivotPanel.Visible = false
 	Panel.label(
 		parts,
 		"Create and machine components, position them in CAD, then validate physical joints. Nothing connects automatically.",
@@ -81,6 +93,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		if self.onEditComponent then self.onEditComponent(self.selectedId) end
 	end)
 	Panel.button(parts, "Install shaft in housing", function()
+		self:setInstallMode("Bearing")
 		self.panel:show("Install")
 		self.selectionIntent = "installBore"
 		self:_report("Select the housing with the bore you want to use")
@@ -331,6 +344,18 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		end)
 	)
 	return self
+end
+
+function Controller:setInstallMode(mode: string)
+	if mode ~= "Bearing" and mode ~= "Pivot" then return end
+	self.installer:restore()
+	self.pivotInstaller:restore()
+	self.installMode = mode
+	self.selectionIntent = nil
+	self.bearingPanel.Visible = mode == "Bearing"
+	self.pivotPanel.Visible = mode == "Pivot"
+	self.panel:show("Install")
+	self.manipulator.gizmo:setHidden(false)
 end
 
 function Controller:name(id: number?): string
@@ -617,6 +642,8 @@ function Controller:select(id: number)
 		self:addFixture(id)
 	elseif intent == "installBore" or intent == "installShaft" then
 		self.installer:select(id, intent)
+	elseif type(intent) == "string" and string.sub(intent, 1, 5) == "pivot" then
+		self.pivotInstaller:select(id, intent)
 	end
 end
 function Controller:cycleReference(delta: number?)
@@ -976,9 +1003,17 @@ function Controller:Enter()
 			end
 		end
 		if nearestIndex then
-			if self.installer and self.installer.housingId == id
-				and self.panel.current == "Install" then
-				self.installer:chooseBore(refs[nearestIndex].id)
+			if self.panel.current == "Install" then
+				if self.installMode == "Bearing"
+					and self.installer.housingId == id then
+					self.installer:chooseBore(refs[nearestIndex].id)
+				elseif self.installMode == "Pivot" then
+					if self.pivotInstaller.bodyId == id then
+						self.pivotInstaller:chooseBore("pivotBody", refs[nearestIndex].id)
+				elseif self.pivotInstaller.movingId == id then
+						self.pivotInstaller:chooseBore("pivotMover", refs[nearestIndex].id)
+					end
+				end
 			end
 			self.refIndex = nearestIndex
 			if self.a and self.a.id == id then self.a.ref = refs[nearestIndex].id end
@@ -1032,6 +1067,7 @@ function Controller:Exit()
 	end
 	self.active = false
 	self.installer:restore()
+	self.pivotInstaller:restore()
 	self.selectionIntent = nil
 	self.gui.Enabled = false
 	self.manipulator:select(nil)
