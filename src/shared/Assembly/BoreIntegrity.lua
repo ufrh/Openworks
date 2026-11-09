@@ -52,10 +52,13 @@ function Integrity.check(component: any, reference: any): (boolean, string?)
 	-- the supporting wall; reject those until final-solid wall analysis
 	-- can certify the surviving material.
 	for _, operation in ipairs(component.operations or {}) do
-		if operation.enabled ~= false and operation.kind ~= "Drill"
-			and operation.kind ~= "DrillFace" then
+		if operation.enabled == false then continue end
+		local additive = operation.kind == "AddPrimitive"
+			or (operation.kind == "SketchExtrude" and operation.mode == "Add")
+		if operation.kind ~= "Drill" and operation.kind ~= "DrillFace"
+			and not additive then
 			return false,
-				"Bore support cannot be certified after other material-removal operations"
+				"Bore support cannot be certified after unsupported material-removal operations"
 		end
 	end
 	local startA = reference.point
