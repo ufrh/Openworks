@@ -31,9 +31,9 @@ local function numbers(text: string, count: number): { number }?
 end
 function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	local panel = Panel.new("Assembly", { "Parts", "Move", "Align", "Mechanics" })
-	panel.tabs.Parts.Text = "Build"
-	panel.tabs.Align.Text = "Line up"
-	panel.tabs.Mechanics.Text = "Connect"
+	panel.tabs.Parts.Text = "Components"
+	panel.tabs.Align.Text = "Align"
+	panel.tabs.Mechanics.Text = "Joints"
 	local self = setmetatable({
 		bridge = bridge,
 		remote = remote,
@@ -60,13 +60,15 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		panel.pages.Parts, panel.pages.Move, panel.pages.Align, panel.pages.Mechanics
 	Panel.label(
 		parts,
-		"Start with a ready-made mechanism, or select one of your parts below. Then Move → Line up → Connect → Test.",
+		"Assemble manufactured components, align their reference geometry, and register the hardware-supported relationships.",
 		48
 	)
-	for _, preset in ipairs({ "Bearing", "Linear guide" }) do
+	for _, preset in ipairs({ "Bearing", "Linear guide", "Slider crank" }) do
 		Panel.button(
 			parts,
-			if preset == "Bearing" then "＋ Add a spinning shaft" else "＋ Add a sliding carriage",
+			if preset == "Bearing" then "Bearing assembly"
+			elseif preset == "Linear guide" then "Linear guide assembly"
+			else "Slider-crank assembly",
 			function()
 				if self.pending or self.manipulator.gizmo:isDragging() then
 					return
@@ -85,7 +87,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 					self:select(result)
 					bridge.frameAssembly(result)
 					self:_report(
-						"Ready! Click Test my build. Your moving part will be selected automatically."
+						"Assembly created. Inspect the joints or switch to Simulation."
 					)
 				else
 					self:_report(
@@ -95,12 +97,12 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 			end
 		)
 	end
-	Panel.button(parts, "▶ Test my build", function()
+	Panel.button(parts, "▶ Simulate", function()
 		if not self.pending and self.onSimulate then
 			self.onSimulate()
 		end
 	end)
-	Panel.label(parts, "Your parts · [Fixed] parts stay still", 30)
+	Panel.label(parts, "COMPONENTS  ·  [Fixed] indicates grounded", 30)
 	self.partsRoot = Panel.list(parts)
 	Panel.button(parts, "Frame all (Home)", function()
 		bridge.frameAssembly(nil)
@@ -134,11 +136,11 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	local precision = Panel.list(move)
 	precision.Visible = false
 	local precisionToggle
-	precisionToggle = Panel.button(move, "Show exact measurements", function()
+	precisionToggle = Panel.button(move, "Precision fields", function()
 		precision.Visible = not precision.Visible
 		precisionToggle.Text = if precision.Visible
-			then "Hide exact measurements"
-			else "Show exact measurements"
+			then "Hide precision fields"
+			else "Precision fields"
 	end)
 	self.orientation = Panel.button(precision, "Axes: Local", function()
 		if self.pending or self.manipulator.gizmo:isDragging() then
@@ -188,25 +190,25 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 	end)
 	Panel.label(
 		align,
-		"Pick the part you want to move, then the part it should line up with. For a shaft, its centerline is selected automatically.",
+		"Select the moving component and target reference. Mates position geometry; they do not create joints.",
 		52
 	)
-	Panel.button(align, "1. Move this part", function()
+	Panel.button(align, "Set moving component (A)", function()
 		self:setReference("a")
 	end)
-	Panel.button(align, "2. Pick the part to line up with", function()
+	Panel.button(align, "Choose target component (B)", function()
 		self.pickTarget = true
-		self:_report("Click the other part. A hole is selected automatically when available.")
+		self:_report("Select the target component in the viewport or Components.")
 	end)
 	self.choices = Panel.label(align, "Moving part: — / Target: —", 52)
-	Panel.label(align, "Choose a face or centerline")
+	Panel.label(align, "GEOMETRIC REFERENCES")
 	self.refsRoot = Panel.list(align)
 	self.offset = Panel.input(align, "Face spacing / offset (mm)", "0")
 	for _, item in ipairs({
-		{ "Concentric", "Center shaft in hole" },
-		{ "Coincident", "Put faces together" },
-		{ "Parallel", "Make parallel" },
-		{ "Distance", "Set face spacing" },
+		{ "Concentric", "Concentric axes" },
+		{ "Coincident", "Coincident faces" },
+		{ "Parallel", "Parallel" },
+		{ "Distance", "Face offset" },
 	}) do
 		Panel.button(align, item[2], function()
 			self:align(item[1])
@@ -229,12 +231,12 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		)
 	end)
 	self.mechanicalChoices = Panel.label(mechanics, "Moving: — / Housing: —", 52)
-	Panel.button(mechanics, "This is the part that moves", function()
+	Panel.button(mechanics, "Set joint member (A)", function()
 		self:setReference("a")
 	end)
-	Panel.button(mechanics, "Pick the part with the hole", function()
+	Panel.button(mechanics, "Choose joint partner (B)", function()
 		self.pickTarget = true
-		self:_report("Click the housing. Its first bore becomes the bearing reference.")
+		self:_report("Select the second link or housing.")
 	end)
 	self.modelButton = Panel.label(mechanics, "", 32)
 	for index, spec in ipairs(Catalog) do
@@ -245,7 +247,7 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		end)
 	end
 	self.modelHelp = Panel.label(mechanics, "", 84)
-	Panel.button(mechanics, "Add this rail or stop plate", function()
+	Panel.button(mechanics, "Add hardware / fixture", function()
 		local id = self.selectedId
 		if not id then
 			return self:_report("Select a fixture first")
@@ -260,13 +262,13 @@ function Controller.new(bridge: any, remote: any, documents: any, _world: any)
 		self:mechanicsText()
 	end)
 	self.fixturesRoot = Panel.list(mechanics)
-	Panel.button(mechanics, "Connect these parts", function()
+	Panel.button(mechanics, "Register joint", function()
 		self:registerSupport()
 	end)
 	Panel.button(mechanics, "Check assembly", function()
 		self:validate()
 	end)
-	Panel.button(mechanics, "▶ Test my build", function()
+	Panel.button(mechanics, "▶ Simulate", function()
 		if self.onSimulate then
 			self.onSimulate()
 		end
@@ -336,7 +338,8 @@ function Controller:mechanicsText()
 	end
 	Panel.label(
 		self.fixturesRoot,
-		string.format("%d / %d fixtures selected", #self.fixtures, item.fixtures)
+		string.format("%d / %d physical fixtures selected%s", #self.fixtures, item.fixtures,
+		if item.model == "RetainedPivotV1" then " (pin, cap A, cap B)" else "")
 	)
 end
 
@@ -582,7 +585,7 @@ function Controller:place(pose: CFrame, historyAction: boolean?)
 			end
 			table.clear(self.redo)
 		end
-		self:_report("Part moved. Use Connect when you want to control how it moves during a test.")
+		self:_report("Placement accepted.")
 	else
 		part.CFrame = self.layout.poses[tostring(id)] * source(part)
 		self:_report("Rejected: " .. tostring(if ok then result else accepted))
@@ -662,6 +665,11 @@ function Controller:registerSupport()
 	if #self.fixtures ~= spec.fixtures then
 		return self:_report("This relationship requires " .. spec.fixtures .. " fixture components")
 	end
+	if spec.model == "RetainedPivotV1" then
+		if not self.b or self.a.id == self.b.id then
+			return self:_report("Select separate drilled links as joint members A and B")
+		end
+	end
 	self:mutate(
 		"RegisterRelationship",
 		spec.model,
@@ -669,7 +677,8 @@ function Controller:registerSupport()
 		if self.b then self.b.id else 0,
 		if self.b then self.b.ref else "",
 		self.fixtures,
-		self.layout.revision
+		self.layout.revision,
+		if spec.model == "RetainedPivotV1" then self.a.ref else nil
 	)
 end
 function Controller:Enter()
@@ -747,7 +756,7 @@ function Controller:Enter()
 	end
 	self.bridge.frameAssembly(nil)
 	self:_report(
-		"Select a part. Move it directly, align references, then add a validated relationship."
+		"CAD assembly ready. Select geometry, position components, and register manufactured joints."
 			.. (
 				if #self.layout.quarantined > 0
 					then " Legacy joints quarantined: " .. #self.layout.quarantined
