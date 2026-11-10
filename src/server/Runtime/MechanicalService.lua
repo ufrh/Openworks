@@ -329,7 +329,7 @@ function Mechanical:Create(player, request)
     -- Prevent the older generic route from bypassing prefab/plate rules.
     if type(request)~="table" or
         (request.kind~="Bearing" and request.kind~="Slider"
-            and request.kind~="Cylindrical" and request.kind~="Fixed") then
+            and request.kind~="Cylindrical") then
         return false,
             "Use dedicated spring, bolt, weld or gear connection controls"
     end
@@ -360,7 +360,7 @@ function Mechanical:Create(player, request)
 
     local componentId = source:GetAttribute("ComponentId")
     if componentId and componentId == target:GetAttribute("ComponentId") then
-        return false, "Relationship requires two separate rigid bodies"
+        return false, "Choose two different mechanical endpoints"
     end
 
     local members = if componentId then d.components:Members(player, componentId)

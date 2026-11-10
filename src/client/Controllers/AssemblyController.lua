@@ -19,7 +19,8 @@ local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local RelationshipProperties=require(script.Parent:WaitForChild("RelationshipProperties"))
 local INSERTION_STEP_U = 0.5
 
-local TYPES = { "Bearing", "Slider", "Cylindrical", "Fixed" }
+-- No implicit Fixed joint. Rigid fabrication requires explicit Weld.
+local TYPES = { "Cylindrical", "Slider", "Bearing" }
 local Controller = {}
 Controller.__index = Controller
 
