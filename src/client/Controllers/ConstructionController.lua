@@ -14,6 +14,7 @@ local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentGeometry = require(construction:WaitForChild("ComponentGeometry"))
 local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
+local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEditingController"))
 
 local BLUE = Color3.fromRGB(96, 174, 207)
 local DARK = Color3.fromRGB(22, 29, 38)
@@ -101,6 +102,7 @@ function Controller.new(tools)
         ScaleCF = nil,
         ScaleSize = nil,
         ScaleHandles = nil,
+        Layered = nil,
         Busy = false,
         Connections = {},
         Started = false,
@@ -260,7 +262,7 @@ end
 
 function Controller:RefreshHUD()
     if not self.Gui then return end
-    self.Gui.Enabled = self.Mode == "Build" or self.Mode == "Edit"
+    self.Gui.Enabled = self.Mode == "Build" or self.Mode == "Edit" or self.Mode == "Inspect"
     if not self.Gui.Enabled then return end
 
     local mode = self.Mode
@@ -268,7 +270,33 @@ function Controller:RefreshHUD()
     local size = self.CurrentSize
 
     self.TitleLabel.Text = "OPENWORKS  /  " .. string.upper(mode)
-    if self.ScaleMode then
+    if self.Layered and self.Layered.Alignment then
+        local alignment = self.Layered.Alignment
+        if alignment.Stage == "PickTarget" then
+            self.DetailLabel.Text = "ALIGN SHAFT  /  choose an opening"
+            self.HelpLabel.Text = "Aim at tube or drilled hole • click • Tab behind • Esc cancel"
+        else
+            self.DetailLabel.Text = "INSERTION OFFSET  /  "
+                .. tostring(alignment.OffsetUnits) .. " U"
+            self.HelpLabel.Text = "Mouse wheel changes depth • click confirm • Esc cancel"
+        end
+    elseif self.Mode == "Inspect" then
+        local target = self.Selected
+        local dimensions = nil
+        if self.SelectedComponentId then
+            local _, size = ComponentGeometry.Bounds(self.SelectedParts)
+            dimensions = size
+        elseif target and target.PrimaryPart then
+            dimensions = target.PrimaryPart.Size
+        end
+        self.DetailLabel.Text = (if self.SelectedComponentId then
+            "Component / " .. tostring(#self.SelectedParts) .. " parts"
+            elseif target then target.Name else "Aim and click to inspect")
+            .. (if dimensions then string.format("  /  %.1f × %.1f × %.1f U",
+                dimensions.X / Grid.Unit, dimensions.Y / Grid.Unit,
+                dimensions.Z / Grid.Unit) else "")
+        self.HelpLabel.Text = "Tab depth • Shift+Tab reverse • X X-ray • I isolate"
+    elseif self.ScaleMode then
         self.DetailLabel.Text = current .. (if self.ScaleSize then
             "  •  " .. string.format("%.2g × %.2g × %.2g U",
                 self.ScaleSize.X / Grid.Unit, self.ScaleSize.Y / Grid.Unit, self.ScaleSize.Z / Grid.Unit)
@@ -291,18 +319,18 @@ function Controller:RefreshHUD()
             else "Rigid component") .. "  /  " .. tostring(#self.SelectedParts) .. " primitives"
         self.HelpLabel.Text = if self.Pending then
             "Aim and click to confirm  •  R/T/Y rotate  •  Esc cancel"
-            else "G move  •  F duplicate  •  E edit inside  •  U ungroup  •  Del"
+            else "G move • F duplicate • A align shaft • E edit • U ungroup"
     elseif #self.SelectedParts > 1 then
         self.DetailLabel.Text = tostring(#self.SelectedParts) .. " primitives selected"
         self.HelpLabel.Text = "C combine  •  Shift+click to change selection"
     elseif self.EditingComponentId then
         self.DetailLabel.Text = (self.Selected and self.Selected.Name or "Editing component")
             .. "  /  component interior"
-        self.HelpLabel.Text = "Click primitive • V scale • G move • E exit component"
+        self.HelpLabel.Text = "Tab depth • V scale • A align • E exit component"
     else
         local target = self.Selected
         self.DetailLabel.Text = if target then target.Name .. "  /  drag scale with V" else "Click a constructed piece"
-        self.HelpLabel.Text = "Shift+click multi-select • C combine • V scale • G move"
+        self.HelpLabel.Text = "Tab depth • X X-ray • I isolate • A align • V scale"
     end
 
     if self.StatusMessage and os.clock() < self.MessageUntil then
@@ -417,6 +445,7 @@ function Controller:SetSelection(model)
         self.Steps = attributesSteps(model)
     end
     self:RefreshSelectionHighlights()
+    if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshHUD()
 end
 
@@ -452,6 +481,7 @@ function Controller:SetComponentSelection(componentId, membersOverride)
         self.Steps = attributesSteps(self.GroupAnchor)
     end
     self:RefreshSelectionHighlights()
+    if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshHUD()
 end
 
@@ -477,6 +507,7 @@ function Controller:ToggleMultiSelection(model)
         self.Steps = attributesSteps(self.Selected)
     end
     self:RefreshSelectionHighlights()
+    if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshHUD()
 end
 
@@ -492,6 +523,7 @@ function Controller:CancelPending()
         end
         self.Pending = nil
         self:ClearPreview()
+        if self.Layered then self.Layered:RefreshVisuals() end
     end
 end
 
@@ -501,10 +533,11 @@ function Controller:OnModeChanged(mode)
     self.Mode = mode
     self:ShowCatalog(false)
     self:ClearPreview()
-    if mode ~= "Edit" then
+    if mode ~= "Edit" and mode ~= "Inspect" then
         self.EditingComponentId = nil
         self:SetSelection(nil)
     end
+    if self.Layered then self.Layered:OnModeChanged(mode) end
     if mode == "Build" then
         if not self.CurrentId or not Registry.Get(self.CurrentId) then
             local entries = Registry.List()
@@ -620,40 +653,8 @@ function Controller:Place()
 end
 
 function Controller:Pick()
-    local hit = self:CastCenter(false)
-    if not hit or not hit.Instance then
-        self:SetSelection(nil)
-        return
-    end
-
-    local built = workspace:FindFirstChild(Config.FolderName)
-    if not built then return end
-    local node = hit.Instance
-    while node and node.Parent ~= built do node = node.Parent end
-
-    if not node or not node:IsA("Model")
-        or node:GetAttribute("OwnerUserId") ~= player.UserId then
-        self:SetSelection(nil)
-        return
-    end
-
-    local cid = node:GetAttribute("ComponentId")
-    if self.EditingComponentId then
-        if cid == self.EditingComponentId then
-            self:SetSelection(node)
-        else
-            self:SetSelection(nil)
-        end
-        return
-    end
-
-    if cid then
-        self:SetComponentSelection(cid)
-    elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
-        self:ToggleMultiSelection(node)
-    else
-        self:SetSelection(node)
+    if self.Layered then
+        self.Layered:PickCurrent()
     end
 end
 
@@ -739,6 +740,8 @@ function Controller:Activate(mode)
     if self.CatalogOpen or self.ScaleMode or self.Busy
         or os.clock() < (self.IgnoreClickUntil or 0) then return end
 
+    if self.Layered and self.Layered:Click() then return end
+
     if mode == "Build" then
         self:Place()
     elseif mode == "Edit" then
@@ -778,6 +781,7 @@ function Controller:StartMove(copy)
         return
     end
     self:RebuildPreview()
+    if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshHUD()
 end
 
@@ -895,6 +899,7 @@ function Controller:BeginScale()
     end
 
     self.ScaleHandles:Open(cf, self.ScaleSize, entry.ResizeMode, entry.Model.PrimaryPart.Size)
+    if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshPointer()
     self:RefreshHUD()
 end
@@ -962,6 +967,7 @@ function Controller:EndScale()
     self.ScaleCF = nil
     self.ScaleSize = nil
     self.IgnoreClickUntil = os.clock() + 0.2
+    if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshPointer()
     self:RefreshHUD()
 end
@@ -994,7 +1000,10 @@ end
 function Controller:OnInput(input, processed)
     local key = input.KeyCode
     if UserInputService:GetFocusedTextBox() then return end
-    if self.Mode ~= "Build" and self.Mode ~= "Edit" then return end
+    if self.Mode ~= "Build" and self.Mode ~= "Edit"
+        and self.Mode ~= "Inspect" then return end
+
+    if self.Layered and self.Layered:OnInput(input, processed) then return end
 
     if key == Enum.KeyCode.Escape then
         if self.ScaleMode then self:EndScale() end
@@ -1006,7 +1015,7 @@ function Controller:OnInput(input, processed)
         if self.ScaleMode then self:EndScale() else self:BeginScale() end
         return
     end
-    if self.ScaleMode then return end
+    if self.ScaleMode or self.Mode == "Inspect" then return end
     if processed then return end
 
     local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
@@ -1050,6 +1059,8 @@ function Controller:Start()
     if self.Started then return end
     self.Started = true
     self:MakeUI()
+    self.Layered = LayeredEditingController.new(self)
+    self.Layered:Start()
 
     table.insert(self.Connections, self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
@@ -1059,6 +1070,11 @@ function Controller:Start()
     end))
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
         self:OnInput(input, processed)
+    end))
+    table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseWheel and self.Layered then
+            self.Layered:AdjustOffset(input.Position.Z)
+        end
     end))
     RunService:BindToRenderStep("OPENWORKS_CursorUnlock",
         Enum.RenderPriority.Camera.Value + 2, function()
@@ -1089,6 +1105,7 @@ end
 
 function Controller:Destroy()
     self:EndScale()
+    if self.Layered then self.Layered:Destroy() end
     RunService:UnbindFromRenderStep("OPENWORKS_CursorUnlock")
     if self.ScaleHandles then self.ScaleHandles:Destroy() end
     self:CancelPending()

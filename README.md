@@ -1,6 +1,6 @@
 # OPENWORKS
 
-A Roblox mechanical construction and engineering sandbox. The active `dev` branch includes the Phase 03 component-building prototype: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, and a dark gray Metal default appearance. The pre-redesign editor is preserved in an archive branch.
+A Roblox mechanical construction and engineering sandbox. The active `dev` branch includes the Phase 04 layered editing prototype: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment with adjustable insertion depth. The pre-redesign editor is preserved in an archive branch.
 
 ## Direction
 
@@ -21,11 +21,11 @@ Current guiding decisions (details will be finalized in the new design document)
 - `default.project.json` — existing Rojo mappings, place ID, and port 34872.
 - Local scripts and Roblox toolchain configuration.
 
-Game-specific code lives in `src/client/`, `src/server/`, and `src/shared/Construction/`. The primitive library comes from the Studio generator and must be saved in the place. Phase 03 needs a Studio playtest; see `docs/PHASE_03_SMOKE_TEST.md`. Components are logical rigid groups in anchored construction mode; physics compilation is a later phase.
+Game-specific code lives in `src/client/`, `src/server/`, and `src/shared/Construction/`. The primitive library comes from the Studio generator and must be saved in the place. Phase 04 needs a Studio playtest; see `docs/PHASE_04_SMOKE_TEST.md`. Components are logical rigid groups in anchored construction mode; the new axis-alignment operation positions parts but creates no mechanical relationship. Physics compilation is a later phase.
 
 ## Run
 
-On the `dev` branch run `START_OPENWORKS.bat`, connect the Rojo plugin to `localhost:34872`, and press Play. Client and server should log the framework version. This is a smoke test for the preserved framework, **not** a verified gameplay build.
+On the `dev` branch run `START_OPENWORKS.bat`, connect the Rojo plugin to `localhost:34872`, and press Play. Client and server should log the framework version. Construction and layered editing are wired, but gameplay behavior must be verified with the in-Studio smoke test.
 
 If you already have OPENWORKS open in Studio, restart the play session and clear any stale game-specific instances that may survive Rojo synchronization; the existing project uses `$ignoreUnknownInstances`.
 

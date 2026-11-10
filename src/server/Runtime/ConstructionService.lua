@@ -11,6 +11,7 @@ local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
+local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
 
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
 
@@ -20,6 +21,7 @@ local remote
 local histories = {}
 local lastRequest = {}
 local components
+local alignmentService
 
 local function historyFor(player)
     local state = histories[player]
@@ -463,14 +465,16 @@ local function handle(player, payload)
     end
 
     local action = payload.action
+    local alignmentAction = action == "Align"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
         or action == "DeleteComponent"
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
-        and action ~= "Undo" and action ~= "Redo" and not componentAction then
+        and action ~= "Undo" and action ~= "Redo"
+        and not componentAction and not alignmentAction then
         return { ok = false, message = "Unknown action" }
     end
-    if componentAction then
+    if componentAction or alignmentAction then
         if not hasEquippedTool(player, "Edit") then
             return { ok = false, message = "Equip Edit to modify components" }
         end
@@ -489,6 +493,7 @@ local function handle(player, payload)
         if action == "Update" then return update(player, payload) end
         if action == "Delete" then return delete(player, payload) end
         if componentAction then return components:Handle(player, action, payload) end
+        if alignmentAction then return alignmentService:Align(player, payload) end
         return historyAction(player, action == "Undo")
     end)
 
@@ -531,6 +536,21 @@ function Service.Start()
         nearPlayer = nearPlayer,
         intersectsConstructed = intersectsConstructed,
         commitBatch = commitBatch,
+    })
+
+    alignmentService = AlignmentService.new({
+        folder = folder,
+        Grid = Grid,
+        Registry = Registry,
+        findOwned = findOwned,
+        nearPlayer = nearPlayer,
+        snapshot = snapshot,
+        applyState = applyState,
+        validState = validState,
+        intersectsConstructed = intersectsConstructed,
+        commitRecord = commitRecord,
+        commitBatch = commitBatch,
+        components = components,
     })
 
     -- The gallery is an Edit-mode inspection aid, never buildable world geometry.

@@ -43,7 +43,10 @@ function CameraController:Start()
         if input.UserInputType ~= Enum.UserInputType.MouseWheel then
             return
         end
-        if UserInputService:GetFocusedTextBox() or GuiService.MenuIsOpen then
+        if UserInputService:GetFocusedTextBox() or GuiService.MenuIsOpen
+            or player:GetAttribute("OPENWORKS_Inserting") == true then
+            -- While placing a shaft in an opening, mouse wheel controls
+            -- axial insertion instead of the camera FieldOfView.
             return
         end
         -- Do not zoom behind a UI that has captured the cursor.
