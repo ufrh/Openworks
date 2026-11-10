@@ -1,6 +1,6 @@
 # OPENWORKS
 
-A Roblox mechanical construction and engineering sandbox. The active `dev` branch is currently on **Phase 10: explicit welds, real bolt prefab fastening, and mouse-driven Simulate Properties**. Earlier milestones included Phase 05 mechanical relationship authoring: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment (L in Edit), first-person Assemble tool authoring Bearing/Slider/Fixed constraints, and fixed 0.5-U sizing and movement increments. The pre-redesign editor is preserved in an archive branch.
+A Roblox mechanical construction and engineering sandbox. The active `dev` branch is currently on **Phase 11: multi-point shaft/hole fitting, explicit motion relationships, and manual-only rigid fastening**. Earlier milestones included Phase 05 mechanical relationship authoring: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment (L in Edit), first-person Assemble tool authoring Bearing/Slider/Fixed constraints, and fixed 0.5-U sizing and movement increments. The pre-redesign editor is preserved in an archive branch.
 
 ## Direction
 
@@ -181,3 +181,16 @@ Limitations: Bolt heads use native faceted metal pieces, not threaded screw geom
 - **Springs:** The construction coil is bright orange; its visual radius spans nearly the largest plate-face diameter that fits, with a small edge margin. Construction coil and guide visuals hide during simulation, while the native spring force stays active.
 - **Simulate Properties:** Equip Simulate for a mouse-unlocked GUI. Click a block (or its running physical copy), choose an authored relationship, and enter spring stiffness/damping/rest length or joint limit parameters. Validated edits update the running native constraint without a simulation restart. Run/Stop and Ground buttons are provided. Editing via the old J/bracket shortcuts is no longer necessary.
 - **Status:** Code is committed to `dev`; Studio engine playtesting remains necessary. See `docs/PHASE_10_EXPLICIT_WELDS_BOLTS_PROPERTIES_TEST.md`.
+
+
+## Phase 11 — Multi-point mechanical fitting and chosen motion (2026.11.10.PHASE11.MULTIPOINT-MOTION-FITTING)
+
+**Drag the WHOLE grouped construction onto multiple shafts or openings.** A component preview looks for all geometrically compatible bore/shaft pairings, not just one raycast target. It uses the primary socket to determine position/orientation and compares *all* secondary guides; when appropriate it automatically solves the remaining in-plane rotation from the full hole pattern. Candidate positions matching more fitted points are preferred, and the preview reports the guide count.
+
+**Choose the motion AFTER fitting:** the connection prompt offers **1 Rotate + Slide** (Cylindrical, default / Enter), **2 Slide Only** (Slider), **3 Rotate Only** (Bearing), or **4 Fit Only** (no invisible joint). This is offered for ordinary single-shaft fits and larger groups. Automatic bore mating no longer has a rigid or editor-group choice. Only the deliberate Weld tool (or a physical bolt) creates an actual rigid fastener. Existing Hub snap still merges editor selection groups, but those groups are *not* physical welds.
+
+**One relation; many verified clearances.** For multi-point fitting, the server recomputes every shaft/hole match, rechecks coaxial orientation, true bore diameter, radial offset, engaged insertion length, and unrelated collisions for all members before committing. The selected motion uses one authoritative native constraint on the primary fit; secondary guides do *not* create redundant motors or automatically welded connections. For sliding relationships, the shortest valid guide limits travel, including limits exposed through Simulate Properties.
+
+**Example:** Build a bottom plate with four physical rods welded to it, an upper editor group of four corner hole blocks explicitly welded into a plate, snap that group over all four rods, choose **Slide Only**, then add a central plate-to-plate Spring and ground the bottom. Actual welds are still required within both structures; editor grouping alone does not create physical bonds.
+
+**Status:** Source and documentation are committed; performance, rigid-body collisions and four-post motion still require a Roblox Studio playtest. Acceptance steps: `docs/PHASE_11_MULTI_POINT_FITTING_TEST.md`. Prior phase sections remain as historical implementation notes; Phase 11 supersedes their default-Rigid/mate prompt descriptions.

@@ -76,7 +76,7 @@ function Context:Lines()
             append(lines, "LMB", "Choose primitive")
             append(lines, "B / Esc", "Close catalog")
         else
-            append(lines, "LMB", "Place / auto-attach")
+            append(lines, "LMB", "Place / multi-point fit")
             append(lines, "B / V / N", "Catalog / resize / exact U")
             if c.SmartMatch then
                 append(lines, "Tab", "Next compatible target")
@@ -159,7 +159,7 @@ function Context:Lines()
             end
             append(lines, "Esc", "Cancel")
         else
-            append(lines, "LMB", "Select component")
+            append(lines, "LMB", "Select editor group")
             append(lines, "Double click", "Edit member inside component")
             append(lines, "Hold selected", "Drag to auto-align")
             append(lines, "Alt+LMB", "Cycle deeper layers")
