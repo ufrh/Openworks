@@ -337,8 +337,16 @@ local function restoreBatch(player, record, undo)
         table.insert(staged, model)
     end
 
+    local relation=record.relation
+    local opening=nil
+    local boreSourceId=nil
+    if relation and (relation.kind=="Bearing"
+        or relation.kind=="Slider" or relation.kind=="Cylindrical") then
+        opening=findOwned(player,relation.targetId)
+        boreSourceId=relation.sourceId
+    end
     for _, model in ipairs(staged) do
-        if intersectsConstructed(model, affected) then
+        if intersectsConstructed(model, affected,opening,boreSourceId) then
             discard()
             return false, "Undo/redo blocked by another construction"
         end
@@ -368,12 +376,41 @@ local function place(player, payload)
     if not model then return false, why end
     applyState(model, proposed)
 
-    if intersectsConstructed(model) then
+    -- Smart placements first pass through the server's exact compatible
+    -- socket/gear transform and full geometry validation. The unsnapped
+    -- draft can overlap an opening; it is never committed directly.
+    if payload.autoMate == nil and intersectsConstructed(model) then
         model:Destroy()
         return false, "Placement intersects existing geometry"
     end
 
     model.Parent = folder
+
+    -- A single drag can create BOTH the primitive and its relationship.
+    -- SmartMate commits one assembly history entry: undo removes both.
+    if payload.autoMate ~= nil then
+        if type(payload.autoMate) ~= "table" then
+            model:Destroy()
+            return false, "Invalid automatic attachment"
+        end
+        local mate=payload.autoMate
+        local ok,why=mechanical:SmartMate(player,{
+            sourceId=model:GetAttribute("InstanceId"),
+            targetId=mate.targetId,
+            mateKind=mate.kind,
+            relationKind=mate.relationKind,
+            offsetUnits=mate.offsetUnits,
+            rollDegrees=mate.rollDegrees,
+            approach=payload.position,
+            position=payload.position,
+        },true)
+        if not ok then
+            model:Destroy()
+            return false,why
+        end
+        return true,model:GetAttribute("InstanceId")
+    end
+
     local after = snapshot(model)
     commitRecord(player, nil, after)
     return true, after.instanceId
@@ -594,9 +631,11 @@ local function handle(player, payload)
         or action == "TransformComponent" or action == "DuplicateComponent"
         or action == "DeleteComponent" or action == "RotateComponent"
         or action == "RotatePrimitiveWorld"
+    local smartAction = action == "SmartMate"
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
-        and not componentAction and not alignmentAction and not mechanicalAction
+        and not componentAction and not smartAction
+        and not alignmentAction and not mechanicalAction
         and not simulationAction then
         return { ok = false, message = "Unknown action" }
     end
@@ -622,7 +661,7 @@ local function handle(player, payload)
         elseif not hasEquippedTool(player, "Assemble") then
             return { ok = false, message = "Equip Assemble to edit relationships" }
         end
-    elseif componentAction or alignmentAction then
+    elseif componentAction or alignmentAction or smartAction then
         if not hasEquippedTool(player, "Edit") then
             return { ok = false, message = "Equip Edit to modify components" }
         end
@@ -657,6 +696,9 @@ local function handle(player, payload)
         if action == "Delete" then return delete(player, payload) end
         if componentAction then return components:Handle(player, action, payload) end
         if alignmentAction then return alignmentService:Align(player, payload) end
+        if action == "SmartMate" then
+            return mechanical:SmartMate(player,payload,false)
+        end
         if action == "CreateRelation" then return mechanical:Create(player, payload) end
         if action == "RemoveRelation" then return mechanical:Remove(player, payload) end
         if action == "FitShaft" then return mechanical:Fit(player, payload) end

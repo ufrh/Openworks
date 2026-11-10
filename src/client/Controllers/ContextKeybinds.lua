@@ -51,10 +51,20 @@ function Context:Lines()
             append(lines, "LMB", "Choose primitive")
             append(lines, "B / Esc", "Close catalog")
         else
-            append(lines, "LMB", "Place when blue")
-            append(lines, "B", "Choose primitive")
-            append(lines, "V", "Resize")
-            append(lines, "R / T / Y", "Rotate axes")
+            append(lines, "LMB", "Place / auto-attach")
+            append(lines, "B / V", "Catalog / resize")
+            if c.SmartMatch then
+                append(lines, "Tab", "Next compatible target")
+                if c.SmartMatch.kind=="Bore" then
+                    append(lines, "Wheel / Q E", "Depth / shaft roll")
+                    append(lines, "C", "Bearing / Slider / Cylindrical")
+                elseif c.SmartMatch.kind=="Hub" then
+                    append(lines, "Hub", "Rigid gear-on-shaft mount")
+                end
+                append(lines, "Alt", "Temporarily bypass snap")
+            else
+                append(lines, "R T Y", "Rotate axes")
+            end
         end
     elseif tool == "Edit" then
         if c.ScaleMode then
@@ -81,12 +91,23 @@ function Context:Lines()
             append(lines, "L / Esc", "Cancel alignment")
         elseif c.Pending then
             append(lines, "Look / Walk", "Position preview")
-            append(lines, "LMB", "Place when blue")
-            append(lines, "R / T / Y", "World-axis rotation")
+            append(lines, "Release / Click", "Move / auto-attach")
+            if c.SmartMatch then
+                append(lines, "Tab / Alt", "Change target / bypass")
+                if c.SmartMatch.kind=="Bore" then
+                    append(lines, "Wheel / Q E", "Depth / shaft roll")
+                    append(lines, "C", "Bearing / Slider / Cylindrical")
+                elseif c.SmartMatch.kind=="Hub" then
+                    append(lines, "Hub", "Rigid gear-on-shaft mount")
+                end
+            else
+                append(lines, "R T Y", "World-axis rotation")
+            end
             append(lines, "Esc", "Cancel")
         else
             append(lines, "LMB", "Select without moving")
-            append(lines, "Hold selected", "Drag to move")
+            append(lines, "Hold selected", "Drag to auto-align")
+            append(lines, "Alt+LMB", "Select inner layer")
             append(lines, "V / G", "Scale / Move")
             append(lines, "R / T / Y", "World-axis rotation")
             append(lines, "L", "Align shaft")

@@ -10,6 +10,10 @@ local JointFrames = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("JointFrames"))
 local Bore = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("BoreClearance"))
+local Smart = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("SmartPlacement"))
+local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("GearMath"))
 
 local Mechanical = {}
 Mechanical.__index = Mechanical
@@ -303,6 +307,247 @@ function Mechanical:Create(player, request)
     end
     d.commitAssembly(player, before, planned, spec)
     return true, spec.kind .. " relationship created (physics when shipped)"
+end
+
+-- ONE server-verified drag release replaces manual housing->shaft/gear
+-- selection. The whole operation (move/create + relationship) has ONE
+-- assembly undo entry. newSource is set ONLY by trusted ConstructionService,
+-- never from the client request.
+function Mechanical:SmartMate(player, request, newSource)
+    local d = self.D
+    if type(request) ~= "table" or type(request.sourceId) ~= "string"
+        or type(request.targetId) ~= "string" then
+        return false, "Missing automatic placement target"
+    end
+    local source=d.findOwned(player,request.sourceId)
+    local target=d.findOwned(player,request.targetId)
+    if not source or not target or source==target then
+        return false, "Attachment requires two of your own constructions"
+    end
+    if not d.nearPlayer(player,target:GetPivot().Position)
+        or not d.nearPlayer(player,source:GetPivot().Position) then
+        return false,"Parts must be within construction range"
+    end
+    local desiredKind=request.mateKind
+    if desiredKind~="Bore" and desiredKind~="Gear"
+        and desiredKind~="Hub" and desiredKind~="Surface" then
+        return false,"Unsupported automatic attachment"
+    end
+    if self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
+        return false,"Relationship limit reached"
+    end
+
+    local componentId=source:GetAttribute("ComponentId")
+    if componentId and componentId==target:GetAttribute("ComponentId") then
+        return false,"Cannot connect a rigid body to itself"
+    end
+    local members=if componentId then d.components:Members(player,componentId)
+        else {source}
+    if #members==0 or #members>128 then
+        return false,"Invalid moving component"
+    end
+    local excluded={}
+    for _,member in ipairs(members) do
+        if member==target then return false,"Target is part of the moving body" end
+        excluded[member]=true
+    end
+
+    local kind=if desiredKind=="Gear" then "Gear"
+        elseif desiredKind=="Surface" or desiredKind=="Hub" then "Fixed"
+        else request.relationKind or "Bearing"
+    if desiredKind=="Bore"
+        and kind~="Bearing" and kind~="Slider" and kind~="Cylindrical" then
+        return false,"Choose a shaft-compatible motion"
+    end
+
+    local before,planned={},{}
+    for _,member in ipairs(members) do
+        if not newSource then table.insert(before,d.snapshot(member)) end
+    end
+    local offset,roll=0,0
+    local delta
+
+    if desiredKind=="Bore" then
+        if not Alignment.IsShaft(source) or not Alignment.TargetAxis(target)
+            then return false,"Only a shaft fits an opening" end
+        offset=request.offsetUnits
+        roll=request.rollDegrees or 0
+        if not Alignment.IsOffsetValid(offset) then
+            return false,"Insertion depth must use 0.5 U steps" end
+        local plan,why=Alignment.Plan(members,source,target,offset,roll)
+        if not plan then return false,why end
+        for _,item in ipairs(plan.items) do
+            local old=d.snapshot(item.model)
+            local nextState=table.clone(old)
+            nextState.position=item.position
+            nextState.steps=item.steps
+            nextState.orientation=item.orientation
+            nextState.assemblyPrecision=true
+            nextState.freePosition=true
+            if item.model==source then
+                nextState.alignedOpeningId=request.targetId
+                nextState.alignedOffsetU=offset
+                nextState.shaftRollDegrees=roll
+            end
+            table.insert(planned,nextState)
+        end
+    elseif desiredKind=="Gear" or desiredKind=="Hub" then
+        if typeof(request.approach)~="Vector3"
+            or not d.Grid.ValidPosition(request.approach) then
+            return false,"Approach a gear with the moving gear"
+        end
+        local targetPose,why
+        if desiredKind=="Gear" then
+            targetPose,why=Smart.GearPose(source,target,request.approach)
+        else
+            targetPose,why=Smart.HubPose(source,target,request.approach)
+        end
+        if not targetPose then
+            return false,why or "Move the compatible components closer"
+        end
+        delta=targetPose*source:GetPivot():Inverse()
+    else
+        if typeof(request.position)~="Vector3"
+            or not d.Grid.ValidPosition(request.position) then
+            return false,"Invalid surface placement"
+        end
+        if (request.position-target:GetPivot().Position).Magnitude >
+            (source.PrimaryPart.Size.Magnitude+
+                target.PrimaryPart.Size.Magnitude+0.35) then
+            return false,"Move the parts into physical contact"
+        end
+        if typeof(request.orientation)=="CFrame" then
+            -- Preserve a body's chosen 3D orientation when dropping it
+            -- against a face, rather than silently translating only.
+            delta=(CFrame.new(request.position)*request.orientation.Rotation)
+                *source:GetPivot():Inverse()
+        else
+            delta=CFrame.new(request.position-source:GetPivot().Position)
+        end
+    end
+
+    if desiredKind~="Bore" then
+        for _,member in ipairs(members) do
+            local old=d.snapshot(member)
+            local cf=delta*member:GetPivot()
+            local nextState=table.clone(old)
+            nextState.position=cf.Position
+            nextState.orientation=cf.Rotation
+            nextState.freePosition=true
+            table.insert(planned,nextState)
+        end
+    end
+
+    for _,state in ipairs(planned) do
+        local entry=d.Registry.Get(state.templateId)
+        if not entry then return false,"Missing primitive template" end
+        local valid,why=d.validState(player,entry,state)
+        if not valid then return false,why end
+    end
+
+    -- An already-mounted shaft should be repositionable by dragging
+    -- without adding a duplicate physics joint.
+    local alreadyConnected=false
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId")==player.UserId
+            and ((relation:GetAttribute("SourceId")==request.sourceId
+                and relation:GetAttribute("TargetId")==request.targetId)
+                or (relation:GetAttribute("SourceId")==request.targetId
+                and relation:GetAttribute("TargetId")==request.sourceId)) then
+            alreadyConnected=true
+            if desiredKind=="Bore" and not newSource then
+                return self:PoseShaft(player,{
+                    sourceId=request.sourceId,targetId=request.targetId,
+                    offsetUnits=offset,rollDegrees=roll
+                })
+            end
+            break
+        end
+    end
+
+    local function rollback()
+        if not newSource then
+            for i,member in ipairs(members) do d.applyState(member,before[i]) end
+        end
+    end
+    for i,member in ipairs(members) do d.applyState(member,planned[i]) end
+    if desiredKind=="Bore" then
+        local okay,why=Bore.ShaftFits(source,target)
+        if not okay then rollback() return false,why end
+    elseif desiredKind=="Gear" then
+        local okay,why=GearMath.Meshable(source,target)
+        if not okay then rollback() return false,why end
+    elseif desiredKind=="Hub" then
+        local okay,why=Smart.HubFits(source,target)
+        if not okay then rollback() return false,why end
+    else
+        -- A fixed attachment requires genuine face proximity. A client
+        -- cannot create a long-distance weld by forging a target ID.
+        local touching=false
+        local collisionFilter=OverlapParams.new()
+        collisionFilter.FilterType=Enum.RaycastFilterType.Include
+        collisionFilter.FilterDescendantsInstances={target}
+        for _,member in ipairs(members) do
+            for _,part in ipairs(member:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    local probe=part:Clone()
+                    probe.Size=part.Size+Vector3.one*0.055
+                    probe.Transparency=1
+                    probe.CanCollide=false
+                    probe.CanTouch=false
+                    probe.CanQuery=true
+                    probe.Anchored=true
+                    probe.Parent=workspace
+                    local ok,touched=pcall(function()
+                        return workspace:GetPartsInPart(probe,collisionFilter)
+                    end)
+                    probe:Destroy()
+                    if ok and #touched>0 then touching=true break end
+                end
+            end
+            if touching then break end
+        end
+        if not touching then
+            rollback()
+            return false,"Place a face against the target before attaching"
+        end
+    end
+    for _,member in ipairs(members) do
+        if d.intersectsConstructed(member,excluded,
+            if desiredKind=="Bore" then target else nil,
+            if desiredKind=="Bore" then request.sourceId else nil) then
+            rollback()
+            return false,"Attachment collides with another part"
+        end
+    end
+
+    local spec={
+        relationId=HttpService:GenerateGUID(false),
+        ownerUserId=player.UserId,
+        kind=kind,
+        sourceId=request.sourceId,
+        targetId=request.targetId,
+        componentId=componentId,
+        offsetUnits=offset,
+        rollDegrees=roll,
+        gearRatio=if desiredKind=="Gear"
+            then -(source:GetAttribute("GearTeeth")
+                /target:GetAttribute("GearTeeth")) else nil,
+    }
+    if not alreadyConnected then
+        local made,why=self:Restore(player,spec)
+        if not made then rollback() return false,why end
+    end
+    local after={}
+    for _,member in ipairs(members) do
+        table.insert(after,d.snapshot(member))
+    end
+    if alreadyConnected then
+        d.commitBatch(player,before,after)
+        return true,"Already connected • repositioned"
+    end
+    d.commitAssembly(player,before,after,spec)
+    return true,kind.." attached automatically"
 end
 
 -- Independent gear mesh: both gear primitives must have the same

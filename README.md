@@ -112,3 +112,19 @@ See `docs/REBUILD_NOTES.md` for the reset boundary and next design step.
 ### Deliberate limits
 - Phase 08 is not electrical design, custom gear generator/profile editing, servo programming, persistent shipping, or full gear-force modeling. The 3D gear representation is faceted tooth geometry with ratio-aware motor coupling, subject to Roblox physics stability.
 - Grounded flags and joint settings participate in local edit/undo history; engine playtesting is required before judging collisions, physics stability, and aesthetics.
+
+
+## Placement overhaul — Drag-first mechanical authoring (2026.11.10.PHASE08.DRAG-MATE)
+
+OPENWORKS uses GearBlocks as the primary interaction reference, adapted to first-person Roblox construction: you **place by physical proximity**, not by picking two separate endpoints in a manual wizard.
+
+- **Build:** Select a primitive. Aim near another compatible construction. The ghost snaps to the hole axis, gear pitch-circle spacing, or a mating solid face. One ordinary click creates the new part AND its joint as a single history operation. Ground/floor placement still works normally.
+- **Edit:** Click once to select a primitive or whole component. A deliberate hold-and-drag moves it, looking and walking updates the preview; the snapped target is recognized automatically. Release commits the rigid-body transform and its relationship in ONE server-authoritative action and undo entry.
+- **Shaft to hole:** Full cylinders recognize circular/square/rectangular tubes and drilled blocks, even when aiming through a hollow opening at a surface behind it. The whole moving component is oriented to the hole's local axis; axial depth is quantized to 0.5 U, Q/E rolls the shaft in 5° steps, and mouse wheel nudges depth. Default relationship is Bearing; while snapped, press C to cycle Bearing, Slider, or Cylindrical (no two-endpoint wizard). Manual Assemble remains a fallback.
+- **Gear to gear:** 12T/20T/32T Transmission gears recognize compatible mesh partners without K's two clicks. The moving gear snaps to the pitch-circle center distance and tooth-to-gap phase. Automatic Gear relationships preserve the separate physics gear-ratio system.
+- **Gear to shaft:** Bring a gear's open center over a compatible Cylinder shaft (or insert a shaft through a gear); the gear and shaft snap coaxially and form a rigid **Fixed hub** relationship, not an incorrect bearing. Scroll to adjust insertion depth. The server checks bore clearance and axis alignment before committing.
+- **Other faces:** Placing an ordinary solid flush against another owned solid automatically proposes a Fixed connection. The server checks actual face proximity; contact cannot be forged from a distant location.
+- **Layering:** The recognizer scans compatible owned geometry under/near the aim ray, not only the first opaque ray hit. Tab cycles overlapping compatible snap targets. Alt+click selects the next occluded primitive behind the one under the crosshair. Holding Alt while moving bypasses snapping.
+- **Visuals:** A subtle, world-space blue target fill highlights the recognized part. Existing red/blue previews and smooth 3D interpolation remain; exact geometry and clearance checks always happen on the server, with rollback on failure.
+- **History/security:** Auto placement/mating and whole-component attachment share an atomic Assembly undo record. The server independently verifies template and ownership, shape compatibility, bore diameter, gear module and pitch distance, collisions, player range and relationship count. Existing shaft/target pairs can be re-posed without duplicating a joint.
+- **Fallbacks:** L manual alignment, K manual gear mesh, and Assemble relationship editing remain for unusual constructions, but are not required for common placement.

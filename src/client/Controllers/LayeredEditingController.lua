@@ -179,9 +179,23 @@ function Layered:Select(model)
 end
 
 function Layered:PickCurrent()
-    local layers = self:DepthModels(nil)
-    self.DepthIndex = 0
-    self:Select(layers[1])
+    local layers=self:DepthModels(nil)
+    if #layers==0 then self:Select(nil) return end
+    local alt=game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftAlt)
+        or game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.RightAlt)
+    if alt then
+        -- One-click layer cycling: Alt+click selects the next physical
+        -- object behind the same crosshair, including shafts in housings.
+        local current=self.Parent.Selected or self.Parent.GroupAnchor
+        local index=table.find(layers,current) or 0
+        self.DepthIndex=index%#layers
+        self:Select(layers[self.DepthIndex+1])
+        self.Parent:Message("Selected layer "..(self.DepthIndex+1)
+            .."/"..#layers)
+    else
+        self.DepthIndex=0
+        self:Select(layers[1])
+    end
 end
 
 function Layered:CycleDepth(backward)

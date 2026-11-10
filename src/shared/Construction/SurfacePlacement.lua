@@ -20,7 +20,8 @@ function SurfacePlacement.SnapToSurface(ghost: Model, desiredPivot: CFrame,
 
     local lowest = math.huge
     for _, part in ipairs(ghost:GetDescendants()) do
-        if part:IsA("BasePart") then
+        if part:IsA("BasePart")
+            and part:GetAttribute("GearPivotOnly")~=true then
             lowest = math.min(lowest, n:Dot(part.Position) - axisRadius(part, n))
         end
     end

@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS phase 01: native first-person tools and camera controls.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.10.PHASE08.MECHANICAL-WORLD"
+local BUILD = "2026.11.10.PHASE08.DRAG-MATE"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -46,4 +46,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | Phase 08 client ready", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | Phase 08 smart placement client ready", BUILD, tostring(FORGE.Version)))

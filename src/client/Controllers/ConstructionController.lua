@@ -19,6 +19,8 @@ local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
 local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEditingController"))
 local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local RotationMath = require(construction:WaitForChild("RotationMath"))
+local SmartPlacement = require(construction:WaitForChild("SmartPlacement"))
+local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 
 local BLUE = Color3.fromRGB(96, 174, 207)
 local DARK = Color3.fromRGB(22, 29, 38)
@@ -102,6 +104,14 @@ function Controller.new(tools)
         PreviewCF = nil,
         PreviewVisualPose = nil,
         PreviewTime = 0,
+        SmartMatch = nil,
+        SmartMatches = {},
+        SmartPreferred = nil,
+        SmartHighlight = nil,
+        SmartOffsetDeltaU = 0,
+        SmartRollDelta = 0,
+        SmartBoreKind = "Bearing",
+        SmartLastScan = 0,
         CatalogOpen = false,
         ScaleMode = false,
         ScaleStepU = Grid.DefaultSizeStepU,
@@ -285,7 +295,23 @@ function Controller:RefreshHUD()
     local size = self.CurrentSize
 
     self.TitleLabel.Text = "OPENWORKS  /  " .. string.upper(mode)
-    if self.Layered and self.Layered.Alignment then
+    if self.SmartMatch and not (self.Layered and self.Layered.Alignment)
+        and (self.Mode == "Build" or self.Pending) then
+        local match=self.SmartMatch
+        self.DetailLabel.Text=string.upper(match.relationKind)
+            .. " / "..tostring(match.target.Name)
+        self.HelpLabel.Text=if match.kind=="Bore"
+            then (if self.Mode=="Build" then "Click to connect" else "Release to connect")
+                .. " • wheel depth • Q/E roll • C joint • Tab target"
+            elseif match.kind=="Gear"
+            then (if self.Mode=="Build" then "Click to mesh gears" else "Release to mesh gears")
+                .. " • Tab target • Alt free"
+            elseif match.kind=="Hub"
+            then (if self.Mode=="Build" then "Click to mount on shaft" else "Release to mount on shaft")
+                .. " • wheel insertion depth • rigid hub • Alt free"
+            else (if self.Mode=="Build" then "Click to attach surfaces" else "Release to attach surfaces")
+                .. " • Alt free"
+    elseif self.Layered and self.Layered.Alignment then
         local alignment = self.Layered.Alignment
         if alignment.Stage == "PickTarget" then
             self.DetailLabel.Text = "ALIGN SHAFT  /  choose an opening"
@@ -390,6 +416,171 @@ function Controller:ClearPreview()
     self.PreviewCF = nil
 end
 
+function Controller:ClearSmartMatch()
+    self.SmartMatch=nil
+    self.SmartMatches={}
+    self.SmartPreferred=nil
+    self.SmartOffsetDeltaU=0
+    self.SmartRollDelta=0
+    self.SmartBoreKind="Bearing"
+    self.SmartLastScan=0
+    if self.SmartHighlight then self.SmartHighlight:Destroy() end
+    self.SmartHighlight=nil
+end
+
+function Controller:HighlightSmartTarget(match)
+    local target=match and match.target
+    if self.SmartHighlight and self.SmartHighlight.Adornee==target then return end
+    if self.SmartHighlight then self.SmartHighlight:Destroy() end
+    self.SmartHighlight=nil
+    if target then
+        self.SmartHighlight=create("Highlight",{
+            Name="OPENWORKS_AutoSnapTarget",
+            Adornee=target,
+            FillColor=Color3.fromRGB(106,212,233),
+            FillTransparency=0.7,
+            OutlineTransparency=1,
+            DepthMode=Enum.HighlightDepthMode.AlwaysOnTop,
+        },self.Gui)
+    end
+end
+
+function Controller:CycleSmartTarget(reverse)
+    if #self.SmartMatches<2 or not self.SmartMatch then return false end
+    local at=1
+    for i,candidate in ipairs(self.SmartMatches) do
+        if candidate.target==self.SmartMatch.target then at=i break end
+    end
+    local nextIndex=(at-1+(if reverse then -1 else 1))%#self.SmartMatches+1
+    self.SmartPreferred=self.SmartMatches[nextIndex].target
+    self.SmartOffsetDeltaU=0
+    self.SmartRollDelta=0
+    self.LastPreviewCheck=0
+    return true
+end
+
+function Controller:SmartDrop()
+    local match=self.SmartMatch
+    if not match or not match.target.Parent
+        or self.Pending=="Copy" or self.Pending=="ComponentCopy" then
+        return false
+    end
+    if not self.PreviewValid then
+        self:Message(self.PreviewReason or "Red snap: physical interference")
+        return true
+    end
+    -- A multi-primitive ghost pivots at its central anchor, but the
+    -- mechanical source may be a different member. Convert its LOCAL
+    -- offset to the exact target pose (not the visually eased pose).
+    local sourceOffset=self.Preview:GetPivot():ToObjectSpace(
+        match.source:GetPivot()
+    )
+    local exactSourceCF=self.PreviewCF*sourceOffset
+    local exactSourcePosition=exactSourceCF.Position
+    local ok=self:Request({
+        action="SmartMate",
+        sourceId=match.source:GetAttribute("InstanceId"),
+        targetId=match.target:GetAttribute("InstanceId"),
+        mateKind=match.kind,
+        relationKind=match.relationKind,
+        offsetUnits=match.offsetUnits,
+        rollDegrees=match.rollDegrees,
+        approach=match.approach or exactSourcePosition,
+        position=exactSourcePosition,
+        orientation=exactSourceCF.Rotation,
+    })
+    if ok then self:CancelPending() self:RefreshHUD() end
+    return true
+end
+
+local function topBuiltModel(part, folder)
+    local model=part
+    while model and model.Parent~=folder do model=model.Parent end
+    return if model and model:IsA("Model") then model else nil
+end
+
+function Controller:RecognizeAttachment(raw,hit)
+    local preview=self.Preview
+    local folder=workspace:FindFirstChild(Config.FolderName)
+    local camera=workspace.CurrentCamera
+    if not preview or not folder or not camera then return nil end
+    local ignore={}
+    if self.Selected and self.Pending=="Move" then ignore[self.Selected]=true end
+    if self.Pending=="ComponentMove" then
+        for _,member in ipairs(self.SelectedParts) do ignore[member]=true end
+    end
+    local half=camera.ViewportSize*0.5
+    local ray=camera:ViewportPointToRay(half.X,half.Y)
+    local fullScan=os.clock()-self.SmartLastScan>=0.065
+    local targets
+    if fullScan then
+        self.SmartLastScan=os.clock()
+        targets=SmartPlacement.NearbyTargets(
+            folder,player.UserId,raw.Position,ignore,ray
+        )
+    else
+        targets=if self.SmartMatch and self.SmartMatch.target.Parent
+            then {self.SmartMatch.target} else {}
+    end
+    local match,list=SmartPlacement.Find(preview,targets,ignore,
+        self.SmartPreferred or (self.SmartMatch and self.SmartMatch.target),ray)
+    if match then
+        if fullScan then self.SmartMatches=list end
+        if match.kind=="Hub" and self.SmartOffsetDeltaU~=0 then
+            local shaft=if AlignmentMath.IsShaft(match.source)
+                then match.source else match.target
+            local axis=shaft:GetPivot().RightVector
+            local near=(match.approach or match.source:GetPivot().Position)
+                +axis*(self.SmartOffsetDeltaU*Grid.Unit)
+            -- Use the SAME depth/shaft-end limits as the server, rather
+            -- than moving the display ghost outside the shaft length.
+            local posed,_,offset=SmartPlacement.HubPose(
+                match.source,match.target,near
+            )
+            if posed then
+                match.cf=(posed*match.source:GetPivot():Inverse())
+                    *preview:GetPivot()
+                match.approach=posed.Position
+                match.offsetUnits=offset
+            end
+        end
+        if match.kind=="Bore" then
+            match.relationKind=self.SmartBoreKind
+            local offset=math.clamp(match.offsetUnits+self.SmartOffsetDeltaU,-64,64)
+            local roll=math.clamp(match.rollDegrees+self.SmartRollDelta,-360,360)
+            local plan=AlignmentMath.Plan(
+                SmartPlacement.Members(preview),match.source,match.target,
+                offset,roll
+            )
+            if plan then
+                match.cf=plan.delta*preview:GetPivot()
+                match.offsetUnits=offset
+                match.rollDegrees=roll
+            end
+        end
+        return match
+    end
+    if fullScan then self.SmartMatches={} end
+    local target=hit and topBuiltModel(hit.Instance,folder)
+    if target and target:GetAttribute("OwnerUserId")==player.UserId
+        and not ignore[target] then
+        local members=SmartPlacement.Members(preview)
+        local mechanical=false
+        for _,member in ipairs(members) do
+            if AlignmentMath.IsShaft(member) or member:GetAttribute("GearTeeth") then
+                mechanical=true break
+            end
+        end
+        if not mechanical and members[1]
+            and (not members[1]:GetAttribute("ComponentId")
+                or members[1]:GetAttribute("ComponentId")~=target:GetAttribute("ComponentId")) then
+            return {kind="Surface",relationKind="Fixed",target=target,
+                source=members[1],cf=raw,offsetUnits=0,rollDegrees=0}
+        end
+    end
+    return nil
+end
+
 function Controller:RebuildPreview()
     self:ClearPreview()
 
@@ -440,11 +631,16 @@ function Controller:RebuildPreview()
         DepthMode = Enum.HighlightDepthMode.Occluded,
     }, ghost)
 
+    if self.Mode=="Build" and self.CurrentId then
+        ghost:SetAttribute("TemplateId",self.CurrentId)
+        ghost:SetAttribute("InstanceId","OPENWORKS_Preflight")
+    end
     ghost.Parent = workspace
     self.Preview = ghost
     self.PreviewValid = true
     self.LastPreviewCheck = 0
     self.PreviewVisualPose = nil
+    self:ClearSmartMatch()
 end
 
 function Controller:RefreshSelectionHighlights()
@@ -675,6 +871,7 @@ function Controller:UpdatePreview()
     if self.ScaleMode then return end
     if not self.Preview or self.CatalogOpen then
         self.PreviewCF = nil
+        self:ClearSmartMatch()
         if self.Preview then self.Preview.Parent = nil end
         return
     end
@@ -684,6 +881,7 @@ function Controller:UpdatePreview()
         or self.Pending == "Copy")
     if not hit or not self.CurrentSize then
         self.PreviewCF = nil
+        if self.SmartMatch then self:ClearSmartMatch() self:RefreshHUD() end
         self.Preview.Parent = nil
         return
     end
@@ -703,7 +901,26 @@ function Controller:UpdatePreview()
     local cf = SurfacePlacement.SnapToSurface(
         self.Preview, proposed, hit.Position, hit.Normal
     )
-    self.PreviewCF = cf
+    local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+    local old=self.SmartMatch
+    local match=nil
+    if not alt and self.Pending~="Copy"
+        and self.Pending~="ComponentCopy" then
+        match=self:RecognizeAttachment(cf,hit)
+    end
+    self.SmartMatch=match
+    if match then
+        cf=match.cf
+        self.Preview:PivotTo(cf)
+    end
+    self:HighlightSmartTarget(match)
+    if (old and old.target)~=(match and match.target)
+        or (old and old.kind)~=(match and match.kind) then
+        self.LastPreviewCheck=0
+        self:RefreshHUD()
+    end
+    self.PreviewCF=cf
 
     if os.clock() - self.LastPreviewCheck > 0.12 then
         self.LastPreviewCheck = os.clock()
@@ -713,8 +930,13 @@ function Controller:UpdatePreview()
         elseif self.Pending == "ComponentMove" then
             for _, member in ipairs(self.SelectedParts) do ignore[member] = true end
         end
-        self.PreviewValid, self.PreviewReason = PreviewFeedback.Check(self.Preview, ignore)
-        PreviewFeedback.Paint(self.Preview, self.PreviewValid)
+        self.PreviewValid,self.PreviewReason=PreviewFeedback.Check(
+            self.Preview,ignore,
+            match and match.source and
+                match.source:GetAttribute("InstanceId") or nil,
+            match and match.kind=="Bore" and match.target or nil
+        )
+        PreviewFeedback.Paint(self.Preview,self.PreviewValid)
     end
 
     -- Presentation is damped independently of the exact hit/validation CF.
@@ -761,6 +983,13 @@ function Controller:Place()
         position = self.PreviewCF.Position,
         steps = stepsCopy(self.Steps),
         size = self.CurrentSize,
+        autoMate=if self.SmartMatch then {
+            kind=self.SmartMatch.kind,
+            targetId=self.SmartMatch.target:GetAttribute("InstanceId"),
+            relationKind=self.SmartMatch.relationKind,
+            offsetUnits=self.SmartMatch.offsetUnits,
+            rollDegrees=self.SmartMatch.rollDegrees,
+        } else nil,
     })
     if success and self.Pending == "Copy" then
         self:CancelPending()
@@ -816,6 +1045,7 @@ end
 
 function Controller:ConfirmMove()
     if not self.Selected or not self.PreviewCF then return end
+    if self.SmartMatch and self:SmartDrop() then return end
     if not self.PreviewValid then
         self:Message("Red preview: movement intersects existing geometry")
         return
@@ -836,6 +1066,8 @@ end
 
 function Controller:ConfirmComponentPlacement()
     if not self.SelectedComponentId or not self.GroupAnchor or not self.PreviewCF then return end
+    if self.Pending=="ComponentMove" and self.SmartMatch
+        and self:SmartDrop() then return end
     if not self.PreviewValid then
         self:Message("Red preview: component overlaps another construction")
         return
@@ -1178,7 +1410,9 @@ function Controller:BeginDirectDrag()
     if not node or not node:IsA("Model")
         or node:GetAttribute("OwnerUserId") ~= player.UserId then return end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then return end
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
     -- A first click just SELECTS. Only a second, deliberate hold on the
     -- already selected piece can become a move. Prevents accidental pickup
     -- when looking around during selection.
@@ -1240,6 +1474,28 @@ function Controller:OnInput(input, processed)
     if player:GetAttribute("OPENWORKS_Simulating") == true then return end
     local key = input.KeyCode
     if UserInputService:GetFocusedTextBox() then return end
+    if not processed and self.SmartMatch
+        and (self.Mode=="Build" or self.Pending) then
+        if key==Enum.KeyCode.Tab then
+            local reverse=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+                or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+            if self:CycleSmartTarget(reverse) then return end
+        elseif key==Enum.KeyCode.C and self.SmartMatch.kind=="Bore" then
+            local kinds={"Bearing","Slider","Cylindrical"}
+            local index=table.find(kinds,self.SmartBoreKind) or 1
+            self.SmartBoreKind=kinds[index%#kinds+1]
+            self.SmartMatch.relationKind=self.SmartBoreKind
+            self:RefreshHUD()
+            return
+        elseif (key==Enum.KeyCode.Q or key==Enum.KeyCode.E)
+            and self.SmartMatch.kind=="Bore" then
+            self.SmartRollDelta=math.clamp(
+                self.SmartRollDelta+(if key==Enum.KeyCode.E then 5 else -5),
+                -360,360)
+            self.LastPreviewCheck=0
+            return
+        end
+    end
     if self.Mode ~= "Build" and self.Mode ~= "Edit"
         and self.Mode ~= "Inspect" then return end
 
@@ -1324,8 +1580,19 @@ function Controller:Start()
         end
     end))
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseWheel and self.Layered then
-            self.Layered:AdjustOffset(input.Position.Z)
+        if input.UserInputType==Enum.UserInputType.MouseWheel then
+            if self.SmartMatch
+                and (self.SmartMatch.kind=="Bore"
+                    or self.SmartMatch.kind=="Hub")
+                and (self.Mode=="Build" or self.Pending) then
+                self.SmartOffsetDeltaU=math.clamp(
+                    self.SmartOffsetDeltaU+
+                        (if input.Position.Z>0 then 0.5 else -0.5),
+                    -64,64)
+                self.LastPreviewCheck=0
+            elseif self.Layered then
+                self.Layered:AdjustOffset(input.Position.Z)
+            end
         end
     end))
     RunService:BindToRenderStep("OPENWORKS_CursorUnlock",

@@ -93,6 +93,14 @@ end
 
 local function closestOrientation(shaft, targetDirection)
     local current = shaft:GetPivot()
+    -- Free-angle shafts already carry their authored axial roll. Remove it
+    -- before finding the 90-degree base, then apply the requested roll once.
+    -- Otherwise an existing 90°+ roll can accidentally be counted twice.
+    local previousRoll = shaft:GetAttribute("ShaftRollDegrees") or 0
+    local unrolled = if type(previousRoll)=="number"
+        then CFrame.fromAxisAngle(current.RightVector,
+            math.rad(-previousRoll)) * current.Rotation
+        else current.Rotation
     local desired = if current.RightVector:Dot(targetDirection) >= 0
         then targetDirection else -targetDirection
 
@@ -104,8 +112,8 @@ local function closestOrientation(shaft, targetDirection)
                 local rotation = Grid.Rotation(steps)
                 local along = rotation.RightVector:Dot(desired)
                 if along > 0.99999 then
-                    local similarity = rotation.UpVector:Dot(current.UpVector)
-                        + rotation.LookVector:Dot(current.LookVector)
+                    local similarity = rotation.UpVector:Dot(unrolled.UpVector)
+                        + rotation.LookVector:Dot(unrolled.LookVector)
                     if similarity > score then
                         best, score = steps, similarity
                     end
