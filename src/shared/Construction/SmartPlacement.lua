@@ -200,6 +200,84 @@ local function aimDistance(ray, worldPosition)
     return (delta-direction*along).Magnitude
 end
 
+-- A single coaxial fit leaves free rotation about its axis. For a plate
+-- with several holes, solve that remaining roll geometrically using the
+-- spacing between OTHER compatible shafts and holes. No prefab patterns:
+-- this works with arbitrary player-built groups and arbitrary orientations.
+local function bestBoreRoll(ghost,members,source,target,reverse,
+    offset,roll,baseCF,allTargets,ignored)
+    if #members<2 or #allTargets<2 then return baseCF,roll end
+    local pivot=ghost:GetPivot()
+    local baseDelta=baseCF*pivot:Inverse()
+    local primary=(baseDelta*source:GetPivot()).Position
+    local fixed=target:GetPivot().Position
+    local axis=if reverse then target:GetPivot().RightVector.Unit
+        else (baseDelta*source:GetPivot()).RightVector.Unit
+    local candidates={roll}
+    local used={}
+    local function addAngle(theta)
+        local suggestion=roll+math.deg(theta)
+        if suggestion < -360 or suggestion > 360 then return end
+        local key=math.round(suggestion*10)
+        if not used[key] and #candidates<25 then
+            used[key]=true
+            table.insert(candidates,suggestion)
+        end
+    end
+    for _,member in ipairs(members) do
+        if member==source then continue end
+        local validMoving=if reverse
+            then Alignment.TargetAxis(member)~=nil
+            else Alignment.IsShaft(member)
+        if not validMoving then continue end
+        local radial=(baseDelta*member:GetPivot()).Position-primary
+        radial-=axis*radial:Dot(axis)
+        if radial.Magnitude<Grid.Unit*0.5 then continue end
+        for _,stationary in ipairs(allTargets) do
+            if stationary==target or (ignored and ignored[stationary])
+                then continue end
+            local validTarget=if reverse
+                then Alignment.IsShaft(stationary)
+                else Alignment.TargetAxis(stationary)~=nil
+            if not validTarget then continue end
+            local direction=if reverse then stationary:GetPivot().RightVector
+                else stationary:GetPivot():VectorToWorldSpace(
+                    Alignment.TargetAxis(stationary))
+            if math.abs(direction:Dot(axis))<0.997 then continue end
+            local destination=stationary:GetPivot().Position-fixed
+            destination-=axis*destination:Dot(axis)
+            if destination.Magnitude<Grid.Unit*0.5
+                or math.abs(destination.Magnitude-radial.Magnitude)
+                    >Grid.Unit*0.25 then continue end
+            addAngle(math.atan2(
+                axis:Dot(radial:Cross(destination)),
+                radial:Dot(destination)))
+        end
+    end
+    local bestCF,bestRoll,bestCount=baseCF,roll,0
+    local bestChange=math.huge
+    for _,candidate in ipairs(candidates) do
+        local plan=if reverse then Alignment.ReversePlan(
+            members,source,target,offset,candidate)
+            else Alignment.Plan(members,source,target,offset,candidate)
+        if plan then
+            local nextCF=plan.delta*pivot
+            local contacts=MultiFit.Find(members,allTargets,
+                nextCF*pivot:Inverse(),ignored)
+            if contacts then
+                local count=#contacts
+                local change=math.abs(candidate-roll)
+                if count>bestCount
+                    or (count==bestCount and change<bestChange) then
+                    bestCF,bestRoll,bestCount=nextCF,candidate,count
+                    bestChange=change
+                end
+            end
+        end
+    end
+    return bestCF,bestRoll
+end
+
 -- caller has positioned ghost at unsnapped world pose. Targets must be
 -- the caller's owned construction. Aim ray is optional and allows
 -- recognition THROUGH empty holes and behind other nested geometry.
@@ -280,6 +358,10 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     approach=pose.Position
                     score=if aimed then rayError+0.14 else dist+0.12
                 end
+            end
+            if cf and kind=="Bore" and #members>1 then
+                cf,roll=bestBoreRoll(ghost,members,source,target,
+                    isOpening,offset,roll,cf,allTargets or targets,ignored)
             end
             if cf then
                 -- Evaluate the WHOLE moving component under the proposed pose:
