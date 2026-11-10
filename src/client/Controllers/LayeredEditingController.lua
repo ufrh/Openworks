@@ -122,10 +122,11 @@ function Layered:DepthModels(exclude)
     local origin = camera.CFrame.Position
     local direction = camera.CFrame.LookVector * Grid.MaxDistance
     local candidates = {}
+    local selected = self:SelectedSet()
 
     for _, model in ipairs(folder:GetChildren()) do
         if owned(model) and not (exclude and exclude[model]) then
-            local visible = not self.Isolated or self:SelectedSet()[model]
+            local visible = not self.Isolated or selected[model]
             if visible then table.insert(candidates, model) end
         end
     end
