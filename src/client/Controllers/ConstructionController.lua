@@ -1022,6 +1022,8 @@ function Controller:UpdatePreview()
 
     if os.clock() - self.LastPreviewCheck > 0.12 then
         self.LastPreviewCheck = os.clock()
+        self.PreviewValid = true
+        self.PreviewReason = nil
         local ignore = {}
         if self.Pending == "Move" and self.Selected then
             ignore[self.Selected] = true
