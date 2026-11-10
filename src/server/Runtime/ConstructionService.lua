@@ -756,8 +756,10 @@ local function handle(player, payload)
                 and not hasEquippedTool(player,"Edit") then
                 return {ok=false,message="Equip Simulate to ground a body"}
             end
-        elseif action=="CreateWeld" and not hasEquippedTool(player,"Weld") then
-            return {ok=false,message="Equip Weld to designate a physical weld"}
+        elseif action=="CreateWeld" then
+            if not hasEquippedTool(player,"Weld") then
+                return {ok=false,message="Equip Weld to designate a physical weld"}
+            end
         elseif action~="GetMechanismInfo"
             and not hasEquippedTool(player,"Edit") then
             return {ok=false,message="Equip Edit to modify relationships"}
