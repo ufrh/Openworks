@@ -1,136 +1,182 @@
 --!strict
--- Physical spring authoring in OPENWORKS. No fake cosmetic-only relation:
--- a native SpringConstraint is created during physics simulation.
+-- Shape-independent, native-physics springs. A spring connects two selected
+-- primitives (which may belong to two larger manually joined components).
+-- It does not require matching plates, centered faces or a particular shape.
+-- Shaft-in-bore springs retain the optional physical prismatic guide.
 local Alignment=require(script.Parent:WaitForChild("AlignmentMath"))
+local Bore=require(script.Parent:WaitForChild("BoreClearance"))
 local Grid=require(script.Parent:WaitForChild("GridMath"))
+
 local Spring={}
+local EDGE_CLEARANCE=Grid.Unit*0.12
+
 local function thinAxis(model)
     local s=model.PrimaryPart.Size
-    if s.X<=s.Y and s.X<=s.Z then return "X",s.X end
-    if s.Y<=s.Z then return "Y",s.Y end
-    return "Z",s.Z
-end
-
-local function plateNormal(model)
-    local axis=thinAxis(model)
-    local cf=model:GetPivot()
-    if axis=="X" then return cf.RightVector end
-    if axis=="Z" then return cf.LookVector end
-    return cf.UpVector
+    if s.X<=s.Y and s.X<=s.Z then return "X" end
+    if s.Y<=s.Z then return "Y" end
+    return "Z"
 end
 
 local function plate(model)
     if not model or not model.PrimaryPart then return false end
-    local id=string.lower(tostring(model:GetAttribute("TemplateId") or model.Name))
-    if string.find(id,"gear",1,true)
-        or string.find(id,"bolt",1,true)
-        or string.find(id,"cylinder",1,true)
-        or string.find(id,"tube",1,true) then return false end
-    if string.find(id,"plate",1,true) then return true end
-    -- A user can build plates by flattening ordinary Blocks. Physical
-    -- proportions count; forcing a special catalog template would make
-    -- this unnecessarily cumbersome.
+    local name=string.lower(tostring(model:GetAttribute("TemplateId") or model.Name))
+    if string.find(name,"gear",1,true) or string.find(name,"bolt",1,true)
+        or string.find(name,"cylinder",1,true) or string.find(name,"tube",1,true)
+        then return false end
+    if string.find(name,"plate",1,true) then return true end
     local s=model.PrimaryPart.Size
-    local _,thickness=thinAxis(model)
+    local axis=thinAxis(model)
+    local thickness=if axis=="X" then s.X elseif axis=="Y" then s.Y else s.Z
     return thickness<=math.max(s.X,s.Y,s.Z)*0.45
 end
 
+local function groupEnvelope(model)
+    -- Selection is through a model; if it's editor-grouped, show the
+    -- spring across the WHOLE component envelope, not just one hole block.
+    -- Group membership NEVER implies physical welding.
+    local parent=model.Parent
+    local group=model:GetAttribute("ComponentId")
+    local owner=model:GetAttribute("OwnerUserId")
+    local low=Vector3.new(math.huge,math.huge,math.huge)
+    local high=-low
+    local parts=0
+    local function add(item)
+        for _,part in ipairs(item:GetDescendants()) do
+            if part:IsA("BasePart") and part:GetAttribute("GearPivotOnly")~=true then
+                local cf=part.CFrame
+                local size=part.Size*0.5
+                local right,up,look=cf.RightVector,cf.UpVector,cf.LookVector
+                local ext=Vector3.new(
+                    math.abs(right.X)*size.X+math.abs(up.X)*size.Y+math.abs(look.X)*size.Z,
+                    math.abs(right.Y)*size.X+math.abs(up.Y)*size.Y+math.abs(look.Y)*size.Z,
+                    math.abs(right.Z)*size.X+math.abs(up.Z)*size.Y+math.abs(look.Z)*size.Z)
+                low=Vector3.new(math.min(low.X,cf.Position.X-ext.X),
+                    math.min(low.Y,cf.Position.Y-ext.Y),
+                    math.min(low.Z,cf.Position.Z-ext.Z))
+                high=Vector3.new(math.max(high.X,cf.Position.X+ext.X),
+                    math.max(high.Y,cf.Position.Y+ext.Y),
+                    math.max(high.Z,cf.Position.Z+ext.Z))
+                parts+=1
+            end
+        end
+    end
+    if type(group)=="string" and group~=""
+        and parent and parent.Name=="OPENWORKS_Constructed" then
+        for _,candidate in ipairs(parent:GetChildren()) do
+            if candidate:IsA("Model")
+                and candidate:GetAttribute("OwnerUserId")==owner
+                and candidate:GetAttribute("ComponentId")==group then
+                add(candidate)
+            end
+        end
+    else
+        add(model)
+    end
+    if parts==0 then
+        return model:GetPivot().Position,model.PrimaryPart.Size*0.5
+    end
+    return (low+high)*0.5,(high-low)*0.5
+end
+
 function Spring.Mode(source,target)
-    if Alignment.IsShaft(source) and Alignment.TargetAxis(target) then
+    -- Guided piston is a special case, never a prerequisite for a spring.
+    if source and target and Alignment.IsShaft(source)
+        and Alignment.TargetAxis(target) and Bore.ShaftFits(source,target) then
         return "Piston"
     end
     if plate(source) and plate(target) then return "Plates" end
-    return nil
+    return "General"
 end
 
 function Spring.Validate(source,target)
-    local mode=Spring.Mode(source,target)
-    if not mode then
-        return nil,"Spring requires a shaft+tube or two equal-size plates"
+    if not source or not target or source==target
+        or not source.PrimaryPart or not target.PrimaryPart then
+        return nil,"Choose two different valid components"
     end
-    if mode=="Piston" then
-        if not Alignment.Engaged(source,target) then
-            return nil,"The spring shaft must remain engaged with its housing"
-        end
-        local axis=target:GetPivot():VectorToWorldSpace(
-            Alignment.TargetAxis(target)
-        )
-        if math.abs(axis:Dot(source:GetPivot().RightVector))<0.999 then
-            return nil,"Spring shaft must be coaxial with the tube"
-        end
-    else
-        local a,b=source.PrimaryPart.Size,target.PrimaryPart.Size
-        if (a-b).Magnitude>Grid.Unit*0.02 then
-            return nil,"Spring plates must have equal X/Y/Z dimensions"
-        end
-        local normalA=plateNormal(source)
-        local normalB=plateNormal(target)
-        if math.abs(normalA:Dot(normalB))<0.995 then
-            return nil,"Spring plates must have parallel faces"
-        end
-        local axis=target:GetPivot().Position-source:GetPivot().Position
-        if axis.Magnitude<Grid.Unit or axis.Magnitude>Grid.Unit*32 then
-            return nil,"Spring plate separation must be 1–32 U"
-        end
-        if math.abs(axis.Unit:Dot(normalA))<0.995 then
-            return nil,"Spring plates must be centered face-to-face"
-        end
-        local radial=axis-normalA*axis:Dot(normalA)
-        if radial.Magnitude>Grid.Unit*0.1 then
-            return nil,"Plate spring centers must be aligned"
-        end
-    end
-    return mode
+    -- Any shapes, sizes, rotations and spacing are allowed. Limits on
+    -- ownership, build range and relationship count live on the server.
+    return Spring.Mode(source,target)
 end
 
--- Spring force points are distinct from guiding Prismatic attachments:
--- they remain on the real physical spring's line, instead of stacking two
--- perfectly coincident attachments and creating a directionless force.
 function Spring.Frames(source,target,mode)
     local sc,tc=source:GetPivot(),target:GetPivot()
     if mode=="Piston" then
-        local axis=tc:VectorToWorldSpace(Alignment.TargetAxis(target)).Unit
+        local localAxis=Alignment.TargetAxis(target)
+        local axis=tc:VectorToWorldSpace(localAxis).Unit
         local toward=if (sc.Position-tc.Position):Dot(axis)>=0 then axis else -axis
-        local housingLength=target.PrimaryPart.Size:Dot(Alignment.TargetAxis(target))
+        local s=target.PrimaryPart.Size
+        local housingLength=math.abs(localAxis.X)*s.X+
+            math.abs(localAxis.Y)*s.Y+math.abs(localAxis.Z)*s.Z
         local shaftLength=source.PrimaryPart.Size.X
-        local targetPoint=tc.Position-toward*housingLength*0.27
-        local sourcePoint=sc.Position+toward*shaftLength*0.27
-        return targetPoint,sourcePoint
+        return tc.Position-toward*housingLength*0.27,
+            sc.Position+toward*shaftLength*0.27
     end
-    local axis=(sc.Position-tc.Position).Unit
-    local _,sourceThickness=thinAxis(source)
-    local _,targetThickness=thinAxis(target)
-    local extent=math.min(sourceThickness,targetThickness)*0.5
-    return tc.Position+axis*extent,sc.Position-axis*extent
+
+    local sourceCenter,sourceHalf=groupEnvelope(source)
+    local targetCenter,targetHalf=groupEnvelope(target)
+    local delta=sourceCenter-targetCenter
+    local distance=delta.Magnitude
+    local direction=if distance>0.0001 then delta.Unit else tc.UpVector
+    local function reach(half)
+        return math.abs(direction.X)*half.X+
+            math.abs(direction.Y)*half.Y+math.abs(direction.Z)*half.Z
+    end
+    -- Attach near the visible facing surfaces when there is room.
+    -- For interpenetrating/enclosed geometry keep the anchor separation
+    -- well-defined rather than crossing two spring endpoints.
+    local cap=distance*0.45
+    local fromTarget=math.min(reach(targetHalf),cap)
+    local fromSource=math.min(reach(sourceHalf),cap)
+    if distance<=0.0001 then
+        return tc.Position-direction*Grid.Unit*0.1,
+            sc.Position+direction*Grid.Unit*0.1
+    end
+    return targetCenter+direction*fromTarget,
+        sourceCenter-direction*fromSource
 end
 
--- The visible coil uses the maximum inscribed diameter of the matching
--- plate faces, minus a small visual edge clearance.
 function Spring.Radius(source,target,mode)
-    if mode=="Plates" then
-        local function faceWidth(model)
-            local s=model.PrimaryPart.Size
-            local axis=thinAxis(model)
-            if axis=="X" then return math.min(s.Y,s.Z) end
-            if axis=="Y" then return math.min(s.X,s.Z) end
-            return math.min(s.X,s.Y)
-        end
-        return math.max(0.025,math.min(faceWidth(source),faceWidth(target))*0.5
-            -Grid.Unit*0.12)
+    if mode=="Piston" then
+        local bore=Bore.OpeningDiameter(target)
+        local shaft=source.PrimaryPart.Size
+        return math.max(0.025,math.min(
+            (bore or math.min(shaft.Y,shaft.Z))*0.5,
+            math.min(shaft.Y,shaft.Z)*0.65)-EDGE_CLEARANCE*0.3)
     end
-    return math.max(0.03,math.min(source.PrimaryPart.Size.Y,
-        source.PrimaryPart.Size.Z)*0.46)
+    local a,ah=groupEnvelope(source)
+    local b,bh=groupEnvelope(target)
+    local delta=a-b
+    local axis=if delta.Magnitude>0.001 then delta.Unit
+        else source:GetPivot().UpVector
+    local reference=if math.abs(axis.Y)<0.9 then Vector3.yAxis else Vector3.xAxis
+    local right=axis:Cross(reference).Unit
+    local up=axis:Cross(right).Unit
+    local function span(half,vector)
+        -- Axis-aligned bounds projected onto the two tangential directions.
+        return math.abs(vector.X)*half.X+
+            math.abs(vector.Y)*half.Y+math.abs(vector.Z)*half.Z
+    end
+    local maxRadius=math.min(
+        span(ah,right),span(ah,up),span(bh,right),span(bh,up))
+    -- Never claim a rigid cross section wider than either component.
+    -- Actual spring is a separate constraint, not solid generated geometry.
+    return math.max(0.025,maxRadius-EDGE_CLEARANCE)
 end
 
-function Spring.Settings(request,freeLength)
-    local stiff=request.stiffness or 120
-    local damp=request.damping or 14
-    if type(stiff)~="number" or stiff~=stiff or stiff<10 or stiff>3000
-        or type(damp)~="number" or damp~=damp or damp<0 or damp>300 then
-        return nil,"Spring strength must be 10–3000 and damping 0–300"
+function Spring.Settings(request,length)
+    local stiffness=request.stiffness or 120
+    local damping=request.damping or 14
+    local rest=if type(request.freeLength)=="number"
+        then request.freeLength else math.max(0.05,length)
+    if type(stiffness)~="number" or stiffness~=stiffness
+        or stiffness<10 or stiffness>3000
+        or type(damping)~="number" or damping~=damping
+        or damping<0 or damping>300
+        or type(rest)~="number" or rest~=rest
+        or rest<0.05 or rest>Grid.MaxDistance*2 then
+        return nil,"Spring stiffness 10–3000, damping 0–300, rest length must fit build range"
     end
-    return {stiffness=stiff,damping=damp,
-        freeLength=math.clamp(freeLength,0.05,32*Grid.Unit)}
+    return {stiffness=stiffness,damping=damping,freeLength=rest}
 end
 
 return table.freeze(Spring)
