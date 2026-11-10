@@ -135,7 +135,7 @@ local function intersectsConstructed(candidate, except)
     probe.Transparency = 1
     probe.CanCollide = false
     probe.CanTouch = false
-    probe.CanQuery = false
+    probe.CanQuery = true -- permit a geometry query while excluding the probe itself
     probe.Anchored = true
     probe.Parent = workspace
 
