@@ -436,6 +436,9 @@ end
 
 function Controller:ClearPreview()
     if self.Preview then self.Preview:Destroy() end
+    if self.FitIndicatorRoot then self.FitIndicatorRoot:Destroy() end
+    self.FitIndicatorRoot=nil
+    self.FitIndicatorDots=nil
     self.Preview = nil
     self.PreviewCF = nil
 end
@@ -450,12 +453,25 @@ function Controller:ClearSmartMatch()
     self.SmartLastScan=0
     if self.SmartHighlight then self.SmartHighlight:Destroy() end
     self.SmartHighlight=nil
+    if self.SmartGroupHighlights then
+        for _,light in ipairs(self.SmartGroupHighlights) do light:Destroy() end
+    end
+    self.SmartGroupHighlights=nil
+    self.SmartGroupKey=nil
 end
 
 function Controller:HighlightSmartTarget(match)
     local target=match and match.target
-    if self.SmartHighlight and self.SmartHighlight.Adornee==target then return end
+    local group=target and target:GetAttribute("ComponentId")
+    local groupKey=target and (group or target) or nil
+    if self.SmartHighlight and self.SmartHighlight.Adornee==target
+        and self.SmartGroupKey==groupKey then return end
     if self.SmartHighlight then self.SmartHighlight:Destroy() end
+    if self.SmartGroupHighlights then
+        for _,light in ipairs(self.SmartGroupHighlights) do light:Destroy() end
+    end
+    self.SmartGroupHighlights={}
+    self.SmartGroupKey=groupKey
     self.SmartHighlight=nil
     if target then
         self.SmartHighlight=create("Highlight",{
@@ -466,6 +482,93 @@ function Controller:HighlightSmartTarget(match)
             OutlineTransparency=1,
             DepthMode=Enum.HighlightDepthMode.AlwaysOnTop,
         },self.Gui)
+        -- Highlight the WHOLE stationary editor component. The moving
+        -- ghost is already a full component, not just the selected hole.
+        if type(group)=="string" and group~="" then
+            local built=workspace:FindFirstChild(Config.FolderName)
+            if built then
+                for _,model in ipairs(built:GetChildren()) do
+                    if model:IsA("Model") and model~=target
+                        and model:GetAttribute("OwnerUserId")==player.UserId
+                        and model:GetAttribute("ComponentId")==group then
+                        local light=create("Highlight",{
+                            Name="OPENWORKS_FitTargetMember",
+                            Adornee=model,
+                            FillColor=Color3.fromRGB(93,190,212),
+                            FillTransparency=0.86,
+                            OutlineTransparency=1,
+                            DepthMode=Enum.HighlightDepthMode.Occluded,
+                        },self.Gui)
+                        table.insert(self.SmartGroupHighlights,light)
+                    end
+                end
+            end
+        end
+    end
+end
+
+function Controller:UpdateFitIndicators(match)
+    local desired={}
+    if match and match.kind=="Bore" then
+        local approved={}
+        for _,pair in ipairs(match.fitDetails or {}) do
+            local moving=pair.moving
+            local stationary=pair.stationary
+            local bore=if AlignmentMath.TargetAxis(moving)
+                then moving else stationary
+            table.insert(desired,{
+                cf=bore:GetPivot(),color=Color3.fromRGB(82,225,201)
+            })
+            approved[moving]=true
+        end
+        -- Invalid members are marked red, so a 3-of-4 fit is visible.
+        for _,member in ipairs(SmartPlacement.Members(self.Preview)) do
+            local fitPrimitive=if match.reverse
+                then AlignmentMath.TargetAxis(member)~=nil
+                else AlignmentMath.IsShaft(member)
+            if fitPrimitive and not approved[member] then
+                table.insert(desired,{
+                    cf=member:GetPivot(),color=Color3.fromRGB(239,91,105)
+                })
+            end
+        end
+    end
+    if #desired==0 then
+        if self.FitIndicatorRoot then self.FitIndicatorRoot:Destroy() end
+        self.FitIndicatorRoot=nil
+        self.FitIndicatorDots=nil
+        return
+    end
+    if not self.FitIndicatorRoot then
+        local root=Instance.new("Folder")
+        root.Name="OPENWORKS_MultiFitIndicators"
+        root.Parent=workspace
+        self.FitIndicatorRoot=root
+        self.FitIndicatorDots={}
+    end
+    for i,item in ipairs(desired) do
+        local dot=self.FitIndicatorDots[i]
+        if not dot then
+            dot=Instance.new("Part")
+            dot.Name="FitPoint_"..i
+            dot.Shape=Enum.PartType.Ball
+            dot.Material=Enum.Material.Neon
+            dot.Size=Vector3.new(0.135,0.135,0.135)
+            dot.Anchored=true
+            dot.CanCollide=false
+            dot.CanTouch=false
+            dot.CanQuery=false
+            dot.CastShadow=false
+            dot.Parent=self.FitIndicatorRoot
+            self.FitIndicatorDots[i]=dot
+        end
+        dot.CFrame=item.cf
+        dot.Color=item.color
+        dot.Transparency=0.08
+    end
+    for i=#self.FitIndicatorDots,#desired+1,-1 do
+        self.FitIndicatorDots[i]:Destroy()
+        table.remove(self.FitIndicatorDots,i)
     end
 end
 
@@ -1056,6 +1159,7 @@ function Controller:UpdatePreview()
             local moving=SmartPlacement.Members(self.Preview)
             local stationary=MultiFit.Scope(match.target,allTargets)
             local matches,why=MultiFit.Find(moving,stationary)
+            match.fitDetails=matches or {}
             if matches then
                 approved=MultiFit.AllowMap(matches)
                 match.fittedCount=#matches
@@ -1119,6 +1223,7 @@ function Controller:UpdatePreview()
         self.PreviewVisualPose, cf, dt, 15
     )
     self.Preview:PivotTo(self.PreviewVisualPose)
+    self:UpdateFitIndicators(match)
 end
 
 function Controller:Request(payload)
