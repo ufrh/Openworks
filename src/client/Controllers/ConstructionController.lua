@@ -692,6 +692,14 @@ end
 
 function Controller:EndScale()
     if not self.ScaleMode then return end
+
+    -- Escape/V during an unfinished mouse drag cancels the tentative
+    -- dimensions rather than leaving the HUD showing an uncommitted size.
+    local drag = self.ScaleHandles and self.ScaleHandles.Drag
+    if drag then
+        self:UpdateScalePreview(drag.StartCF, drag.StartSize)
+    end
+
     self.ScaleMode = false
     self.ScaleHandles:Close()
 
