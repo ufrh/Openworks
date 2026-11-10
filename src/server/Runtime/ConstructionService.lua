@@ -714,6 +714,7 @@ local function handle(player, payload)
         or action == "SetGrounded" or action == "GetMechanismInfo"
         or action == "CreateSpring" or action == "TuneSpring"
         or action == "CreateWeld" or action == "CreateBolt"
+    local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
     local simulationAction = action == "StartSimulation"
         or action == "StopSimulation" or action == "ToggleSimulationMotor"
         or action == "TuneSimulationMotor"
@@ -738,10 +739,19 @@ local function handle(player, payload)
         if action ~= "StopSimulation" and not hasEquippedTool(player,"Simulate") then
             return {ok=false,message="Equip Simulate to run a mechanism"}
         end
-    elseif simulation and simulation:IsRunning(player) then
-        return { ok = false, message = "Stop simulation (P) before editing" }
+    elseif simulation and simulation:IsRunning(player)
+        and not propertyAction then
+        return { ok = false, message = "Stop simulation before changing construction" }
     elseif mechanicalAction then
-        if action=="SetGrounded" then
+        if propertyAction then
+            if not hasEquippedTool(player,"Simulate") then
+                return {ok=false,message="Use Simulate Properties to edit relationships"}
+            end
+            if simulation:IsRunning(player)
+                and not simulation:HasRelationship(player,payload.relationId) then
+                return {ok=false,message="Relation is not in the running mechanism"}
+            end
+        elseif action=="SetGrounded" then
             if not hasEquippedTool(player,"Simulate")
                 and not hasEquippedTool(player,"Edit") then
                 return {ok=false,message="Equip Simulate to ground a body"}
@@ -830,6 +840,10 @@ local function handle(player, payload)
     if not ok then
         warn("[OPENWORKS] Construction request error: " .. tostring(result))
         return { ok = false, message = "Construction error (check Output)" }
+    end
+    if result and propertyAction and simulation:IsRunning(player) then
+        local relation=mechanical:OwnedRelation(player,payload.relationId)
+        if relation then simulation:SyncRelationship(player,relation) end
     end
     if result and mechanical and not simulationAction
         and action ~= "GetMechanismInfo" then

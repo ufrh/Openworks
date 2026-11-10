@@ -261,7 +261,11 @@ function Simulation:Start(player, payload)
         Constraints = {},
         SeedId = payload.seedId,
         AssemblyName = graph.assemblyName,
+        ActiveRelations={},
     }
+    for _,edge in ipairs(graph.edges) do
+        session.ActiveRelations[edge.relation:GetAttribute("RelationId")]=true
+    end
     local created = Instance.new("Folder")
     created.Name = "Simulation_" .. tostring(player.UserId)
     session.World = created
@@ -403,6 +407,8 @@ function Simulation:Start(player, payload)
                 spring.Thickness=math.clamp(spring.Radius*0.085,0.012,0.065)
                 spring.Color=BrickColor.new("Bright orange")
                 spring.Visible=false -- native force only; hide edit coil
+                spring:SetAttribute("AuthoredRelationId",
+                    edge.relation:GetAttribute("RelationId"))
                 spring.Parent=runtime
                 table.insert(session.Constraints,spring)
                 if mode=="Piston" then
@@ -463,6 +469,8 @@ function Simulation:Start(player, payload)
                 constraint.Attachment0 = a0
                 constraint.Attachment1 = a1
                 constraint.Enabled = true
+                constraint:SetAttribute("AuthoredRelationId",
+                    edge.relation:GetAttribute("RelationId"))
                 if constraint:IsA("PrismaticConstraint")
                     or constraint:IsA("CylindricalConstraint") then
                     local low,high=Alignment.OffsetBounds(edge.source,edge.target)
@@ -485,6 +493,8 @@ function Simulation:Start(player, payload)
                         if a<b then lower,upper=a,b end
                     end
                     constraint.LimitsEnabled=true
+                    constraint:SetAttribute("PhysicalLower",lower*Grid.Unit)
+                    constraint:SetAttribute("PhysicalUpper",upper*Grid.Unit)
                     constraint.LowerLimit=lower*Grid.Unit
                     constraint.UpperLimit=upper*Grid.Unit
                 end
@@ -630,6 +640,50 @@ function Simulation:Start(player, payload)
         .. (if next(session.GroundKeys)
             then "green grounded / orange movable • P stop"
             else "free assembly • orange bodies • P stop")
+end
+
+-- Keep runtime native constraints synchronized with authored property edits.
+-- Only the owning player's active simulation may receive live changes.
+function Simulation:HasRelationship(player,id)
+    local session=self.Sessions[player]
+    return session~=nil and session.ActiveRelations[id]==true
+end
+function Simulation:SyncRelationship(player,relation)
+    local session=self.Sessions[player]
+    if not session then return true end
+    local id=relation:GetAttribute("RelationId")
+    if not self:HasRelationship(player,id) then
+        return false,"Relationship is outside the active simulation"
+    end
+    local kind=relation:GetAttribute("Kind")
+    for _,constraint in ipairs(session.Constraints) do
+        if constraint.Parent
+            and constraint:GetAttribute("AuthoredRelationId")==id then
+            if kind=="Spring" and constraint:IsA("SpringConstraint") then
+                constraint.Stiffness=relation:GetAttribute("Stiffness") or 120
+                constraint.Damping=relation:GetAttribute("Damping") or 14
+                constraint.FreeLength=relation:GetAttribute("FreeLength") or 0.5
+                constraint.MaxLength=math.max(constraint.FreeLength*1.8,0.25)
+            elseif kind=="Bearing" and constraint:IsA("HingeConstraint") then
+                constraint.LimitsEnabled=relation:GetAttribute("LimitsEnabled")==true
+                constraint.LowerAngle=relation:GetAttribute("LowerLimit") or -180
+                constraint.UpperAngle=relation:GetAttribute("UpperLimit") or 180
+            elseif (kind=="Slider" or kind=="Cylindrical")
+                and (constraint:IsA("PrismaticConstraint")
+                    or constraint:IsA("CylindricalConstraint")) then
+                local low=math.max(constraint:GetAttribute("PhysicalLower")
+                    or -math.huge,(relation:GetAttribute("LowerLimit") or -32)*Grid.Unit)
+                local high=math.min(constraint:GetAttribute("PhysicalUpper")
+                    or math.huge,(relation:GetAttribute("UpperLimit") or 32)*Grid.Unit)
+                if low<high then
+                    constraint.LimitsEnabled=true
+                    constraint.LowerLimit=low
+                    constraint.UpperLimit=high
+                end
+            end
+        end
+    end
+    return true
 end
 
 function Simulation:Motor(player)

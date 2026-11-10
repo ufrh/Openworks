@@ -16,6 +16,7 @@ local Grid = require(construction:WaitForChild("GridMath"))
 local Alignment = require(construction:WaitForChild("AlignmentMath"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
+local RelationshipProperties=require(script.Parent:WaitForChild("RelationshipProperties"))
 local INSERTION_STEP_U = 0.5
 
 local TYPES = { "Bearing", "Slider", "Cylindrical", "Fixed" }
@@ -843,17 +844,21 @@ function Controller:OnModeChanged(mode)
     if self.Mode~=mode then self:Reset() end
     self.Mode=mode
     self.Active=mode=="Edit" or mode=="Simulate" or mode=="Weld"
+    if self.Properties then self.Properties:Show(mode=="Simulate") end
     self:RefreshHUD()
 end
 
 function Controller:Start()
     self.Gui, self.Header, self.Detail, self.Help = createGui()
+    self.Properties=RelationshipProperties.new(self)
+    self.Properties:Start()
     self.Remote = ReplicatedStorage:WaitForChild(Config.RequestName)
     table.insert(self.Connections,self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
     end))
     table.insert(self.Connections,self.Tools.Activated.Event:Connect(function(mode)
-        if mode=="Simulate" and not self:IsSimulating() then
+        if mode=="Simulate" and not self:IsSimulating()
+            and not player:GetAttribute("OPENWORKS_PropertiesOpen") then
             self:ToggleGround()
         elseif mode=="Weld" then
             self:WeldClick()
@@ -909,7 +914,7 @@ function Controller:Start()
             return
         end
         if key==Enum.KeyCode.K then self:ToggleGearMode() return end
-        if key==Enum.KeyCode.J then self:OpenJointSettings() return end
+        -- Tune joints only with the mouse-driven Simulate properties GUI.
         if key==Enum.KeyCode.H then self:StartManualJoint() return end
         if shift and (key==Enum.KeyCode.Delete
             or key==Enum.KeyCode.Backspace) then
@@ -919,20 +924,11 @@ function Controller:Start()
         if not self.ManualActive then return end
 
         if key==Enum.KeyCode.Escape then self:Reset()
-        elseif key==Enum.KeyCode.U and self.Stage=="JointSettings" then
-            self:UpdateJoint(0,true)
         elseif key==Enum.KeyCode.R and self.Stage~="JointSettings" then
             self:CycleType()
-        elseif self.Stage=="JointSettings"
-            and self.Joint and self.Joint:GetAttribute("Kind")=="Spring"
-            and (key==Enum.KeyCode.Minus or key==Enum.KeyCode.Equals) then
-            self:UpdateJoint(if key==Enum.KeyCode.Equals then 1 else -1,
-                false,true)
         elseif key==Enum.KeyCode.LeftBracket or key==Enum.KeyCode.RightBracket then
             local delta=if key==Enum.KeyCode.RightBracket then 1 else -1
-            if self.Stage=="JointSettings" then
-                self:UpdateJoint(delta,false)
-            elseif self.Stage=="Fit" then
+            if self.Stage=="Fit" then
                 self:AdjustFit(delta)
             elseif self.Stage=="Preview" then
                 self.OffsetUnits=math.clamp(
@@ -1025,6 +1021,7 @@ function Controller:Destroy()
     self:Reset()
     for _, conn in ipairs(self.Connections) do conn:Disconnect() end
     table.clear(self.Connections)
+    if self.Properties then self.Properties:Destroy() end
     if self.Gui then self.Gui:Destroy() end
 end
 

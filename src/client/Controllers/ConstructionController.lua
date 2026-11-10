@@ -1778,7 +1778,8 @@ function Controller:Start()
     end))
     RunService:BindToRenderStep("OPENWORKS_CursorUnlock",
         Enum.RenderPriority.Camera.Value + 2, function()
-            if (self.Numeric and self.Numeric.Active)
+            if player:GetAttribute("OPENWORKS_PropertiesOpen")==true
+                or (self.Numeric and self.Numeric.Active)
                 or self.PendingMateChoice then
                 UserInputService.MouseBehavior=Enum.MouseBehavior.Default
                 UserInputService.MouseIconEnabled=true

@@ -47,6 +47,11 @@ function Context:Lines()
         append(lines,"Esc","Cancel weld selection")
         return lines
     end
+    if tool=="Simulate" and player:GetAttribute("OPENWORKS_PropertiesOpen") then
+        append(lines,"Mouse","Select a part, then its mechanical relationship")
+        append(lines,"Properties","Adjust settings in the GUI")
+        return lines
+    end
     if player:GetAttribute("OPENWORKS_Simulating") == true then
         append(lines, "P", "Stop physics")
         append(lines, "M", "Motor on / off")
@@ -104,9 +109,7 @@ function Context:Lines()
                 append(lines,"Click","Choose gear to mesh")
                 append(lines,"K / Esc","Cancel gear connection")
             elseif a.Stage=="JointSettings" then
-                append(lines,"U","Toggle joint limits")
-                append(lines,"[ ]","Adjust allowed travel")
-                append(lines,"Esc","Done editing joint")
+                append(lines,"Simulate","Use the relationship properties panel")
             else
                 append(lines,"Click","Housing then shaft")
                 append(lines,"R","Change relationship")
@@ -162,7 +165,7 @@ function Context:Lines()
             end
             append(lines, "R / T / Y", "World-axis rotation")
             append(lines, "L", "Manual align")
-            append(lines,"K / J / H","Gear mesh / joint settings / manual")
+            append(lines,"K / H","Gear mesh / manual alignment")
             append(lines,"Shift+J","Create suspension or plate spring")
             append(lines,"B / Shift+B","Bolt holes / weld touching parts")
             append(lines,"Ctrl+G","Register whole connected assembly")
