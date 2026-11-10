@@ -131,7 +131,13 @@ function Alignment.Plan(members, shaft, target, offsetUnits)
     local steps = closestOrientation(shaft, direction)
     if not steps then return nil, "Could not align shaft axes" end
 
-    local center = target:GetPivot().Position + direction * (offsetUnits * Grid.Unit)
+    local rawCenter = target:GetPivot().Position + direction * (offsetUnits * Grid.Unit)
+    -- Preserve coaxial center EXACTLY; do not snap the shaft to the
+    -- ordinary part-parity grid, which could shift it out of the bore.
+    local center = Grid.SnapAssemblyCenter(rawCenter)
+    if (center - rawCenter).Magnitude > 0.001 then
+        return nil, "Opening center is not on the assembly half-Unit grid"
+    end
     local desiredShaft = CFrame.new(center) * Grid.Rotation(steps)
     local delta = desiredShaft * shaft:GetPivot():Inverse()
     local items = {}
@@ -141,6 +147,9 @@ function Alignment.Plan(members, shaft, target, offsetUnits)
         local world = delta * member:GetPivot()
         local partSteps = Alignment.MatchSteps(world.Rotation)
         if not partSteps then return nil, "A member cannot rotate to a 90-degree orientation" end
+        if not Grid.IsAssemblySnapped(world.Position) then
+            return nil, "Component geometry exceeds the assembly half-Unit grid"
+        end
         table.insert(items, {
             model = member,
             position = world.Position,

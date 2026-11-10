@@ -68,6 +68,23 @@ function Grid.IsSnapped(position, size, rotation)
     return (position - Grid.SnapCenter(position, size, rotation)).Magnitude < 0.01
 end
 
+-- Coaxial assembly may need an extra half Unit (0.125 studs) of
+-- center precision when opening/shaft dimensions have opposite parity.
+-- Only a server-validated Align operation can opt into this precision;
+-- ordinary Build/Move stays on the original 1 U face grid.
+function Grid.SnapAssemblyCenter(position)
+    local step = UNIT / 2
+    return Vector3.new(
+        nearest(position.X, step, 0),
+        nearest(position.Y, step, 0),
+        nearest(position.Z, step, 0)
+    )
+end
+
+function Grid.IsAssemblySnapped(position)
+    return (position - Grid.SnapAssemblyCenter(position)).Magnitude < 0.001
+end
+
 function Grid.ValidSteps(steps)
     if type(steps) ~= "table" then return false end
     for _, axis in ipairs({ "x", "y", "z" }) do

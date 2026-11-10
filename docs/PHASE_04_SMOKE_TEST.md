@@ -1,6 +1,6 @@
 # OPENWORKS Phase 04 — Layered Editing & Axial Insertion
 
-Build marker: `2026.11.09.PHASE04.LAYERED-ALIGN`
+Build marker: `2026.11.09.PHASE04.GRID-LOOK-SCALE`
 Branch: `dev` — Rojo port `34872`
 
 Phase 04 extends the approved first-person construction controls. There is
@@ -87,3 +87,26 @@ Phase 04 extends the approved first-person construction controls. There is
 
 No Roblox Studio Play session was executed by the assistant. This checklist
 is the gameplay acceptance gate.
+
+## Grid and first-person drag regression (latest patch)
+
+1. Create a tube and cylinder whose dimensions have different odd/even Unit
+   parity (for example, a 4-U tube body and a 3-U cylinder shaft). Align the
+   Cylinder using A, scroll to adjust axial offset, click confirm. It should
+   not report "Position is not aligned to the Unit grid" solely because the
+   centers have opposite parity. The shaft remains **coaxial**, not offset
+   by half a Unit to fake a whole-Unit snap.
+2. The half-Unit center lattice (0.5 U / 0.125 studs) is enabled only by
+   **server-validated shaft alignment**. Normal Build and Edit placement
+   still snaps faces at 1 U increments.
+3. After aligning, resize the cylinder, undo and redo it; the validated
+   assembly precision should survive history restoration. Other players
+   must not submit arbitrary alignment requests for others' geometry.
+4. Equip Build, aim a Block ghost at a surface, press V, aim at a handle and
+   hold left click. **The camera should continue turning naturally as the
+   mouse moves**, while the face resizes in whole Units. Release to commit,
+   V/Esc to exit. No camera Scriptable mode or frozen camera CFrame.
+5. Repeat on a selected placed Block in Edit mode; verify one server
+   history step per drag. Verify ordinary first-person look still works
+   during and immediately after resizing.
+6. Only the B primitive library may unlock the mouse cursor.

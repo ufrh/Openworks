@@ -1,7 +1,8 @@
 --!strict
 -- First-person resize gizmo. The mouse NEVER unlocks for scaling.
 -- Aim the central crosshair at a projected face handle, hold left mouse,
--- and drag with relative MouseMovement. One server edit on release.
+-- and drag with relative MouseMovement while still turning the camera.
+-- One server edit on release.
 
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -23,7 +24,6 @@ local COLORS = {
 }
 
 local PICK_RADIUS = 33
-local CAMERA_PRIORITY = Enum.RenderPriority.Camera.Value + 3
 
 local function withAxis(size, axis, value)
     if axis == 1 then return Vector3.new(value, size.Y, size.Z) end
@@ -67,8 +67,6 @@ function Gizmo.new(gui, onChange, onCommit)
         Active = false,
         Hovered = nil,
         Drag = nil,
-        Camera = nil,
-        PreviousCameraType = nil,
     }, Gizmo)
 
     for axis = 1, 3 do
@@ -135,17 +133,10 @@ function Gizmo.new(gui, onChange, onCommit)
         if self.Active then self:UpdateHandles() end
     end))
 
-    RunService:BindToRenderStep("OPENWORKS_ScaleHoldCamera", CAMERA_PRIORITY, function()
-        if self.Drag and self.Camera and self.Camera.Parent then
-            self.Camera.CFrame = self.Drag.CameraCF
-        end
-    end)
-
     return self
 end
 
 function Gizmo:Open(cf, size, mode, templateSize)
-    self:RestoreCamera()
     self.Drag = nil
     self.Active = true
     self.CFrame = cf
@@ -155,19 +146,10 @@ function Gizmo:Open(cf, size, mode, templateSize)
     self:UpdateHandles()
 end
 
-function Gizmo:RestoreCamera()
-    if self.Camera and self.Camera.Parent and self.PreviousCameraType then
-        self.Camera.CameraType = self.PreviousCameraType
-    end
-    self.Camera = nil
-    self.PreviousCameraType = nil
-end
-
 function Gizmo:Close()
     self.Active = false
     self.Drag = nil
     self.Hovered = nil
-    self:RestoreCamera()
 
     for _, handle in ipairs(self.Handles) do
         handle.Object.Visible = false
@@ -238,9 +220,6 @@ function Gizmo:BeginDrag()
     if not camera then return end
 
     local outward = self.CFrame:VectorToWorldSpace(AXES[handle.Axis] * handle.Sign)
-    self.Camera = camera
-    self.PreviousCameraType = camera.CameraType
-    local capturedCF = camera.CFrame
 
     self.Drag = {
         Handle = handle,
@@ -251,12 +230,10 @@ function Gizmo:BeginDrag()
         ScreenDirection = handle.Direction,
         PixelsPerUnit = handle.PixelsPerUnit,
         PixelTravel = 0,
-        CameraCF = capturedCF,
     }
 
-    -- Freeze camera orientation only while holding the resize handle.
-    -- Mouse stays LockCenter throughout; camera returns on release.
-    camera.CameraType = Enum.CameraType.Scriptable
+    -- Do not touch CameraType or Camera.CFrame here. Native first-person
+    -- mouse-look remains active as the player drags the handle.
     UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 end
 
@@ -292,7 +269,6 @@ function Gizmo:FinishDrag()
     if not drag then return end
 
     self.Drag = nil
-    self:RestoreCamera()
 
     local changed = (self.CFrame.Position - drag.StartCF.Position).Magnitude > 0.0001
         or (self.Size - drag.StartSize).Magnitude > 0.0001
@@ -308,7 +284,6 @@ end
 
 function Gizmo:Destroy()
     self:Close()
-    RunService:UnbindFromRenderStep("OPENWORKS_ScaleHoldCamera")
     for _, connection in ipairs(self.Connections) do
         connection:Disconnect()
     end

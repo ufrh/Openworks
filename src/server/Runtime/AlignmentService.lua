@@ -68,6 +68,7 @@ function Service:Align(player, request)
             size = old.size,
             componentId = old.componentId,
             componentAnchorId = old.componentAnchorId,
+            assemblyPrecision = true,
         }
         local entry = d.Registry.Get(old.templateId)
         if not entry then return false, "A component template is missing" end

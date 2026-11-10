@@ -92,6 +92,7 @@ local function snapshot(model)
         size = primary.Size,
         componentId = model:GetAttribute("ComponentId"),
         componentAnchorId = model:GetAttribute("ComponentAnchorId"),
+        assemblyPrecision = model:GetAttribute("AssemblyPrecision") == true,
     }
 end
 
@@ -203,7 +204,11 @@ local function validState(player, entry, proposed)
     end
 
     local rotation = Grid.Rotation(proposed.steps)
-    if not Grid.IsSnapped(proposed.position, proposed.size, rotation) then
+    if proposed.assemblyPrecision == true then
+        if not Grid.IsAssemblySnapped(proposed.position) then
+            return false, "Assembly position is not on the half-Unit precision grid"
+        end
+    elseif not Grid.IsSnapped(proposed.position, proposed.size, rotation) then
         return false, "Position is not aligned to the Unit grid"
     end
     return true
@@ -217,6 +222,7 @@ local function applyState(model, data)
     model:SetAttribute("RotZ", data.steps.z)
     model:SetAttribute("ComponentId", data.componentId)
     model:SetAttribute("ComponentAnchorId", data.componentAnchorId)
+    model:SetAttribute("AssemblyPrecision", data.assemblyPrecision == true)
 end
 
 local function commitRecord(player, before, after)
@@ -333,6 +339,7 @@ local function update(player, payload)
         -- Editing one primitive inside a component must preserve membership.
         componentId = model:GetAttribute("ComponentId"),
         componentAnchorId = model:GetAttribute("ComponentAnchorId"),
+        assemblyPrecision = model:GetAttribute("AssemblyPrecision") == true,
     }
     local valid, reason = validState(player, entry, proposed)
     if not valid then return false, reason end
