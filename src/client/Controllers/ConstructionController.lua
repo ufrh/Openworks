@@ -22,6 +22,8 @@ local RotationMath = require(construction:WaitForChild("RotationMath"))
 local SmartPlacement = require(construction:WaitForChild("SmartPlacement"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local BoreClearance = require(construction:WaitForChild("BoreClearance"))
+local NumericSizePanel = require(script.Parent:WaitForChild("NumericSizePanel"))
+local MateChoicePanel = require(script.Parent:WaitForChild("MateChoicePanel"))
 
 local BLUE = Color3.fromRGB(96, 174, 207)
 local DARK = Color3.fromRGB(22, 29, 38)
@@ -115,6 +117,11 @@ function Controller.new(tools)
         SmartLastScan = 0,
         CatalogOpen = false,
         ScaleMode = false,
+        NumericPrecision = false,
+        Numeric = nil,
+        MateChoice = nil,
+        PendingMateChoice = nil,
+        Assembly = nil,
         ScaleStepU = Grid.DefaultSizeStepU,
         PreviewValid = true,
         LastPreviewCheck = 0,
@@ -213,6 +220,8 @@ function Controller:MakeUI()
     self.List = list
     self.Unlock = unlock
     self.Crosshair = crosshair
+    self.Numeric = NumericSizePanel.new(gui)
+    self.MateChoice = MateChoicePanel.new(gui)
     self.ScaleHandles = ResizeGizmo.new(gui, function(cf, size)
         self:UpdateScalePreview(cf, size)
     end, function(cf, size, oldCF, oldSize)
@@ -305,7 +314,7 @@ function Controller:RefreshHUD()
             then (if self.Mode=="Build" then "Click to align" else "Release to align")
                 .. " • "..(if match.relationKind=="Rigid" then "auto-group"
                     else match.relationKind)
-                .. " • wheel depth • Q/E roll • C mode • Tab target"
+                .. " • wheel depth • Q/E roll • confirm then 1–4"
             elseif match.kind=="Gear"
             then (if self.Mode=="Build" then "Click to mesh gears" else "Release to mesh gears")
                 .. " • Tab target • Alt free"
@@ -356,15 +365,15 @@ function Controller:RefreshHUD()
         local aligned=self.Mode=="Edit" and self.Selected
             and type(self.Selected:GetAttribute("AlignedOpeningId"))=="string"
         self.HelpLabel.Text = (if aligned
-            then "Aligned shaft • X-axis length only • "
+            then "Aligned shaft • length-only grips • "
             else "Scale: ")
             .. tostring(self.ScaleHandles.IncrementU)
-            .. " U • colored sphere, hold + move/look • V exit"
+            .. " U • sphere drag • N enter exact U size • V exit"
     elseif mode == "Build" then
         self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
             size.X / Grid.Unit, size.Y / Grid.Unit, size.Z / Grid.Unit) else "")
         self.HelpLabel.Text = if self.CatalogOpen then "Choose a primitive • B/Esc close"
-            else "B catalog  •  R/T/Y rotate  •  V drag resize"
+            else "B catalog • R/T/Y rotate • V grips • N precise U size"
     elseif self.Pending == "Move" then
         self.DetailLabel.Text = "MOVE  /  " .. (self.Selected and self.Selected.Name or "")
         self.HelpLabel.Text = "Click to place  •  R/T/Y rotate  •  Esc cancel"
@@ -387,7 +396,7 @@ function Controller:RefreshHUD()
         self.HelpLabel.Text = "Click other members • V scale • E select whole component"
     else
         local target = self.Selected
-        self.DetailLabel.Text = if target then target.Name .. "  /  drag scale with V" else "Click a constructed piece"
+        self.DetailLabel.Text = if target then target.Name .. " / V grips • N exact U" else "Click a constructed piece"
         self.HelpLabel.Text = "Tab depth • X X-ray • I isolate • L align • V scale"
     end
 
@@ -407,6 +416,7 @@ function Controller:RefreshHUD()
 end
 
 function Controller:SelectPrimitive(id)
+    self.NumericPrecision=false
     local entry = Registry.Get(id)
     if not entry then return end
 
@@ -467,7 +477,30 @@ function Controller:CycleSmartTarget(reverse)
     return true
 end
 
-function Controller:SmartDrop()
+function Controller:OpenMateChoice(mode)
+    local match=self.SmartMatch
+    if not match or match.kind~="Bore" or self.PendingMateChoice then
+        return false
+    end
+    self.PendingMateChoice=mode
+    self.DirectDragCandidate=nil
+    self.DirectDragActive=false
+    self.MateChoice:Show(function(kind)
+        local requestMode=self.PendingMateChoice
+        self.PendingMateChoice=nil
+        if kind and requestMode=="Build" then
+            self:Place(kind)
+        elseif kind and requestMode=="Edit" then
+            self:SmartDrop(kind)
+        elseif requestMode=="Edit" then
+            self:CancelPending()
+        end
+        self:RefreshHUD()
+    end)
+    return true
+end
+
+function Controller:SmartDrop(chosenKind)
     local match=self.SmartMatch
     if not match or not match.target.Parent
         or self.Pending=="Copy" or self.Pending=="ComponentCopy" then
@@ -476,6 +509,9 @@ function Controller:SmartDrop()
     if not self.PreviewValid then
         self:Message(self.PreviewReason or "Red snap: physical interference")
         return true
+    end
+    if match.kind=="Bore" and not chosenKind then
+        return self:OpenMateChoice("Edit")
     end
     -- A multi-primitive ghost pivots at its central anchor, but the
     -- mechanical source may be a different member. Convert its LOCAL
@@ -490,7 +526,7 @@ function Controller:SmartDrop()
         sourceId=match.source:GetAttribute("InstanceId"),
         targetId=match.target:GetAttribute("InstanceId"),
         mateKind=match.kind,
-        relationKind=match.relationKind,
+        relationKind=chosenKind or match.relationKind,
         offsetUnits=match.offsetUnits,
         rollDegrees=match.rollDegrees,
         reverse=match.reverse==true,
@@ -807,6 +843,9 @@ function Controller:OnModeChanged(mode)
     self:EndScale()
     self:CancelPending()
     self.Mode = mode
+    if self.MateChoice then self.MateChoice:Hide() end
+    self.PendingMateChoice=nil
+    if self.Numeric then self.Numeric:Hide() end
     self:ShowCatalog(false)
     self:ClearPreview()
     if mode ~= "Edit" and mode ~= "Inspect" then
@@ -992,10 +1031,15 @@ function Controller:Request(payload)
     return true, result
 end
 
-function Controller:Place()
+function Controller:Place(chosenKind)
     if not self.PreviewCF or not self.CurrentId or not self.CurrentSize then return end
     if not self.PreviewValid then
         self:Message("Red preview: construction intersects existing geometry")
+        return
+    end
+    if self.SmartMatch and self.SmartMatch.kind=="Bore"
+        and not chosenKind then
+        self:OpenMateChoice("Build")
         return
     end
     local success = self:Request({
@@ -1004,10 +1048,11 @@ function Controller:Place()
         position = self.PreviewCF.Position,
         steps = stepsCopy(self.Steps),
         size = self.CurrentSize,
+        numericPrecision=self.NumericPrecision==true,
         autoMate=if self.SmartMatch then {
             kind=self.SmartMatch.kind,
             targetId=self.SmartMatch.target:GetAttribute("InstanceId"),
-            relationKind=self.SmartMatch.relationKind,
+            relationKind=chosenKind or self.SmartMatch.relationKind,
             offsetUnits=self.SmartMatch.offsetUnits,
             rollDegrees=self.SmartMatch.rollDegrees,
             reverse=self.SmartMatch.reverse==true,
@@ -1116,8 +1161,13 @@ function Controller:ConfirmComponentPlacement()
 end
 
 function Controller:Activate(mode)
+    -- Tool 3 Simulate and Tool 4 Inspect never activate construction.
+    if mode~="Build" and mode~="Edit" and mode~="Inspect" then return end
+    if self.PendingMateChoice or (self.Numeric and self.Numeric.Active) then return end
+    if mode=="Edit" and self.Assembly
+        and self.Assembly:HandleEditClick() then return end
     if player:GetAttribute("OPENWORKS_Simulating") == true then
-        self:Message("Stop simulation in Assemble (P) before editing")
+        self:Message("Stop simulation in Simulate (P) before editing")
         return
     end
     if self.DirectDragActive then return end
@@ -1246,6 +1296,44 @@ end
 
 -- Face drag scaling stays entirely within the native first-person
 -- locked mouse. V shows the grips; aim the crosshair at one, then drag.
+-- Direct numeric construction: arbitrary axis values in U at 0.01-U
+-- precision, server-validated against the original primitive geometry.
+-- Normal shaft grips stay length-only, but entering an exact diameter
+-- remains possible in the panel if the shaft can physically fit its bore.
+function Controller:OpenNumericSize()
+    if self.CatalogOpen or self.PendingMateChoice
+        or (self.Assembly and self.Assembly:IsEditingJoint()) then return end
+    if not self.ScaleMode then self:BeginScale() end
+    if not self.ScaleMode or not self.ScaleSize then return end
+    if self.Numeric.Active then return end
+    local id=if self.Mode=="Edit" and self.Selected then
+        self.Selected:GetAttribute("TemplateId") else self.CurrentId
+    local entry=id and Registry.Get(id)
+    if not entry then return end
+    local original=entry.Model.PrimaryPart.Size
+    local sizeMode=entry.ResizeMode
+    self.Numeric:Show(self.ScaleSize,sizeMode,function(newSize)
+        if not Grid.ValidSize(original,newSize,sizeMode,true,true) then
+            return false,"Invalid size for this primitive • 0.25–64 U"
+        end
+        local current=self.ScaleSize
+        local cf=self.ScaleCF
+        if not cf then return false,"Select a valid construction first" end
+        if self.Mode=="Build" then
+            self.NumericPrecision=true
+            self:UpdateScalePreview(cf,newSize)
+            self:EndScale()
+            return true
+        end
+        if not self.Selected then return false,"Select a primitive first" end
+        local ok=self:CommitScale(cf,newSize,cf,current)
+        if not ok then return false,"Size rejected: check bore and collisions" end
+        self:EndScale()
+        return true
+    end)
+    self:Message("Enter exact X/Y/Z dimensions in U; press Enter to apply")
+end
+
 function Controller:BeginScale()
     if self.ScaleMode or self.CatalogOpen or self.Pending then return end
 
@@ -1323,7 +1411,9 @@ function Controller:BeginScale()
     local mode=if aligned then "LengthOnly_1U" else entry.ResizeMode
     self.ScaleHandles:Open(
         cf, self.ScaleSize, mode, entry.Model.PrimaryPart.Size,
-        step, model:GetAttribute("FitPrecision") == true
+        step, model:GetAttribute("FitPrecision") == true,
+        self.NumericPrecision==true
+            or model:GetAttribute("NumericPrecision")==true
     )
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshPointer()
@@ -1361,6 +1451,7 @@ function Controller:CommitScale(cf, size, oldCF, oldSize)
         steps = stepsCopy(self.Steps),
         size = size,
         resizePrecision = true,
+        numericPrecision=self.Numeric and self.Numeric.Active,
     })
     if ok then
         self.CurrentSize = size
@@ -1371,6 +1462,7 @@ function Controller:CommitScale(cf, size, oldCF, oldSize)
 end
 
 function Controller:EndScale()
+    if self.Numeric and self.Numeric.Active then self.Numeric:Hide() end
     if not self.ScaleMode then return end
 
     -- Escape/V during an unfinished mouse drag cancels the tentative
@@ -1428,7 +1520,10 @@ end
 -- A normal click still selects. Holding LMB and moving the camera or player
 -- beyond a small world-space threshold starts the existing temporary G move.
 function Controller:BeginDirectDrag()
-    if self.Mode ~= "Edit" or self.Pending or self.ScaleMode or self.CatalogOpen then return end
+    if self.PendingMateChoice
+        or (self.Assembly and self.Assembly:IsEditingJoint())
+        or self.Mode ~= "Edit" or self.Pending
+        or self.ScaleMode or self.CatalogOpen then return end
     local hit = self:CastCenter(false)
     if not hit then return end
     local folder = workspace:FindFirstChild(Config.FolderName)
@@ -1457,6 +1552,7 @@ function Controller:BeginDirectDrag()
 end
 
 function Controller:UpdateDirectDrag()
+    if self.PendingMateChoice then return end
     local held = self.DirectDragCandidate
     if not held or self.DirectDragActive then return end
     if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
@@ -1498,9 +1594,26 @@ function Controller:FinishDirectDrag()
 end
 
 function Controller:OnInput(input, processed)
+    if self.PendingMateChoice then return end
+    if self.Numeric and self.Numeric.Active then
+        if input.KeyCode==Enum.KeyCode.Escape then
+            self.Numeric:Hide()
+            self:EndScale()
+        end
+        return
+    end
     if player:GetAttribute("OPENWORKS_Simulating") == true then return end
     local key = input.KeyCode
     if UserInputService:GetFocusedTextBox() then return end
+    if self.Assembly and self.Assembly:IsEditingJoint() then return end
+    local shiftHeld=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    if self.Mode=="Edit" and shiftHeld
+        and (key==Enum.KeyCode.Delete or key==Enum.KeyCode.Backspace) then
+        -- Shift+Delete removes only the aimed relationship, handled by
+        -- the integrated mechanical editor, never primitive geometry.
+        return
+    end
     if not processed and self.SmartMatch
         and (self.Mode=="Build" or self.Pending) then
         if key==Enum.KeyCode.Tab then
@@ -1508,11 +1621,7 @@ function Controller:OnInput(input, processed)
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
             if self:CycleSmartTarget(reverse) then return end
         elseif key==Enum.KeyCode.C and self.SmartMatch.kind=="Bore" then
-            local kinds={"Rigid","Bearing","Slider","Cylindrical"}
-            local index=table.find(kinds,self.SmartBoreKind) or 1
-            self.SmartBoreKind=kinds[index%#kinds+1]
-            self.SmartMatch.relationKind=self.SmartBoreKind
-            self:RefreshHUD()
+            -- Connection type is chosen on release, not by cycling modes.
             return
         elseif (key==Enum.KeyCode.Q or key==Enum.KeyCode.E)
             and self.SmartMatch.kind=="Bore" then
@@ -1536,6 +1645,11 @@ function Controller:OnInput(input, processed)
     end
     if key == Enum.KeyCode.V and not processed then
         if self.ScaleMode then self:EndScale() else self:BeginScale() end
+        return
+    end
+    if key==Enum.KeyCode.N and not processed
+        and (self.Mode=="Edit" or self.Mode=="Build") then
+        self:OpenNumericSize()
         return
     end
     if self.ScaleMode or self.Mode == "Inspect" then return end
@@ -1624,7 +1738,11 @@ function Controller:Start()
     end))
     RunService:BindToRenderStep("OPENWORKS_CursorUnlock",
         Enum.RenderPriority.Camera.Value + 2, function()
-            if self.CatalogOpen then
+            if (self.Numeric and self.Numeric.Active)
+                or self.PendingMateChoice then
+                UserInputService.MouseBehavior=Enum.MouseBehavior.Default
+                UserInputService.MouseIconEnabled=true
+            elseif self.CatalogOpen then
                 -- Native first-person camera can re-lock the cursor per-frame.
                 -- Keep the catalog interactive without modifying the toolbar.
                 UserInputService.MouseBehavior = Enum.MouseBehavior.Default
@@ -1646,7 +1764,9 @@ function Controller:Start()
             end
         end
         self:UpdateDirectDrag()
-        if self.Mode == "Build" or (self.Mode == "Edit" and self.Pending) then
+        if not self.PendingMateChoice
+            and (self.Mode == "Build" or
+                (self.Mode == "Edit" and self.Pending)) then
             self:UpdatePreview()
         end
         if self.StatusMessage and os.clock() >= self.MessageUntil then
@@ -1660,6 +1780,8 @@ function Controller:Start()
 end
 
 function Controller:Destroy()
+    if self.MateChoice then self.MateChoice:Destroy() end
+    if self.Numeric then self.Numeric:Destroy() end
     self:EndScale()
     if self.Layered then self.Layered:Destroy() end
     RunService:UnbindFromRenderStep("OPENWORKS_CursorUnlock")

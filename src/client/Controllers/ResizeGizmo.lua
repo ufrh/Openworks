@@ -127,10 +127,11 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
     return self
 end
 
-function Gizmo:Open(cf, size, mode, templateSize, incrementU, fineDiameter)
+function Gizmo:Open(cf,size,mode,templateSize,incrementU,fineDiameter,numericPrecision)
     self.Drag = nil
-    self.IncrementU = incrementU or Grid.DefaultSizeStepU
-    self.FineDiameter = fineDiameter == true
+    self.IncrementU=incrementU or Grid.DefaultSizeStepU
+    self.FineDiameter=fineDiameter==true
+    self.NumericPrecision=numericPrecision==true
     self.Active = true
     self.CFrame = cf
     self.Size = size
@@ -211,8 +212,8 @@ function Gizmo:UpdateDrag()
     if steps == drag.LastSteps then return end
 
     local size = nextSize(self.Mode, drag.StartSize, drag.Axis, steps, drag.StepU)
-    if not size or not Grid.ValidSize(self.TemplateSize, size,
-        self.Mode, self.FineDiameter) then
+    if not size or not Grid.ValidSize(self.TemplateSize,size,
+        self.Mode,self.FineDiameter,self.NumericPrecision) then
         return
     end
 

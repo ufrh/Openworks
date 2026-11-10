@@ -89,6 +89,8 @@ function Controller.new(tools)
     return setmetatable({
         Tools = tools,
         Active = false,
+        Mode = nil,
+        ManualActive = false,
         Stage = "Housing",
         KindIndex = 1,
         Housing = nil,
@@ -169,7 +171,8 @@ end
 function Controller:RefreshHUD()
     if not self.Gui then return end
     self.Gui.Enabled = self.Active
-    if not self.Active then return end
+        and (self.Mode == "Simulate" or self.ManualActive)
+    if not self.Gui.Enabled then return end
 
     if self:IsSimulating() then
         self.Header.Text = "OPENWORKS / PHYSICS SIMULATION"
@@ -190,7 +193,7 @@ function Controller:RefreshHUD()
         return
     end
 
-    self.Header.Text = "OPENWORKS / ASSEMBLE / " .. string.upper(self:Kind())
+    self.Header.Text = "OPENWORKS / EDIT / " .. string.upper(self:Kind())
     if self.Stage == "GearFirst" then
         self.Header.Text = "OPENWORKS / GEAR TRANSMISSION"
         self.Detail.Text = "Choose the first gear"
@@ -208,7 +211,7 @@ function Controller:RefreshHUD()
         self.Help.Text = "U toggle limits • [ ] adjust travel • Esc close"
     elseif self.Stage == "Housing" then
         self.Detail.Text = "Choose the housing or opening"
-        self.Help.Text = "Click an opening • R relationship • P simulate aimed mechanism"
+        self.Help.Text = "Click opening • R relationship • Esc close"
     elseif self.Stage == "Source" then
         self.Detail.Text = "Choose the shaft or source component"
         self.Help.Text = "Click shaft/component • P simulate aimed mechanism • Esc reset"
@@ -263,6 +266,7 @@ function Controller:Reset()
     self:ClearPreview()
     self:ClearHighlights()
     self.Stage = "Housing"
+    self.ManualActive = false
     self.Housing = nil
     self.Source = nil
     self.Members = {}
@@ -445,9 +449,29 @@ function Controller:ToggleGearMode()
         self:Reset()
     else
         self:Reset()
+        self.ManualActive=true
         self.Stage="GearFirst"
         self:RefreshHUD()
     end
+end
+
+function Controller:StartManualJoint()
+    self:Reset()
+    self.ManualActive=true
+    self.Stage="Housing"
+    self:RefreshHUD()
+end
+
+function Controller:HandleEditClick()
+    if self.Mode ~= "Edit" or not self.ManualActive then
+        return false
+    end
+    self:Activate()
+    return true
+end
+
+function Controller:IsEditingJoint()
+    return self.Mode=="Edit" and self.ManualActive
 end
 
 function Controller:ToggleGround()
@@ -471,6 +495,7 @@ function Controller:OpenJointSettings()
                 or joint:GetAttribute("Kind")=="Slider"
                 or joint:GetAttribute("Kind")=="Cylindrical") then
             self:Reset()
+            self.ManualActive=true
             self.Joint=joint
             self.Stage="JointSettings"
             self:RefreshHUD()
@@ -657,101 +682,92 @@ function Controller:CycleType()
 end
 
 function Controller:OnModeChanged(mode)
-    if mode ~= "Assemble" and self.Active then self:Reset() end
-    self.Active = mode == "Assemble"
-    if self.Active then self:Reset() end
+    if self.Mode~=mode then self:Reset() end
+    self.Mode=mode
+    self.Active=mode=="Edit" or mode=="Simulate"
     self:RefreshHUD()
 end
 
 function Controller:Start()
     self.Gui, self.Header, self.Detail, self.Help = createGui()
     self.Remote = ReplicatedStorage:WaitForChild(Config.RequestName)
-    table.insert(self.Connections, self.Tools.Changed.Event:Connect(function(mode)
+    table.insert(self.Connections,self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
     end))
-    table.insert(self.Connections, self.Tools.Activated.Event:Connect(function(mode)
-        if mode == "Assemble" then self:Activate() end
-    end))
-    table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
-        if not self.Active or UserInputService:GetFocusedTextBox() then return end
-        -- Simulation controls have priority over the relationship editor.
-        -- Neither P nor M interferes with WASD movement.
-        if not processed and input.KeyCode == Enum.KeyCode.P then
-            self:ToggleSimulation()
-            return
-        elseif not processed and input.KeyCode == Enum.KeyCode.M then
-            self:ToggleMotor()
-            return
-        end
-        if self:IsSimulating() then
-            if not processed and input.KeyCode == Enum.KeyCode.O then
-                self:Request({action="PauseSimulation"})
-            elseif not processed and input.KeyCode == Enum.KeyCode.U then
-                self:Request({action="ResetSimulation"})
-            elseif not processed and input.KeyCode == Enum.KeyCode.I then
-                self:Request({action="GetMechanismInfo",seedId=self.SimSeedId})
-            elseif not processed and input.KeyCode == Enum.KeyCode.N then
-                self:TuneMotor(true)
-            elseif not processed and input.KeyCode == Enum.KeyCode.LeftBracket then
-                self:TuneMotor(false, -1)
-            elseif not processed and input.KeyCode == Enum.KeyCode.RightBracket then
-                self:TuneMotor(false, 1)
-            end
-            return
-        end
-        if input.KeyCode == Enum.KeyCode.Escape then
-            self:Reset()
-        elseif processed then
-            return
-        elseif input.KeyCode == Enum.KeyCode.G then
+    table.insert(self.Connections,self.Tools.Activated.Event:Connect(function(mode)
+        if mode=="Simulate" and not self:IsSimulating() then
             self:ToggleGround()
-        elseif input.KeyCode == Enum.KeyCode.K then
-            self:ToggleGearMode()
-        elseif input.KeyCode == Enum.KeyCode.J then
-            self:OpenJointSettings()
-        elseif input.KeyCode == Enum.KeyCode.U and self.Stage=="JointSettings" then
-            self:UpdateJoint(0,true)
-        elseif input.KeyCode == Enum.KeyCode.R then
-            self:CycleType()
-        elseif input.KeyCode == Enum.KeyCode.Delete
-            or input.KeyCode == Enum.KeyCode.Backspace then
-            self:DeleteRelationship()
-        elseif input.KeyCode == Enum.KeyCode.Z and
-            (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
-                or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
-            self:Request({ action = "Undo" })
-            self:Reset()
-        elseif input.KeyCode == Enum.KeyCode.Y and
-            (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
-                or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
-            self:Request({ action = "Redo" })
-            self:Reset()
-        elseif self.Stage=="JointSettings" and
-            (input.KeyCode==Enum.KeyCode.LeftBracket
-                or input.KeyCode==Enum.KeyCode.RightBracket) then
-            self:UpdateJoint(if input.KeyCode==Enum.KeyCode.RightBracket
-                then 1 else -1,false)
-        elseif (self.Stage=="Preview" or self.Stage=="Fit") and
-            (input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.E) then
-            self:ChangeRoll(if input.KeyCode==Enum.KeyCode.E then 5 else -5)
-        elseif (self.Stage == "Preview" or self.Stage == "Fit") and
-            (input.KeyCode == Enum.KeyCode.LeftBracket or
-            input.KeyCode == Enum.KeyCode.RightBracket) then
-            if self.Stage == "Fit" then
-                self:AdjustFit(if input.KeyCode == Enum.KeyCode.RightBracket
-                    then 1 else -1)
-                return
+        end
+    end))
+    table.insert(self.Connections,UserInputService.InputBegan:Connect(function(input,processed)
+        if not self.Active or UserInputService:GetFocusedTextBox() then return end
+        local key=input.KeyCode
+        if self.Construction and
+            (self.Construction.PendingMateChoice
+                or (self.Construction.Numeric and self.Construction.Numeric.Active)) then
+            return
+        end
+        if self.Mode=="Simulate" then
+            if processed then return end
+            if key==Enum.KeyCode.P then self:ToggleSimulation()
+            elseif key==Enum.KeyCode.G then
+                if not self:IsSimulating() then self:ToggleGround() end
+            elseif key==Enum.KeyCode.M then self:ToggleMotor()
+            elseif self:IsSimulating() then
+                if key==Enum.KeyCode.O then
+                    self:Request({action="PauseSimulation"})
+                elseif key==Enum.KeyCode.U then
+                    self:Request({action="ResetSimulation"})
+                elseif key==Enum.KeyCode.I then
+                    self:Request({action="GetMechanismInfo",seedId=self.SimSeedId})
+                elseif key==Enum.KeyCode.N then self:TuneMotor(true)
+                elseif key==Enum.KeyCode.LeftBracket then self:TuneMotor(false,-1)
+                elseif key==Enum.KeyCode.RightBracket then self:TuneMotor(false,1)
+                end
             end
-            self.OffsetUnits = math.clamp(
-                self.OffsetUnits + (if input.KeyCode == Enum.KeyCode.RightBracket
-                    then INSERTION_STEP_U else -INSERTION_STEP_U),
-                -Alignment.MaxOffsetUnits, Alignment.MaxOffsetUnits
-            )
-            self:UpdatePreview()
+            return
+        end
+
+        -- All mechanical authoring now lives in Edit. Only explicit
+        -- K/J/H interactions capture clicks; ordinary selection and drag
+        -- continue to belong to ConstructionController.
+        if self.Mode~="Edit" or processed then return end
+        if key==Enum.KeyCode.K then self:ToggleGearMode() return end
+        if key==Enum.KeyCode.J then self:OpenJointSettings() return end
+        if key==Enum.KeyCode.H then self:StartManualJoint() return end
+        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        if shift and (key==Enum.KeyCode.Delete
+            or key==Enum.KeyCode.Backspace) then
+            self:DeleteRelationship()
+            return
+        end
+        if not self.ManualActive then return end
+
+        if key==Enum.KeyCode.Escape then self:Reset()
+        elseif key==Enum.KeyCode.U and self.Stage=="JointSettings" then
+            self:UpdateJoint(0,true)
+        elseif key==Enum.KeyCode.R and self.Stage~="JointSettings" then
+            self:CycleType()
+        elseif key==Enum.KeyCode.LeftBracket or key==Enum.KeyCode.RightBracket then
+            local delta=if key==Enum.KeyCode.RightBracket then 1 else -1
+            if self.Stage=="JointSettings" then
+                self:UpdateJoint(delta,false)
+            elseif self.Stage=="Fit" then
+                self:AdjustFit(delta)
+            elseif self.Stage=="Preview" then
+                self.OffsetUnits=math.clamp(
+                    self.OffsetUnits+delta*INSERTION_STEP_U,
+                    -Alignment.MaxOffsetUnits,Alignment.MaxOffsetUnits)
+                self:UpdatePreview()
+            end
+        elseif (self.Stage=="Preview" or self.Stage=="Fit")
+            and (key==Enum.KeyCode.Q or key==Enum.KeyCode.E) then
+            self:ChangeRoll(if key==Enum.KeyCode.E then 5 else -5)
         end
     end))
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
-        if not self.Active
+        if self.Mode~="Edit" or not self.ManualActive
             or (self.Stage ~= "Preview" and self.Stage ~= "Fit")
             or self:Kind() == "Fixed" then return end
         if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
@@ -782,7 +798,8 @@ function Controller:Start()
         self:UpdatePreview()
     end))
     table.insert(self.Connections, RunService.RenderStepped:Connect(function(dt)
-        if not self.Active or self:IsSimulating() then return end
+        if self.Mode~="Edit" or not self.ManualActive
+            or self:IsSimulating() then return end
         if self.Stage=="Preview" and self.PreviewModel and self.TargetPose then
             self.VisualPose=WorldMotion.Step(
                 self.VisualPose,self.TargetPose,dt,17)

@@ -58,6 +58,23 @@ end
 
 function Provisioner.Start()
     StarterPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+    -- Clean up saved older StarterPack tool and already-equipped legacy
+    -- Assemble copies, which must not occupy a fifth hotbar slot.
+    local function removeLegacy(container)
+        if not container then return end
+        for _, tool in ipairs(container:GetChildren()) do
+            if tool:IsA("Tool") and
+                (tool:GetAttribute("OpenworksToolId") == "Assemble"
+                or tool.Name == "Assemble") then
+                tool:Destroy()
+            end
+        end
+    end
+    removeLegacy(StarterPack)
+    for _, player in ipairs(Players:GetPlayers()) do
+        removeLegacy(player:FindFirstChildOfClass("Backpack"))
+        removeLegacy(player.Character)
+    end
 
     local templates = {}
     for _, definition in ipairs(definitions) do
@@ -86,7 +103,7 @@ function Provisioner.Start()
         end)
     end
 
-    print("[OPENWORKS] StarterPack native tools provisioned: Build, Edit, Assemble, Inspect")
+    print("[OPENWORKS] StarterPack native tools provisioned: Build, Edit, Simulate, Inspect")
 end
 
 return Provisioner

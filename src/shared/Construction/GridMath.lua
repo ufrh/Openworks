@@ -132,7 +132,7 @@ function Grid.ValidPosition(position)
     return true
 end
 
-function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter)
+function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter, numericPrecision)
     if typeof(proposed) ~= "Vector3" then return false end
     if typeof(templateSize) ~= "Vector3" then return false end
 
@@ -153,21 +153,25 @@ function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter)
             and math.abs(ticks - math.floor(ticks + 0.5)) < 0.0001
     end
 
+    -- Numeric sizing has 0.01-U resolution; the world still imposes
+    -- minimum dimensions, maximum dimensions, and shape-specific axes.
+    local positionStep=if numericPrecision==true then 0.01 else Grid.MinSizeStepU
+    local diameterStep=if numericPrecision==true then 0.01
+        elseif fineDiameter==true then 0.05 else Grid.MinSizeStepU
     if resizeMode == "XYZ_1U" then
-        return unitValid(proposed.X) and unitValid(proposed.Y) and unitValid(proposed.Z)
+        return unitValid(proposed.X,positionStep)
+            and unitValid(proposed.Y,positionStep)
+            and unitValid(proposed.Z,positionStep)
     elseif resizeMode == "UniformDiameter_1U" then
-        return unitValid(proposed.X)
+        return unitValid(proposed.X,positionStep)
             and math.abs(proposed.X - proposed.Y) < 0.001
             and math.abs(proposed.X - proposed.Z) < 0.001
     elseif resizeMode == "LengthAndDiameter_1U" then
-        -- Only shafts explicitly marked FitPrecision by the server may
-        -- use the 0.05-U diameter lattice. Length stays on the 0.25-U
-        -- sizing lattice, including the dedicated cylinder gizmo step.
-        local diameterStep = if fineDiameter == true then 0.05 else Grid.MinSizeStepU
-        return unitValid(proposed.X) and unitValid(proposed.Y, diameterStep)
+        return unitValid(proposed.X,positionStep)
+            and unitValid(proposed.Y,diameterStep)
             and math.abs(proposed.Y - proposed.Z) < 0.001
     elseif resizeMode == "LengthOnly_1U" then
-        return unitValid(proposed.X)
+        return unitValid(proposed.X,positionStep)
             and math.abs(proposed.Y - templateSize.Y) < 0.01
             and math.abs(proposed.Z - templateSize.Z) < 0.01
     end

@@ -74,6 +74,7 @@ function Service:Align(player, request)
             assemblyPrecision = true,
             freePosition = true,
             fitPrecision = old.fitPrecision,
+            numericPrecision = old.numericPrecision,
             alignedOpeningId = if member == shaft then
                 target:GetAttribute("InstanceId") else old.alignedOpeningId,
             shaftRollDegrees = if member == shaft

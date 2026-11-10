@@ -28,6 +28,20 @@ function Context:Lines()
     local a = self.Assembly
     local lines = {}
     if not tool then return { "Choose a tool: 1–4" } end
+    if c.PendingMateChoice then
+        append(lines,"1","Rigid • one component")
+        append(lines,"2","Bearing • rotation")
+        append(lines,"3","Slider • linear travel")
+        append(lines,"4","Cylindrical • slide + rotate")
+        append(lines,"Esc","Cancel connection")
+        return lines
+    end
+    if c.Numeric and c.Numeric.Active then
+        append(lines,"X Y Z","Type dimensions in U")
+        append(lines,"Enter","Apply precise size")
+        append(lines,"Esc","Cancel")
+        return lines
+    end
     if player:GetAttribute("OPENWORKS_Simulating") == true then
         append(lines, "P", "Stop physics")
         append(lines, "M", "Motor on / off")
@@ -46,18 +60,19 @@ function Context:Lines()
             append(lines, "Move / Look", "Resize in 3D")
             append(lines, "Step", tostring(c.ScaleHandles.IncrementU) .. " U")
             append(lines, "Release", "Apply size")
+            append(lines, "N", "Enter exact dimensions in U")
             append(lines, "V / Esc", "Exit scale")
         elseif c.CatalogOpen then
             append(lines, "LMB", "Choose primitive")
             append(lines, "B / Esc", "Close catalog")
         else
             append(lines, "LMB", "Place / auto-attach")
-            append(lines, "B / V", "Catalog / resize")
+            append(lines, "B / V / N", "Catalog / resize / exact U")
             if c.SmartMatch then
                 append(lines, "Tab", "Next compatible target")
                 if c.SmartMatch.kind=="Bore" then
                     append(lines, "Wheel / Q E", "Depth / shaft roll")
-                    append(lines, "C", "Rigid / Bearing / Slider / Cylindrical")
+                    append(lines, "On release", "1–4 relationship choice")
                 elseif c.SmartMatch.kind=="Hub" then
                     append(lines, "Hub", "Rigid gear-on-shaft mount")
                 end
@@ -67,11 +82,26 @@ function Context:Lines()
             end
         end
     elseif tool == "Edit" then
-        if c.ScaleMode then
+        if a.ManualActive then
+            if a.Stage=="GearFirst" or a.Stage=="GearSecond" then
+                append(lines,"Click","Choose gear to mesh")
+                append(lines,"K / Esc","Cancel gear connection")
+            elseif a.Stage=="JointSettings" then
+                append(lines,"U","Toggle joint limits")
+                append(lines,"[ ]","Adjust allowed travel")
+                append(lines,"Esc","Done editing joint")
+            else
+                append(lines,"Click","Housing then shaft")
+                append(lines,"R","Change relationship")
+                append(lines,"Wheel / Q E","Depth / rotation")
+                append(lines,"Esc","Exit manual relationship")
+            end
+        elseif c.ScaleMode then
             append(lines, "LMB hold", "Grab face")
             append(lines, "Move / Look", "Resize in 3D")
             append(lines, "Step", tostring(c.ScaleHandles.IncrementU) .. " U")
             append(lines, "Release", "Apply size")
+            append(lines, "N", "Enter exact dimensions in U")
             append(lines, "V / Esc", "Exit scale")
         elseif c.Layered and c.Layered.Alignment then
             local align = c.Layered.Alignment
@@ -96,7 +126,7 @@ function Context:Lines()
                 append(lines, "Tab / Alt", "Change target / bypass")
                 if c.SmartMatch.kind=="Bore" then
                     append(lines, "Wheel / Q E", "Depth / shaft roll")
-                    append(lines, "C", "Rigid / Bearing / Slider / Cylindrical")
+                    append(lines, "On release", "1–4 relationship choice")
                 elseif c.SmartMatch.kind=="Hub" then
                     append(lines, "Hub", "Rigid gear-on-shaft mount")
                 end
@@ -109,48 +139,22 @@ function Context:Lines()
             append(lines, "Double click", "Edit member inside component")
             append(lines, "Hold selected", "Drag to auto-align")
             append(lines, "Alt+LMB", "Cycle deeper layers")
-            append(lines, "V / G", "Scale / Move")
+            append(lines, "V / N / G", "Scale / exact size / Move")
             if c.Selected and type(c.Selected:GetAttribute("AlignedOpeningId"))=="string" then
                 append(lines,"V","Resize aligned shaft length only")
             end
             append(lines, "R / T / Y", "World-axis rotation")
-            append(lines, "L", "Align shaft")
+            append(lines, "L", "Manual align")
+            append(lines, "K / J / H", "Gears / joint limits / relationship")
             append(lines, "C / U", "Combine / Ungroup")
             append(lines, "E", "Edit group interior")
             append(lines, "F / Del", "Duplicate / Delete")
             append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
         end
-    elseif tool == "Assemble" then
-        if a.Stage=="GearFirst" then
-            append(lines,"LMB","Choose driving gear")
-            append(lines,"K / Esc","Cancel gear mesh")
-        elseif a.Stage=="GearSecond" then
-            append(lines,"LMB","Choose mating gear")
-            append(lines,"K / Esc","Cancel gear mesh")
-        elseif a.Stage=="JointSettings" then
-            append(lines,"U","Toggle motion limits")
-            append(lines,"[  ]","Adjust limit range")
-            append(lines,"Esc","Close joint settings")
-        elseif a.Stage=="Preview" then
-            append(lines,"Wheel / [ ]","Insertion depth")
-            append(lines,"Q / E","Rotate shaft around bore")
-            append(lines,"LMB","Create selected joint")
-            append(lines,"Esc","Cancel")
-        elseif a.Stage=="Fit" then
-            append(lines,"Wheel / [ ]","Diameter ±0.05 U")
-            append(lines,"Alt+wheel","Insertion depth")
-            append(lines,"Q / E","Shaft rotation")
-            append(lines,"LMB / Esc","Finish fitting")
-        else
-            append(lines,"LMB",if a.Stage=="Housing"
-                then "Choose housing" else "Choose shaft/body")
-            append(lines,"R","Bearing / Slider / Cylinder / Fixed")
-            append(lines,"K","Connect a gear pair")
-            append(lines,"G","Toggle body grounding")
-            append(lines,"J","Edit existing joint")
-            append(lines,"P / Shift+P","Simulate grounded / free")
-            append(lines,"Del","Delete aimed relationship")
-        end
+    elseif tool=="Simulate" then
+        append(lines,"Click / G","Toggle grounding on aimed body")
+        append(lines,"P / Shift+P","Simulate grounded / free")
+        append(lines,"M","Motor on/off during simulation")
     elseif tool == "Inspect" then
         append(lines, "LMB", "Inspect")
         append(lines, "Tab", "Cycle depth")

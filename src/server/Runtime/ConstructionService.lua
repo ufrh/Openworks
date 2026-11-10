@@ -104,6 +104,7 @@ local function snapshot(model)
         resizePrecision = model:GetAttribute("ResizePrecision") == true,
         freePosition = model:GetAttribute("FreePosition") == true,
         fitPrecision = model:GetAttribute("FitPrecision") == true,
+        numericPrecision = model:GetAttribute("NumericPrecision") == true,
         alignedOpeningId = model:GetAttribute("AlignedOpeningId"),
         grounded = model:GetAttribute("Grounded") == true,
         orientation = model:GetAttribute("AuthoredRotation"),
@@ -227,7 +228,8 @@ local function validState(player, entry, proposed)
         return false, "Fine-fit precision is reserved for full Cylinder shafts"
     end
     if not Grid.ValidSize(original.Size, proposed.size,
-        entry.ResizeMode, proposed.fitPrecision == true) then
+        entry.ResizeMode, proposed.fitPrecision == true,
+        proposed.numericPrecision == true) then
         return false, "Size does not match allowed Unit increments"
     end
 
@@ -252,6 +254,7 @@ local function applyState(model, data)
         or Grid.HasFractionalSize(data.size))
     model:SetAttribute("FreePosition", data.freePosition == true)
     model:SetAttribute("FitPrecision", data.fitPrecision == true)
+    model:SetAttribute("NumericPrecision", data.numericPrecision == true)
     model:SetAttribute("AlignedOpeningId", data.alignedOpeningId)
     model:SetAttribute("Grounded", data.grounded == true)
     model:SetAttribute("AuthoredRotation", data.orientation)
@@ -369,6 +372,7 @@ local function place(player, payload)
         size = payload.size or (template and template.Size),
     }
     proposed.resizePrecision = Grid.HasFractionalSize(proposed.size)
+    proposed.numericPrecision = payload.numericPrecision == true
 
     local valid, reason = validState(player, entry, proposed)
     if not valid then return false, reason end
@@ -440,6 +444,8 @@ local function update(player, payload)
         freePosition = model:GetAttribute("FreePosition") == true
             or payload.freePosition == true,
         fitPrecision = model:GetAttribute("FitPrecision") == true,
+        numericPrecision = model:GetAttribute("NumericPrecision") == true
+            or payload.numericPrecision == true,
         alignedOpeningId = model:GetAttribute("AlignedOpeningId"),
         grounded = model:GetAttribute("Grounded") == true,
         -- Resizing/moving a fine-rotated shaft must preserve its authored
@@ -458,11 +464,13 @@ local function update(player, payload)
     local opening=before.alignedOpeningId
         and findOwned(player,before.alignedOpeningId) or nil
     if opening and Alignment.IsShaft(model) then
-        -- A seated shaft may change its X-axis length only.
+        -- Normal scale grips are length-only. Precise numeric entry may
+        -- change the diameter only if the real bore clearance allows it.
         -- Fine-fit diameter remains controlled by the dedicated 0.05 U
         -- fitting workflow, not ordinary scale grips/remote updates.
-        if math.abs(proposed.size.Y-before.size.Y)>0.0001
-            or math.abs(proposed.size.Z-before.size.Z)>0.0001 then
+        if payload.numericPrecision~=true and (
+            math.abs(proposed.size.Y-before.size.Y)>0.0001
+            or math.abs(proposed.size.Z-before.size.Z)>0.0001) then
             return false,"Aligned shafts resize along length only (X axis)"
         end
     end
@@ -694,31 +702,25 @@ local function handle(player, payload)
     if action == "GetMechanismInfo" then
         -- Read-only information is available even during simulation.
     elseif simulationAction then
-        if action ~= "StopSimulation" and not hasEquippedTool(player, "Assemble") then
-            return { ok = false, message = "Equip Assemble to simulate a mechanism" }
+        if action ~= "StopSimulation" and not hasEquippedTool(player,"Simulate") then
+            return {ok=false,message="Equip Simulate to run a mechanism"}
         end
     elseif simulation and simulation:IsRunning(player) then
         return { ok = false, message = "Stop simulation (P) before editing" }
     elseif mechanicalAction then
-        if action == "SetGrounded" or action == "PoseShaft" then
-            if not hasEquippedTool(player, "Edit")
-                and not hasEquippedTool(player, "Assemble") then
-                return { ok = false, message = "Equip Edit or Assemble" }
+        if action=="SetGrounded" then
+            if not hasEquippedTool(player,"Simulate")
+                and not hasEquippedTool(player,"Edit") then
+                return {ok=false,message="Equip Simulate to ground a body"}
             end
-        elseif action == "FitShaft" then
-            if not hasEquippedTool(player, "Assemble")
-                and not hasEquippedTool(player, "Edit") then
-                return { ok = false, message = "Equip Edit or Assemble to fit the shaft" }
-            end
-        elseif not hasEquippedTool(player, "Assemble") then
-            return { ok = false, message = "Equip Assemble to edit relationships" }
+        elseif action~="GetMechanismInfo"
+            and not hasEquippedTool(player,"Edit") then
+            return {ok=false,message="Equip Edit to modify relationships"}
         end
     elseif componentAction or alignmentAction or smartAction then
         if not hasEquippedTool(player, "Edit") then
             return { ok = false, message = "Equip Edit to modify components" }
         end
-    elseif (action == "Undo" or action == "Redo") and hasEquippedTool(player, "Assemble") then
-        -- Relationship history is shared with construction history.
     elseif not accessFor(player, action) then
         return { ok = false, message = "Equip Build or Edit" }
     end

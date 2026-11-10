@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS phase 01: native first-person tools and camera controls.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.10.PHASE08.BIDIRECTIONAL-COMPONENTS"
+local BUILD = "2026.11.10.PHASE08.UNIFIED-TOOLS-PRECISION"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -26,9 +26,12 @@ local tools = ToolController.new()
 tools:Start()
 
 local constructionController = ConstructionController.new(tools)
-constructionController:Start()
-
 local assemblyController = AssemblyController.new(tools)
+-- A single Edit tool owns both primitive operations and joint authoring;
+-- the companion controller exclusively owns Simulate actions on tool 3.
+constructionController.Assembly = assemblyController
+assemblyController.Construction = constructionController
+constructionController:Start()
 assemblyController:Start()
 
 local contextKeybinds = ContextKeybinds.new(
@@ -46,4 +49,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | Phase 08 bidirectional component placement client ready", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | Phase 08 unified editing and precision controls ready", BUILD, tostring(FORGE.Version)))

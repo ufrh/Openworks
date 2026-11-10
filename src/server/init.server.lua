@@ -17,7 +17,7 @@ FORGE.Start({ Bridge = bridge, Roots = {} })
 provisioner.Start()
 ConstructionService.Start()
 
-print(string.format("[OPENWORKS] FORGE %s | Phase 08 bidirectional component placement server ready", tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] FORGE %s | Phase 08 unified tools + precision sizing server ready", tostring(FORGE.Version)))
 
 game:BindToClose(function()
     FORGE.Shutdown()

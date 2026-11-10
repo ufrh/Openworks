@@ -154,6 +154,7 @@ function ComponentService:Plan(player, payload)
         -- A fitted shaft may be the center primitive of its component.
         -- Preserve server-authorized 0.05-U diameter precision when moving it.
         fitPrecision = anchorState.fitPrecision,
+        numericPrecision = anchorState.numericPrecision,
     }
     local valid, why = d.validState(player, anchorEntry, newAnchor)
     if not valid then return nil, nil, why end
