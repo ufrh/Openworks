@@ -610,8 +610,15 @@ function Controller:RecognizeAttachment(raw,hit)
     local targets
     if fullScan then
         self.SmartLastScan=os.clock()
+        local span=0
+        if self.Pending=="ComponentMove" then
+            local pivot=preview:GetPivot().Position
+            for _,member in ipairs(SmartPlacement.Members(preview)) do
+                span=math.max(span,(member:GetPivot().Position-pivot).Magnitude)
+            end
+        end
         targets=SmartPlacement.NearbyTargets(
-            folder,player.UserId,raw.Position,ignore,ray
+            folder,player.UserId,raw.Position,ignore,ray,span
         )
     else
         targets=if self.SmartMatch and self.SmartMatch.target.Parent

@@ -360,8 +360,15 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 end
             end
             if cf and kind=="Bore" and #members>1 then
-                cf,roll=bestBoreRoll(ghost,members,source,target,
-                    isOpening,offset,roll,cf,allTargets or targets,ignored)
+                local chosenTargets=allTargets or targets
+                local initial=MultiFit.Find(members,chosenTargets,
+                    cf*ghost:GetPivot():Inverse(),ignored)
+                -- Don't run the multi-angle search every frame if the
+                -- authored hole pattern already registers two or more fits.
+                if not initial or #initial<2 then
+                    cf,roll=bestBoreRoll(ghost,members,source,target,
+                        isOpening,offset,roll,cf,chosenTargets,ignored)
+                end
             end
             if cf then
                 -- Evaluate the WHOLE moving component under the proposed pose:
@@ -398,7 +405,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
 end
 
 function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
-    reference: Vector3, ignored, aimRay)
+    reference: Vector3, ignored, aimRay, extraReach)
     local targets={}
     if not folder then return targets end
     for _,model in ipairs(folder:GetChildren()) do
@@ -407,6 +414,7 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
             and not (ignored and ignored[model]) then
             local size=model.PrimaryPart.Size.Magnitude
             local range=Smart.SnapDistance+math.min(3,size)
+                +math.clamp(extraReach or 0,0,24)
             if (model:GetPivot().Position-reference).Magnitude<=range
                 or aimDistance(aimRay,model:GetPivot().Position)
                     <=math.clamp(size*0.38,0.48,1.5) then
