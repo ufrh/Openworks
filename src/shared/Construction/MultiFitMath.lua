@@ -8,7 +8,7 @@ local Grid=require(script.Parent:WaitForChild("GridMath"))
 local Fit={}
 Fit.MaxPairs=32
 Fit.RadialTolerance=Grid.Unit*0.12
-Fit.AxisTolerance=0.998
+Fit.AxisTolerance=0.9998
 
 local function key(model)
     return tostring(model:GetAttribute("InstanceId") or model.Name)
@@ -33,15 +33,27 @@ function Fit.Check(moving,stationary,delta)
     local localAxis=Alignment.TargetAxis(hole)
     local axis=holeCF:VectorToWorldSpace(localAxis).Unit
     local shaftAxis=shaftCF.RightVector.Unit
-    if math.abs(axis:Dot(shaftAxis))<Fit.AxisTolerance then return nil end
+    local angular=math.abs(axis:Dot(shaftAxis))
+    if angular<Fit.AxisTolerance then return nil end
     local diameter=Bore.OpeningDiameter(hole)
     if not diameter then return nil end
-    if math.max(shaft.PrimaryPart.Size.Y,shaft.PrimaryPart.Size.Z)
-        >diameter-0.002 then return nil end
+    local shaftDiameter=math.max(shaft.PrimaryPart.Size.Y,
+        shaft.PrimaryPart.Size.Z)
+    if shaftDiameter>diameter-0.002 then return nil end
     local distance=shaftCF.Position-holeCF.Position
     local depth=distance:Dot(axis)
     local radial=(distance-axis*depth).Magnitude
     if radial>Fit.RadialTolerance then return nil end
+    local holeSize=hole.PrimaryPart.Size
+    local thickness=math.abs(localAxis.X)*holeSize.X
+        +math.abs(localAxis.Y)*holeSize.Y
+        +math.abs(localAxis.Z)*holeSize.Z
+    local skew=thickness*0.5*math.sqrt(math.max(0,1-angular*angular))
+        /angular
+    -- Inset shaft must fit at BOTH faces, not only along its centerline.
+    -- Without this clearance check a nearly-aligned rod could be falsely
+    -- whitelisted as noninterfering despite clipping the bore wall.
+    if shaftDiameter+2*(radial+skew)>diameter-0.002 then return nil end
     local lo,hi=Alignment.OffsetBounds(shaft,hole)
     if not lo or depth/Grid.Unit<lo-0.006
         or depth/Grid.Unit>hi+0.006 then return nil end
