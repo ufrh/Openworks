@@ -2,7 +2,7 @@
 
 ## Setup
 
-1. On the local `dev` branch, run `START_OPENWORKS.bat`. The launcher should report `2026.11.09.PHASE02.DRAG-SCALE`.
+1. On the local `dev` branch, run `START_OPENWORKS.bat`. The launcher should report `2026.11.09.PHASE02.LOCKED-SCALE`.
 2. Connect Rojo at port **34872**.
 3. Keep your previously generated `ReplicatedStorage.OPENWORKS_PrimitiveLibrary_DRAFT` in the Studio place. The client logs how many templates it found.
 4. Press Play. The primitive showroom gallery should disappear **only in Play**, so it does not interfere with raycasts or movement.
@@ -16,7 +16,7 @@
 - Aim at the ground or an existing piece. Click to place.
 - Repeat and stack blocks against one another. Pieces should follow a **1 U = 0.25 studs** grid and touch at faces without overlapping.
 - Rotate placement in 90-degree increments using **R** (Y axis), **T** (X axis), **Y** (Z axis).
-- Aim the Build preview at a surface and press **V** to freeze it in **Scale** mode. The mouse unlocks and colored face handles appear: red X, green Y, blue Z. Drag one outward/inward; the size previews in 1 U increments while the opposite face stays anchored. Press V/Esc to return to normal first-person placement.
+- Aim the Build preview at a surface and press **V** to freeze it in **Scale** mode. The mouse **stays locked** and colored face handles appear: red X, green Y, blue Z. Aim your center crosshair at a grip (it enlarges), hold left click, and drag. Mouse movement adjusts the size in 1 U increments while the opposing face stays anchored. Press V/Esc to return to normal first-person placement.
 - Native solids have free dimensional resizing subject to shape constraints. Tubes only resize along their length; fixed drilled/slot modules cannot resize.
 - Press **Ctrl+Z** to undo and **Ctrl+Y** to redo.
 
@@ -26,7 +26,7 @@
 - Aim at one of your placed pieces and click to select it. It receives an outline.
 - **G** enters move placement; aim at the new surface and click to confirm. **Esc** cancels.
 - **R/T/Y** rotate the selected piece in 90-degree steps.
-- **V** opens the draggable Scale gizmo on the selection, with cursor unlocked. Drag a face grip; on mouse release the server commits one rescale operation (one undo step). Press V/Esc to dismiss the handles and resume first-person aiming.
+- **V** opens the draggable Scale gizmo on the selection, with first-person mouse lock preserved. Aim the crosshair at a grip, hold left click, and drag. The camera stays fixed *only while dragging*; on mouse release the server commits one rescale operation (one undo step). Press V/Esc to dismiss the handles and resume first-person aiming.
 - **F** or **Ctrl+D** copies a selected piece into a ghost preview; click to place it.
 - **Delete/Backspace** deletes the selected piece.
 - **Ctrl+Z / Ctrl+Y** undo and redo create, edit, and delete operations.
@@ -42,7 +42,7 @@
 - Joining parts into **one rigid component** is **not implemented**; Phase 03 will introduce that concept.
 - A shaft placed inside an empty tube opening should be permitted if the CSG collision decomposition agrees. Extremely small holes still require physics tests.
 - Equip Assemble/Inspect: they remain mode placeholders, with no destructive side effects.
-- Reset the character; the four native tools should reappear without duplicates.\n- While the catalog is open, verify mouse moves normally across the whole screen and the view does not turn. While dragging scale grips, verify camera stays still and no accidental piece is placed.\n- Rotate a rectangular block and drag a face; check the opposite face remains in place. Test the minimum 1 U limit and undo a completed drag with Ctrl+Z.
+- Reset the character; the four native tools should reappear without duplicates.\n- While the catalog is open, verify mouse moves normally across the whole screen and the view does not turn. While scaling, verify the cursor **never unlocks**, normal first-person looking works until a grip is grabbed, the camera stays still during held drag, and no accidental piece is placed.\n- Rotate a rectangular block and drag a face; check the opposite face remains in place. Test the minimum 1 U limit and undo a completed drag with Ctrl+Z.
 - Ctrl+Z and Ctrl+Y should affect only the current player's pieces.
 - Play runs should not persist placement after server shutdown; blueprints/persistence are a later phase.
 

@@ -1,7 +1,7 @@
 --!strict
--- Mouse-driven face resize gizmo for Build previews and Edit selections.
--- Screen-projected grips, opposing face anchored, 1 U steps, one server request
--- on mouse release (the caller owns the authoritative commit).
+-- First-person resize gizmo. The mouse NEVER unlocks for scaling.
+-- Aim the central crosshair at a projected face handle, hold left mouse,
+-- and drag with relative MouseMovement. One server edit on release.
 
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -15,11 +15,15 @@ local Gizmo = {}
 Gizmo.__index = Gizmo
 
 local AXES = { Vector3.xAxis, Vector3.yAxis, Vector3.zAxis }
+local AXIS_NAMES = { "X", "Y", "Z" }
 local COLORS = {
     Color3.fromRGB(224, 106, 100),
     Color3.fromRGB(113, 202, 137),
     Color3.fromRGB(115, 164, 245),
 }
+
+local PICK_RADIUS = 33
+local CAMERA_PRIORITY = Enum.RenderPriority.Camera.Value + 3
 
 local function withAxis(size, axis, value)
     if axis == 1 then return Vector3.new(value, size.Y, size.Z) end
@@ -30,7 +34,7 @@ end
 local function nextSize(mode, initial, axis, amount)
     local delta = amount * Grid.Unit
     if mode == "XYZ_1U" then
-        return withAxis(initial, axis, initial[({ "X", "Y", "Z" })[axis]] + delta)
+        return withAxis(initial, axis, initial[AXIS_NAMES[axis]] + delta)
     elseif mode == "UniformDiameter_1U" then
         return Vector3.new(initial.X + delta, initial.X + delta, initial.X + delta)
     elseif mode == "LengthAndDiameter_1U" then
@@ -40,6 +44,13 @@ local function nextSize(mode, initial, axis, amount)
         return Vector3.new(initial.X + delta, initial.Y, initial.Z)
     end
     return nil
+end
+
+local function canUse(mode, axis)
+    return mode ~= "None"
+        and (mode ~= "LengthOnly_1U" or axis == 1)
+        and (mode ~= "UniformDiameter_1U" or axis == 1)
+        and (mode ~= "LengthAndDiameter_1U" or axis ~= 3)
 end
 
 function Gizmo.new(gui, onChange, onCommit)
@@ -54,23 +65,27 @@ function Gizmo.new(gui, onChange, onCommit)
         Mode = "None",
         TemplateSize = Vector3.one,
         Active = false,
+        Hovered = nil,
         Drag = nil,
+        Camera = nil,
+        PreviousCameraType = nil,
     }, Gizmo)
 
     for axis = 1, 3 do
         for _, sign in ipairs({ -1, 1 }) do
-            local grip = Instance.new("TextButton")
-            grip.Name = "Scale_" .. ({ "X", "Y", "Z" })[axis] .. (if sign == 1 then "Plus" else "Minus")
+            -- Display-only labels: input always goes through the center
+            -- crosshair and the native first-person mouse, not GUI clicking.
+            local grip = Instance.new("TextLabel")
+            grip.Name = "Scale_" .. AXIS_NAMES[axis] .. (if sign == 1 then "Plus" else "Minus")
             grip.AnchorPoint = Vector2.new(0.5, 0.5)
-            grip.Size = UDim2.fromOffset(32, 32)
+            grip.Size = UDim2.fromOffset(28, 28)
             grip.BorderSizePixel = 0
             grip.BackgroundColor3 = COLORS[axis]
-            grip.BackgroundTransparency = 0.1
+            grip.BackgroundTransparency = 0.13
             grip.Font = Enum.Font.GothamBold
-            grip.Text = ({ "X", "Y", "Z" })[axis] .. (if sign == 1 then "+" else "-")
-            grip.TextSize = 12
+            grip.Text = AXIS_NAMES[axis] .. (if sign == 1 then "+" else "-")
+            grip.TextSize = 11
             grip.TextColor3 = Color3.new(1, 1, 1)
-            grip.AutoButtonColor = true
             grip.ZIndex = 40
             grip.Visible = false
             grip.Parent = gui
@@ -81,22 +96,32 @@ function Gizmo.new(gui, onChange, onCommit)
 
             local outline = Instance.new("UIStroke")
             outline.Color = Color3.fromRGB(238, 245, 255)
-            outline.Transparency = 0.2
+            outline.Transparency = 0.25
             outline.Thickness = 1
             outline.Parent = grip
 
-            table.insert(self.Connections, grip.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    self:BeginDrag(axis, sign)
-                end
-            end))
-            table.insert(self.Handles, { Axis = axis, Sign = sign, Object = grip })
+            table.insert(self.Handles, {
+                Axis = axis,
+                Sign = sign,
+                Object = grip,
+                Stroke = outline,
+                Point = nil,
+                Direction = nil,
+                Visible = false,
+            })
         end
     end
 
+    table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
+        if not self.Active or self.Drag or processed then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            self:BeginDrag()
+        end
+    end))
+
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
         if self.Drag and input.UserInputType == Enum.UserInputType.MouseMovement then
-            self:UpdateDrag()
+            self:UpdateDrag(input.Delta)
         end
     end))
 
@@ -110,10 +135,17 @@ function Gizmo.new(gui, onChange, onCommit)
         if self.Active then self:UpdateHandles() end
     end))
 
+    RunService:BindToRenderStep("OPENWORKS_ScaleHoldCamera", CAMERA_PRIORITY, function()
+        if self.Drag and self.Camera and self.Camera.Parent then
+            self.Camera.CFrame = self.Drag.CameraCF
+        end
+    end)
+
     return self
 end
 
 function Gizmo:Open(cf, size, mode, templateSize)
+    self:RestoreCamera()
     self.Drag = nil
     self.Active = true
     self.CFrame = cf
@@ -123,9 +155,20 @@ function Gizmo:Open(cf, size, mode, templateSize)
     self:UpdateHandles()
 end
 
+function Gizmo:RestoreCamera()
+    if self.Camera and self.Camera.Parent and self.PreviousCameraType then
+        self.Camera.CameraType = self.PreviousCameraType
+    end
+    self.Camera = nil
+    self.PreviousCameraType = nil
+end
+
 function Gizmo:Close()
     self.Active = false
     self.Drag = nil
+    self.Hovered = nil
+    self:RestoreCamera()
+
     for _, handle in ipairs(self.Handles) do
         handle.Object.Visible = false
     end
@@ -134,74 +177,98 @@ end
 function Gizmo:UpdateHandles()
     local camera = workspace.CurrentCamera
     if not camera then return end
+    local center = camera.ViewportSize / 2
+    local nearest, nearestDistance = nil, PICK_RADIUS
+
     for _, handle in ipairs(self.Handles) do
         local axis, sign = handle.Axis, handle.Sign
-        local usable = self.Mode ~= "None"
-            and (self.Mode ~= "LengthOnly_1U" or axis == 1)
-            and (self.Mode ~= "UniformDiameter_1U" or axis == 1)
-            and (self.Mode ~= "LengthAndDiameter_1U" or axis ~= 3)
-
         local grip = handle.Object
-        if not usable then
+        if not canUse(self.Mode, axis) then
+            handle.Visible = false
             grip.Visible = false
             continue
         end
 
-        local dir = self.CFrame:VectorToWorldSpace(AXES[axis] * sign)
-        local face = self.CFrame.Position + dir * self.Size[({ "X", "Y", "Z" })[axis]] / 2
-        local origin, visible = camera:WorldToViewportPoint(face)
-        local beyond = camera:WorldToViewportPoint(face + dir)
+        local outward = self.CFrame:VectorToWorldSpace(AXES[axis] * sign)
+        local face = self.CFrame.Position
+            + outward * self.Size[AXIS_NAMES[axis]] / 2
+        local projected, visible = camera:WorldToViewportPoint(face)
+        local beyond = camera:WorldToViewportPoint(face + outward)
+        local direction = Vector2.new(beyond.X - projected.X, beyond.Y - projected.Y)
 
-        local direction = Vector2.new(beyond.X - origin.X, beyond.Y - origin.Y)
         if direction.Magnitude < 0.5 then
-            -- Face-on axes project to a point. Fan those handles outward.
             local angle = axis * math.pi * 2 / 3
             direction = Vector2.new(math.cos(angle), math.sin(angle)) * sign
         end
 
         direction = direction.Unit
-        local screen = Vector2.new(origin.X, origin.Y) + direction * 30
-        grip.Position = UDim2.fromOffset(screen.X, screen.Y)
-        grip.Visible = visible
+        local screenPoint = Vector2.new(projected.X, projected.Y) + direction * 30
+        handle.Point = screenPoint
+        handle.Direction = direction
+        handle.PixelsPerUnit = math.max(10, (Vector2.new(
+            beyond.X - projected.X, beyond.Y - projected.Y
+        )).Magnitude * Grid.Unit)
+        handle.Visible = visible and projected.Z > 0
+        grip.Position = UDim2.fromOffset(screenPoint.X, screenPoint.Y)
+        grip.Visible = handle.Visible
+
+        if handle.Visible then
+            local distance = (screenPoint - center).Magnitude
+            if distance < nearestDistance then
+                nearest = handle
+                nearestDistance = distance
+            end
+        end
+    end
+
+    self.Hovered = if self.Drag then self.Drag.Handle else nearest
+
+    for _, handle in ipairs(self.Handles) do
+        local hovered = handle == self.Hovered
+        handle.Object.Size = UDim2.fromOffset(if hovered then 39 else 28, if hovered then 39 else 28)
+        handle.Object.BackgroundTransparency = if hovered then 0 else 0.13
+        handle.Stroke.Thickness = if hovered then 2.5 else 1
     end
 end
 
-function Gizmo:BeginDrag(axis, sign)
-    if not self.Active or self.Drag then return end
+function Gizmo:BeginDrag()
+    local handle = self.Hovered
+    if not handle or not handle.Visible then return end
     local camera = workspace.CurrentCamera
     if not camera then return end
 
-    local direction = self.CFrame:VectorToWorldSpace(AXES[axis] * sign)
-    local face = self.CFrame.Position
-        + direction * self.Size[({ "X", "Y", "Z" })[axis]] / 2
-    local projected = camera:WorldToViewportPoint(face)
-    local projectedNext = camera:WorldToViewportPoint(face + direction)
-    local projectedAxis = Vector2.new(
-        projectedNext.X - projected.X,
-        projectedNext.Y - projected.Y
-    )
-
-    if projectedAxis.Magnitude < 0.5 then
-        projectedAxis = Vector2.new(0, -1)
-    end
+    local outward = self.CFrame:VectorToWorldSpace(AXES[handle.Axis] * handle.Sign)
+    self.Camera = camera
+    self.PreviousCameraType = camera.CameraType
+    local capturedCF = camera.CFrame
 
     self.Drag = {
-        StartMouse = UserInputService:GetMouseLocation(),
+        Handle = handle,
         StartCF = self.CFrame,
         StartSize = self.Size,
-        Axis = axis,
-        Direction = direction,
-        ScreenDirection = projectedAxis.Unit,
-        PixelsPerUnit = math.max(9, projectedAxis.Magnitude * Grid.Unit),
+        Axis = handle.Axis,
+        Direction = outward,
+        ScreenDirection = handle.Direction,
+        PixelsPerUnit = handle.PixelsPerUnit,
+        PixelTravel = 0,
+        CameraCF = capturedCF,
     }
+
+    -- Freeze camera orientation only while holding the resize handle.
+    -- Mouse stays LockCenter throughout; camera returns on release.
+    camera.CameraType = Enum.CameraType.Scriptable
+    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 end
 
-function Gizmo:UpdateDrag()
+function Gizmo:UpdateDrag(delta)
     local drag = self.Drag
     if not drag then return end
 
-    local delta = UserInputService:GetMouseLocation() - drag.StartMouse
-    local steps = math.floor(delta:Dot(drag.ScreenDirection) / drag.PixelsPerUnit + 0.5)
+    -- Locked mouse position does not move. InputObject.Delta measures
+    -- relative mouse motion without ever unlocking the pointer.
+    drag.PixelTravel += delta:Dot(drag.ScreenDirection)
+
+    local steps = math.floor(drag.PixelTravel / drag.PixelsPerUnit + 0.5)
     local size = nextSize(self.Mode, drag.StartSize, drag.Axis, steps)
 
     if not size or not Grid.ValidSize(self.TemplateSize, size, self.Mode) then
@@ -219,9 +286,11 @@ function Gizmo:FinishDrag()
     if not drag then return end
 
     self.Drag = nil
-    local moved = (self.CFrame.Position - drag.StartCF.Position).Magnitude > 0.0001
+    self:RestoreCamera()
+
+    local changed = (self.CFrame.Position - drag.StartCF.Position).Magnitude > 0.0001
         or (self.Size - drag.StartSize).Magnitude > 0.0001
-    if not moved then return end
+    if not changed then return end
 
     local accepted = self.OnCommit(self.CFrame, self.Size, drag.StartCF, drag.StartSize)
     if not accepted then
@@ -233,6 +302,7 @@ end
 
 function Gizmo:Destroy()
     self:Close()
+    RunService:UnbindFromRenderStep("OPENWORKS_ScaleHoldCamera")
     for _, connection in ipairs(self.Connections) do
         connection:Disconnect()
     end

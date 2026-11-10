@@ -159,8 +159,8 @@ function Controller:MakeUI()
     }, catalog)
     create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, list)
 
-    -- Keep a visible, full-viewport modal GuiButton behind the catalog/scale
-    -- grips to release LockFirstPerson. Roblox controls stay native.
+    -- The primitive catalog alone unlocks the mouse. Resizing always uses
+    -- the center crosshair with a locked first-person pointer.
     local unlock = create("TextButton", {
         Name = "MouseReleaseSurface",
         Position = UDim2.fromOffset(0, 0),
@@ -216,12 +216,17 @@ function Controller:RefreshCatalog()
 end
 
 function Controller:RefreshPointer()
-    local unlocked = self.CatalogOpen or self.ScaleMode
+    -- Only the library needs the free cursor. Scale mode stays LockCenter,
+    -- and the ResizeGizmo uses relative MouseMovement + crosshair aiming.
+    local unlocked = self.CatalogOpen
     self.Unlock.Visible = unlocked
     self.Crosshair.Visible = not unlocked
     UserInputService.MouseIconEnabled = unlocked
+
     if unlocked then
         UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    else
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
     end
 end
 
@@ -262,7 +267,7 @@ function Controller:RefreshHUD()
             "  •  " .. string.format("%.2g × %.2g × %.2g U",
                 self.ScaleSize.X / Grid.Unit, self.ScaleSize.Y / Grid.Unit, self.ScaleSize.Z / Grid.Unit)
             else "")
-        self.HelpLabel.Text = "Drag X/Y/Z face grips to resize • 1 U steps • V/Esc finish"
+        self.HelpLabel.Text = "Aim at X/Y/Z grip • hold click + drag • V/Esc finish"
     elseif mode == "Build" then
         self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
             size.X / Grid.Unit, size.Y / Grid.Unit, size.Z / Grid.Unit) else "")
@@ -600,8 +605,8 @@ function Controller:Rotate(axis)
     self:RefreshHUD()
 end
 
--- Face drag scaling is an explicit pointer interaction to avoid moving the
--- first-person camera accidentally. V opens the grips, Esc/V closes them.
+-- Face drag scaling stays entirely within the native first-person
+-- locked mouse. V shows the grips; aim the crosshair at one, then drag.
 function Controller:BeginScale()
     if self.ScaleMode or self.CatalogOpen or self.Pending then return end
     local model = if self.Mode == "Edit" then self.Selected else self.Preview
@@ -800,10 +805,14 @@ function Controller:Start()
     end))
     RunService:BindToRenderStep("OPENWORKS_CursorUnlock",
         Enum.RenderPriority.Camera.Value + 2, function()
-            if self.CatalogOpen or self.ScaleMode then
-                -- Camera scripts can re-lock this during the camera step.
+            if self.CatalogOpen then
+                -- Native first-person camera can re-lock the cursor per-frame.
+                -- Keep the catalog interactive without modifying the toolbar.
                 UserInputService.MouseBehavior = Enum.MouseBehavior.Default
                 UserInputService.MouseIconEnabled = true
+            elseif self.ScaleMode then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+                UserInputService.MouseIconEnabled = false
             end
         end)
 
