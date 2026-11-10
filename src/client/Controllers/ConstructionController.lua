@@ -613,23 +613,7 @@ function Controller:RecognizeAttachment(raw,hit)
         return match
     end
     if fullScan then self.SmartMatches={} end
-    local target=hit and topBuiltModel(hit.Instance,folder)
-    if target and target:GetAttribute("OwnerUserId")==player.UserId
-        and not ignore[target] then
-        local members=SmartPlacement.Members(preview)
-        local mechanical=false
-        for _,member in ipairs(members) do
-            if AlignmentMath.IsShaft(member) or member:GetAttribute("GearTeeth") then
-                mechanical=true break
-            end
-        end
-        if not mechanical and members[1]
-            and (not members[1]:GetAttribute("ComponentId")
-                or members[1]:GetAttribute("ComponentId")~=target:GetAttribute("ComponentId")) then
-            return {kind="Surface",relationKind="Fixed",target=target,
-                source=members[1],cf=raw,offsetUnits=0,rollDegrees=0}
-        end
-    end
+    -- Contact is placement only. Welding requires a deliberate Weld-tool click.
     return nil
 end
 

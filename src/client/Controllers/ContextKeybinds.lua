@@ -42,6 +42,11 @@ function Context:Lines()
         append(lines,"Esc","Cancel")
         return lines
     end
+    if tool=="Weld" then
+        append(lines,"Click","Select first solid, then second to weld")
+        append(lines,"Esc","Cancel weld selection")
+        return lines
+    end
     if player:GetAttribute("OPENWORKS_Simulating") == true then
         append(lines, "P", "Stop physics")
         append(lines, "M", "Motor on / off")

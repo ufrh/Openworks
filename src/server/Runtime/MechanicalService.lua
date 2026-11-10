@@ -186,9 +186,10 @@ function Mechanical:Restore(player, spec)
         spring.MinLength=0.01
         spring.MaxLength=math.max(spring.FreeLength*1.8,0.25)
         spring.Visible=true
+        spring.Color=BrickColor.new("Bright orange")
         spring.Coils=8
-        spring.Radius=0.13
-        spring.Thickness=0.025
+        spring.Radius=SpringMath.Radius(source,target,mode)
+        spring.Thickness=math.clamp(spring.Radius*0.085,0.012,0.065)
         spring.Parent=folder
         if mode=="Piston" then
             -- The guide and restoring force are separate physical
@@ -438,6 +439,9 @@ function Mechanical:SmartMate(player, request, newSource)
     end
 
     local mode=request.mateKind
+    if mode=="Surface" then
+        return false,"Touching parts are never welded automatically. Use Weld."
+    end
     if mode~="Bore" and mode~="Gear"
         and mode~="Hub" and mode~="Surface" then
         return false,"Unsupported attachment"

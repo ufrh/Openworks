@@ -104,6 +104,24 @@ function Spring.Frames(source,target,mode)
     return tc.Position+axis*extent,sc.Position-axis*extent
 end
 
+-- The visible coil uses the maximum inscribed diameter of the matching
+-- plate faces, minus a small visual edge clearance.
+function Spring.Radius(source,target,mode)
+    if mode=="Plates" then
+        local function faceWidth(model)
+            local s=model.PrimaryPart.Size
+            local axis=thinAxis(model)
+            if axis=="X" then return math.min(s.Y,s.Z) end
+            if axis=="Y" then return math.min(s.X,s.Z) end
+            return math.min(s.X,s.Y)
+        end
+        return math.max(0.025,math.min(faceWidth(source),faceWidth(target))*0.5
+            -Grid.Unit*0.12)
+    end
+    return math.max(0.03,math.min(source.PrimaryPart.Size.Y,
+        source.PrimaryPart.Size.Z)*0.46)
+end
+
 function Spring.Settings(request,freeLength)
     local stiff=request.stiffness or 120
     local damp=request.damping or 14

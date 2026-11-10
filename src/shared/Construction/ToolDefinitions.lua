@@ -5,6 +5,7 @@ local definitions = {
     { Id = "Edit", Tooltip = "Build, resize, and edit mechanical relationships" },
     { Id = "Simulate", Tooltip = "Ground physical bodies and run mechanical simulations" },
     { Id = "Inspect", Tooltip = "Inspect, measure, and select obstructed components" },
+    { Id = "Weld", Tooltip = "Choose two touching solids and author an explicit weld" },
 }
 
 for _, definition in ipairs(definitions) do

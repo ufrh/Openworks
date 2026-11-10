@@ -90,6 +90,7 @@ function Controller.new(tools)
         Tools = tools,
         Active = false,
         Mode = nil,
+        WeldFirst = nil,
         ManualActive = false,
         Stage = "Housing",
         KindIndex = 1,
@@ -174,9 +175,19 @@ end
 function Controller:RefreshHUD()
     if not self.Gui then return end
     self.Gui.Enabled = self.Active
-        and (self.Mode == "Simulate" or self.ManualActive)
+        and (self.Mode == "Simulate" or self.Mode=="Weld" or self.ManualActive)
     if not self.Gui.Enabled then return end
 
+    if self.Mode=="Weld" then
+        self.Header.Text="OPENWORKS / WELD"
+        self.Detail.Text=if self.WeldFirst then "Choose the second touching solid"
+            else "Choose the first solid to weld"
+        self.Help.Text="Click both solids • Esc cancels selection"
+        if self.LastMessage and os.clock()<self.MessageUntil then
+            self.Detail.Text=self.LastMessage
+        end
+        return
+    end
     if self.Mode=="Simulate" and not self:IsSimulating() then
         self.Header.Text="OPENWORKS / SIMULATE"
         self.Detail.Text="GREEN grounded / ORANGE moving"
@@ -306,6 +317,7 @@ function Controller:Reset()
     self.PairFirst = nil
     self.PairKind = nil
     self.Joint = nil
+    self.WeldFirst=nil
     self:RefreshHUD()
 end
 
@@ -516,6 +528,31 @@ function Controller:RegisterAssembly(add)
     if ok and response and response.assemblyId then
         self.SelectedAssemblyId=response.assemblyId
     end
+end
+
+function Controller:WeldClick()
+    if self:IsSimulating() then
+        self:Message("Stop simulation before welding")
+        return
+    end
+    local picked=self:Pick()
+    if not picked then self:Message("Aim at a solid to weld") return end
+    if not self.WeldFirst then
+        self.WeldFirst=picked
+        self:RefreshHUD()
+        return
+    end
+    if self.WeldFirst==picked then
+        self:Message("Select a different touching solid")
+        return
+    end
+    local success=self:Request({
+        action="CreateWeld",
+        sourceId=self.WeldFirst:GetAttribute("InstanceId"),
+        targetId=picked:GetAttribute("InstanceId"),
+    })
+    if success then self.WeldFirst=nil end
+    self:RefreshHUD()
 end
 
 function Controller:StartManualJoint()
@@ -805,7 +842,7 @@ end
 function Controller:OnModeChanged(mode)
     if self.Mode~=mode then self:Reset() end
     self.Mode=mode
-    self.Active=mode=="Edit" or mode=="Simulate"
+    self.Active=mode=="Edit" or mode=="Simulate" or mode=="Weld"
     self:RefreshHUD()
 end
 
@@ -818,11 +855,17 @@ function Controller:Start()
     table.insert(self.Connections,self.Tools.Activated.Event:Connect(function(mode)
         if mode=="Simulate" and not self:IsSimulating() then
             self:ToggleGround()
+        elseif mode=="Weld" then
+            self:WeldClick()
         end
     end))
     table.insert(self.Connections,UserInputService.InputBegan:Connect(function(input,processed)
         if not self.Active or UserInputService:GetFocusedTextBox() then return end
         local key=input.KeyCode
+        if self.Mode=="Weld" then
+            if key==Enum.KeyCode.Escape then self.WeldFirst=nil self:RefreshHUD() end
+            return
+        end
         if self.Construction and
             (self.Construction.PendingMateChoice
                 or (self.Construction.Numeric and self.Construction.Numeric.Active)) then
@@ -863,13 +906,6 @@ function Controller:Start()
         end
         if key==Enum.KeyCode.J and shift then
             self:StartPair("Spring")
-            return
-        end
-        if key==Enum.KeyCode.B and shift then
-            self:StartPair("Weld")
-            return
-        elseif key==Enum.KeyCode.B then
-            self:StartPair("Bolt")
             return
         end
         if key==Enum.KeyCode.K then self:ToggleGearMode() return end

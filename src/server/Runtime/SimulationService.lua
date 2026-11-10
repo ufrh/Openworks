@@ -22,10 +22,7 @@ local MAX_JOINTS = 64
 local MAX_COLLISION_PAIRS = 1200
 
 local function bodyKey(model)
-    local component = model:GetAttribute("ComponentId")
-    if type(component) == "string" and component ~= "" then
-        return "c:" .. component
-    end
+    -- ComponentId is only an editor grouping; NEVER a physical joint.
     return "p:" .. tostring(model:GetAttribute("InstanceId"))
 end
 
@@ -91,6 +88,14 @@ function Simulation:Graph(player, seed)
         end
     end
 
+    local editorGroups={}
+    for _,model in pairs(owned) do
+        local group=model:GetAttribute("ComponentId")
+        if type(group)=="string" and group~="" then
+            editorGroups[group]=editorGroups[group] or {}
+            table.insert(editorGroups[group],bodyKey(model))
+        end
+    end
     local seedKey = bodyKey(seed)
     if not bodies[seedKey] then return nil, "Selected body is missing" end
     local edges = {}
@@ -141,6 +146,17 @@ function Simulation:Graph(player, seed)
     while index <= #queue do
         local key = queue[index]
         index += 1
+        -- Group members enter the same simulation SCOPE, not a welded body.
+        local current=bodies[key] and bodies[key][1]
+        local component=current and current:GetAttribute("ComponentId")
+        if component then
+            for _,peer in ipairs(editorGroups[component] or {}) do
+                if not visited[peer] then
+                    visited[peer]=true
+                    table.insert(queue,peer)
+                end
+            end
+        end
         for _, edge in ipairs(adjacent[key] or {}) do
             local nextKey = if edge.a == key then edge.b else edge.a
             if type(assemblyId)=="string" and assemblyId~=""
@@ -165,10 +181,6 @@ function Simulation:Graph(player, seed)
         if visited[edge.a] and visited[edge.b] then
             table.insert(connected, edge)
         end
-    end
-    if #connected==0 and not (type(assemblyId)=="string"
-        and assemblyId~="" and #models>0) then
-        return nil,"Register an assembly (A) or add a mechanical relationship"
     end
     if #models > MAX_PARTS or #connected > MAX_JOINTS then
         return nil, "Assembly exceeds simulation safety limits (128 parts / 64 joints)"
@@ -269,26 +281,24 @@ function Simulation:Start(player, payload)
             copyParts[id] = allParts(clone)
         end
 
-        -- 2. Compile each authored component into one physical rigid body.
+        -- A prefab is a physical primitive even if it has several geometry
+        -- Parts (bolt heads / gear teeth). Only those INTERNAL parts are welded.
+        -- Separately authored primitives remain independent without explicit
+        -- authored Weld/Bolt relationships, regardless of ComponentId.
         for key, originals in pairs(graph.bodies) do
             if graph.included[key] then
-                local first = originals[1]
-                local root = copies[first:GetAttribute("InstanceId")]
-                local anchor = root and root.PrimaryPart
-                if not anchor then error("A rigid component has no anchor") end
-                bodyAnchors[key] = anchor
-
-                for _, original in ipairs(originals) do
-                    local copy = copies[original:GetAttribute("InstanceId")]
-                    if not copy then error("Missing cloned component member") end
-                    for _, part in ipairs(copyParts[original:GetAttribute("InstanceId")]) do
-                        if part ~= anchor then
-                            local weld = Instance.new("WeldConstraint")
-                            weld.Name = "CompiledRigidMember"
-                            weld.Part0 = anchor
-                            weld.Part1 = part
-                            weld.Parent = runtime
-                        end
+                local id=originals[1]:GetAttribute("InstanceId")
+                local copy=copies[id]
+                local anchor=copy and copy.PrimaryPart
+                if not anchor then error("Primitive has no physics root") end
+                bodyAnchors[key]=anchor
+                for _,part in ipairs(copyParts[id]) do
+                    if part~=anchor then
+                        local weld=Instance.new("WeldConstraint")
+                        weld.Name="PrefabInternalPart"
+                        weld.Part0=anchor
+                        weld.Part1=part
+                        weld.Parent=runtime
                     end
                 end
             end
@@ -374,9 +384,10 @@ function Simulation:Start(player, payload)
                 spring.MinLength=0.01
                 spring.MaxLength=math.max(spring.FreeLength*1.8,0.25)
                 spring.Coils=8
-                spring.Radius=0.13
-                spring.Thickness=0.025
-                spring.Visible=true
+                spring.Radius=SpringMath.Radius(edge.source,edge.target,mode)
+                spring.Thickness=math.clamp(spring.Radius*0.085,0.012,0.065)
+                spring.Color=BrickColor.new("Bright orange")
+                spring.Visible=false -- native force only; hide edit coil
                 spring.Parent=runtime
                 table.insert(session.Constraints,spring)
                 if mode=="Piston" then
