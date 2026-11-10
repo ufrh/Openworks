@@ -213,6 +213,7 @@ function Mechanical:Create(player, request)
             targetState.steps = item.steps
             targetState.position = item.position
             targetState.assemblyPrecision = true
+            targetState.freePosition = true
             local entry = d.Registry.Get(old.templateId)
             if not entry then return false, "Missing component template" end
             local valid, why = d.validState(player, entry, targetState)

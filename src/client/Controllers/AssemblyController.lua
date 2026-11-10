@@ -14,6 +14,8 @@ local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("C
 local Config = require(construction:WaitForChild("BuildConfig"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Alignment = require(construction:WaitForChild("AlignmentMath"))
+local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
+local INSERTION_STEP_U = 0.5
 
 local TYPES = { "Bearing", "Slider", "Fixed" }
 local Controller = {}
@@ -93,6 +95,7 @@ function Controller.new(tools)
         Members = {},
         OffsetUnits = 0,
         PreviewModel = nil,
+        PreviewValid = true,
         LastMessage = nil,
         MessageUntil = 0,
         Connections = {},
@@ -124,7 +127,11 @@ function Controller:RefreshHUD()
         self.Help.Text = "Click a source  •  R change relation  •  Esc reset"
     else
         self.Detail.Text = "Insertion offset: " .. tostring(self.OffsetUnits) .. " U"
-        self.Help.Text = "Wheel adjusts depth  •  click finalize  •  R change type  •  Esc cancel"
+        self.Help.Text = "Wheel: 0.5 U depth • blue=clear, red=blocked • click finalize"
+    end
+
+    if self.Stage == "Preview" and self:Kind() ~= "Fixed" and not self.PreviewValid then
+        self.Detail.Text = "INTERFERENCE / move insertion until blue"
     end
 
     if self.LastMessage and os.clock() < self.MessageUntil then
@@ -262,6 +269,10 @@ function Controller:UpdatePreview()
     end
     if self.PreviewModel then
         self.PreviewModel:PivotTo(plan.delta * self.GhostStart)
+        local ignore = {}
+        for _, member in ipairs(self.Members) do ignore[member] = true end
+        self.PreviewValid = PreviewFeedback.IsClear(self.PreviewModel, ignore)
+        PreviewFeedback.Paint(self.PreviewModel, self.PreviewValid)
     end
     self:RefreshHUD()
 end
@@ -323,6 +334,10 @@ function Controller:Activate()
         self:MakePreview()
     else
         if not self.Housing or not self.Source then self:Reset() return end
+        if self:Kind() ~= "Fixed" and not self.PreviewValid then
+            self:Message("Red preview: geometry overlaps; adjust insertion")
+            return
+        end
         if self:Request({
             action = "CreateRelation",
             kind = self:Kind(),
@@ -334,6 +349,43 @@ function Controller:Activate()
         end
     end
     self:RefreshHUD()
+end
+
+function Controller:DeleteRelationship()
+    -- Delete an authored relationship by aiming at either connected body.
+    -- Construction itself is never deleted by the Assemble tool.
+    local candidate = self:Pick()
+    if not candidate then candidate = self.Source or self.Housing end
+    if not candidate then
+        self:Message("Aim at a connected part to delete its relationship")
+        return
+    end
+    local id = candidate:GetAttribute("InstanceId")
+    local relationships = workspace:FindFirstChild("OPENWORKS_Relationships")
+    if not relationships then
+        self:Message("No mechanical relationships to delete")
+        return
+    end
+    local chosen
+    for _, relation in ipairs(relationships:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId") == player.UserId
+            and (relation:GetAttribute("SourceId") == id
+                or relation:GetAttribute("TargetId") == id) then
+            chosen = relation
+            break
+        end
+    end
+    if not chosen then
+        self:Message("This part has no mechanical relationship")
+        return
+    end
+
+    if self:Request({
+        action = "RemoveRelation",
+        relationId = chosen:GetAttribute("RelationId"),
+    }) then
+        self:Reset()
+    end
 end
 
 function Controller:CycleType()
@@ -381,6 +433,9 @@ function Controller:Start()
             return
         elseif input.KeyCode == Enum.KeyCode.R then
             self:CycleType()
+        elseif input.KeyCode == Enum.KeyCode.Delete
+            or input.KeyCode == Enum.KeyCode.Backspace then
+            self:DeleteRelationship()
         elseif input.KeyCode == Enum.KeyCode.Z and
             (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
@@ -395,7 +450,8 @@ function Controller:Start()
             (input.KeyCode == Enum.KeyCode.LeftBracket or
             input.KeyCode == Enum.KeyCode.RightBracket) then
             self.OffsetUnits = math.clamp(
-                self.OffsetUnits + (if input.KeyCode == Enum.KeyCode.RightBracket then 1 else -1),
+                self.OffsetUnits + (if input.KeyCode == Enum.KeyCode.RightBracket
+                    then INSERTION_STEP_U else -INSERTION_STEP_U),
                 -Alignment.MaxOffsetUnits, Alignment.MaxOffsetUnits
             )
             self:UpdatePreview()
@@ -405,7 +461,8 @@ function Controller:Start()
         if not self.Active or self.Stage ~= "Preview" or self:Kind() == "Fixed" then return end
         if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
         self.OffsetUnits = math.clamp(
-            self.OffsetUnits + (if input.Position.Z > 0 then 1 else -1),
+            self.OffsetUnits + (if input.Position.Z > 0
+                then INSERTION_STEP_U else -INSERTION_STEP_U),
             -Alignment.MaxOffsetUnits, Alignment.MaxOffsetUnits
         )
         self:UpdatePreview()

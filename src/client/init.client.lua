@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS phase 01: native first-person tools and camera controls.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.09.PHASE05.MECHANICS"
+local BUILD = "2026.11.09.PHASE05.FREE-ALIGN-FEEDBACK"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -14,6 +14,7 @@ local CameraController = require(controllers:WaitForChild("CameraController"))
 local ToolController = require(controllers:WaitForChild("ToolController"))
 local ConstructionController = require(controllers:WaitForChild("ConstructionController"))
 local AssemblyController = require(controllers:WaitForChild("AssemblyController"))
+local ContextKeybinds = require(controllers:WaitForChild("ContextKeybinds"))
 
 FORGE.Start({ Roots = {} })
 
@@ -28,6 +29,11 @@ constructionController:Start()
 
 local assemblyController = AssemblyController.new(tools)
 assemblyController:Start()
+
+local contextKeybinds = ContextKeybinds.new(
+    tools, constructionController, assemblyController
+)
+contextKeybinds:Start()
 
 local entries = PrimitiveRegistry.List()
 if not PrimitiveRegistry.IsAvailable() then

@@ -2,7 +2,7 @@
 -- All player-facing construction dimensions are in U, never mm.
 local UNIT = 0.25
 local Grid = { Unit = UNIT, MaxUnits = 64, MaxDistance = 55,
-    MinSizeStepU = 0.25, DefaultSizeStepU = 0.25 }
+    MinSizeStepU = 0.25, DefaultSizeStepU = 0.5 }
 
 local function nearest(value, step, offset)
     return math.floor((value - offset) / step + 0.5) * step + offset

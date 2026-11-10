@@ -13,6 +13,8 @@ local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentGeometry = require(construction:WaitForChild("ComponentGeometry"))
+local SurfacePlacement = require(construction:WaitForChild("SurfacePlacement"))
+local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
 local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEditingController"))
 
@@ -99,8 +101,10 @@ function Controller.new(tools)
         PreviewCF = nil,
         CatalogOpen = false,
         ScaleMode = false,
-        ScaleStepIndex = 1,
+        ScaleStepIndex = 2,
         ScaleStepU = Grid.DefaultSizeStepU,
+        PreviewValid = true,
+        LastPreviewCheck = 0,
         ScaleGhost = nil,
         ScaleCF = nil,
         ScaleSize = nil,
@@ -414,6 +418,8 @@ function Controller:RebuildPreview()
 
     ghost.Parent = workspace
     self.Preview = ghost
+    self.PreviewValid = true
+    self.LastPreviewCheck = 0
 end
 
 function Controller:RefreshSelectionHighlights()
@@ -615,11 +621,34 @@ function Controller:UpdatePreview()
     end
 
     local rotation = Grid.Rotation(self.Steps)
-    local cf = Grid.FromSurface(hit.Position, hit.Normal, self.CurrentSize, rotation)
+    local proposed = Grid.FromSurface(hit.Position, hit.Normal, self.CurrentSize, rotation)
+    if not self.Preview.Parent then self.Preview.Parent = workspace end
+
+    -- A rigid component's anchor may be an interior or side primitive.
+    -- Place using the *lowest point of the complete rotated assembly* so
+    -- no member is accidentally pushed into the ground.
+    local group = self.Pending == "ComponentMove" or self.Pending == "ComponentCopy"
+    local cf
+    if group then
+        cf = SurfacePlacement.SnapToSurface(self.Preview, proposed,
+            hit.Position, hit.Normal)
+    else
+        cf = proposed
+        self.Preview:PivotTo(cf)
+    end
     self.PreviewCF = cf
 
-    if not self.Preview.Parent then self.Preview.Parent = workspace end
-    self.Preview:PivotTo(cf)
+    if os.clock() - self.LastPreviewCheck > 0.12 then
+        self.LastPreviewCheck = os.clock()
+        local ignore = {}
+        if self.Pending == "Move" and self.Selected then
+            ignore[self.Selected] = true
+        elseif self.Pending == "ComponentMove" then
+            for _, member in ipairs(self.SelectedParts) do ignore[member] = true end
+        end
+        self.PreviewValid = PreviewFeedback.IsClear(self.Preview, ignore)
+        PreviewFeedback.Paint(self.Preview, self.PreviewValid)
+    end
 end
 
 function Controller:Request(payload)
@@ -646,6 +675,10 @@ end
 
 function Controller:Place()
     if not self.PreviewCF or not self.CurrentId or not self.CurrentSize then return end
+    if not self.PreviewValid then
+        self:Message("Red preview: construction intersects existing geometry")
+        return
+    end
     local success = self:Request({
         action = "Place",
         templateId = self.CurrentId,
@@ -707,6 +740,10 @@ end
 
 function Controller:ConfirmMove()
     if not self.Selected or not self.PreviewCF then return end
+    if not self.PreviewValid then
+        self:Message("Red preview: movement intersects existing geometry")
+        return
+    end
     local success = self:Request({
         action = "Update",
         instanceId = self.Selected:GetAttribute("InstanceId"),
@@ -722,6 +759,10 @@ end
 
 function Controller:ConfirmComponentPlacement()
     if not self.SelectedComponentId or not self.GroupAnchor or not self.PreviewCF then return end
+    if not self.PreviewValid then
+        self:Message("Red preview: component overlaps another construction")
+        return
+    end
     local isCopy = self.Pending == "ComponentCopy"
     local ok = self:Request({
         action = if isCopy then "DuplicateComponent" else "TransformComponent",

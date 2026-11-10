@@ -71,7 +71,8 @@ end
 
 function Alignment.IsOffsetValid(units)
     return type(units) == "number" and units == units
-        and units % 1 == 0 and math.abs(units) <= Alignment.MaxOffsetUnits
+        and math.abs(units * 4 - math.round(units * 4)) < 0.0001
+        and math.abs(units) <= Alignment.MaxOffsetUnits
 end
 
 function Alignment.MatchSteps(orientation)
@@ -117,7 +118,7 @@ end
 
 function Alignment.Plan(members, shaft, target, offsetUnits)
     if not Alignment.IsOffsetValid(offsetUnits) then
-        return nil, "Insertion offset must be a whole Unit within +/-64 U"
+        return nil, "Insertion offset must be in 0.25-U increments within +/-64 U"
     end
     if not Alignment.IsShaft(shaft) then
         return nil, "Select a Cylinder shaft or a component containing one"
@@ -132,13 +133,9 @@ function Alignment.Plan(members, shaft, target, offsetUnits)
     local steps = closestOrientation(shaft, direction)
     if not steps then return nil, "Could not align shaft axes" end
 
-    local rawCenter = target:GetPivot().Position + direction * (offsetUnits * Grid.Unit)
-    -- Preserve coaxial center EXACTLY; do not snap the shaft to the
-    -- ordinary part-parity grid, which could shift it out of the bore.
-    local center = Grid.SnapAssemblyCenter(rawCenter)
-    if (center - rawCenter).Magnitude > 0.001 then
-        return nil, "Opening center is not on the assembly precision grid"
-    end
+    -- No grid rounding during coaxial alignment: the shaft uses the
+    -- target's true world-space hole axis and exact axial offset.
+    local center = target:GetPivot().Position + direction * (offsetUnits * Grid.Unit)
     local desiredShaft = CFrame.new(center) * Grid.Rotation(steps)
     local delta = desiredShaft * shaft:GetPivot():Inverse()
     local items = {}
@@ -148,9 +145,6 @@ function Alignment.Plan(members, shaft, target, offsetUnits)
         local world = delta * member:GetPivot()
         local partSteps = Alignment.MatchSteps(world.Rotation)
         if not partSteps then return nil, "A member cannot rotate to a 90-degree orientation" end
-        if not Grid.IsAssemblySnapped(world.Position) then
-            return nil, "Component geometry exceeds the assembly precision grid"
-        end
         table.insert(items, {
             model = member,
             position = world.Position,

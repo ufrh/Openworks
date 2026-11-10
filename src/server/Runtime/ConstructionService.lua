@@ -96,6 +96,7 @@ local function snapshot(model)
         componentAnchorId = model:GetAttribute("ComponentAnchorId"),
         assemblyPrecision = model:GetAttribute("AssemblyPrecision") == true,
         resizePrecision = model:GetAttribute("ResizePrecision") == true,
+        freePosition = model:GetAttribute("FreePosition") == true,
     }
 end
 
@@ -207,7 +208,11 @@ local function validState(player, entry, proposed)
     end
 
     local rotation = Grid.Rotation(proposed.steps)
-    if proposed.resizePrecision == true or Grid.HasFractionalSize(proposed.size) then
+    if proposed.freePosition == true or proposed.assemblyPrecision == true then
+        -- Server-created assembly and whole-component transforms may be
+        -- off-lattice because parts can have independently resized geometry.
+        -- Ownership, size/range, and interference are still validated.
+    elseif proposed.resizePrecision == true or Grid.HasFractionalSize(proposed.size) then
         if not Grid.IsSizeSnapped(proposed.position, proposed.size, rotation)
             and not (proposed.assemblyPrecision == true
                 and Grid.IsAssemblySnapped(proposed.position)) then
@@ -234,6 +239,7 @@ local function applyState(model, data)
     model:SetAttribute("AssemblyPrecision", data.assemblyPrecision == true)
     model:SetAttribute("ResizePrecision", data.resizePrecision == true
         or Grid.HasFractionalSize(data.size))
+    model:SetAttribute("FreePosition", data.freePosition == true)
 end
 
 local function commitRecord(player, before, after)
@@ -367,6 +373,7 @@ local function update(player, payload)
         assemblyPrecision = model:GetAttribute("AssemblyPrecision") == true,
         resizePrecision = model:GetAttribute("ResizePrecision") == true
             or payload.resizePrecision == true,
+        freePosition = model:GetAttribute("FreePosition") == true,
     }
     local valid, reason = validState(player, entry, proposed)
     if not valid then return false, reason end

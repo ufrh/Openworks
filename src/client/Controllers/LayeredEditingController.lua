@@ -12,6 +12,8 @@ local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("C
 local Config = require(construction:WaitForChild("BuildConfig"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
+local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
+local INSERTION_INCREMENT_U = 0.5
 
 local Layered = {}
 Layered.__index = Layered
@@ -318,6 +320,10 @@ function Layered:UpdateAlignPreview()
     align.Plan = plan
     if align.Preview then
         align.Preview:PivotTo(plan.delta * align.StartGhostPivot)
+        local ignore = {}
+        for _, member in ipairs(align.Members) do ignore[member] = true end
+        align.Valid = PreviewFeedback.IsClear(align.Preview, ignore)
+        PreviewFeedback.Paint(align.Preview, align.Valid)
     end
     self:RefreshVisuals()
     self.Parent:RefreshHUD()
@@ -391,7 +397,7 @@ function Layered:AdjustOffset(wheel)
     if amount == 0 then return true end
 
     align.OffsetUnits = math.clamp(
-        align.OffsetUnits + amount,
+        align.OffsetUnits + amount * INSERTION_INCREMENT_U,
         -AlignmentMath.MaxOffsetUnits,
         AlignmentMath.MaxOffsetUnits
     )
@@ -404,6 +410,10 @@ function Layered:ConfirmAlignment()
     local align = self.Alignment
     if not align or align.Stage ~= "Preview" then return end
 
+    if align.Valid == false then
+        self.Parent:Message("Red preview: shaft conflicts with solid geometry")
+        return
+    end
     local ok = self.Parent:Request({
         action = "Align",
         sourceId = align.Shaft:GetAttribute("InstanceId"),

@@ -148,6 +148,7 @@ function ComponentService:Plan(player, payload)
     local newAnchor = {
         position = payload.position, steps = payload.steps,
         size = anchorState.size,
+        freePosition = true,
     }
     local valid, why = d.validState(player, anchorEntry, newAnchor)
     if not valid then return nil, nil, why end
@@ -164,6 +165,7 @@ function ComponentService:Plan(player, payload)
         local target = copied(state)
         target.position = desiredCF.Position
         target.steps = steps
+        target.freePosition = true
 
         local entry = d.Registry.Get(state.templateId)
         if not entry then return nil, nil, "Missing primitive template" end
