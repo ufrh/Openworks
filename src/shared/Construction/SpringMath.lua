@@ -2,33 +2,11 @@
 -- Shape-independent, native-physics springs. A spring connects two selected
 -- primitives (which may belong to two larger manually joined components).
 -- It does not require matching plates, centered faces or a particular shape.
--- Shaft-in-bore springs retain the optional physical prismatic guide.
-local Alignment=require(script.Parent:WaitForChild("AlignmentMath"))
-local Bore=require(script.Parent:WaitForChild("BoreClearance"))
+-- A spring never creates a hidden slider, even between a shaft and a tube.
 local Grid=require(script.Parent:WaitForChild("GridMath"))
 
 local Spring={}
 local EDGE_CLEARANCE=Grid.Unit*0.12
-
-local function thinAxis(model)
-    local s=model.PrimaryPart.Size
-    if s.X<=s.Y and s.X<=s.Z then return "X" end
-    if s.Y<=s.Z then return "Y" end
-    return "Z"
-end
-
-local function plate(model)
-    if not model or not model.PrimaryPart then return false end
-    local name=string.lower(tostring(model:GetAttribute("TemplateId") or model.Name))
-    if string.find(name,"gear",1,true) or string.find(name,"bolt",1,true)
-        or string.find(name,"cylinder",1,true) or string.find(name,"tube",1,true)
-        then return false end
-    if string.find(name,"plate",1,true) then return true end
-    local s=model.PrimaryPart.Size
-    local axis=thinAxis(model)
-    local thickness=if axis=="X" then s.X elseif axis=="Y" then s.Y else s.Z
-    return thickness<=math.max(s.X,s.Y,s.Z)*0.45
-end
 
 local function groupEnvelope(model)
     -- Selection is through a model; if it's editor-grouped, show the
@@ -78,13 +56,7 @@ local function groupEnvelope(model)
     return (low+high)*0.5,(high-low)*0.5
 end
 
-function Spring.Mode(source,target)
-    -- Guided piston is a special case, never a prerequisite for a spring.
-    if source and target and Alignment.IsShaft(source)
-        and Alignment.TargetAxis(target) and Bore.ShaftFits(source,target) then
-        return "Piston"
-    end
-    if plate(source) and plate(target) then return "Plates" end
+function Spring.Mode(_source,_target)
     return "General"
 end
 
@@ -93,25 +65,12 @@ function Spring.Validate(source,target)
         or not source.PrimaryPart or not target.PrimaryPart then
         return nil,"Choose two different valid components"
     end
-    -- Any shapes, sizes, rotations and spacing are allowed. Limits on
-    -- ownership, build range and relationship count live on the server.
-    return Spring.Mode(source,target)
+    return "General"
 end
 
 function Spring.Frames(source,target,mode)
     local sc,tc=source:GetPivot(),target:GetPivot()
-    if mode=="Piston" then
-        local localAxis=Alignment.TargetAxis(target)
-        local axis=tc:VectorToWorldSpace(localAxis).Unit
-        local toward=if (sc.Position-tc.Position):Dot(axis)>=0 then axis else -axis
-        local s=target.PrimaryPart.Size
-        local housingLength=math.abs(localAxis.X)*s.X+
-            math.abs(localAxis.Y)*s.Y+math.abs(localAxis.Z)*s.Z
-        local shaftLength=source.PrimaryPart.Size.X
-        return tc.Position-toward*housingLength*0.27,
-            sc.Position+toward*shaftLength*0.27
-    end
-
+    -- Free spring force has no geometry-specific guide.
     local sourceCenter,sourceHalf=groupEnvelope(source)
     local targetCenter,targetHalf=groupEnvelope(target)
     local delta=sourceCenter-targetCenter
@@ -136,13 +95,7 @@ function Spring.Frames(source,target,mode)
 end
 
 function Spring.Radius(source,target,mode)
-    if mode=="Piston" then
-        local bore=Bore.OpeningDiameter(target)
-        local shaft=source.PrimaryPart.Size
-        return math.max(0.025,math.min(
-            (bore or math.min(shaft.Y,shaft.Z))*0.5,
-            math.min(shaft.Y,shaft.Z)*0.65)-EDGE_CLEARANCE*0.3)
-    end
+    -- Size from full component bounds, independent of primitive type.
     local a,ah=groupEnvelope(source)
     local b,bh=groupEnvelope(target)
     local delta=a-b

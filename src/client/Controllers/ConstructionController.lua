@@ -446,7 +446,7 @@ function Controller:ClearSmartMatch()
     self.SmartPreferred=nil
     self.SmartOffsetDeltaU=0
     self.SmartRollDelta=0
-    self.SmartBoreKind="Rigid"
+    self.SmartBoreKind="Cylindrical"
     self.SmartLastScan=0
     if self.SmartHighlight then self.SmartHighlight:Destroy() end
     self.SmartHighlight=nil

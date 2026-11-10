@@ -377,9 +377,8 @@ function Simulation:Start(player, payload)
                 weld.Parent = runtime
             elseif edge.kind=="Spring" then
                 local mode=edge.relation:GetAttribute("SpringMode")
-                if mode~="Piston" and mode~="Plates" and mode~="General" then
-                    error("Unsupported spring mechanism")
-                end
+                -- Old piston/plate labels are normalized to a free spring.
+                mode="General"
                 local world0,world1=SpringMath.Frames(
                     edge.source,edge.target,mode
                 )
@@ -412,44 +411,7 @@ function Simulation:Start(player, payload)
                     edge.relation:GetAttribute("RelationId"))
                 spring.Parent=runtime
                 table.insert(session.Constraints,spring)
-                if mode=="Piston" then
-                    -- Exactly ONE guide if a slider/cylindrical connection
-                    -- already constrains the same two mechanical bodies.
-                    local guided=false
-                    for _,other in ipairs(graph.edges) do
-                        if other~=edge
-                            and (other.kind=="Slider" or other.kind=="Cylindrical")
-                            and ((other.a==edge.a and other.b==edge.b)
-                                or (other.a==edge.b and other.b==edge.a)) then
-                            guided=true break
-                        end
-                    end
-                    if not guided then
-                        local frame=JointFrames.ForOpening(edge.target)
-                        if not frame then error("Piston spring missing opening axis") end
-                        local g0=Instance.new("Attachment")
-                        g0.CFrame=p0.CFrame:ToObjectSpace(frame)
-                        g0.Parent=p0
-                        local g1=Instance.new("Attachment")
-                        g1.CFrame=p1.CFrame:ToObjectSpace(frame)
-                        g1.Parent=p1
-                        local guide=Instance.new("PrismaticConstraint")
-                        guide.Name="SpringTravelGuide"
-                        guide.Attachment0=g0
-                        guide.Attachment1=g1
-                        local low,high=Alignment.OffsetBounds(edge.source,edge.target)
-                        local normal=edge.target:GetPivot():VectorToWorldSpace(
-                            Alignment.TargetAxis(edge.target)
-                        )
-                        local at=(edge.source:GetPivot().Position
-                            -edge.target:GetPivot().Position):Dot(normal)/Grid.Unit
-                        guide.LimitsEnabled=true
-                        guide.LowerLimit=(low-at)*Grid.Unit
-                        guide.UpperLimit=(high-at)*Grid.Unit
-                        guide.Parent=runtime
-                        table.insert(session.Constraints,guide)
-                    end
-                end
+                -- Free spring: no hidden prismatic or other motion guide.
             else
                 local worldFrame = JointFrames.ForOpening(edge.target)
                 if not worldFrame then error("Joint opening axis is unavailable") end

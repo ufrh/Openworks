@@ -184,8 +184,7 @@ function Mechanical:Restore(player, spec)
             folder:Destroy()
             return false,why or "Spring endpoints are unavailable"
         end
-        -- Geometry changes must not delete a valid general spring: an
-        -- invalidated piston guide gracefully becomes a free spring.
+        -- All restored spring relationships use the general free model.
         folder:SetAttribute("SpringMode",mode)
         local world0,world1=SpringMath.Frames(source,target,mode)
         local att0=Instance.new("Attachment")
@@ -219,35 +218,8 @@ function Mechanical:Restore(player, spec)
         spring.Radius=SpringMath.Radius(source,target,mode)
         spring.Thickness=math.clamp(spring.Radius*0.085,0.012,0.065)
         spring.Parent=folder
-        if mode=="Piston" then
-            -- The guide and restoring force are separate physical
-            -- constraints. Avoid an unconstrained sideways spring.
-            local frame=JointFrames.ForOpening(target)
-            if frame then
-                local g0=Instance.new("Attachment")
-                g0.CFrame=targetPart.CFrame:ToObjectSpace(frame)
-                g0.Parent=targetPart
-                local g1=Instance.new("Attachment")
-                g1.CFrame=sourcePart.CFrame:ToObjectSpace(frame)
-                g1.Parent=sourcePart
-                for _,ga in ipairs({g0,g1}) do
-                    local ref=Instance.new("ObjectValue")
-                    ref.Name="ManagedAttachment"
-                    ref.Value=ga
-                    ref.Parent=folder
-                end
-                local guide=Instance.new("PrismaticConstraint")
-                guide.Name="SpringGuide"
-                guide.Attachment0=g0
-                guide.Attachment1=g1
-                local low,high=Alignment.OffsetBounds(source,target)
-                local at=source:GetAttribute("AlignedOffsetU") or 0
-                guide.LimitsEnabled=true
-                guide.LowerLimit=(low-at)*self.D.Grid.Unit
-                guide.UpperLimit=(high-at)*self.D.Grid.Unit
-                guide.Parent=folder
-            end
-        end
+        -- No special-case auto guide. Slider or Cylindrical relationships
+        -- are independently authored if linear motion needs guidance.
     else
         local axisLocal = Alignment.TargetAxis(target)
         if not axisLocal or not Alignment.IsShaft(source) then
@@ -934,14 +906,6 @@ function Mechanical:CreateSpring(player,request)
     if not source then return false,reason end
     local mode,why=SpringMath.Validate(source,target)
     if not mode then return false,why end
-    if mode=="Piston" then
-        local fits,problem=Bore.ShaftFits(source,target)
-        if not fits then return false,problem end
-        local low,high=Alignment.OffsetBounds(source,target)
-        if not low or high-low<0.5 then
-            return false,"Spring shaft must have enough guided travel"
-        end
-    end
     local point0,point1=SpringMath.Frames(source,target,mode)
     local settings,problem=SpringMath.Settings(
         request,(point1-point0).Magnitude
@@ -958,9 +922,7 @@ function Mechanical:CreateSpring(player,request)
     local created,err=self:Restore(player,spec)
     if not created then return false,err end
     self.D.commitAssembly(player,{}, {},spec)
-    return true,if mode=="Piston"
-        then "Guided piston spring connected"
-        else "Spring connected between both components (no shape requirement)"
+    return true,"Spring connected between both components (no automatic travel guide)"
 end
 
 function Mechanical:TuneSpring(player,request)
