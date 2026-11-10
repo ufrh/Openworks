@@ -1,6 +1,6 @@
 # OPENWORKS Phase 04 — Layered Editing & Axial Insertion
 
-Build marker: `2026.11.09.PHASE04.GRID-LOOK-SCALE`
+Build marker: `2026.11.09.PHASE04.DRAG-FIX`
 Branch: `dev` — Rojo port `34872`
 
 Phase 04 extends the approved first-person construction controls. There is
@@ -31,7 +31,7 @@ Phase 04 extends the approved first-person construction controls. There is
 1. Build a circular/square **Tube** and a full **Cylinder** (not HalfCylinder).
    Tubes run along local X; DrilledBlocks are assumed to have the hole
    through local Z. These assumptions may need per-template metadata later.
-2. Equip **Edit (2)**, select the Cylinder shaft and press **A**.
+2. Equip **Edit (2)**, select the Cylinder shaft and press **L**.
 3. Look at a visible surface of the Tube. A green highlight indicates a
    supported opening target. A yellow highlight indicates an unsupported
    primitive. Click the Tube to select its axial center as the destination.
@@ -46,7 +46,7 @@ Phase 04 extends the approved first-person construction controls. There is
    intersects another solid, the request is rejected without moving the
    source. **Esc** cancels without changing geometry.
 7. Build a flange + cylinder shaft as a single Phase 03 component, select
-   the component and press A. Alignment should move *all* component members
+   the component and press L. Alignment should move *all* component members
    together while taking the cylinder as the axis reference. No parts may
    shear apart.
 8. Try using a DrilledBlock instead of a Tube. Verify its through-hole
@@ -110,3 +110,25 @@ is the gameplay acceptance gate.
    history step per drag. Verify ordinary first-person look still works
    during and immediately after resizing.
 6. Only the B primitive library may unlock the mouse cursor.
+
+
+## Scale input and movement-key regression — DRAG-FIX
+
+1. Equip Build (1), select a resizable Block, aim it at the floor, press V.
+   Handles appear, camera stays normal first-person, and the cursor stays locked.
+2. Simply hold left mouse and move the mouse horizontally/vertically.
+   The **closest visible axis handle** is selected automatically; it no longer
+   requires a tiny 33-pixel precise hover. The selected face highlights and
+   dimensions should visibly update each 1 U increment.
+3. Test clicking while a native Tool is equipped. MouseButton1 can be marked
+   processed by Roblox; that must **not** block scale input. Native Tool.Activated
+   is an alternate scale-grab trigger while V mode is active.
+4. Repeat with a placed part using Edit (2) -> select -> V. Dragging should
+   preview immediately and submit a single server edit on mouse release.
+   No Scriptable camera, no frozen camera CFrame.
+5. While building/editing, press **A** or **D** and confirm they only
+   perform native left/right movement. Alignment is now **L**, not A.
+6. Select a Cylinder/shaft in Edit and press **L**; confirm the guided
+   alignment selection appears, then Esc cancels. Native WASD stays intact.
+7. Check the controller/status text reads the selected scaling axis and
+   the resulting size in Units. All validation errors still appear in the HUD.

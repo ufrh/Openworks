@@ -23,7 +23,9 @@ local COLORS = {
     Color3.fromRGB(115, 164, 245),
 }
 
-local PICK_RADIUS = 33
+-- In Scale mode, select the nearest on-screen face grip even when the
+-- crosshair is not exactly over its 28px label. No inactive clicks.
+local PICK_RADIUS = math.huge
 
 local function withAxis(size, axis, value)
     if axis == 1 then return Vector3.new(value, size.Y, size.Z) end
@@ -53,11 +55,12 @@ local function canUse(mode, axis)
         and (mode ~= "LengthAndDiameter_1U" or axis ~= 3)
 end
 
-function Gizmo.new(gui, onChange, onCommit)
+function Gizmo.new(gui, onChange, onCommit, onDragStarted)
     local self = setmetatable({
         Gui = gui,
         OnChange = onChange,
         OnCommit = onCommit,
+        OnDragStarted = onDragStarted,
         Handles = {},
         Connections = {},
         CFrame = CFrame.identity,
@@ -110,9 +113,11 @@ function Gizmo.new(gui, onChange, onCommit)
         end
     end
 
-    table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
-        if not self.Active or self.Drag or processed then return end
+    table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input)
+        if not self.Active or self.Drag then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            -- Native Roblox Tools frequently mark LMB as processed.
+            -- A gizmo interaction must not depend on that processed flag.
             self:BeginDrag()
         end
     end))
@@ -214,10 +219,12 @@ function Gizmo:UpdateHandles()
 end
 
 function Gizmo:BeginDrag()
+    if not self.Active or self.Drag then return false end
+    self:UpdateHandles()
     local handle = self.Hovered
-    if not handle or not handle.Visible then return end
+    if not handle or not handle.Visible then return false end
     local camera = workspace.CurrentCamera
-    if not camera then return end
+    if not camera then return false end
 
     local outward = self.CFrame:VectorToWorldSpace(AXES[handle.Axis] * handle.Sign)
 
@@ -232,9 +239,11 @@ function Gizmo:BeginDrag()
         PixelTravel = 0,
     }
 
-    -- Do not touch CameraType or Camera.CFrame here. Native first-person
-    -- mouse-look remains active as the player drags the handle.
+    -- Do not touch CameraType or Camera.CFrame. Native first-person
+    -- mouse-look remains active while the handle follows the drag.
     UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+    if self.OnDragStarted then self.OnDragStarted(handle.Axis, handle.Sign) end
+    return true
 end
 
 function Gizmo:UpdateDrag(delta)

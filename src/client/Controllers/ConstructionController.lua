@@ -194,6 +194,9 @@ function Controller:MakeUI()
         self:UpdateScalePreview(cf, size)
     end, function(cf, size, oldCF, oldSize)
         return self:CommitScale(cf, size, oldCF, oldSize)
+    end, function(axis, sign)
+        self:Message("Resizing " .. ({ "X", "Y", "Z" })[axis]
+            .. (if sign > 0 then "+" else "-") .. " — drag to change size")
     end)
 end
 
@@ -319,18 +322,18 @@ function Controller:RefreshHUD()
             else "Rigid component") .. "  /  " .. tostring(#self.SelectedParts) .. " primitives"
         self.HelpLabel.Text = if self.Pending then
             "Aim and click to confirm  •  R/T/Y rotate  •  Esc cancel"
-            else "G move • F duplicate • A align shaft • E edit • U ungroup"
+            else "G move • F duplicate • L align shaft • E edit • U ungroup"
     elseif #self.SelectedParts > 1 then
         self.DetailLabel.Text = tostring(#self.SelectedParts) .. " primitives selected"
         self.HelpLabel.Text = "C combine  •  Shift+click to change selection"
     elseif self.EditingComponentId then
         self.DetailLabel.Text = (self.Selected and self.Selected.Name or "Editing component")
             .. "  /  component interior"
-        self.HelpLabel.Text = "Tab depth • V scale • A align • E exit component"
+        self.HelpLabel.Text = "Tab depth • V scale • L align • E exit component"
     else
         local target = self.Selected
         self.DetailLabel.Text = if target then target.Name .. "  /  drag scale with V" else "Click a constructed piece"
-        self.HelpLabel.Text = "Tab depth • X X-ray • I isolate • A align • V scale"
+        self.HelpLabel.Text = "Tab depth • X X-ray • I isolate • L align • V scale"
     end
 
     if self.StatusMessage and os.clock() < self.MessageUntil then
@@ -737,7 +740,13 @@ function Controller:ConfirmComponentPlacement()
 end
 
 function Controller:Activate(mode)
-    if self.CatalogOpen or self.ScaleMode or self.Busy
+    if self.ScaleMode then
+        -- Redundant native-Tool activation path: some Roblox input flows
+        -- consume MouseButton1 before UserInputService.InputBegan sees it.
+        if self.ScaleHandles then self.ScaleHandles:BeginDrag() end
+        return
+    end
+    if self.CatalogOpen or self.Busy
         or os.clock() < (self.IgnoreClickUntil or 0) then return end
 
     if self.Layered and self.Layered:Click() then return end

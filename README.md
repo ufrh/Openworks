@@ -1,6 +1,6 @@
 # OPENWORKS
 
-A Roblox mechanical construction and engineering sandbox. The active `dev` branch includes the Phase 04 layered editing prototype: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment with adjustable insertion depth. The pre-redesign editor is preserved in an archive branch.
+A Roblox mechanical construction and engineering sandbox. The active `dev` branch includes the Phase 04 layered editing prototype: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment (L key, no WASD conflict) with adjustable insertion depth. The pre-redesign editor is preserved in an archive branch.
 
 ## Direction
 

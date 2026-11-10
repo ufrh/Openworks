@@ -484,7 +484,7 @@ function Layered:OnInput(input, processed)
     elseif key == Enum.KeyCode.I then
         self:ToggleIsolate()
         return true
-    elseif key == Enum.KeyCode.A and parent.Mode == "Edit" then
+    elseif key == Enum.KeyCode.L and parent.Mode == "Edit" then
         if self.Alignment then self:CancelAlignment() else self:StartAlignment() end
         return true
     end
