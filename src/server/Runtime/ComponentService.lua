@@ -5,6 +5,12 @@
 -- editable; FORGE physics compilation/welds are deliberately future work.
 
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ComponentGeometry = require(
+    ReplicatedStorage:WaitForChild("Openworks")
+        :WaitForChild("Construction")
+        :WaitForChild("ComponentGeometry")
+)
 
 local ComponentService = {}
 ComponentService.__index = ComponentService
@@ -66,7 +72,9 @@ function ComponentService:Group(player, payload)
 
     local before, after = {}, {}
     local componentId = HttpService:GenerateGUID(false)
-    local anchorId = models[1]:GetAttribute("InstanceId")
+    -- Construction pivot = most central primitive, never first selection.
+    local centerModel = ComponentGeometry.CentralPrimitive(models)
+    local anchorId = centerModel:GetAttribute("InstanceId")
     for _, model in ipairs(models) do
         table.insert(before, self.D.snapshot(model))
         model:SetAttribute("ComponentId", componentId)
@@ -129,6 +137,9 @@ function ComponentService:Plan(player, payload)
         end
     end
     if not anchor then return nil, nil, "Invalid component anchor" end
+    if anchor ~= ComponentGeometry.CentralPrimitive(members) then
+        return nil, nil, "Component center changed; reselect the component"
+    end
 
     local anchorState = d.snapshot(anchor)
     local anchorEntry = d.Registry.Get(anchorState.templateId)

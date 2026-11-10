@@ -275,7 +275,13 @@ function Gizmo:UpdateDrag(delta)
         return
     end
 
-    local cf = drag.StartCF + drag.Direction * (steps * Grid.Unit / 2)
+    local dragged = drag.StartCF + drag.Direction * (steps * Grid.Unit / 2)
+    -- Diameter and uniform scale can resize two or three axes at once.
+    -- Keep every resulting center on the proper half-Unit grid parity, or
+    -- the server correctly rejects an otherwise valid-looking face drag.
+    local rotation = drag.StartCF.Rotation
+    local position = Grid.SnapCenter(dragged.Position, size, rotation)
+    local cf = CFrame.new(position) * rotation
     self.CFrame = cf
     self.Size = size
     self.OnChange(cf, size)

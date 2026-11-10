@@ -12,6 +12,7 @@ local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("C
 local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
+local ComponentGeometry = require(construction:WaitForChild("ComponentGeometry"))
 local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
 
 local BLUE = Color3.fromRGB(96, 174, 207)
@@ -441,13 +442,11 @@ function Controller:SetComponentSelection(componentId, membersOverride)
     self.SelectedParts = membersOverride or self:ComponentMembers(componentId)
     if #self.SelectedParts == 0 then
         self.SelectedComponentId = nil
-    else
-        local anchorId = self.SelectedParts[1]:GetAttribute("ComponentAnchorId")
         self.GroupAnchor = nil
-        for _, model in ipairs(self.SelectedParts) do
-            if model:GetAttribute("InstanceId") == anchorId then self.GroupAnchor = model end
-        end
-        self.GroupAnchor = self.GroupAnchor or self.SelectedParts[1]
+    else
+        -- Always grab the primitive nearest the component's geometric
+        -- center, even when selection order or authored dimensions change.
+        self.GroupAnchor = ComponentGeometry.CentralPrimitive(self.SelectedParts)
         self.CurrentId = self.GroupAnchor:GetAttribute("TemplateId")
         self.CurrentSize = self.GroupAnchor.PrimaryPart.Size
         self.Steps = attributesSteps(self.GroupAnchor)
@@ -831,6 +830,28 @@ end
 -- locked mouse. V shows the grips; aim the crosshair at one, then drag.
 function Controller:BeginScale()
     if self.ScaleMode or self.CatalogOpen or self.Pending then return end
+
+    -- Scale is a primitive operation, not a destructive component-wide scale.
+    -- When V is pressed on a selected rigid component, enter its interior and
+    -- choose the member under the crosshair (or the central member).
+    if self.Mode == "Edit" and self.SelectedComponentId then
+        local componentId = self.SelectedComponentId
+        local target = self.GroupAnchor
+        local hit = self:CastCenter(false)
+        local built = workspace:FindFirstChild(Config.FolderName)
+        local node = hit and hit.Instance
+        while node and node.Parent ~= built do node = node.Parent end
+        if node and node:IsA("Model")
+            and node:GetAttribute("ComponentId") == componentId
+            and node:GetAttribute("OwnerUserId") == player.UserId then
+            target = node
+        end
+        if target then
+            self.EditingComponentId = componentId
+            self:SetSelection(target)
+        end
+    end
+
     local model = if self.Mode == "Edit" then self.Selected else self.Preview
     if not model or not model.PrimaryPart then
         self:Message("Aim at a surface or select a piece first")

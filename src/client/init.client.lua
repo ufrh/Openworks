@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS phase 01: native first-person tools and camera controls.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.09.PHASE03.COMPONENTS"
+local BUILD = "2026.11.09.PHASE03.CENTER-PIVOT-SCALE"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
