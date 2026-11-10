@@ -65,6 +65,64 @@ function Fit.Check(moving,stationary,delta)
     }
 end
 
+-- All stationary members of the SELECTED editor component are part of the
+-- mechanical fitting operation, not merely the primitive the camera hit.
+-- Separate nearby components must not become accidental guide contacts.
+function Fit.Scope(target,all)
+    if not target then return {} end
+    local id=target:GetAttribute("ComponentId")
+    if type(id)~="string" or id=="" then return {target} end
+    local owner=target:GetAttribute("OwnerUserId")
+    local result={}
+    for _,model in ipairs(all or {}) do
+        if model:IsA("Model") and model.PrimaryPart
+            and model:GetAttribute("ComponentId")==id
+            and model:GetAttribute("OwnerUserId")==owner then
+            table.insert(result,model)
+        end
+    end
+    if #result==0 then return {target} end
+    return result
+end
+
+-- If both sides contain the same number of guide sockets (e.g. four
+-- holes and four rods), require ALL of them to fit uniquely. This stops a
+-- red/misaligned fourth rod from being overlooked just because one good
+-- pair could still create a slider.
+function Fit.Completeness(movingMembers,stationaryModels,pairs,reverse)
+    local movingCount,stationaryCount=0,0
+    for _,model in ipairs(movingMembers) do
+        if (reverse and Alignment.TargetAxis(model)~=nil)
+            or (not reverse and Alignment.IsShaft(model)) then
+            movingCount+=1
+        end
+    end
+    for _,model in ipairs(stationaryModels) do
+        if (reverse and Alignment.IsShaft(model))
+            or (not reverse and Alignment.TargetAxis(model)~=nil) then
+            stationaryCount+=1
+        end
+    end
+    if movingCount<=1 or movingCount~=stationaryCount then return true end
+    local movingUnique,stationaryUnique={},{}
+    local fitCount=0
+    for _,pair in ipairs(pairs or {}) do
+        if pair.reverse==reverse
+            and not movingUnique[pair.movingId]
+            and not stationaryUnique[pair.stationaryId] then
+            movingUnique[pair.movingId]=true
+            stationaryUnique[pair.stationaryId]=true
+            fitCount+=1
+        end
+    end
+    if fitCount<movingCount then
+        return false,string.format(
+            "Only %d/%d holes fitted. Check every rod, diameter, angle and spacing",
+            fitCount,movingCount)
+    end
+    return true
+end
+
 function Fit.Find(movingMembers,stationaryModels,delta,ignore)
     local list={}
     for _,moving in ipairs(movingMembers) do
