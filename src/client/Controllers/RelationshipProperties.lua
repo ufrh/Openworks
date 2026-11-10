@@ -180,9 +180,13 @@ function Properties:Refresh()
             then "No mechanical relationships" else "Select a part to inspect",35)
     end
     for _,r in ipairs(list) do
+        local guides=r:GetAttribute("FitPointCount")
+        local name=tostring(r:GetAttribute("Kind"))
+        if type(guides)=="number" and guides>1 then
+            name..="  •  "..tostring(guides).." fitted guides"
+        end
         local item=button(self.RelationList,
-            (if self.SelectedRelation==r then "●  " else "○  ")
-                ..tostring(r:GetAttribute("Kind")))
+            (if self.SelectedRelation==r then "●  " else "○  ")..name)
         if self.SelectedRelation==r then
             item.BackgroundColor3=Color3.fromRGB(34,99,114)
         end

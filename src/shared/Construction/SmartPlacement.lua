@@ -294,7 +294,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 end
                 local candidate={kind=kind,target=target,source=source,
                     cf=cf,offsetUnits=offset or 0,rollDegrees=roll or 0,
-                    relationKind=if kind=="Bore" then "Rigid"
+                    relationKind=if kind=="Bore" then "Cylindrical"
                         elseif kind=="Hub" then "Fixed" else "Gear",
                     reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score,

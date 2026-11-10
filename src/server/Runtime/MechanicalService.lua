@@ -1381,6 +1381,11 @@ function Mechanical:AdjustJoint(player, request)
         local authored=source:GetAttribute("AlignedOffsetU") or 0
         min-=authored
         max-=authored
+        local fittedTravel=joint:GetAttribute("FitTravelU")
+        if type(fittedTravel)=="number" then
+            min=math.max(min,-fittedTravel)
+            max=math.min(max,fittedTravel)
+        end
         if lower<min or upper>max then
             return false,string.format(
                 "Slide must remain on shaft: %.1f to %.1f U",min,max)

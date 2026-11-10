@@ -482,6 +482,16 @@ function Simulation:Start(player, payload)
                         -edge.target:GetPivot().Position):Dot(normal)/Grid.Unit
                     local lower=(low-authored)
                     local upper=(high-authored)
+                    local fittedTravel=edge.relation:GetAttribute("FitTravelU")
+                    if type(fittedTravel)=="number" then
+                        -- All guide posts must stay engaged. Never exceed
+                        -- the shortest valid multi-point insertion.
+                        lower=math.max(lower,-fittedTravel)
+                        upper=math.min(upper,fittedTravel)
+                    end
+                    if lower>=upper then
+                        error("Multi-point guides have no safe sliding travel")
+                    end
                     local physicalLower=lower*Grid.Unit
                     local physicalUpper=upper*Grid.Unit
                     local authoredLow=edge.relation:GetAttribute("LowerLimit")
