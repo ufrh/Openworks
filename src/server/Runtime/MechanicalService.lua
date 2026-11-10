@@ -180,10 +180,13 @@ function Mechanical:Restore(player, spec)
         end
     elseif spec.kind=="Spring" then
         local mode,why=SpringMath.Validate(source,target)
-        if not mode or (spec.springMode and spec.springMode~=mode) then
+        if not mode then
             folder:Destroy()
-            return false,why or "Spring type no longer matches geometry"
+            return false,why or "Spring endpoints are unavailable"
         end
+        -- Geometry changes must not delete a valid general spring: an
+        -- invalidated piston guide gracefully becomes a free spring.
+        folder:SetAttribute("SpringMode",mode)
         local world0,world1=SpringMath.Frames(source,target,mode)
         local att0=Instance.new("Attachment")
         att0.Name="SpringFixedEnd"
@@ -949,8 +952,8 @@ function Mechanical:CreateSpring(player,request)
     if not created then return false,err end
     self.D.commitAssembly(player,{}, {},spec)
     return true,if mode=="Piston"
-        then "Suspension spring created (guided along shaft)"
-        else "Equal-plate compression spring created"
+        then "Guided piston spring connected"
+        else "Spring connected between both components (no shape requirement)"
 end
 
 function Mechanical:TuneSpring(player,request)
@@ -968,8 +971,8 @@ function Mechanical:TuneSpring(player,request)
         or type(damping)~="number" or damping~=damping
         or damping<0 or damping>300
         or type(freeLength)~="number" or freeLength~=freeLength
-        or freeLength<0.05 or freeLength>32*self.D.Grid.Unit then
-        return false,"Spring stiffness 10–3000 / damping 0–300 / rest 0.2–32 U"
+        or freeLength<0.05 or freeLength>self.D.Grid.MaxDistance*2 then
+        return false,"Spring stiffness 10–3000 / damping 0–300 / rest length within construction range"
     end
     local before=self:Snapshot(relation)
     relation:SetAttribute("Stiffness",stiffness)

@@ -377,7 +377,7 @@ function Simulation:Start(player, payload)
                 weld.Parent = runtime
             elseif edge.kind=="Spring" then
                 local mode=edge.relation:GetAttribute("SpringMode")
-                if mode~="Piston" and mode~="Plates" then
+                if mode~="Piston" and mode~="Plates" and mode~="General" then
                     error("Unsupported spring mechanism")
                 end
                 local world0,world1=SpringMath.Frames(

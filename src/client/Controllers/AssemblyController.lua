@@ -233,7 +233,7 @@ function Controller:RefreshHUD()
         self.Detail.Text=if self.Stage=="PairFirst"
             then "Choose first mechanical part" else "Choose second physical part"
         self.Help.Text=if self.PairKind=="Spring"
-            then "Shaft + tube OR two equally sized plates • Esc cancel"
+            then "Select ANY two components • guided piston if shaft fits bore • Esc"
             elseif self.PairKind=="Bolt"
             then "Choose two aligned holes • physical bolt inserted"
             else "Choose two touching surfaces • permanent weld"

@@ -185,6 +185,9 @@ function Properties:Refresh()
         if type(guides)=="number" and guides>1 then
             name..="  •  "..tostring(guides).." fitted guides"
         end
+        if name=="Spring" and r:GetAttribute("SpringMode")=="General" then
+            name="Spring  •  Free"
+        end
         local item=button(self.RelationList,
             (if self.SelectedRelation==r then "●  " else "○  ")..name)
         if self.SelectedRelation==r then

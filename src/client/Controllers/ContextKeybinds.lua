@@ -100,7 +100,7 @@ function Context:Lines()
                     then "Select first part" else "Select second part")
                 append(lines,"Mode",tostring(a.PairKind))
                 if a.PairKind=="Spring" then
-                    append(lines,"Valid","Shaft + tube OR matching plates")
+                    append(lines,"Valid","Any two components; no size or shape requirement")
                 elseif a.PairKind=="Bolt" then
                     append(lines,"Valid","Two matching coaxial holes")
                 else
@@ -170,7 +170,7 @@ function Context:Lines()
             append(lines, "R / T / Y", "World-axis rotation")
             append(lines, "L", "Manual align")
             append(lines,"K / H","Gear mesh / manual alignment")
-            append(lines,"Shift+J","Create suspension or plate spring")
+            append(lines,"Shift+J","Spring between any two components")
             append(lines,"Weld tool","Manually join touching solids")
             append(lines,"Build > Fasteners","Drag prefab bolts into real holes")
             append(lines,"Ctrl+G","Register whole connected assembly")
