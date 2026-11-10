@@ -14,6 +14,7 @@ local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
 local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
 local MechanicalService = require(script.Parent:WaitForChild("MechanicalService"))
+local SimulationService = require(script.Parent:WaitForChild("SimulationService"))
 
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
 
@@ -25,6 +26,7 @@ local lastRequest = {}
 local components
 local alignmentService
 local mechanical
+local simulation
 
 local function historyFor(player)
     local state = histories[player]
@@ -507,15 +509,24 @@ local function handle(player, payload)
     local action = payload.action
     local alignmentAction = action == "Align"
     local mechanicalAction = action == "CreateRelation" or action == "RemoveRelation"
+    local simulationAction = action == "StartSimulation"
+        or action == "StopSimulation" or action == "ToggleSimulationMotor"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
         or action == "DeleteComponent"
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
-        and not componentAction and not alignmentAction and not mechanicalAction then
+        and not componentAction and not alignmentAction and not mechanicalAction
+        and not simulationAction then
         return { ok = false, message = "Unknown action" }
     end
-    if mechanicalAction then
+    if simulationAction then
+        if action ~= "StopSimulation" and not hasEquippedTool(player, "Assemble") then
+            return { ok = false, message = "Equip Assemble to simulate a mechanism" }
+        end
+    elseif simulation and simulation:IsRunning(player) then
+        return { ok = false, message = "Stop simulation (P) before editing" }
+    elseif mechanicalAction then
         if not hasEquippedTool(player, "Assemble") then
             return { ok = false, message = "Equip Assemble to edit relationships" }
         end
@@ -536,6 +547,9 @@ local function handle(player, payload)
     lastRequest[player] = now
 
     local ok, result, extra = pcall(function()
+        if action == "StartSimulation" then return simulation:Start(player, payload) end
+        if action == "StopSimulation" then return simulation:Stop(player) end
+        if action == "ToggleSimulationMotor" then return simulation:Motor(player) end
         if action == "Place" then return place(player, payload) end
         if action == "Update" then return update(player, payload) end
         if action == "Delete" then return delete(player, payload) end
@@ -550,7 +564,9 @@ local function handle(player, payload)
         warn("[OPENWORKS] Construction request error: " .. tostring(result))
         return { ok = false, message = "Construction error (check Output)" }
     end
-    if result and mechanical then mechanical:RebuildRelations() end
+    if result and mechanical and not simulationAction then
+        mechanical:RebuildRelations()
+    end
     local message = tostring(extra or "")
     if result and action == "Place" then message = "Placed" end
     if result and action == "Update" then message = "Updated" end
@@ -617,6 +633,22 @@ function Service.Start()
         commitAssembly = commitAssembly,
     })
 
+    simulation = SimulationService.new({
+        folder = folder,
+        findOwned = findOwned,
+        nearPlayer = nearPlayer,
+        mechanical = mechanical,
+    })
+
+    local function initializePlayer(player)
+        simulation:SetStatus(player, false, false)
+        player.CharacterAdded:Connect(function()
+            if simulation:IsRunning(player) then simulation:Stop(player) end
+        end)
+    end
+    Players.PlayerAdded:Connect(initializePlayer)
+    for _, present in ipairs(Players:GetPlayers()) do initializePlayer(present) end
+
     -- The gallery is an Edit-mode inspection aid, never buildable world geometry.
     -- This only moves it during Play; the Studio place remains unchanged.
     local gallery = workspace:FindFirstChild(Config.GalleryName)
@@ -633,6 +665,7 @@ function Service.Start()
     remote.Parent = ReplicatedStorage
 
     Players.PlayerRemoving:Connect(function(player)
+        if simulation then simulation:ClearPlayer(player) end
         for _, model in ipairs(folder:GetChildren()) do
             if model:IsA("Model") and model:GetAttribute("OwnerUserId") == player.UserId then
                 model:Destroy()

@@ -28,6 +28,12 @@ function Context:Lines()
     local a = self.Assembly
     local lines = {}
     if not tool then return { "Choose a tool: 1–4" } end
+    if player:GetAttribute("OPENWORKS_Simulating") == true then
+        append(lines, "P", "Stop physics (Assemble)")
+        append(lines, "M", "Toggle joint motors (Assemble)")
+        append(lines, "1–4", "Select native Tool")
+        return lines
+    end
 
     -- Only list actions possible IN THE CURRENT CONTEXT; submenus narrow
     -- rather than continuing to show the entire tool's shortcut catalog.
@@ -81,6 +87,7 @@ function Context:Lines()
             append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
         end
     elseif tool == "Assemble" then
+        append(lines, "P", "Simulate aimed assembly")
         if a.Stage == "Housing" then
             append(lines, "LMB", "Choose housing")
             append(lines, "R", "Change relationship")

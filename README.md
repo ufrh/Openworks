@@ -71,3 +71,13 @@ See `docs/REBUILD_NOTES.md` for the reset boundary and next design step.
 ## Direct drag only (2026-11-10)
 - Removed the move-arrow gizmo and all its input bindings. Edit selection continues to work with one click; holding and moving a previously selected object or component starts the existing temporary move, with surface-aware placement and red/blue collision feedback.
 - The G move shortcut remains available, but no physical axis-move handles are displayed. R/T/Y rotation and V spherical scaling are unchanged.
+
+
+## Phase 06 — Simulation / physics compilation (2026.11.10.PHASE06.SIMULATION)
+
+- Equip **Assemble (3)**, aim at the **housing / body to hold stationary**, press **P** to simulate the connected mechanism. The server traverses all Bearing, Slider and Fixed relationships plus their rigid component memberships; only the chosen connected graph is compiled, not your entire workshop.
+- The selected body is grounded (anchored) for this prototype. Other bodies use native Roblox rigid-body physics. Rigid component members are welded together in a dedicated simulated copy; HingeConstraint, PrismaticConstraint and WeldConstraint relationships are reconstructed on those physical copies.
+- The original authored construction stays anchored and intact. It is temporarily hidden and made noncollidable during simulation. The simulation copies occupy `Workspace.OPENWORKS_Simulated`.
+- Press **M** during simulation to start/stop simple hinge and linear motors. Press **P** again to discard the running simulation and restore the EXACT original editable construction. Motors start off by default.
+- Server owns simulation physics where supported. During simulation, edits and relationship changes are rejected; other players cannot simulate your work. The graph is bounded to 128 primitive models and 64 joints. Leaving the server or respawning clears simulation safely.
+- This phase adds a **reversible physics simulation / compile preview**, not persistent shipping, sophisticated mechanical drives, electronics, mass calibration, or player-saved builds. Motion and stability must be tested in Roblox Studio, particularly CSG collision fidelity.

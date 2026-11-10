@@ -107,6 +107,43 @@ function Controller:Kind()
     return TYPES[self.KindIndex]
 end
 
+function Controller:IsSimulating()
+    return player:GetAttribute("OPENWORKS_Simulating") == true
+end
+
+function Controller:ToggleSimulation()
+    if self.Busy then return end
+
+    if self:IsSimulating() then
+        if self:Request({ action = "StopSimulation" }) then self:Reset() end
+        return
+    end
+
+    local seed = self:Pick()
+    if not seed then
+        self:Message("Aim at the housing of a connected mechanism, then press P")
+        return
+    end
+    local id = seed:GetAttribute("InstanceId")
+    if type(id) ~= "string" then
+        self:Message("Select a constructed body you own")
+        return
+    end
+
+    -- Clear staged assembly ghosts before physics starts. This does not
+    -- modify the authored construction.
+    self:Reset()
+    self:Request({ action = "StartSimulation", seedId = id })
+end
+
+function Controller:ToggleMotor()
+    if self:IsSimulating() then
+        self:Request({ action = "ToggleSimulationMotor" })
+    else
+        self:Message("Press P to start simulation first")
+    end
+end
+
 function Controller:Message(message)
     self.LastMessage = message
     self.MessageUntil = os.clock() + 2.5
@@ -118,13 +155,25 @@ function Controller:RefreshHUD()
     self.Gui.Enabled = self.Active
     if not self.Active then return end
 
+    if self:IsSimulating() then
+        self.Header.Text = "OPENWORKS / PHYSICS SIMULATION"
+        self.Detail.Text = if player:GetAttribute("OPENWORKS_MotorOn") == true
+            then "MOTORS ACTIVE  /  moving assembly"
+            else "PHYSICS ACTIVE  /  unpowered joints"
+        self.Help.Text = "M motor drive on/off  •  P return to editing"
+        if self.LastMessage and os.clock() < self.MessageUntil then
+            self.Detail.Text = self.LastMessage
+        end
+        return
+    end
+
     self.Header.Text = "OPENWORKS / ASSEMBLE / " .. string.upper(self:Kind())
     if self.Stage == "Housing" then
         self.Detail.Text = "Choose the housing or opening"
-        self.Help.Text = "Click an opening  •  R change relation  •  Esc reset"
+        self.Help.Text = "Click an opening • R relationship • P simulate aimed mechanism"
     elseif self.Stage == "Source" then
         self.Detail.Text = "Choose the shaft or source component"
-        self.Help.Text = "Click a source  •  R change relation  •  Esc reset"
+        self.Help.Text = "Click shaft/component • P simulate aimed mechanism • Esc reset"
     else
         self.Detail.Text = "Insertion offset: " .. tostring(self.OffsetUnits) .. " U"
         self.Help.Text = "Wheel: 0.5 U depth • blue=clear, red=blocked • click finalize"
@@ -296,7 +345,7 @@ function Controller:Request(payload)
 end
 
 function Controller:Activate()
-    if not self.Active or self.Busy then return end
+    if not self.Active or self.Busy or self:IsSimulating() then return end
     if self.Stage == "Housing" then
         local candidate = self:Pick()
         if not candidate then
@@ -430,6 +479,16 @@ function Controller:Start()
     end))
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
         if not self.Active or UserInputService:GetFocusedTextBox() then return end
+        -- Simulation controls have priority over the relationship editor.
+        -- Neither P nor M interferes with WASD movement.
+        if not processed and input.KeyCode == Enum.KeyCode.P then
+            self:ToggleSimulation()
+            return
+        elseif not processed and input.KeyCode == Enum.KeyCode.M then
+            self:ToggleMotor()
+            return
+        end
+        if self:IsSimulating() then return end
         if input.KeyCode == Enum.KeyCode.Escape then
             self:Reset()
         elseif processed then
@@ -470,6 +529,14 @@ function Controller:Start()
         )
         self:UpdatePreview()
     end))
+    table.insert(self.Connections, player:GetAttributeChangedSignal(
+        "OPENWORKS_Simulating"):Connect(function()
+            self:RefreshHUD()
+        end))
+    table.insert(self.Connections, player:GetAttributeChangedSignal(
+        "OPENWORKS_MotorOn"):Connect(function()
+            self:RefreshHUD()
+        end))
     -- Use the state of the already-equipped native tool on client startup.
     self:OnModeChanged(self.Tools.ActiveId)
 end

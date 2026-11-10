@@ -592,6 +592,11 @@ function Controller:OnModeChanged(mode)
         self:SetSelection(nil)
     end
     if self.Layered then self.Layered:OnModeChanged(mode) end
+    if player:GetAttribute("OPENWORKS_Simulating") == true then
+        self:ClearPreview()
+        self:RefreshHUD()
+        return
+    end
     if mode == "Build" then
         if not self.CurrentId or not Registry.Get(self.CurrentId) then
             local entries = Registry.List()
@@ -647,6 +652,11 @@ function Controller:CastCenter(excludeSelected)
 end
 
 function Controller:UpdatePreview()
+    if player:GetAttribute("OPENWORKS_Simulating") == true then
+        self.PreviewCF = nil
+        if self.Preview then self.Preview.Parent = nil end
+        return
+    end
     if self.ScaleMode then return end
     if not self.Preview or self.CatalogOpen then
         self.PreviewCF = nil
@@ -823,6 +833,10 @@ function Controller:ConfirmComponentPlacement()
 end
 
 function Controller:Activate(mode)
+    if player:GetAttribute("OPENWORKS_Simulating") == true then
+        self:Message("Stop simulation in Assemble (P) before editing")
+        return
+    end
     if self.DirectDragActive then return end
     if self.ScaleMode then
         -- Redundant native-Tool activation path: some Roblox input flows
@@ -1166,6 +1180,7 @@ function Controller:FinishDirectDrag()
 end
 
 function Controller:OnInput(input, processed)
+    if player:GetAttribute("OPENWORKS_Simulating") == true then return end
     local key = input.KeyCode
     if UserInputService:GetFocusedTextBox() then return end
     if self.Mode ~= "Build" and self.Mode ~= "Edit"
@@ -1233,6 +1248,10 @@ function Controller:Start()
     table.insert(self.Connections, self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
     end))
+    table.insert(self.Connections, player:GetAttributeChangedSignal(
+        "OPENWORKS_Simulating"):Connect(function()
+            self:OnModeChanged(self.Tools.ActiveId)
+        end))
     table.insert(self.Connections, self.Tools.Activated.Event:Connect(function(mode)
         self:Activate(mode)
     end))
