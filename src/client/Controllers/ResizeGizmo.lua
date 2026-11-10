@@ -26,6 +26,10 @@ local COLORS = {
 -- In Scale mode, select the nearest on-screen face grip even when the
 -- crosshair is not exactly over its 28px label. No inactive clicks.
 local PICK_RADIUS = math.huge
+-- Fixed sensitivity, independent of camera distance and zoom.
+-- Previously screen-space projection could demand dozens/hundreds of
+-- pixels for a single U when the part was close to the camera.
+local PIXELS_PER_UNIT = 7
 
 local function withAxis(size, axis, value)
     if axis == 1 then return Vector3.new(value, size.Y, size.Z) end
@@ -194,9 +198,10 @@ function Gizmo:UpdateHandles()
         local screenPoint = Vector2.new(projected.X, projected.Y) + direction * 30
         handle.Point = screenPoint
         handle.Direction = direction
-        handle.PixelsPerUnit = math.max(10, (Vector2.new(
-            beyond.X - projected.X, beyond.Y - projected.Y
-        )).Magnitude * Grid.Unit)
+        -- Resizing is a discrete 1-U operation, not a physically sized
+        -- cursor gizmo. Keep the mouse travel required per Unit consistent
+        -- at all FOV values and distances.
+        handle.PixelsPerUnit = PIXELS_PER_UNIT
         handle.Visible = visible and projected.Z > 0
         grip.Position = UDim2.fromOffset(screenPoint.X, screenPoint.Y)
         grip.Visible = handle.Visible

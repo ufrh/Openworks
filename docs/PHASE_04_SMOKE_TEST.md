@@ -1,6 +1,6 @@
 # OPENWORKS Phase 04 — Layered Editing & Axial Insertion
 
-Build marker: `2026.11.09.PHASE04.VECTOR2-DRAG`
+Build marker: `2026.11.09.PHASE04.SCALE-SENSITIVITY`
 Branch: `dev` — Rojo port `34872`
 
 Phase 04 extends the approved first-person construction controls. There is
@@ -148,3 +148,15 @@ The input path now converts delta.X/delta.Y to Vector2 first.
 4. Confirm Studio Output has no Vector3/Vector2 type error in ResizeGizmo.
 5. If no size change occurs, inspect Studio Output for the next error rather
    than changing the input behavior again without a reproduced failure.
+
+
+## Scaling sensitivity regression
+
+- Previous drag responsiveness depended on perspective projection. At close
+  distances a 1-U step could require extremely large mouse movement.
+- Scale sensitivity is now a fixed **7 pixels of projected mouse travel per
+  Unit**, regardless of zoom, object distance, or primitive size.
+- Test V resizing with a Block both near and far from the camera. Both should
+  update quickly, in the same small amount of mouse travel.
+- Dragging sideways along a handle's indicated direction should immediately
+  move by 1 U without camera freeze. Existing grid validation still applies.
