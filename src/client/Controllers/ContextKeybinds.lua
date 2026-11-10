@@ -64,10 +64,6 @@ function Context:Lines()
                 append(lines, "LMB", "Confirm when blue")
             end
             append(lines, "L / Esc", "Cancel alignment")
-        elseif c.MoveHandles and c.MoveHandles.Drag then
-            append(lines, "Hold LMB", "Move along axis")
-            append(lines, "Move / Look", "World-space drag")
-            append(lines, "Release", "Confirm")
         elseif c.Pending then
             append(lines, "Look / Walk", "Position preview")
             append(lines, "LMB", "Place when blue")
@@ -76,7 +72,6 @@ function Context:Lines()
         else
             append(lines, "LMB", "Select without moving")
             append(lines, "Hold selected", "Drag to move")
-            append(lines, "Arrows", "Move on X / Y / Z")
             append(lines, "V / G", "Scale / Move")
             append(lines, "R / T / Y", "Rotate")
             append(lines, "L", "Align shaft")

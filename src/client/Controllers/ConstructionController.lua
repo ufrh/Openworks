@@ -16,7 +16,6 @@ local ComponentGeometry = require(construction:WaitForChild("ComponentGeometry")
 local SurfacePlacement = require(construction:WaitForChild("SurfacePlacement"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
-local MoveGizmo = require(script.Parent:WaitForChild("MoveGizmo"))
 local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEditingController"))
 
 local BLUE = Color3.fromRGB(96, 174, 207)
@@ -108,8 +107,6 @@ function Controller.new(tools)
         ScaleCF = nil,
         ScaleSize = nil,
         ScaleHandles = nil,
-        MoveHandles = nil,
-        GizmoMoving = false,
         DirectDragCandidate = nil,
         DirectDragActive = false,
         ComponentOutline = nil,
@@ -567,7 +564,6 @@ function Controller:ToggleMultiSelection(model)
 end
 
 function Controller:CancelPending()
-    self.GizmoMoving = false
     if self.Pending then
         if self.Selected and self.Selected.PrimaryPart then
             self.Selected.PrimaryPart.LocalTransparencyModifier = 0
@@ -586,7 +582,6 @@ end
 function Controller:OnModeChanged(mode)
     self.DirectDragCandidate = nil
     self.DirectDragActive = false
-    if self.MoveHandles then self.MoveHandles:Cancel() end
     self:EndScale()
     self:CancelPending()
     self.Mode = mode
@@ -652,7 +647,7 @@ function Controller:CastCenter(excludeSelected)
 end
 
 function Controller:UpdatePreview()
-    if self.ScaleMode or self.GizmoMoving then return end
+    if self.ScaleMode then return end
     if not self.Preview or self.CatalogOpen then
         self.PreviewCF = nil
         if self.Preview then self.Preview.Parent = nil end
@@ -828,7 +823,7 @@ function Controller:ConfirmComponentPlacement()
 end
 
 function Controller:Activate(mode)
-    if self.GizmoMoving or self.DirectDragActive then return end
+    if self.DirectDragActive then return end
     if self.ScaleMode then
         -- Redundant native-Tool activation path: some Roblox input flows
         -- consume MouseButton1 before UserInputService.InputBegan sees it.
@@ -1103,8 +1098,7 @@ end
 -- A normal click still selects. Holding LMB and moving the camera or player
 -- beyond a small world-space threshold starts the existing temporary G move.
 function Controller:BeginDirectDrag()
-    if self.Mode ~= "Edit" or self.Pending or self.ScaleMode or self.CatalogOpen
-        or (self.MoveHandles and self.MoveHandles.Drag) then return end
+    if self.Mode ~= "Edit" or self.Pending or self.ScaleMode or self.CatalogOpen then return end
     local hit = self:CastCenter(false)
     if not hit then return end
     local folder = workspace:FindFirstChild(Config.FolderName)
@@ -1133,7 +1127,6 @@ end
 function Controller:UpdateDirectDrag()
     local held = self.DirectDragCandidate
     if not held or self.DirectDragActive then return end
-    if self.MoveHandles and self.MoveHandles.Drag then return end
     if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
         self.DirectDragCandidate = nil
         return
@@ -1236,8 +1229,6 @@ function Controller:Start()
     self:MakeUI()
     self.Layered = LayeredEditingController.new(self)
     self.Layered:Start()
-    self.MoveHandles = MoveGizmo.new(self)
-    self.MoveHandles:Start()
 
     table.insert(self.Connections, self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
@@ -1303,7 +1294,6 @@ function Controller:Destroy()
     if self.Layered then self.Layered:Destroy() end
     RunService:UnbindFromRenderStep("OPENWORKS_CursorUnlock")
     if self.ScaleHandles then self.ScaleHandles:Destroy() end
-    if self.MoveHandles then self.MoveHandles:Destroy() end
     if self.ComponentOutline then self.ComponentOutline:Destroy() end
     self:CancelPending()
     self:ClearPreview()

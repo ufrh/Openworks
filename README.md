@@ -51,7 +51,7 @@ See `docs/REBUILD_NOTES.md` for the reset boundary and next design step.
 
 ## Cohesion and interaction pass — 2026.11.09.PHASE05.PHYSICAL-CONTEXT
 - In Edit, a click selects; **hold and move/look to drag** a selected primitive/component. Release positions it through the same temporary G-move workflow. **G** remains a separate placement mode.
-- Archived FORM-style physical handles: three colored move arrows made from cylinder stems plus `ReplicatedStorage.Cone` mesh, and actual 3D scale cubes on both faces. Their Highlights use **fill only (outline transparency 1)**; the scale cube's thin border uses SelectionBox.
+- Physical scale controls use six smooth colored sphere grips, with no Neon bloom. There are no move-arrow or rotation-ring controls.
 - Whole components use one continuously updated selection bounds outline, not a separate Highlight outline per member.
 - The right controls panel lists only relevant keybinds for the active Tool's current substate (catalog, normal edit, scale, alignment, move, assemble selection/placement).
 - Live red/blue feedback describes the actual interfering model. Selecting a hollow bore permits the intended *cylindrical shaft* to overlap its collision representation ONLY after a metadata-derived radial clearance test. The rest of the moving assembly still undergoes full collision tests.
@@ -61,9 +61,13 @@ See `docs/REBUILD_NOTES.md` for the reset boundary and next design step.
 
 
 ## Move-only drag and half-Unit cleanup
-- **Single click selects** the same way as before. It never starts a move. A second deliberate hold-and-drag on the already selected primitive/component begins a temporary move and releases to place.
+- **Single click selects** the same way as before. It never starts a move. A second deliberate hold-and-drag on the already selected primitive/component begins a temporary move and releases to place; the `G` move shortcut remains available.
 - **No rotation-on-drag**. No rotation rings or ring capture; R/T/Y are still the only rotation inputs.
-- **Fixed 0.5 U** increments for new size changes, move-arrow displacement, insertion-depth nudges, and ordinary placement snapping. No [ / ] step-size adjustment. Older geometry with 0.25-U dimensions remains readable/valid; the server does not reject world positions for missing a grid.
-- The existing physical cone-arrow move grips are now actually visible (previously all handle Parts had Transparency=1) and can be acquired on their cylindrical stems as well as their heads.
+- **Fixed 0.5 U** increments for new size changes, drag-move displacement, insertion-depth nudges, and ordinary placement snapping. No [ / ] step-size adjustment. Older geometry with 0.25-U dimensions remains readable/valid; the server does not reject world positions for missing a grid.
 - Scale grips are **colored smooth non-blooming spheres**. Their SmoothPlastic material and fill-only Highlights mimic vivid neon hues without Neon-material bloom; no cube borders.
 - Component/single-part selection highlighting is preserved.
+
+
+## Direct drag only (2026-11-10)
+- Removed the move-arrow gizmo and all its input bindings. Edit selection continues to work with one click; holding and moving a previously selected object or component starts the existing temporary move, with surface-aware placement and red/blue collision feedback.
+- The G move shortcut remains available, but no physical axis-move handles are displayed. R/T/Y rotation and V spherical scaling are unchanged.
