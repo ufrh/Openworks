@@ -1053,11 +1053,18 @@ function Controller:UpdatePreview()
                     end
                 end
             end
-            local matches,why=MultiFit.Find(
-                SmartPlacement.Members(self.Preview),allTargets)
+            local moving=SmartPlacement.Members(self.Preview)
+            local stationary=MultiFit.Scope(match.target,allTargets)
+            local matches,why=MultiFit.Find(moving,stationary)
             if matches then
                 approved=MultiFit.AllowMap(matches)
                 match.fittedCount=#matches
+                local complete,reason=MultiFit.Completeness(
+                    moving,stationary,matches,match.reverse==true)
+                if not complete then
+                    self.PreviewValid=false
+                    self.PreviewReason=reason
+                end
                 local names={}
                 local seen={}
                 for _,pair in ipairs(matches) do

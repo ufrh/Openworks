@@ -360,7 +360,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 end
             end
             if cf and kind=="Bore" and #members>1 then
-                local chosenTargets=allTargets or targets
+                local chosenTargets=MultiFit.Scope(target,allTargets or targets)
                 local initial=MultiFit.Find(members,chosenTargets,
                     cf*ghost:GetPivot():Inverse(),ignored)
                 -- Don't run the multi-angle search every frame if the
@@ -376,7 +376,9 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 local fitted=nil
                 if kind=="Bore" then
                     local delta=cf*ghost:GetPivot():Inverse()
-                    fitted=MultiFit.Find(members,allTargets or targets,delta,ignored)
+                    fitted=MultiFit.Find(members,
+                        MultiFit.Scope(target,allTargets or targets),
+                        delta,ignored)
                     if fitted and #fitted>1 then
                         score-=math.min(12,(#fitted-1)*2.5)
                     end

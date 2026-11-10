@@ -724,10 +724,17 @@ function Mechanical:SmartMate(player, request, newSource)
             end
         end
         local reason
-        fitPairs,reason=MultiFit.Find(members,all,nil,excluded)
+        local stationary=MultiFit.Scope(target,all)
+        fitPairs,reason=MultiFit.Find(members,stationary,nil,excluded)
         if not fitPairs then
             restoreMoving()
             return false,reason or "Multi-point fitting failed"
+        end
+        local complete,why=MultiFit.Completeness(
+            members,stationary,fitPairs,reverse)
+        if not complete then
+            restoreMoving()
+            return false,why
         end
         local primary
         for _,pair in ipairs(fitPairs) do
