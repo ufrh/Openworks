@@ -119,6 +119,21 @@ function Simulation:Graph(player, seed)
                     adjacent[b] = adjacent[b] or {}
                     table.insert(adjacent[a], edge)
                     table.insert(adjacent[b], edge)
+                    -- A bolt can fasten a second drilled body without creating
+                    -- another bolt or duplicating its authored history entry.
+                    if kind=="Bolt" then
+                        local other=owned[relation:GetAttribute("SecondTargetId")]
+                        if other and other~=source and other~=target then
+                            local key=bodyKey(other)
+                            local extra={source=source,target=other,kind=kind,
+                                relation=relation,a=a,b=key}
+                            table.insert(edges,extra)
+                            adjacent[a]=adjacent[a] or {}
+                            adjacent[key]=adjacent[key] or {}
+                            table.insert(adjacent[a],extra)
+                            table.insert(adjacent[key],extra)
+                        end
+                    end
                 end
             end
         end

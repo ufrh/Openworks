@@ -16,6 +16,8 @@ local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
 local ComponentGeometry = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("ComponentGeometry"))
+local BoltMath = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("BoltMath"))
 local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SpringMath"))
 
@@ -78,6 +80,7 @@ function Mechanical:Snapshot(relation)
         damping = relation:GetAttribute("Damping"),
         freeLength = relation:GetAttribute("FreeLength"),
         boltId = relation:GetAttribute("BoltId"),
+        secondTargetId = relation:GetAttribute("SecondTargetId"),
     }
 end
 
@@ -131,6 +134,7 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("Damping",spec.damping)
     folder:SetAttribute("FreeLength",spec.freeLength)
     folder:SetAttribute("BoltId",spec.boltId)
+    folder:SetAttribute("SecondTargetId",spec.secondTargetId)
 
     local targetPart, sourcePart = target.PrimaryPart, source.PrimaryPart
     if not targetPart or not sourcePart then
@@ -153,6 +157,19 @@ function Mechanical:Restore(player, spec)
         weld.Part0 = targetPart
         weld.Part1 = sourcePart
         weld.Parent = folder
+        if spec.kind=="Bolt" and spec.secondTargetId then
+            local other=self.D.findOwned(player,spec.secondTargetId)
+            if not other or not other.PrimaryPart or other==target or other==source
+                or not BoltMath.Fits(source,other) then
+                folder:Destroy()
+                return false,"The bolt does not reach the second opening"
+            end
+            local secondary=Instance.new("WeldConstraint")
+            secondary.Name="BoltedSecondBody"
+            secondary.Part0=sourcePart
+            secondary.Part1=other.PrimaryPart
+            secondary.Parent=folder
+        end
     elseif spec.kind=="Spring" then
         local mode,why=SpringMath.Validate(source,target)
         if not mode or (spec.springMode and spec.springMode~=mode) then
@@ -994,6 +1011,86 @@ function Mechanical:CreateBolt(player,request)
     end
     self.D.commitAssembly(player,before,after,spec)
     return true,"Physical "..bestId.." placed • bolted rigid connection"
+end
+
+-- A prefab-based bolt: fit the dragged bolt THROUGH one or two aligned
+-- holes. Make exactly one atomic relationship and weld the physical bolt
+-- to each penetrated body. An unfastened editor grouping is not a weld.
+function Mechanical:FastenBolt(player,request,newSource)
+    local d=self.D
+    local bolt=d.findOwned(player,request.boltId)
+    local target=d.findOwned(player,request.targetId)
+    if not BoltMath.IsBolt(bolt) or not target or bolt==target then
+        return false,"Drag a Bolt prefab into a drilled opening"
+    end
+    if not d.nearPlayer(player,target:GetPivot().Position)
+        or not d.nearPlayer(player,bolt:GetPivot().Position) then
+        return false,"Bolt is outside your construction range"
+    end
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("BoltId")==request.boltId then
+            return false,"Remove the existing bolt connection before relocating it"
+        end
+    end
+    local before=if newSource then {} else {d.snapshot(bolt)}
+    local old=d.snapshot(bolt)
+    if not newSource then
+        if typeof(request.position)~="Vector3"
+            or typeof(request.orientation)~="CFrame" then
+            return false,"Invalid bolt transform"
+        end
+        local state=table.clone(old)
+        state.position=request.position
+        state.orientation=request.orientation
+        state.freePosition=true
+        local entry=d.Registry.Get(state.templateId)
+        if not entry then return false,"Bolt prefab template unavailable" end
+        local valid,why=d.validState(player,entry,state)
+        if not valid then return false,why end
+        d.applyState(bolt,state)
+    end
+    local function rollback(reason)
+        if not newSource then d.applyState(bolt,old) end
+        return false,reason
+    end
+    if not BoltMath.Fits(bolt,target) then
+        return rollback("Bolt must pass completely through the selected hole")
+    end
+    local holes={}
+    for _,model in ipairs(d.folder:GetChildren()) do
+        if model:IsA("Model") and model~=bolt
+            and model:GetAttribute("OwnerUserId")==player.UserId then
+            local fits,position=BoltMath.Fits(bolt,model)
+            if fits then table.insert(holes,{model=model,position=position}) end
+        end
+    end
+    table.sort(holes,function(a,b) return a.position<b.position end)
+    if #holes==0 or #holes>2 then
+        return rollback("A bolt can fasten one or two pierced holes")
+    end
+    local selected=false
+    local ignored={[bolt]=true}
+    for _,item in ipairs(holes) do
+        ignored[item.model]=true
+        if item.model==target then selected=true end
+    end
+    if not selected then return rollback("The selected hole is not reached") end
+    if d.intersectsConstructed(bolt,ignored) then
+        return rollback("Bolt intersects an unrelated solid")
+    end
+    local spec={
+        relationId=HttpService:GenerateGUID(false),
+        ownerUserId=player.UserId,kind="Bolt",
+        sourceId=bolt:GetAttribute("InstanceId"),
+        targetId=holes[1].model:GetAttribute("InstanceId"),
+        secondTargetId=holes[2] and holes[2].model:GetAttribute("InstanceId"),
+        boltId=bolt:GetAttribute("InstanceId"),
+    }
+    local ok,why=self:Restore(player,spec)
+    if not ok then return rollback(why) end
+    d.commitAssembly(player,before,{d.snapshot(bolt)},spec)
+    return true,if holes[2] then "Bolt fastened both drilled bodies"
+        else "Bolt fastened one drilled body"
 end
 
 -- Independent gear mesh: both gear primitives must have the same

@@ -365,6 +365,8 @@ local function restoreBatch(player, record, undo)
             local b=findOwned(player,relation.targetId)
             if a then ignore[a]=true end
             if b then ignore[b]=true end
+            local extra=findOwned(player,relation.secondTargetId)
+            if extra then ignore[extra]=true end
         end
         if intersectsConstructed(model,ignore,opening,boreSourceId) then
             discard()
@@ -386,6 +388,9 @@ local function place(player, payload)
         position = payload.position,
         steps = payload.steps,
         size = payload.size or (template and template.Size),
+        orientation = if payload.autoMate and payload.autoMate.kind=="BoltHole"
+            then payload.orientation else nil,
+        freePosition=payload.autoMate and payload.autoMate.kind=="BoltHole",
     }
     proposed.resizePrecision = Grid.HasFractionalSize(proposed.size)
     proposed.numericPrecision = payload.numericPrecision == true
@@ -415,6 +420,14 @@ local function place(player, payload)
             return false, "Invalid automatic attachment"
         end
         local mate=payload.autoMate
+        if mate.kind=="BoltHole" then
+            local ok,why=mechanical:FastenBolt(player,{
+                boltId=model:GetAttribute("InstanceId"),
+                targetId=mate.targetId,
+            },true)
+            if not ok then model:Destroy() return false,why end
+            return true,model:GetAttribute("InstanceId")
+        end
         local ok,why=mechanical:SmartMate(player,{
             sourceId=model:GetAttribute("InstanceId"),
             targetId=mate.targetId,
@@ -695,6 +708,7 @@ local function handle(player, payload)
     local action = payload.action
     local alignmentAction = action == "Align"
     local mechanicalAction = action == "CreateRelation" or action == "RemoveRelation"
+        or action == "FastenBolt"
         or action == "FitShaft" or action == "CreateGearMesh"
         or action == "AdjustJoint" or action == "PoseShaft"
         or action == "SetGrounded" or action == "GetMechanismInfo"
@@ -784,6 +798,9 @@ local function handle(player, payload)
             return rotatePrimitiveWorld(player,payload)
         end
         if action == "CreateGearMesh" then return mechanical:CreateGearMesh(player, payload) end
+        if action=="FastenBolt" then
+            return mechanical:FastenBolt(player,payload,false)
+        end
         if action=="CreateSpring" then
             return mechanical:CreateSpring(player,payload)
         end
@@ -794,7 +811,7 @@ local function handle(player, payload)
             return mechanical:CreateWeld(player,payload)
         end
         if action=="CreateBolt" then
-            return mechanical:CreateBolt(player,payload)
+            return false,"Use Build > Fasteners to drag a real bolt through the holes"
         end
         if action=="RegisterAssembly" then
             return assemblies:Register(player,payload)

@@ -14,6 +14,7 @@ local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentGeometry = require(construction:WaitForChild("ComponentGeometry"))
 local SurfacePlacement = require(construction:WaitForChild("SurfacePlacement"))
+local BoltMath = require(construction:WaitForChild("BoltMath"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
 local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEditingController"))
@@ -522,7 +523,8 @@ function Controller:SmartDrop(chosenKind)
     local exactSourceCF=self.PreviewCF*sourceOffset
     local exactSourcePosition=exactSourceCF.Position
     local ok=self:Request({
-        action="SmartMate",
+        action=if match.kind=="BoltHole" then "FastenBolt" else "SmartMate",
+        boltId=if match.kind=="BoltHole" then match.source:GetAttribute("InstanceId") else nil,
         sourceId=match.source:GetAttribute("InstanceId"),
         targetId=match.target:GetAttribute("InstanceId"),
         mateKind=match.kind,
@@ -549,6 +551,48 @@ function Controller:RecognizeAttachment(raw,hit)
     local folder=workspace:FindFirstChild(Config.FolderName)
     local camera=workspace.CurrentCamera
     if not preview or not folder or not camera then return nil end
+    -- A placed Bolt prefab snaps shaft-first through the nearest fitting
+    -- drilled hole. Its head stays outside the entrance face.
+    if BoltMath.IsBolt(preview) then
+        local ignored={}
+        if self.Selected and self.Pending=="Move" then
+            ignored[self.Selected]=true
+        end
+        local half=camera.ViewportSize*0.5
+        local aim=camera:ViewportPointToRay(half.X,half.Y)
+        local targets=SmartPlacement.NearbyTargets(
+            folder,player.UserId,raw.Position,ignored,aim)
+        local best,bestDistance=nil,math.huge
+        local diameter=preview:GetAttribute("BoltDiameterU")*Grid.Unit
+        for _,candidate in ipairs(targets) do
+            local holeAxis=AlignmentMath.TargetAxis(candidate)
+            local opening=BoreClearance.OpeningDiameter(candidate)
+            if holeAxis and opening and opening>diameter+0.002 then
+                local distance=(candidate:GetPivot().Position-raw.Position).Magnitude
+                if distance<bestDistance then best=candidate bestDistance=distance end
+            end
+        end
+        if best then
+            local localAxis=AlignmentMath.TargetAxis(best)
+            local axis=best:GetPivot():VectorToWorldSpace(localAxis).Unit
+            if (camera.CFrame.Position-best:GetPivot().Position):Dot(axis)>0 then
+                axis=-axis
+            end
+            local basis=if math.abs(axis:Dot(Vector3.yAxis))<0.9
+                then Vector3.yAxis else Vector3.zAxis
+            local up=(basis-axis*axis:Dot(basis)).Unit
+            local size=best.PrimaryPart.Size
+            local wall=math.abs(localAxis.X)*size.X+
+                math.abs(localAxis.Y)*size.Y+math.abs(localAxis.Z)*size.Z
+            local length=preview:GetAttribute("BoltLengthU")*Grid.Unit
+            local point=best:GetPivot().Position+
+                axis*(length*0.5-wall*0.5-0.005)
+            return {kind="BoltHole",relationKind="Bolt",target=best,
+                source=preview,cf=CFrame.fromMatrix(
+                    point,axis,up,axis:Cross(up)),
+                offsetUnits=0,rollDegrees=0}
+        end
+    end
     local ignore={}
     if self.Selected and self.Pending=="Move" then ignore[self.Selected]=true end
     if self.Pending=="ComponentMove" then
@@ -976,6 +1020,11 @@ function Controller:UpdatePreview()
             match and match.kind=="Bore" and not match.reverse
                 and match.target or nil
         )
+        if match and match.kind=="BoltHole" and self.PreviewValid
+            and not BoltMath.Fits(self.Preview,match.target) then
+            self.PreviewValid=false
+            self.PreviewReason="Bolt must pass through the selected hole"
+        end
         if match and match.kind=="Bore" and self.PreviewValid then
             local shaft=if match.reverse then match.target else match.source
             local hole=if match.reverse then match.source else match.target
@@ -1038,6 +1087,8 @@ function Controller:Place(chosenKind)
         steps = stepsCopy(self.Steps),
         size = self.CurrentSize,
         numericPrecision=self.NumericPrecision==true,
+        orientation=if self.SmartMatch and self.SmartMatch.kind=="BoltHole"
+            then self.PreviewCF.Rotation else nil,
         autoMate=if self.SmartMatch then {
             kind=self.SmartMatch.kind,
             targetId=self.SmartMatch.target:GetAttribute("InstanceId"),

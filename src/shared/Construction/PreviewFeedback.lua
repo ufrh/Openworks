@@ -9,6 +9,9 @@ local Bore = require(ReplicatedStorage:WaitForChild("Openworks")
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
 
+local BoltMath=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("BoltMath"))
+
 local Feedback = {}
 Feedback.ValidColor = Color3.fromRGB(83, 176, 241)
 Feedback.InvalidColor = Color3.fromRGB(241, 83, 93)
@@ -59,6 +62,9 @@ function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
                     and movingModel:GetAttribute("InstanceId") == sourceId
                 local fits = false
                 if eligible then fits = Bore.ShaftFits(movingModel, target) end
+                if BoltMath.IsBolt(movingModel) then
+                    fits=BoltMath.Fits(movingModel,target)
+                end
                 if not fits and not GearMath.Meshable(movingModel,target) then
                     return false, tostring(movingModel and movingModel.Name or part.Name)
                         .. " interferes with " .. tostring(target.Name)
