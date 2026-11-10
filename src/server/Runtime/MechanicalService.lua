@@ -232,7 +232,8 @@ function Mechanical:Create(player, request)
             d.applyState(member, planned[index])
         end
         for _, member in ipairs(members) do
-            if d.intersectsConstructed(member, ignore) then
+            if d.intersectsConstructed(member, ignore, target,
+                source:GetAttribute("InstanceId")) then
                 for index, old in ipairs(before) do d.applyState(members[index], old) end
                 return false, "Mechanical relationship interferes with solid geometry"
             end

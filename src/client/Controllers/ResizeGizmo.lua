@@ -1,12 +1,13 @@
 --!strict
 -- First-person resize gizmo. The mouse NEVER unlocks for scaling.
--- Aim the central crosshair at a projected face handle, hold left mouse,
+-- Aim the central crosshair at a real 3D scale cube, hold left mouse,
 -- drag using the crosshair ray's intersection with a world-space plane.
 -- Camera rotation AND player movement both change the projected world point.
 -- One server edit on release.
 
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local PhysicalHandles = require(script.Parent:WaitForChild("PhysicalHandles"))
 
 local Grid = require(
     game:GetService("ReplicatedStorage"):WaitForChild("Openworks")
@@ -93,7 +94,7 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
         OnChange = onChange,
         OnCommit = onCommit,
         OnDragStarted = onDragStarted,
-        Handles = {},
+        Visual = PhysicalHandles.new("Scale"),
         Connections = {},
         CFrame = CFrame.identity,
         Size = Vector3.one,
@@ -105,69 +106,23 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
         IncrementU = Grid.DefaultSizeStepU,
     }, Gizmo)
 
-    for axis = 1, 3 do
-        for _, sign in ipairs({ -1, 1 }) do
-            -- Display-only labels: input always goes through the center
-            -- crosshair and the native first-person mouse, not GUI clicking.
-            local grip = Instance.new("TextLabel")
-            grip.Name = "Scale_" .. AXIS_NAMES[axis] .. (if sign == 1 then "Plus" else "Minus")
-            grip.AnchorPoint = Vector2.new(0.5, 0.5)
-            grip.Size = UDim2.fromOffset(28, 28)
-            grip.BorderSizePixel = 0
-            grip.BackgroundColor3 = COLORS[axis]
-            grip.BackgroundTransparency = 0.13
-            grip.Font = Enum.Font.GothamBold
-            grip.Text = AXIS_NAMES[axis] .. (if sign == 1 then "+" else "-")
-            grip.TextSize = 11
-            grip.TextColor3 = Color3.new(1, 1, 1)
-            grip.ZIndex = 40
-            grip.Visible = false
-            grip.Parent = gui
-
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(1, 0)
-            corner.Parent = grip
-
-            local outline = Instance.new("UIStroke")
-            outline.Color = Color3.fromRGB(238, 245, 255)
-            outline.Transparency = 0.25
-            outline.Thickness = 1
-            outline.Parent = grip
-
-            table.insert(self.Handles, {
-                Axis = axis,
-                Sign = sign,
-                Object = grip,
-                Stroke = outline,
-                Point = nil,
-                Direction = nil,
-                Visible = false,
-            })
-        end
-    end
-
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input)
-        if not self.Active or self.Drag then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            -- Native Roblox Tools frequently mark LMB as processed.
-            -- A gizmo interaction must not depend on that processed flag.
+        if self.Active and not self.Drag
+            and input.UserInputType == Enum.UserInputType.MouseButton1 then
             self:BeginDrag()
         end
     end))
-
     table.insert(self.Connections, UserInputService.InputEnded:Connect(function(input)
         if self.Drag and input.UserInputType == Enum.UserInputType.MouseButton1 then
             self:FinishDrag()
         end
     end))
-
     table.insert(self.Connections, RunService.RenderStepped:Connect(function()
         if self.Active then
             if self.Drag then self:UpdateDrag() end
             self:UpdateHandles()
         end
     end))
-
     return self
 end
 
@@ -193,63 +148,18 @@ function Gizmo:Close()
     self.Drag = nil
     self.Hovered = nil
 
-    for _, handle in ipairs(self.Handles) do
-        handle.Object.Visible = false
+    for _, grip in ipairs(self.Visual.Grips) do
+        grip.Highlight.Enabled = false
+        if grip.Border then grip.Border.Visible = false end
     end
 end
 
 function Gizmo:UpdateHandles()
-    local camera = workspace.CurrentCamera
-    if not camera then return end
-    local center = camera.ViewportSize / 2
-    local nearest, nearestDistance = nil, PICK_RADIUS
-
-    for _, handle in ipairs(self.Handles) do
-        local axis, sign = handle.Axis, handle.Sign
-        local grip = handle.Object
-        if not canUse(self.Mode, axis) then
-            handle.Visible = false
-            grip.Visible = false
-            continue
-        end
-
-        local outward = self.CFrame:VectorToWorldSpace(AXES[axis] * sign)
-        local face = self.CFrame.Position
-            + outward * self.Size[AXIS_NAMES[axis]] / 2
-        local projected, visible = camera:WorldToViewportPoint(face)
-        local beyond = camera:WorldToViewportPoint(face + outward)
-        local direction = Vector2.new(beyond.X - projected.X, beyond.Y - projected.Y)
-
-        if direction.Magnitude < 0.5 then
-            local angle = axis * math.pi * 2 / 3
-            direction = Vector2.new(math.cos(angle), math.sin(angle)) * sign
-        end
-
-        direction = direction.Unit
-        local screenPoint = Vector2.new(projected.X, projected.Y) + direction * 30
-        handle.Point = screenPoint
-        handle.Direction = direction
-        handle.Visible = visible and projected.Z > 0
-        grip.Position = UDim2.fromOffset(screenPoint.X, screenPoint.Y)
-        grip.Visible = handle.Visible
-
-        if handle.Visible then
-            local distance = (screenPoint - center).Magnitude
-            if distance < nearestDistance then
-                nearest = handle
-                nearestDistance = distance
-            end
-        end
-    end
-
-    self.Hovered = if self.Drag then self.Drag.Handle else nearest
-
-    for _, handle in ipairs(self.Handles) do
-        local hovered = handle == self.Hovered
-        handle.Object.Size = UDim2.fromOffset(if hovered then 39 else 28, if hovered then 39 else 28)
-        handle.Object.BackgroundTransparency = if hovered then 0 else 0.13
-        handle.Stroke.Thickness = if hovered then 2.5 else 1
-    end
+    if not self.Active then return end
+    self.Visual:Update(self.CFrame, self.Size, function(axis)
+        return canUse(self.Mode, axis)
+    end)
+    self.Hovered = if self.Drag then self.Drag.Handle else self.Visual:Pick()
 end
 
 function Gizmo:BeginDrag()
@@ -313,8 +223,9 @@ function Gizmo:UpdateDrag()
     local shifted = drag.StartCF.Position
         + drag.Direction * (steps * Grid.Unit * drag.StepU / 2)
     local rotation = drag.StartCF.Rotation
-    local snapped = Grid.SnapSizeCenter(shifted, size, rotation)
-    local cf = CFrame.new(snapped) * rotation
+    -- Preserve the opposite face exactly. The server validates dimensions
+    -- and interference, not arbitrary center-grid parity.
+    local cf = CFrame.new(shifted) * rotation
 
     drag.LastSteps = steps
     self.CFrame = cf
@@ -345,10 +256,7 @@ function Gizmo:Destroy()
     for _, connection in ipairs(self.Connections) do
         connection:Disconnect()
     end
-    for _, handle in ipairs(self.Handles) do
-        handle.Object:Destroy()
-    end
-    table.clear(self.Handles)
+    self.Visual:Destroy()
     table.clear(self.Connections)
 end
 

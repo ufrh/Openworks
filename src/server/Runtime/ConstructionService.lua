@@ -9,6 +9,7 @@ local HttpService = game:GetService("HttpService")
 local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("Construction")
 local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
 local Grid = require(construction:WaitForChild("GridMath"))
+local Bore = require(construction:WaitForChild("BoreClearance"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
 local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
@@ -147,7 +148,7 @@ overlap.FilterType = Enum.RaycastFilterType.Include
 overlap.RespectCanCollide = false
 overlap.MaxParts = 0
 
-local function intersectsConstructed(candidate, except)
+local function intersectsConstructed(candidate, except, opening: Model?, shaftId: string?)
     -- Exact occupied-volume test rather than CSG bounding box.
     -- Slight shrink distinguishes face-to-face placement from penetration.
     local primary = candidate.PrimaryPart
@@ -185,7 +186,14 @@ local function intersectsConstructed(candidate, except)
             isIgnored = model ~= nil and except[model] == true
         end
 
-        if not isIgnored then return true end
+        if not isIgnored then
+            local target = part:FindFirstAncestorOfClass("Model")
+            local isIntendedBore = target and target == opening and shaftId
+                and candidate:GetAttribute("InstanceId") == shaftId
+            if not (isIntendedBore and Bore.ShaftFits(candidate, target)) then
+                return true
+            end
+        end
     end
     return false
 end
@@ -207,24 +215,9 @@ local function validState(player, entry, proposed)
         return false, "Size does not match allowed Unit increments"
     end
 
-    local rotation = Grid.Rotation(proposed.steps)
-    if proposed.freePosition == true or proposed.assemblyPrecision == true then
-        -- Server-created assembly and whole-component transforms may be
-        -- off-lattice because parts can have independently resized geometry.
-        -- Ownership, size/range, and interference are still validated.
-    elseif proposed.resizePrecision == true or Grid.HasFractionalSize(proposed.size) then
-        if not Grid.IsSizeSnapped(proposed.position, proposed.size, rotation)
-            and not (proposed.assemblyPrecision == true
-                and Grid.IsAssemblySnapped(proposed.position)) then
-            return false, "Resize position is not aligned to the 0.25-U sizing grid"
-        end
-    elseif proposed.assemblyPrecision == true then
-        if not Grid.IsAssemblySnapped(proposed.position) then
-            return false, "Assembly position is not on the assembly precision lattice"
-        end
-    elseif not Grid.IsSnapped(proposed.position, proposed.size, rotation) then
-        return false, "Position is not aligned to the Unit grid"
-    end
+    -- Only size increments are quantized. A valid world-space position
+    -- is no longer required to coincide with ANY grid lattice.
+    -- Exact surface support and component offsets must not be rejected.
     return true
 end
 
@@ -373,7 +366,10 @@ local function update(player, payload)
         assemblyPrecision = model:GetAttribute("AssemblyPrecision") == true,
         resizePrecision = model:GetAttribute("ResizePrecision") == true
             or payload.resizePrecision == true,
-        freePosition = model:GetAttribute("FreePosition") == true,
+        -- Explicit move operations may retain a precise world-space
+        -- position; they still undergo range and full geometry validation.
+        freePosition = model:GetAttribute("FreePosition") == true
+            or payload.freePosition == true,
     }
     local valid, reason = validState(player, entry, proposed)
     if not valid then return false, reason end

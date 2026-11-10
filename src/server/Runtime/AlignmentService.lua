@@ -87,7 +87,8 @@ function Service:Align(player, request)
     end
 
     for _, item in ipairs(plan.items) do
-        if d.intersectsConstructed(item.model, ignored) then
+        if d.intersectsConstructed(item.model, ignored, target,
+            shaft:GetAttribute("InstanceId")) then
             for i, original in ipairs(before) do
                 d.applyState(plan.items[i].model, original)
             end

@@ -16,6 +16,8 @@ local ComponentGeometry = require(construction:WaitForChild("ComponentGeometry")
 local SurfacePlacement = require(construction:WaitForChild("SurfacePlacement"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
+local MoveGizmo = require(script.Parent:WaitForChild("MoveGizmo"))
+local RotateGizmo = require(script.Parent:WaitForChild("RotateGizmo"))
 local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEditingController"))
 
 local BLUE = Color3.fromRGB(96, 174, 207)
@@ -109,6 +111,12 @@ function Controller.new(tools)
         ScaleCF = nil,
         ScaleSize = nil,
         ScaleHandles = nil,
+        MoveHandles = nil,
+        RotateHandles = nil,
+        GizmoMoving = false,
+        DirectDragCandidate = nil,
+        DirectDragActive = false,
+        ComponentOutline = nil,
         Layered = nil,
         Busy = false,
         Connections = {},
@@ -344,6 +352,16 @@ function Controller:RefreshHUD()
         self.HelpLabel.Text = "Tab depth • X X-ray • I isolate • L align • V scale"
     end
 
+    if self.Layered and self.Layered.Alignment
+        and self.Layered.Alignment.Stage == "Preview"
+        and self.Layered.Alignment.Valid == false then
+        self.DetailLabel.Text = "RED / " .. tostring(
+            self.Layered.Alignment.ConflictReason or "Geometry interference")
+    elseif self.Preview and self.PreviewValid == false then
+        self.DetailLabel.Text = "RED / " .. tostring(
+            self.PreviewReason or "Geometry interference")
+    end
+
     if self.StatusMessage and os.clock() < self.MessageUntil then
         self.DetailLabel.Text = self.StatusMessage
     end
@@ -427,20 +445,49 @@ function Controller:RefreshSelectionHighlights()
         self.SelectionHighlight:Destroy()
         self.SelectionHighlight = nil
     end
-    for _, highlight in ipairs(self.SelectionHighlights) do highlight:Destroy() end
+    for _, h in ipairs(self.SelectionHighlights) do h:Destroy() end
     table.clear(self.SelectionHighlights)
+    if self.ComponentOutline then self.ComponentOutline:Destroy() end
+    self.ComponentOutline = nil
 
-    for _, model in ipairs(self.SelectedParts) do
-        if model and model.Parent then
-            local h = create("Highlight", {
-                Adornee = model,
-                FillColor = BLUE,
-                FillTransparency = 0.78,
-                OutlineColor = Color3.fromRGB(151, 214, 245),
-                OutlineTransparency = 0,
-                DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-            }, self.Gui)
-            table.insert(self.SelectionHighlights, h)
+    if self.SelectedComponentId and #self.SelectedParts > 0 then
+        -- One continuous component boundary instead of outlining every
+        -- primitive, including internal seams.
+        local center, bounds = ComponentGeometry.Bounds(self.SelectedParts)
+        if center and bounds then
+            local bound = Instance.new("Part")
+            bound.Name = "OPENWORKS_ComponentSelectionBounds"
+            bound.Size = bounds + Vector3.one * 0.025
+            bound.CFrame = CFrame.new(center)
+            bound.Anchored = true
+            bound.CanCollide = false
+            bound.CanTouch = false
+            bound.CanQuery = false
+            bound.Transparency = 1
+            bound.Parent = workspace
+
+            local box = Instance.new("SelectionBox")
+            box.Name = "UnifiedComponentBoundary"
+            box.Adornee = bound
+            box.LineThickness = 0.018
+            box.Color3 = Color3.fromRGB(137, 207, 251)
+            box.SurfaceTransparency = 1
+            box.Transparency = 0.1
+            box.Parent = bound
+            self.ComponentOutline = bound
+        end
+    else
+        for _, model in ipairs(self.SelectedParts) do
+            if model and model.Parent then
+                local h = create("Highlight", {
+                    Adornee = model,
+                    FillColor = BLUE,
+                    FillTransparency = 0.78,
+                    OutlineTransparency = 1,
+                    DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+                }, self.Gui)
+                table.insert(self.SelectionHighlights, h)
+            end
         end
     end
 end
@@ -525,6 +572,7 @@ function Controller:ToggleMultiSelection(model)
 end
 
 function Controller:CancelPending()
+    self.GizmoMoving = false
     if self.Pending then
         if self.Selected and self.Selected.PrimaryPart then
             self.Selected.PrimaryPart.LocalTransparencyModifier = 0
@@ -541,6 +589,10 @@ function Controller:CancelPending()
 end
 
 function Controller:OnModeChanged(mode)
+    self.DirectDragCandidate = nil
+    self.DirectDragActive = false
+    if self.MoveHandles then self.MoveHandles:Cancel() end
+    if self.RotateHandles then self.RotateHandles:Cancel() end
     self:EndScale()
     self:CancelPending()
     self.Mode = mode
@@ -606,14 +658,16 @@ function Controller:CastCenter(excludeSelected)
 end
 
 function Controller:UpdatePreview()
-    if self.ScaleMode then return end
+    if self.ScaleMode or self.GizmoMoving then return end
     if not self.Preview or self.CatalogOpen then
         self.PreviewCF = nil
         if self.Preview then self.Preview.Parent = nil end
         return
     end
 
-    local hit = self:CastCenter(self.Pending == "Move" or self.Pending == "ComponentMove")
+    local hit = self:CastCenter(self.Pending == "Move"
+        or self.Pending == "ComponentMove" or self.Pending == "ComponentCopy"
+        or self.Pending == "Copy")
     if not hit or not self.CurrentSize then
         self.PreviewCF = nil
         self.Preview.Parent = nil
@@ -624,18 +678,12 @@ function Controller:UpdatePreview()
     local proposed = Grid.FromSurface(hit.Position, hit.Normal, self.CurrentSize, rotation)
     if not self.Preview.Parent then self.Preview.Parent = workspace end
 
-    -- A rigid component's anchor may be an interior or side primitive.
-    -- Place using the *lowest point of the complete rotated assembly* so
-    -- no member is accidentally pushed into the ground.
-    local group = self.Pending == "ComponentMove" or self.Pending == "ComponentCopy"
-    local cf
-    if group then
-        cf = SurfacePlacement.SnapToSurface(self.Preview, proposed,
-            hit.Position, hit.Normal)
-    else
-        cf = proposed
-        self.Preview:PivotTo(cf)
-    end
+    -- Exact surface support for BOTH individual primitives and groups.
+    -- The raycast hit is the supporting surface: all geometry must stay
+    -- on its outside instead of rounding back into it.
+    local cf = SurfacePlacement.SnapToSurface(
+        self.Preview, proposed, hit.Position, hit.Normal
+    )
     self.PreviewCF = cf
 
     if os.clock() - self.LastPreviewCheck > 0.12 then
@@ -646,7 +694,7 @@ function Controller:UpdatePreview()
         elseif self.Pending == "ComponentMove" then
             for _, member in ipairs(self.SelectedParts) do ignore[member] = true end
         end
-        self.PreviewValid = PreviewFeedback.IsClear(self.Preview, ignore)
+        self.PreviewValid, self.PreviewReason = PreviewFeedback.Check(self.Preview, ignore)
         PreviewFeedback.Paint(self.Preview, self.PreviewValid)
     end
 end
@@ -750,6 +798,7 @@ function Controller:ConfirmMove()
         position = self.PreviewCF.Position,
         steps = stepsCopy(self.Steps),
         size = self.CurrentSize,
+        freePosition = true,
     })
     if success then
         self:CancelPending()
@@ -785,6 +834,7 @@ function Controller:ConfirmComponentPlacement()
 end
 
 function Controller:Activate(mode)
+    if self.GizmoMoving or self.DirectDragActive then return end
     if self.ScaleMode then
         -- Redundant native-Tool activation path: some Roblox input flows
         -- consume MouseButton1 before UserInputService.InputBegan sees it.
@@ -1056,6 +1106,74 @@ function Controller:History(redo)
     end
 end
 
+-- Direct world-space pickup of any owned primitive or component.
+-- A normal click still selects. Holding LMB and moving the camera or player
+-- beyond a small world-space threshold starts the existing temporary G move.
+function Controller:BeginDirectDrag()
+    if self.Mode ~= "Edit" or self.Pending or self.ScaleMode or self.CatalogOpen
+        or (self.MoveHandles and self.MoveHandles.Drag)
+        or (self.RotateHandles and self.RotateHandles.Drag) then return end
+    local hit = self:CastCenter(false)
+    if not hit then return end
+    local folder = workspace:FindFirstChild(Config.FolderName)
+    local node = hit.Instance
+    while node and node.Parent ~= folder do node = node.Parent end
+    if not node or not node:IsA("Model")
+        or node:GetAttribute("OwnerUserId") ~= player.UserId then return end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then return end
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    self.DirectDragCandidate = {
+        Model = node,
+        StartedAt = os.clock(),
+        Camera = camera.CFrame,
+    }
+end
+
+function Controller:UpdateDirectDrag()
+    local held = self.DirectDragCandidate
+    if not held or self.DirectDragActive then return end
+    if self.MoveHandles and self.MoveHandles.Drag then return end
+    if self.RotateHandles and self.RotateHandles.Drag then return end
+    if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+        self.DirectDragCandidate = nil
+        return
+    end
+    if os.clock() - held.StartedAt < 0.10 then return end
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    local displacement = (camera.CFrame.Position - held.Camera.Position).Magnitude
+    local angular = math.acos(math.clamp(
+        camera.CFrame.LookVector:Dot(held.Camera.LookVector), -1, 1))
+    if displacement < 0.12 and angular < math.rad(1.8) then return end
+
+    if self.SelectedComponentId then
+        if held.Model:GetAttribute("ComponentId") ~= self.SelectedComponentId then return end
+    elseif self.Selected ~= held.Model then
+        return
+    end
+    self.DirectDragActive = true
+    self:StartMove(false)
+    if not self.Pending then self.DirectDragActive = false end
+end
+
+function Controller:FinishDirectDrag()
+    self.DirectDragCandidate = nil
+    if not self.DirectDragActive then return end
+    self.DirectDragActive = false
+    if not self.PreviewValid or not self.PreviewCF then
+        if not self.PreviewValid then
+            self:Message(self.PreviewReason or "Red preview: placement blocked")
+        end
+        self:CancelPending()
+    elseif self.Pending == "ComponentMove" then
+        self:ConfirmComponentPlacement()
+    elseif self.Pending == "Move" then
+        self:ConfirmMove()
+    end
+end
+
 function Controller:OnInput(input, processed)
     local key = input.KeyCode
     if UserInputService:GetFocusedTextBox() then return end
@@ -1130,6 +1248,10 @@ function Controller:Start()
     self:MakeUI()
     self.Layered = LayeredEditingController.new(self)
     self.Layered:Start()
+    self.MoveHandles = MoveGizmo.new(self)
+    self.MoveHandles:Start()
+    self.RotateHandles = RotateGizmo.new(self)
+    self.RotateHandles:Start()
 
     table.insert(self.Connections, self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
@@ -1138,7 +1260,15 @@ function Controller:Start()
         self:Activate(mode)
     end))
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            self:BeginDirectDrag()
+        end
         self:OnInput(input, processed)
+    end))
+    table.insert(self.Connections, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            self:FinishDirectDrag()
+        end
     end))
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseWheel and self.Layered then
@@ -1159,6 +1289,16 @@ function Controller:Start()
         end)
 
     table.insert(self.Connections, RunService.RenderStepped:Connect(function()
+        if self.ComponentOutline and self.ComponentOutline.Parent then
+            local source = if self.Preview and self.SelectedComponentId
+                then { self.Preview } else self.SelectedParts
+            local center, bounds = ComponentGeometry.Bounds(source)
+            if center and bounds then
+                self.ComponentOutline.CFrame = CFrame.new(center)
+                self.ComponentOutline.Size = bounds + Vector3.one * 0.025
+            end
+        end
+        self:UpdateDirectDrag()
         if self.Mode == "Build" or (self.Mode == "Edit" and self.Pending) then
             self:UpdatePreview()
         end
@@ -1177,6 +1317,9 @@ function Controller:Destroy()
     if self.Layered then self.Layered:Destroy() end
     RunService:UnbindFromRenderStep("OPENWORKS_CursorUnlock")
     if self.ScaleHandles then self.ScaleHandles:Destroy() end
+    if self.MoveHandles then self.MoveHandles:Destroy() end
+    if self.RotateHandles then self.RotateHandles:Destroy() end
+    if self.ComponentOutline then self.ComponentOutline:Destroy() end
     self:CancelPending()
     self:ClearPreview()
     if self.SelectionHighlight then self.SelectionHighlight:Destroy() end

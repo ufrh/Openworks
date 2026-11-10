@@ -322,7 +322,9 @@ function Layered:UpdateAlignPreview()
         align.Preview:PivotTo(plan.delta * align.StartGhostPivot)
         local ignore = {}
         for _, member in ipairs(align.Members) do ignore[member] = true end
-        align.Valid = PreviewFeedback.IsClear(align.Preview, ignore)
+        align.Valid, align.ConflictReason = PreviewFeedback.Check(
+            align.Preview, ignore, align.Shaft:GetAttribute("InstanceId"), align.Target
+        )
         PreviewFeedback.Paint(align.Preview, align.Valid)
     end
     self:RefreshVisuals()
@@ -411,7 +413,7 @@ function Layered:ConfirmAlignment()
     if not align or align.Stage ~= "Preview" then return end
 
     if align.Valid == false then
-        self.Parent:Message("Red preview: shaft conflicts with solid geometry")
+        self.Parent:Message(align.ConflictReason or "Red preview: solid interference")
         return
     end
     local ok = self.Parent:Request({

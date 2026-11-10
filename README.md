@@ -8,7 +8,7 @@ A Roblox mechanical construction and engineering sandbox. The active `dev` branc
 
 Current guiding decisions (details will be finalized in the new design document):
 - GearBlocks-like scale; no microscopic voxel resolution for its own sake.
-- Modular, grid-aligned building with curved shapes and specialized prefabs such as gears and shafts.
+- Modular building with adjustable sizing increments, but no mandatory position-grid validation; curved shapes and prefabs such as gears and shafts.
 - Custom rigid parts built from modular/voxel material, then optimized into finished components.
 - No reliance on destructive CSG modeling or arbitrarily scaling finished components.
 - Functional mechanical relationships and intuitive assembly, with room to expand transmissions, flexible elements, and electronics.
@@ -47,3 +47,14 @@ See `docs/REBUILD_NOTES.md` for the reset boundary and next design step.
 - Resizing defaults to 0.5 U, with [ / ] selecting 0.25, 0.5, 1, or 2 U.
 - A contextual shortcuts list appears on the right for the equipped Tool and current operation.
 - Edit supports Delete for pieces/components; Assemble supports Delete for an authored relationship on the aimed part.
+
+
+## Cohesion and interaction pass — 2026.11.09.PHASE05.PHYSICAL-CONTEXT
+- In Edit, a click selects; **hold and move/look to drag** a selected primitive/component. Release positions it through the same temporary G-move workflow. **G** remains a separate placement mode.
+- Archived FORM-style physical handles: three colored move arrows made from cylinder stems plus `ReplicatedStorage.Cone` mesh, and actual 3D scale cubes on both faces. Their Highlights use **fill only (outline transparency 1)**; the scale cube's thin border uses SelectionBox.
+- Whole components use one continuously updated selection bounds outline, not a separate Highlight outline per member.
+- The right controls panel lists only relevant keybinds for the active Tool's current substate (catalog, normal edit, scale, alignment, move, assemble selection/placement).
+- Live red/blue feedback describes the actual interfering model. Selecting a hollow bore permits the intended *cylindrical shaft* to overlap its collision representation ONLY after a metadata-derived radial clearance test. The rest of the moving assembly still undergoes full collision tests.
+- Exact bore metadata is read from Studio Generator v4 (`HoleDiameterU`, `InnerDiameterU`, `InnerWidthU`, `InnerHeightU`, `WallU`), including tube cross-section resizing.
+- World position is not subject to a mandatory grid test. Size increments stay quantized; surface support and range/collision/ownership rules remain authoritative.
+- Segmented physical rotation rings are now ported, with first-person ray/plane drag and 90° snapping. Existing R/T/Y shortcuts remain.

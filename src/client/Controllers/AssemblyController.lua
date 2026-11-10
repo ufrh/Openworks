@@ -271,7 +271,10 @@ function Controller:UpdatePreview()
         self.PreviewModel:PivotTo(plan.delta * self.GhostStart)
         local ignore = {}
         for _, member in ipairs(self.Members) do ignore[member] = true end
-        self.PreviewValid = PreviewFeedback.IsClear(self.PreviewModel, ignore)
+        self.PreviewValid, self.PreviewReason = PreviewFeedback.Check(
+            self.PreviewModel, ignore, self.Source:GetAttribute("InstanceId"),
+            self.Housing
+        )
         PreviewFeedback.Paint(self.PreviewModel, self.PreviewValid)
     end
     self:RefreshHUD()
@@ -335,7 +338,7 @@ function Controller:Activate()
     else
         if not self.Housing or not self.Source then self:Reset() return end
         if self:Kind() ~= "Fixed" and not self.PreviewValid then
-            self:Message("Red preview: geometry overlaps; adjust insertion")
+            self:Message(self.PreviewReason or "Red preview: geometry overlaps")
             return
         end
         if self:Request({

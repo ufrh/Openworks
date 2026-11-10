@@ -27,84 +27,85 @@ function Context:Lines()
     local c = self.Construction
     local a = self.Assembly
     local lines = {}
+    if not tool then return { "Choose a tool: 1–4" } end
 
-    if not tool then return { "Equip a Tool (1–4)" } end
-    append(lines, "WASD", "Move")
-    append(lines, "Mouse", "Look around")
-    append(lines, "Space", "Jump")
-
+    -- Only list actions possible IN THE CURRENT CONTEXT; submenus narrow
+    -- rather than continuing to show the entire tool's shortcut catalog.
     if tool == "Build" then
         if c.ScaleMode then
-            append(lines, "LMB hold", "Grab resize face")
-            append(lines, "Move / Look", "World-space resize")
-            append(lines, "[  ]", "Sizing step (" .. tostring(c.ScaleStepU) .. " U)")
-            append(lines, "LMB release", "Confirm resize")
-            append(lines, "V / Esc", "Exit resizing")
+            append(lines, "LMB hold", "Grab face")
+            append(lines, "Move / Look", "Resize in 3D")
+            append(lines, "[  ]", "Step: " .. tostring(c.ScaleStepU) .. " U")
+            append(lines, "Release", "Apply size")
+            append(lines, "V / Esc", "Exit scale")
         elseif c.CatalogOpen then
-            append(lines, "B / Esc", "Close primitive library")
             append(lines, "LMB", "Choose primitive")
+            append(lines, "B / Esc", "Close catalog")
         else
-            append(lines, "B", "Primitive library")
-            append(lines, "LMB", "Place primitive")
-            append(lines, "R / T / Y", "Rotate X/Y/Z mapping")
-            append(lines, "V", "Resize primitive")
-            append(lines, "Ctrl+Z / Y", "Undo / Redo")
+            append(lines, "LMB", "Place when blue")
+            append(lines, "B", "Choose primitive")
+            append(lines, "V", "Resize")
+            append(lines, "R / T / Y", "Rotate axes")
         end
     elseif tool == "Edit" then
         if c.ScaleMode then
-            append(lines, "LMB hold", "Grab resize face")
-            append(lines, "Move / Look", "World-space resize")
-            append(lines, "[  ]", "Sizing step (" .. tostring(c.ScaleStepU) .. " U)")
-            append(lines, "LMB release", "Commit resize")
-            append(lines, "V / Esc", "Exit resizing")
+            append(lines, "LMB hold", "Grab face")
+            append(lines, "Move / Look", "Resize in 3D")
+            append(lines, "[  ]", "Step: " .. tostring(c.ScaleStepU) .. " U")
+            append(lines, "Release", "Apply size")
+            append(lines, "V / Esc", "Exit scale")
         elseif c.Layered and c.Layered.Alignment then
             local align = c.Layered.Alignment
             if align.Stage == "PickTarget" then
                 append(lines, "LMB", "Choose opening")
-                append(lines, "Tab", "Cycle obscured targets")
-                append(lines, "L / Esc", "Cancel alignment")
+                append(lines, "Tab", "Cycle depth")
             else
                 append(lines, "Wheel / [ ]", "Insertion depth")
                 append(lines, "LMB", "Confirm when blue")
-                append(lines, "L / Esc", "Cancel alignment")
             end
+            append(lines, "L / Esc", "Cancel alignment")
+        elseif c.RotateHandles and c.RotateHandles.Drag then
+            append(lines, "Hold LMB", "Rotate around ring")
+            append(lines, "Move / Look", "World-space rotation")
+            append(lines, "Release", "Confirm quarter turn")
+        elseif c.MoveHandles and c.MoveHandles.Drag then
+            append(lines, "Hold LMB", "Move along axis")
+            append(lines, "Move / Look", "World-space drag")
+            append(lines, "Release", "Confirm")
         elseif c.Pending then
-            append(lines, "LMB", "Confirm when blue")
+            append(lines, "Look / Walk", "Position preview")
+            append(lines, "LMB", "Place when blue")
             append(lines, "R / T / Y", "Rotate")
-            append(lines, "Esc", "Cancel move/copy")
+            append(lines, "Esc", "Cancel")
         else
-            append(lines, "LMB", "Select primitive/component")
-            append(lines, "Shift+LMB", "Multi-select")
-            append(lines, "Tab / Shift+Tab", "Cycle depth")
-            append(lines, "X / I", "X-ray / Isolate")
-            append(lines, "C", "Combine selection")
-            append(lines, "E", "Edit component interior")
-            append(lines, "G / F", "Move / Duplicate")
+            append(lines, "LMB", "Select; hold to drag")
+            append(lines, "Arrows / Rings", "Move / Rotate handles")
+            append(lines, "V / G", "Scale / Move")
             append(lines, "R / T / Y", "Rotate")
-            append(lines, "V", "Resize")
-            append(lines, "L", "Align shaft to opening")
-            append(lines, "U", "Ungroup component")
-            append(lines, "Del", "Delete selected geometry")
-            append(lines, "Ctrl+Z / Y", "Undo / Redo")
+            append(lines, "L", "Align shaft")
+            append(lines, "C / U", "Combine / Ungroup")
+            append(lines, "E", "Edit group interior")
+            append(lines, "F / Del", "Duplicate / Delete")
+            append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
         end
     elseif tool == "Assemble" then
-        append(lines, "R", "Bearing / Slider / Fixed")
         if a.Stage == "Housing" then
-            append(lines, "LMB", "Choose opening/housing")
+            append(lines, "LMB", "Choose housing")
+            append(lines, "R", "Change relationship")
         elseif a.Stage == "Source" then
-            append(lines, "LMB", "Choose shaft/component")
+            append(lines, "LMB", "Choose shaft/body")
+            append(lines, "R", "Change relationship")
         else
-            append(lines, "Wheel / [ ]", "Insertion depth (0.5 U)")
+            append(lines, "Wheel / [ ]", "Insertion depth")
             append(lines, "LMB", "Finalize when blue")
+            append(lines, "R", "Change relationship")
         end
-        append(lines, "Del", "Delete aimed relationship")
-        append(lines, "Ctrl+Z / Y", "Undo / Redo")
-        append(lines, "Esc", "Reset selection")
+        append(lines, "Del", "Remove aimed joint")
+        append(lines, "Esc", "Reset")
     elseif tool == "Inspect" then
-        append(lines, "LMB", "Inspect primitive")
-        append(lines, "Tab / Shift+Tab", "Cycle depth")
-        append(lines, "X", "X-ray")
-        append(lines, "I", "Isolate")
+        append(lines, "LMB", "Inspect")
+        append(lines, "Tab", "Cycle depth")
+        append(lines, "X / I", "X-ray / Isolate")
     end
     return lines
 end
@@ -121,7 +122,7 @@ function Context:Start()
     panel.Name = "BindsPanel"
     panel.AnchorPoint = Vector2.new(1, 0)
     panel.Position = UDim2.new(1, -16, 0, 145)
-    panel.Size = UDim2.fromOffset(244, 390)
+    panel.Size = UDim2.fromOffset(244, 247)
     panel.BackgroundColor3 = Color3.fromRGB(22, 29, 38)
     panel.BackgroundTransparency = 0.12
     panel.BorderSizePixel = 0

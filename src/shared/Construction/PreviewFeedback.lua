@@ -4,6 +4,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("BuildConfig"))
+local Bore = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("BoreClearance"))
 
 local Feedback = {}
 Feedback.ValidColor = Color3.fromRGB(83, 176, 241)
@@ -14,7 +16,8 @@ overlap.FilterType = Enum.RaycastFilterType.Include
 overlap.RespectCanCollide = false
 overlap.MaxParts = 0
 
-function Feedback.IsClear(ghost: Model, ignored: { [Instance]: boolean }?): boolean
+function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
+    sourceId: string?, opening: Model?): (boolean, string?)
     local built = workspace:FindFirstChild(Config.FolderName)
     if not built then return true end
     overlap.FilterDescendantsInstances = { built }
@@ -40,17 +43,30 @@ function Feedback.IsClear(ghost: Model, ignored: { [Instance]: boolean }?): bool
             return workspace:GetPartsInPart(probe, overlap)
         end)
         probe:Destroy()
-        if not ok then return false end
+        if not ok then return false, "Collision query unavailable" end
 
         for _, object in ipairs(touching) do
             local target = object:FindFirstAncestorOfClass("Model")
             if target and target.Parent == built
                 and not (ignored and ignored[target]) then
-                return false
+                local movingModel = part:FindFirstAncestorOfClass("Model")
+                local eligible = target == opening and sourceId
+                    and movingModel
+                    and movingModel:GetAttribute("InstanceId") == sourceId
+                local fits = false
+                if eligible then fits = Bore.ShaftFits(movingModel, target) end
+                if not fits then
+                    return false, tostring(movingModel and movingModel.Name or part.Name)
+                        .. " interferes with " .. tostring(target.Name)
+                end
             end
         end
     end
     return true
+end
+
+function Feedback.IsClear(ghost: Model, ignored: { [Instance]: boolean }?): boolean
+    return Feedback.Check(ghost, ignored)
 end
 
 function Feedback.Paint(ghost: Model?, valid: boolean)
