@@ -6,10 +6,13 @@ local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 local constructor = ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction")
 local Config = require(constructor:WaitForChild("BuildConfig"))
 local Alignment = require(constructor:WaitForChild("AlignmentMath"))
+local SpringMath = require(constructor:WaitForChild("SpringMath"))
+local Grid = require(constructor:WaitForChild("GridMath"))
 
 local localPlayer = Players.LocalPlayer
 local Visuals = {}
@@ -19,6 +22,11 @@ local GROUNDED=Color3.fromRGB(57,212,127)
 local MOVABLE=Color3.fromRGB(252,160,73)
 local AXIS = Color3.fromRGB(92, 189, 228)
 local GEAR = Color3.fromRGB(209, 180, 124)
+local SLIDER = Color3.fromRGB(74, 196, 235)
+local BEARING = Color3.fromRGB(177, 132, 248)
+local SPRING = Color3.fromRGB(255, 153, 47)
+local WELD = Color3.fromRGB(73, 223, 150)
+local GUIDE = Color3.fromRGB(102, 220, 240)
 
 local function accentPart(parent, size)
     local part = Instance.new("Part")
@@ -67,13 +75,156 @@ function Visuals:GroundCue(key)
 end
 
 function Visuals:JointCue(id)
-    local parent = Instance.new("Folder")
-    parent.Name = "Joint_"..id
-    parent.Parent = self.Folder
-    local shaft = accentPart(parent,Vector3.new(0.1,0.03,0.03))
-    local collar = accentPart(parent,Vector3.new(0.045,0.11,0.11))
-    collar.Shape = Enum.PartType.Cylinder
-    return {root=parent,shaft=shaft,collar=collar}
+    local parent=Instance.new("Folder")
+    parent.Name="Joint_"..id
+    parent.Parent=self.Folder
+    local shaft=accentPart(parent,Vector3.new(0.1,0.025,0.025))
+    shaft.Transparency=0.35
+    local collar=accentPart(parent,Vector3.new(0.05,0.14,0.14))
+    collar.Shape=Enum.PartType.Cylinder
+    collar.Transparency=0.12
+    local function orb()
+        local part=accentPart(parent,Vector3.new(0.095,0.095,0.095))
+        part.Shape=Enum.PartType.Ball
+        part.Transparency=0.08
+        return part
+    end
+    local mark0,mark1=orb(),orb()
+    local stop0=accentPart(parent,Vector3.new(0.025,0.18,0.18))
+    local stop1=accentPart(parent,Vector3.new(0.025,0.18,0.18))
+    stop0.Shape=Enum.PartType.Cylinder
+    stop1.Shape=Enum.PartType.Cylinder
+    local tag=Instance.new("BillboardGui")
+    tag.Name="OPENWORKS_RelationshipLabel"
+    tag.Adornee=collar
+    tag.Size=UDim2.fromOffset(158,26)
+    tag.StudsOffsetWorldSpace=Vector3.new(0,0.35,0)
+    tag.AlwaysOnTop=false
+    tag.MaxDistance=42
+    tag.LightInfluence=0
+    tag.Parent=parent
+    local text=Instance.new("TextLabel")
+    text.Name="Label"
+    text.Size=UDim2.fromScale(1,1)
+    text.BackgroundColor3=Color3.fromRGB(19,28,36)
+    text.BackgroundTransparency=0.16
+    text.BorderSizePixel=0
+    text.Font=Enum.Font.GothamBold
+    text.TextSize=10
+    text.TextColor3=Color3.fromRGB(234,243,249)
+    text.TextStrokeTransparency=1
+    text.Parent=tag
+    local round=Instance.new("UICorner")
+    round.CornerRadius=UDim.new(0,6)
+    round.Parent=text
+    local stroke=Instance.new("UIStroke")
+    stroke.Thickness=1
+    stroke.Transparency=0.38
+    stroke.Parent=text
+    return {root=parent,shaft=shaft,collar=collar,
+        mark0=mark0,mark1=mark1,stop0=stop0,stop1=stop1,
+        text=text,stroke=stroke,fitMarkers={},fitData={},fitJSON=nil}
+end
+
+local function oriented(center,axis)
+    local dir=axis.Magnitude>0.0001 and axis.Unit or Vector3.xAxis
+    local reference=if math.abs(dir.Y)<0.9 then Vector3.yAxis else Vector3.zAxis
+    local up=(reference-dir*dir:Dot(reference)).Unit
+    return CFrame.fromMatrix(center,dir,up,dir:Cross(up))
+end
+
+local function drawEnd(part,position)
+    part.CFrame=CFrame.new(position)
+end
+
+function Visuals:UpdateJoint(cue,relation,source,target,models)
+    local kind=relation:GetAttribute("Kind")
+    local tint=if kind=="Spring" then SPRING
+        elseif kind=="Weld" then WELD
+        elseif kind=="Bolt" or kind=="Gear" then GEAR
+        elseif kind=="Bearing" then BEARING
+        elseif kind=="Slider" then SLIDER else AXIS
+    local a,b=target:GetPivot().Position,source:GetPivot().Position
+    local localAxis=Alignment.TargetAxis(target)
+    local direction=if localAxis
+        then target:GetPivot():VectorToWorldSpace(localAxis).Unit
+        elseif (b-a).Magnitude>0.0001
+        then (b-a).Unit else Vector3.yAxis
+    if kind=="Spring" then
+        a,b=SpringMath.Frames(source,target,"General")
+        if (b-a).Magnitude>0.0001 then direction=(b-a).Unit end
+    end
+    local center=(a+b)*0.5
+    local guideCount=relation:GetAttribute("FitPointCount") or 0
+    local labels={Spring="SPRING",Weld="WELD",Bolt="BOLT",Gear="GEARS",
+        Bearing="ROTATE",Slider="SLIDE",Cylindrical="SLIDE + ROTATE",
+        Fixed="FIXED"}
+    cue.text.Text=(labels[kind] or tostring(kind):upper())
+        ..(if guideCount>1 then "  ·  "..guideCount.." FITS" else "")
+    cue.stroke.Color=tint
+    for _,part in ipairs({cue.shaft,cue.collar,cue.mark0,cue.mark1}) do
+        part.Color=tint
+    end
+    drawEnd(cue.mark0,a)
+    drawEnd(cue.mark1,b)
+    cue.collar.CFrame=oriented(center,direction)
+    if kind=="Slider" or kind=="Bearing" or kind=="Cylindrical" then
+        local reach=math.min(1.8,math.max(0.3,
+            math.min(source.PrimaryPart.Size.Magnitude,
+                target.PrimaryPart.Size.Magnitude)*0.4))
+        cylinderBetween(cue.shaft,center-direction*reach,
+            center+direction*reach,0.024)
+    else
+        cylinderBetween(cue.shaft,a,b,if kind=="Spring" then 0.012 else 0.025)
+    end
+    local travel=relation:GetAttribute("FitTravelU")
+    local hasStop=(kind=="Slider" or kind=="Cylindrical")
+        and type(travel)=="number" and travel>0
+    for index,stop in ipairs({cue.stop0,cue.stop1}) do
+        stop.Color=tint
+        stop.Transparency=if hasStop then 0.22 else 1
+        if hasStop then
+            local sign=if index==1 then -1 else 1
+            stop.CFrame=oriented(center+direction*travel*Grid.Unit*sign,
+                direction)
+        end
+    end
+    local json=relation:GetAttribute("FitPointsJSON")
+    if json~=cue.fitJSON then
+        cue.fitJSON=json
+        cue.fitData={}
+        if type(json)=="string" and #json<12000 then
+            local ok,result=pcall(function() return HttpService:JSONDecode(json) end)
+            if ok and type(result)=="table" then cue.fitData=result end
+        end
+    end
+    local n=0
+    for _,entry in ipairs(cue.fitData) do
+        if n>=32 then break end
+        n+=1
+        local dot=cue.fitMarkers[n]
+        if not dot then
+            dot=accentPart(cue.root,Vector3.new(0.12,0.12,0.12))
+            dot.Shape=Enum.PartType.Ball
+            dot.Color=GUIDE
+            dot.Transparency=0.07
+            cue.fitMarkers[n]=dot
+        end
+        local moving=models[entry.movingId]
+        local stationary=models[entry.stationaryId]
+        if moving and stationary then
+            local bore=if Alignment.TargetAxis(moving) then moving
+                elseif Alignment.TargetAxis(stationary) then stationary else nil
+            dot.CFrame=bore and bore:GetPivot() or CFrame.new(stationary:GetPivot().Position)
+            dot.Transparency=0.07
+        else
+            dot.Transparency=1
+        end
+    end
+    for i=#cue.fitMarkers,n+1,-1 do
+        cue.fitMarkers[i]:Destroy()
+        table.remove(cue.fitMarkers,i)
+    end
 end
 
 function Visuals:Update()
@@ -166,43 +317,7 @@ function Visuals:Update()
             active[id]=true
             local cue=self.Joints[id]
             if not cue then cue=self:JointCue(id) self.Joints[id]=cue end
-            local kind=folder:GetAttribute("Kind")
-            if kind=="Gear" then
-                cue.shaft.Color=GEAR
-                cue.collar.Color=GEAR
-                cylinderBetween(cue.shaft,target:GetPivot().Position,
-                    source:GetPivot().Position,0.035)
-                cue.collar.CFrame=source:GetPivot()
-            else
-                local axis=Alignment.TargetAxis(target)
-                if axis then
-                    local accent=if kind=="Spring" then MOVABLE
-                        elseif kind=="Bolt" then GEAR
-                        elseif kind=="Weld" then GROUNDED else AXIS
-                    cue.shaft.Color=accent
-                    cue.collar.Color=accent
-                    cue.shaft.Transparency=0.18
-                    local point=target:GetPivot().Position
-                    local vector=target:GetPivot():VectorToWorldSpace(axis)
-                    local reach=math.min(1.5,math.max(0.3,source.PrimaryPart.Size.X*0.7))
-                    cylinderBetween(cue.shaft,point-vector*reach,
-                        point+vector*reach,0.024)
-                    cue.collar.CFrame=CFrame.new(point)
-                        * (target:GetPivot().Rotation)
-                else
-                    if kind=="Spring" or kind=="Weld" then
-                        local accent=if kind=="Spring" then MOVABLE else GROUNDED
-                        cue.shaft.Color=accent
-                        cue.collar.Color=accent
-                        cue.shaft.Transparency=0.16
-                        cylinderBetween(cue.shaft,target:GetPivot().Position,
-                            source:GetPivot().Position,0.028)
-                        cue.collar.CFrame=source:GetPivot()
-                    else
-                        cue.shaft.Transparency=1
-                    end
-                end
-            end
+            self:UpdateJoint(cue,folder,source,target,models)
         end
     end
     for key,cue in pairs(self.Joints) do
