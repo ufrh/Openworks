@@ -16,6 +16,11 @@ local MUTED=Color3.fromRGB(158,179,195)
 local function create(class,parent,props)
     local item=Instance.new(class)
     for k,v in pairs(props) do item[k]=v end
+    if item:IsA("GuiObject") and parent
+        and parent:FindFirstChildOfClass("UIListLayout")
+        and props.LayoutOrder==nil then
+        item.LayoutOrder=#parent:GetChildren()
+    end
     item.Parent=parent
     return item
 end
@@ -246,8 +251,8 @@ function Properties:Start()
     surface.Activated:Connect(function()
         if not self.Looking then self:SelectWorld() end
     end)
-    table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
-        if not self.Open or processed then return end
+    table.insert(self.Connections,UIS.InputBegan:Connect(function(input,_processed)
+        if not self.Open then return end
         if input.UserInputType==Enum.UserInputType.MouseButton2 then
             self.Looking=true
             surface.Visible=false
