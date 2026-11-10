@@ -236,7 +236,11 @@ function Controller:RefreshCatalog()
 end
 
 function Controller:ShowCatalog(visible)
+    local wasOpen = self.CatalogOpen
     self.CatalogOpen = visible and self.Mode == "Build"
+    if wasOpen and not self.CatalogOpen then
+        self.IgnoreClickUntil = os.clock() + 0.2
+    end
     self.Catalog.Visible = self.CatalogOpen
     self.Unlock.Visible = self.CatalogOpen
     self.Crosshair.Visible = not self.CatalogOpen
@@ -537,7 +541,7 @@ function Controller:ConfirmMove()
 end
 
 function Controller:Activate(mode)
-    if self.CatalogOpen or self.Busy then return end
+    if self.CatalogOpen or self.Busy or os.clock() < (self.IgnoreClickUntil or 0) then return end
 
     if mode == "Build" then
         self:Place()
