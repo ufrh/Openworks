@@ -1033,6 +1033,10 @@ function Mechanical:FastenBolt(player,request,newSource)
     end
     local before=if newSource then {} else {d.snapshot(bolt)}
     local old=d.snapshot(bolt)
+    -- Bolts added to an already-registered assembly participate in its
+    -- simulation scope without changing editable component identities.
+    local assemblyId=target:GetAttribute("AssemblyId")
+    local assemblyName=target:GetAttribute("AssemblyName")
     if not newSource then
         if typeof(request.position)~="Vector3"
             or typeof(request.orientation)~="CFrame" then
@@ -1077,6 +1081,10 @@ function Mechanical:FastenBolt(player,request,newSource)
     if d.intersectsConstructed(bolt,ignored) then
         return rollback("Bolt intersects an unrelated solid")
     end
+    if assemblyId then
+        bolt:SetAttribute("AssemblyId",assemblyId)
+        bolt:SetAttribute("AssemblyName",assemblyName)
+    end
     local spec={
         relationId=HttpService:GenerateGUID(false),
         ownerUserId=player.UserId,kind="Bolt",
@@ -1086,7 +1094,11 @@ function Mechanical:FastenBolt(player,request,newSource)
         boltId=bolt:GetAttribute("InstanceId"),
     }
     local ok,why=self:Restore(player,spec)
-    if not ok then return rollback(why) end
+    if not ok then
+        bolt:SetAttribute("AssemblyId",old.assemblyId)
+        bolt:SetAttribute("AssemblyName",old.assemblyName)
+        return rollback(why)
+    end
     d.commitAssembly(player,before,{d.snapshot(bolt)},spec)
     return true,if holes[2] then "Bolt fastened both drilled bodies"
         else "Bolt fastened one drilled body"

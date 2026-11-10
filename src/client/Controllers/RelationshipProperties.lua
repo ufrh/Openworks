@@ -47,7 +47,7 @@ end
 function Properties.new(controller)
     return setmetatable({Controller=controller,Open=false,
         SelectedId=nil,SelectedName=nil,SelectedRelation=nil,
-        Fields={},LimitsOn=false},Properties)
+        Fields={},LimitsOn=false,Looking=false,Connections={}},Properties)
 end
 function Properties:Relations()
     local root=workspace:FindFirstChild("OPENWORKS_Relationships")
@@ -90,12 +90,11 @@ end
 function Properties:SelectWorld()
     local camera=workspace.CurrentCamera
     if not camera then return end
-    local world={workspace:FindFirstChild(Config.FolderName),
-        workspace:FindFirstChild("OPENWORKS_Simulated")}
     local roots={}
-    for _,root in ipairs(world) do
-        if root then table.insert(roots,root) end
-    end
+    local authored=workspace:FindFirstChild(Config.FolderName)
+    local simulated=workspace:FindFirstChild("OPENWORKS_Simulated")
+    if authored then table.insert(roots,authored) end
+    if simulated then table.insert(roots,simulated) end
     local params=RaycastParams.new()
     params.FilterType=Enum.RaycastFilterType.Include
     params.FilterDescendantsInstances=roots
@@ -217,7 +216,15 @@ function Properties:Show(open)
     self.Open=open
     if not self.Gui then return end
     self.Gui.Enabled=open
+    if self.WorldSurface then
+        self.WorldSurface.Visible=true
+        self.WorldSurface.Modal=true
+    end
     player:SetAttribute("OPENWORKS_PropertiesOpen",open)
+    if not open then
+        self.Looking=false
+        player:SetAttribute("OPENWORKS_PropertiesLooking",false)
+    end
     if open then
         UIS.MouseBehavior=Enum.MouseBehavior.Default
         UIS.MouseIconEnabled=true
@@ -235,7 +242,27 @@ function Properties:Start()
         BackgroundTransparency=1,BorderSizePixel=0,Text="",
         Modal=true,Active=true,ZIndex=1,
     })
-    surface.Activated:Connect(function() self:SelectWorld() end)
+    self.WorldSurface=surface
+    surface.Activated:Connect(function()
+        if not self.Looking then self:SelectWorld() end
+    end)
+    table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
+        if not self.Open or processed then return end
+        if input.UserInputType==Enum.UserInputType.MouseButton2 then
+            self.Looking=true
+            surface.Visible=false
+            surface.Modal=false
+            player:SetAttribute("OPENWORKS_PropertiesLooking",true)
+        end
+    end))
+    table.insert(self.Connections,UIS.InputEnded:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton2 and self.Looking then
+            self.Looking=false
+            surface.Visible=true
+            surface.Modal=true
+            player:SetAttribute("OPENWORKS_PropertiesLooking",false)
+        end
+    end))
     local panel=rounded(create("Frame",gui,{
         Name="PropertiesPanel",Position=UDim2.fromOffset(16,55),
         Size=UDim2.fromOffset(320,565),
@@ -292,6 +319,7 @@ function Properties:Start()
 end
 function Properties:Destroy()
     self:Show(false)
+    for _,connection in ipairs(self.Connections) do connection:Disconnect() end
     if self.Gui then self.Gui:Destroy() end
 end
 return Properties
