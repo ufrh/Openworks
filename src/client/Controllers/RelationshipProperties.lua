@@ -163,7 +163,8 @@ function Properties:Apply()
     end
     local ok,result=self.Controller:Request(payload)
     self.Status.Text=result and tostring(result.message) or "Request failed"
-    if ok then self:Refresh() end
+    -- Preserve typed values until attribute replication catches up. Immediate
+    -- rebuild could display stale pre-request values after a successful edit.
 end
 function Properties:Refresh()
     if not self.Gui then return end
