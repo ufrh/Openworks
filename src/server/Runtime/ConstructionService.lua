@@ -169,7 +169,7 @@ overlap.RespectCanCollide = false
 overlap.MaxParts = 0
 
 local GearMath = require(construction:WaitForChild("GearMath"))
-local function intersectsConstructed(candidate, except, opening: Model?, shaftId: string?)
+local function intersectsConstructed(candidate, except, opening: Model?, shaftId: string?, fitMap)
     overlap.FilterDescendantsInstances = { folder }
     for _,solid in ipairs(candidate:GetDescendants()) do
         if not solid:IsA("BasePart") or not solid.CanCollide then continue end
@@ -207,7 +207,11 @@ local function intersectsConstructed(candidate, except, opening: Model?, shaftId
                 and candidate:GetAttribute("InstanceId")==shaftId
                 and Bore.ShaftFits(candidate,target)
             local intendedGear=target and GearMath.Meshable(candidate,target)
-            if not intendedBore and not intendedGear then return true end
+            local approvedFit=target and fitMap and fitMap[candidate]
+                and fitMap[candidate][target] == true
+            if not intendedBore and not intendedGear and not approvedFit then
+                return true
+            end
         end
     end
     return false
@@ -436,6 +440,7 @@ local function place(player, payload)
             offsetUnits=mate.offsetUnits,
             rollDegrees=mate.rollDegrees,
             reverse=mate.reverse==true,
+            fitTargets=mate.fitTargets,
             approach=payload.position,
             position=payload.position,
         },true)
