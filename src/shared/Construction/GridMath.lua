@@ -81,9 +81,12 @@ function Grid.FromSurface(hitPosition, surfaceNormal, size, rotation)
         + math.abs(normal.Y) * dimensionsWorld.Y
         + math.abs(normal.Z) * dimensionsWorld.Z
     local desired = hitPosition + normal * (depth / 2 + 0.001)
-    local target = if Grid.HasFractionalSize(size)
-        then Grid.SnapSizeCenter(desired, size, rotation)
-        else Grid.SnapCenter(desired, size, rotation)
+    -- The placement lattice is fixed at 0.5 U; dimensions originally
+    -- authored in quarter Units remain valid for backward compatibility.
+    -- The final support-plane correction uses exact world coordinates.
+    local target = Grid.SnapCenter(
+        desired, size, rotation, Grid.DefaultSizeStepU
+    )
     return CFrame.new(target) * rotation
 end
 

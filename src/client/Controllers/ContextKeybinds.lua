@@ -35,7 +35,7 @@ function Context:Lines()
         if c.ScaleMode then
             append(lines, "LMB hold", "Grab face")
             append(lines, "Move / Look", "Resize in 3D")
-            append(lines, "[  ]", "Step: " .. tostring(c.ScaleStepU) .. " U")
+            append(lines, "Fixed", "0.5 U per step")
             append(lines, "Release", "Apply size")
             append(lines, "V / Esc", "Exit scale")
         elseif c.CatalogOpen then
@@ -51,7 +51,7 @@ function Context:Lines()
         if c.ScaleMode then
             append(lines, "LMB hold", "Grab face")
             append(lines, "Move / Look", "Resize in 3D")
-            append(lines, "[  ]", "Step: " .. tostring(c.ScaleStepU) .. " U")
+            append(lines, "Fixed", "0.5 U per step")
             append(lines, "Release", "Apply size")
             append(lines, "V / Esc", "Exit scale")
         elseif c.Layered and c.Layered.Alignment then
@@ -64,10 +64,6 @@ function Context:Lines()
                 append(lines, "LMB", "Confirm when blue")
             end
             append(lines, "L / Esc", "Cancel alignment")
-        elseif c.RotateHandles and c.RotateHandles.Drag then
-            append(lines, "Hold LMB", "Rotate around ring")
-            append(lines, "Move / Look", "World-space rotation")
-            append(lines, "Release", "Confirm quarter turn")
         elseif c.MoveHandles and c.MoveHandles.Drag then
             append(lines, "Hold LMB", "Move along axis")
             append(lines, "Move / Look", "World-space drag")
@@ -78,8 +74,9 @@ function Context:Lines()
             append(lines, "R / T / Y", "Rotate")
             append(lines, "Esc", "Cancel")
         else
-            append(lines, "LMB", "Select; hold to drag")
-            append(lines, "Arrows / Rings", "Move / Rotate handles")
+            append(lines, "LMB", "Select without moving")
+            append(lines, "Hold selected", "Drag to move")
+            append(lines, "Arrows", "Move on X / Y / Z")
             append(lines, "V / G", "Scale / Move")
             append(lines, "R / T / Y", "Rotate")
             append(lines, "L", "Align shaft")

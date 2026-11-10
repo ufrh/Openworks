@@ -71,7 +71,7 @@ end
 
 function Alignment.IsOffsetValid(units)
     return type(units) == "number" and units == units
-        and math.abs(units * 4 - math.round(units * 4)) < 0.0001
+        and math.abs(units * 2 - math.round(units * 2)) < 0.0001
         and math.abs(units) <= Alignment.MaxOffsetUnits
 end
 
@@ -118,7 +118,7 @@ end
 
 function Alignment.Plan(members, shaft, target, offsetUnits)
     if not Alignment.IsOffsetValid(offsetUnits) then
-        return nil, "Insertion offset must be in 0.25-U increments within +/-64 U"
+        return nil, "Insertion offset must be in 0.5-U increments within +/-64 U"
     end
     if not Alignment.IsShaft(shaft) then
         return nil, "Select a Cylinder shaft or a component containing one"

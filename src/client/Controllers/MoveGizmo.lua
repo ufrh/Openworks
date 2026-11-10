@@ -64,7 +64,12 @@ function Move:Update()
         return
     end
     if not self:IsAvailable() then
-        for _, grip in ipairs(self.Visual.Grips) do grip.Highlight.Enabled = false end
+        for _, grip in ipairs(self.Visual.Grips) do
+            grip.Highlight.Enabled = false
+            for _, part in ipairs(grip.Model:GetDescendants()) do
+                if part:IsA("BasePart") then part.Transparency = 1 end
+            end
+        end
         self.Visual.Selected = nil
         return
     end
@@ -86,12 +91,6 @@ function Move:BeginDrag()
     self:Update()
     local grip = self.Visual:Pick()
     if not grip then return false end
-    local rotate = self.Parent.RotateHandles
-    if rotate and rotate.Visual:Pick()
-        and rotate.Visual.SelectedDistance < self.Visual.SelectedDistance then
-        return false
-    end
-
     local c = self.Parent
     local pivot = if c.GroupAnchor then c.GroupAnchor:GetPivot()
         else c.Selected:GetPivot()
@@ -135,7 +134,7 @@ function Move:UpdateDrag()
     if not hit then return end
     local distance = (hit - drag.Point):Dot(drag.Axis) - drag.Offset
     local c = self.Parent
-    local step = Grid.Unit * c.ScaleStepU
+    local step = Grid.Unit * Grid.DefaultSizeStepU
     local snapped = math.round(distance / step) * step
     if math.abs(snapped - drag.LastMove) < 0.00001 then return end
     drag.LastMove = snapped

@@ -103,7 +103,6 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
         Active = false,
         Hovered = nil,
         Drag = nil,
-        IncrementU = Grid.DefaultSizeStepU,
     }, Gizmo)
 
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input)
@@ -126,13 +125,6 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
     return self
 end
 
-function Gizmo:SetIncrement(stepU)
-    if type(stepU) ~= "number" or stepU < Grid.MinSizeStepU
-        or stepU > 2 then return end
-    self.IncrementU = stepU
-    -- A step change takes effect on the next drag, never mid-grab.
-end
-
 function Gizmo:Open(cf, size, mode, templateSize)
     self.Drag = nil
     self.Active = true
@@ -150,7 +142,9 @@ function Gizmo:Close()
 
     for _, grip in ipairs(self.Visual.Grips) do
         grip.Highlight.Enabled = false
-        if grip.Border then grip.Border.Visible = false end
+        for _, item in ipairs(grip.Model:GetDescendants()) do
+            if item:IsA("BasePart") then item.Transparency = 1 end
+        end
     end
 end
 
@@ -187,7 +181,7 @@ function Gizmo:BeginDrag()
         PlaneNormal = planeNormal,
         StartAxisCoordinate = (startHit - startFace):Dot(outward),
         LastSteps = 0,
-        StepU = self.IncrementU,
+        StepU = Grid.DefaultSizeStepU,
     }
 
     -- Never freeze the camera. Moving or looking around changes the world

@@ -1,6 +1,6 @@
 # OPENWORKS
 
-A Roblox mechanical construction and engineering sandbox. The active `dev` branch includes the Phase 05 mechanical relationship authoring prototype: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment (L in Edit), first-person Assemble tool authoring Bearing/Slider/Fixed constraints, and adjustable sizing increments (0.5 U default; 0.25/0.5/1/2 U options). The pre-redesign editor is preserved in an archive branch.
+A Roblox mechanical construction and engineering sandbox. The active `dev` branch includes the Phase 05 mechanical relationship authoring prototype: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment (L in Edit), first-person Assemble tool authoring Bearing/Slider/Fixed constraints, and fixed 0.5-U sizing and movement increments. The pre-redesign editor is preserved in an archive branch.
 
 ## Direction
 
@@ -57,4 +57,13 @@ See `docs/REBUILD_NOTES.md` for the reset boundary and next design step.
 - Live red/blue feedback describes the actual interfering model. Selecting a hollow bore permits the intended *cylindrical shaft* to overlap its collision representation ONLY after a metadata-derived radial clearance test. The rest of the moving assembly still undergoes full collision tests.
 - Exact bore metadata is read from Studio Generator v4 (`HoleDiameterU`, `InnerDiameterU`, `InnerWidthU`, `InnerHeightU`, `WallU`), including tube cross-section resizing.
 - World position is not subject to a mandatory grid test. Size increments stay quantized; surface support and range/collision/ownership rules remain authoritative.
-- Segmented physical rotation rings are now ported, with first-person ray/plane drag and 90° snapping. Existing R/T/Y shortcuts remain.
+- Rotation rings are removed: dragging never rotates geometry. Existing R/T/Y discrete rotation shortcuts remain unchanged.
+
+
+## Move-only drag and half-Unit cleanup
+- **Single click selects** the same way as before. It never starts a move. A second deliberate hold-and-drag on the already selected primitive/component begins a temporary move and releases to place.
+- **No rotation-on-drag**. No rotation rings or ring capture; R/T/Y are still the only rotation inputs.
+- **Fixed 0.5 U** increments for new size changes, move-arrow displacement, insertion-depth nudges, and ordinary placement snapping. No [ / ] step-size adjustment. Older geometry with 0.25-U dimensions remains readable/valid; the server does not reject world positions for missing a grid.
+- The existing physical cone-arrow move grips are now actually visible (previously all handle Parts had Transparency=1) and can be acquired on their cylindrical stems as well as their heads.
+- Scale grips are **colored smooth non-blooming spheres**. Their SmoothPlastic material and fill-only Highlights mimic vivid neon hues without Neon-material bloom; no cube borders.
+- Component/single-part selection highlighting is preserved.

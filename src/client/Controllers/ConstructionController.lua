@@ -17,7 +17,6 @@ local SurfacePlacement = require(construction:WaitForChild("SurfacePlacement"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
 local MoveGizmo = require(script.Parent:WaitForChild("MoveGizmo"))
-local RotateGizmo = require(script.Parent:WaitForChild("RotateGizmo"))
 local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEditingController"))
 
 local BLUE = Color3.fromRGB(96, 174, 207)
@@ -28,7 +27,6 @@ local MUTED = Color3.fromRGB(167, 186, 199)
 
 local Controller = {}
 Controller.__index = Controller
-local SIZE_STEPS_U = { 0.25, 0.5, 1, 2 }
 
 local function create(className, fields, parent)
     local instance = Instance.new(className)
@@ -103,7 +101,6 @@ function Controller.new(tools)
         PreviewCF = nil,
         CatalogOpen = false,
         ScaleMode = false,
-        ScaleStepIndex = 2,
         ScaleStepU = Grid.DefaultSizeStepU,
         PreviewValid = true,
         LastPreviewCheck = 0,
@@ -112,7 +109,6 @@ function Controller.new(tools)
         ScaleSize = nil,
         ScaleHandles = nil,
         MoveHandles = nil,
-        RotateHandles = nil,
         GizmoMoving = false,
         DirectDragCandidate = nil,
         DirectDragActive = false,
@@ -319,8 +315,7 @@ function Controller:RefreshHUD()
             "  •  " .. string.format("%.2g × %.2g × %.2g U",
                 self.ScaleSize.X / Grid.Unit, self.ScaleSize.Y / Grid.Unit, self.ScaleSize.Z / Grid.Unit)
             else "")
-        self.HelpLabel.Text = "Scale step: " .. tostring(self.ScaleStepU)
-            .. " U  •  [ / ] adjust  •  hold click + move/look  •  V exit"
+        self.HelpLabel.Text = "Scale: 0.5 U  •  aim at colored sphere, hold + move/look  •  V exit"
     elseif mode == "Build" then
         self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
             size.X / Grid.Unit, size.Y / Grid.Unit, size.Z / Grid.Unit) else "")
@@ -592,7 +587,6 @@ function Controller:OnModeChanged(mode)
     self.DirectDragCandidate = nil
     self.DirectDragActive = false
     if self.MoveHandles then self.MoveHandles:Cancel() end
-    if self.RotateHandles then self.RotateHandles:Cancel() end
     self:EndScale()
     self:CancelPending()
     self.Mode = mode
@@ -1005,7 +999,6 @@ function Controller:BeginScale()
         model.PrimaryPart.LocalTransparencyModifier = 1
     end
 
-    self.ScaleHandles:SetIncrement(self.ScaleStepU)
     self.ScaleHandles:Open(cf, self.ScaleSize, entry.ResizeMode, entry.Model.PrimaryPart.Size)
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshPointer()
@@ -1111,8 +1104,7 @@ end
 -- beyond a small world-space threshold starts the existing temporary G move.
 function Controller:BeginDirectDrag()
     if self.Mode ~= "Edit" or self.Pending or self.ScaleMode or self.CatalogOpen
-        or (self.MoveHandles and self.MoveHandles.Drag)
-        or (self.RotateHandles and self.RotateHandles.Drag) then return end
+        or (self.MoveHandles and self.MoveHandles.Drag) then return end
     local hit = self:CastCenter(false)
     if not hit then return end
     local folder = workspace:FindFirstChild(Config.FolderName)
@@ -1122,6 +1114,13 @@ function Controller:BeginDirectDrag()
         or node:GetAttribute("OwnerUserId") ~= player.UserId then return end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then return end
+    -- A first click just SELECTS. Only a second, deliberate hold on the
+    -- already selected piece can become a move. Prevents accidental pickup
+    -- when looking around during selection.
+    local alreadySelected = if self.SelectedComponentId
+        then node:GetAttribute("ComponentId") == self.SelectedComponentId
+        else self.Selected == node
+    if not alreadySelected then return end
     local camera = workspace.CurrentCamera
     if not camera then return end
     self.DirectDragCandidate = {
@@ -1135,18 +1134,17 @@ function Controller:UpdateDirectDrag()
     local held = self.DirectDragCandidate
     if not held or self.DirectDragActive then return end
     if self.MoveHandles and self.MoveHandles.Drag then return end
-    if self.RotateHandles and self.RotateHandles.Drag then return end
     if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
         self.DirectDragCandidate = nil
         return
     end
-    if os.clock() - held.StartedAt < 0.10 then return end
+    if os.clock() - held.StartedAt < 0.16 then return end
     local camera = workspace.CurrentCamera
     if not camera then return end
     local displacement = (camera.CFrame.Position - held.Camera.Position).Magnitude
     local angular = math.acos(math.clamp(
         camera.CFrame.LookVector:Dot(held.Camera.LookVector), -1, 1))
-    if displacement < 0.12 and angular < math.rad(1.8) then return end
+    if displacement < 0.20 and angular < math.rad(3) then return end
 
     if self.SelectedComponentId then
         if held.Model:GetAttribute("ComponentId") ~= self.SelectedComponentId then return end
@@ -1181,16 +1179,6 @@ function Controller:OnInput(input, processed)
         and self.Mode ~= "Inspect" then return end
 
     if self.Layered and self.Layered:OnInput(input, processed) then return end
-
-    if self.ScaleMode and not processed
-        and (key == Enum.KeyCode.LeftBracket or key == Enum.KeyCode.RightBracket) then
-        local direction = if key == Enum.KeyCode.RightBracket then 1 else -1
-        self.ScaleStepIndex = math.clamp(self.ScaleStepIndex + direction, 1, #SIZE_STEPS_U)
-        self.ScaleStepU = SIZE_STEPS_U[self.ScaleStepIndex]
-        self.ScaleHandles:SetIncrement(self.ScaleStepU)
-        self:RefreshHUD()
-        return
-    end
 
     if key == Enum.KeyCode.Escape then
         if self.ScaleMode then self:EndScale() end
@@ -1250,8 +1238,6 @@ function Controller:Start()
     self.Layered:Start()
     self.MoveHandles = MoveGizmo.new(self)
     self.MoveHandles:Start()
-    self.RotateHandles = RotateGizmo.new(self)
-    self.RotateHandles:Start()
 
     table.insert(self.Connections, self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
@@ -1318,7 +1304,6 @@ function Controller:Destroy()
     RunService:UnbindFromRenderStep("OPENWORKS_CursorUnlock")
     if self.ScaleHandles then self.ScaleHandles:Destroy() end
     if self.MoveHandles then self.MoveHandles:Destroy() end
-    if self.RotateHandles then self.RotateHandles:Destroy() end
     if self.ComponentOutline then self.ComponentOutline:Destroy() end
     self:CancelPending()
     self:ClearPreview()
