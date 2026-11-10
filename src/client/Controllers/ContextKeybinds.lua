@@ -29,7 +29,7 @@ function Context:Lines()
     local lines = {}
     if not tool then return { "Choose a tool: 1–5" } end
     if c.PendingMateChoice then
-        append(lines,"1","Rigid • one component")
+        append(lines,"1","Group • edit together, no physical weld")
         append(lines,"2","Bearing • rotation")
         append(lines,"3","Slider • linear travel")
         append(lines,"4","Cylindrical • slide + rotate")
@@ -84,7 +84,9 @@ function Context:Lines()
                     append(lines, "Wheel / Q E", "Depth / shaft roll")
                     append(lines, "On release", "1–4 relationship choice")
                 elseif c.SmartMatch.kind=="Hub" then
-                    append(lines, "Hub", "Rigid gear-on-shaft mount")
+                    append(lines, "Hub", "Group gear and shaft (no weld)")
+                elseif c.SmartMatch.kind=="BoltHole" then
+                    append(lines, "Bolt", "Fasten holes reached by prefab")
                 end
                 append(lines, "Alt", "Temporarily bypass snap")
             else
@@ -148,7 +150,9 @@ function Context:Lines()
                     append(lines, "Wheel / Q E", "Depth / shaft roll")
                     append(lines, "On release", "1–4 relationship choice")
                 elseif c.SmartMatch.kind=="Hub" then
-                    append(lines, "Hub", "Rigid gear-on-shaft mount")
+                    append(lines, "Hub", "Group gear and shaft (no weld)")
+                elseif c.SmartMatch.kind=="BoltHole" then
+                    append(lines, "Bolt", "Fasten holes reached by prefab")
                 end
             else
                 append(lines, "R T Y", "World-axis rotation")
@@ -167,7 +171,8 @@ function Context:Lines()
             append(lines, "L", "Manual align")
             append(lines,"K / H","Gear mesh / manual alignment")
             append(lines,"Shift+J","Create suspension or plate spring")
-            append(lines,"B / Shift+B","Bolt holes / weld touching parts")
+            append(lines,"Weld tool","Manually join touching solids")
+            append(lines,"Build > Fasteners","Drag prefab bolts into real holes")
             append(lines,"Ctrl+G","Register whole connected assembly")
             append(lines,"Ctrl+Shift+G","Add to registered assembly")
             append(lines, "C / U", "Combine / Ungroup")

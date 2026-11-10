@@ -482,6 +482,8 @@ function Simulation:Start(player, payload)
                         -edge.target:GetPivot().Position):Dot(normal)/Grid.Unit
                     local lower=(low-authored)
                     local upper=(high-authored)
+                    local physicalLower=lower*Grid.Unit
+                    local physicalUpper=upper*Grid.Unit
                     local authoredLow=edge.relation:GetAttribute("LowerLimit")
                     local authoredHigh=edge.relation:GetAttribute("UpperLimit")
                     -- User travel restrictions can ONLY narrow the physical
@@ -494,8 +496,8 @@ function Simulation:Start(player, payload)
                         if a<b then lower,upper=a,b end
                     end
                     constraint.LimitsEnabled=true
-                    constraint:SetAttribute("PhysicalLower",lower*Grid.Unit)
-                    constraint:SetAttribute("PhysicalUpper",upper*Grid.Unit)
+                    constraint:SetAttribute("PhysicalLower",physicalLower)
+                    constraint:SetAttribute("PhysicalUpper",physicalUpper)
                     constraint.LowerLimit=lower*Grid.Unit
                     constraint.UpperLimit=upper*Grid.Unit
                 end

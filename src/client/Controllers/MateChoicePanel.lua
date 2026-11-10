@@ -42,7 +42,7 @@ function Mate.new(gui)
     label("How should these parts connect?",42,19,12,
         Color3.fromRGB(167,194,208))
     local subtitles={
-        "Rigid   •   one physical component",
+        "Group   •   editor only (not physically welded)",
         "Bearing   •   rotation only",
         "Slider   •   linear travel only",
         "Cylindrical   •   rotation + travel",

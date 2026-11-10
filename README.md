@@ -171,3 +171,13 @@ OPENWORKS now distinguishes **physical components**, **registered assemblies**, 
 - **Preserved:** Build, Edit, Simulate, Inspect tools; auto-snapping; precise N-size entry; sphere grips; component member double-click; original non-destructive construction and reversible simulation.
 
 Limitations: Bolt heads use native faceted metal pieces, not threaded screw geometry; springs use Roblox's native solver, not an in-house finite-element spring model. As with all phases, full Studio physics testing is required before asserting stability.
+
+
+## Phase 10 — Explicit Welding, Prefab Fastening and Simulate Properties (2026.11.10.PHASE10.EXPLICIT-WELD-PROPERTIES)
+
+- **Grouping is not welding.** `ComponentId` organizes edit-mode selection/movement, and sets the simulation inclusion scope. It no longer implies physics `WeldConstraint` links across separately authored primitives. Geometry *within a single prefab primitive* is still compiled rigidly.
+- **Weld tool 5:** Click two touching owned solid primitives to author a physical welded connection. No surface touching or component creation creates automatic welds; Esc cancels. Explicit joints and fasteners remain possible between members of a grouped component.
+- **Physical bolts from Build > Fasteners:** Drag an actual bolt prefab through the first compatible opening; it snaps along the bore axis, placing its head outside. If the shaft fully passes one or two validated coaxial holes, the inserted prefab fastens to all those bodies. Placement checks shaft reach, bore diameter, alignment and collisions. Edit dragging also works for initially unfastened bolts. The old B-based automatic bolt-manufacture workflow is disabled.
+- **Springs:** The construction coil is bright orange; its visual radius spans nearly the largest plate-face diameter that fits, with a small edge margin. Construction coil and guide visuals hide during simulation, while the native spring force stays active.
+- **Simulate Properties:** Equip Simulate for a mouse-unlocked GUI. Click a block (or its running physical copy), choose an authored relationship, and enter spring stiffness/damping/rest length or joint limit parameters. Validated edits update the running native constraint without a simulation restart. Run/Stop and Ground buttons are provided. Editing via the old J/bracket shortcuts is no longer necessary.
+- **Status:** Code is committed to `dev`; Studio engine playtesting remains necessary. See `docs/PHASE_10_EXPLICIT_WELDS_BOLTS_PROPERTIES_TEST.md`.
