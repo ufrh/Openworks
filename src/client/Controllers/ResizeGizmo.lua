@@ -124,7 +124,9 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
 
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
         if self.Drag and input.UserInputType == Enum.UserInputType.MouseMovement then
-            self:UpdateDrag(input.Delta)
+            -- InputObject.Delta is Vector3, while a projected screen axis
+            -- is Vector2. Calling Vector3:Dot(Vector2) throws at runtime.
+            self:UpdateDrag(Vector2.new(input.Delta.X, input.Delta.Y))
         end
     end))
 
@@ -246,12 +248,12 @@ function Gizmo:BeginDrag()
     return true
 end
 
-function Gizmo:UpdateDrag(delta)
+function Gizmo:UpdateDrag(delta: Vector2)
     local drag = self.Drag
     if not drag then return end
 
-    -- Locked mouse position does not move. InputObject.Delta measures
-    -- relative mouse motion without ever unlocking the pointer.
+    -- Locked mouse position does not move. Convert InputObject.Delta's
+    -- XY components to Vector2 before projecting onto the screen axis.
     drag.PixelTravel += delta:Dot(drag.ScreenDirection)
 
     local steps = math.floor(drag.PixelTravel / drag.PixelsPerUnit + 0.5)

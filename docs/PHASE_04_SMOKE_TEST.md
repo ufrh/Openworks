@@ -1,6 +1,6 @@
 # OPENWORKS Phase 04 — Layered Editing & Axial Insertion
 
-Build marker: `2026.11.09.PHASE04.DRAG-FIX`
+Build marker: `2026.11.09.PHASE04.VECTOR2-DRAG`
 Branch: `dev` — Rojo port `34872`
 
 Phase 04 extends the approved first-person construction controls. There is
@@ -132,3 +132,19 @@ is the gameplay acceptance gate.
    alignment selection appears, then Esc cancels. Native WASD stays intact.
 7. Check the controller/status text reads the selected scaling axis and
    the resulting size in Units. All validation errors still appear in the HUD.
+
+
+## Vector3/Vector2 drag-type regression
+
+The prior resize gizmo called `delta:Dot(drag.ScreenDirection)` with a Roblox
+MouseMovement `InputObject.Delta` (Vector3) and a projected axis (Vector2).
+This raises a runtime type error, preventing any resize preview from updating.
+The input path now converts delta.X/delta.Y to Vector2 first.
+
+1. Equip Build, choose a resizable Block, aim at floor, and press V.
+2. Hold left click and drag. Preview must resize on screen with whole-Unit steps.
+3. Equip Edit, select a placed Block, press V, hold click, drag, release.
+   The edit should persist and undo/redo should restore dimensions.
+4. Confirm Studio Output has no Vector3/Vector2 type error in ResizeGizmo.
+5. If no size change occurs, inspect Studio Output for the next error rather
+   than changing the input behavior again without a reproduced failure.
