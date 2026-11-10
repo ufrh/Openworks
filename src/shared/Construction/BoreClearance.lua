@@ -63,6 +63,12 @@ local function boreProfile(target)
     }
 end
 
+function Bore.OpeningDiameter(target)
+    local profile=boreProfile(target)
+    if not profile then return nil end
+    return 2*math.min(profile.radiusY,profile.radiusZ)
+end
+
 function Bore.MaxShaftDiameter(source, target): (number?, string?)
     if not Alignment.IsShaft(source) or not source.PrimaryPart then
         return nil, "Select a cylindrical shaft"
@@ -101,6 +107,8 @@ function Bore.ShaftFits(source, target)
     if diameter > maxDiameter + 1e-5 then
         return false, "Shaft diameter exceeds available bore clearance"
     end
+    local engaged,reason=Alignment.Engaged(source,target)
+    if not engaged then return false,reason end
     return true
 end
 

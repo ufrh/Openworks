@@ -15,7 +15,8 @@ local localPlayer = Players.LocalPlayer
 local Visuals = {}
 Visuals.__index = Visuals
 
-local STEEL = Color3.fromRGB(96, 125, 148)
+local GROUNDED=Color3.fromRGB(57,212,127)
+local MOVABLE=Color3.fromRGB(252,160,73)
 local AXIS = Color3.fromRGB(92, 189, 228)
 local GEAR = Color3.fromRGB(209, 180, 124)
 
@@ -53,12 +54,12 @@ end
 
 function Visuals:GroundCue(key)
     local ring = Instance.new("Folder")
-    ring.Name = "Grounded_"..key
+    ring.Name = "BodyStatus_"..key
     ring.Parent = self.Folder
     local bars = {}
     for i=1,4 do
         local p = accentPart(ring,Vector3.new(0.1,0.025,0.025))
-        p.Color = STEEL
+        p.Color = GROUNDED
         p.Transparency = 0.17
         table.insert(bars,p)
     end
@@ -86,31 +87,37 @@ function Visuals:Update()
     local built = workspace:FindFirstChild(Config.FolderName)
     if not built then return end
     local models={}
-    local grounded={}
+    local groups={}
     for _,model in ipairs(built:GetChildren()) do
         if model:IsA("Model")
             and model:GetAttribute("OwnerUserId")==localPlayer.UserId then
             local id = model:GetAttribute("InstanceId")
             if type(id)=="string" then models[id]=model end
             local key=model:GetAttribute("ComponentId") or id
-            if key and model:GetAttribute("Grounded")==true then
-                grounded[key]=grounded[key] or {}
-                table.insert(grounded[key],model)
+            if key then
+                groups[key]=groups[key] or {models={},grounded=false}
+                table.insert(groups[key].models,model)
+                if model:GetAttribute("Grounded")==true then
+                    groups[key].grounded=true
+                end
             end
         end
     end
     for key,cue in pairs(self.Ground) do
-        if not grounded[key] then cue.root:Destroy() self.Ground[key]=nil end
+        if not groups[key] then cue.root:Destroy() self.Ground[key]=nil end
     end
-    for key,group in pairs(grounded) do
+    for key,status in pairs(groups) do
         local cue=self.Ground[key]
         if not cue then
             cue=self:GroundCue(key)
             self.Ground[key]=cue
         end
+        for _,bar in ipairs(cue.bars) do
+            bar.Color=if status.grounded then GROUNDED else MOVABLE
+        end
         local low=Vector3.new(math.huge,math.huge,math.huge)
         local high=Vector3.new(-math.huge,-math.huge,-math.huge)
-        for _,model in ipairs(group) do
+        for _,model in ipairs(status.models) do
             for _,part in ipairs(model:GetDescendants()) do
                 if part:IsA("BasePart") then
                     local r=part.Size.Magnitude * 0.5
@@ -158,8 +165,11 @@ function Visuals:Update()
             else
                 local axis=Alignment.TargetAxis(target)
                 if axis then
-                    cue.shaft.Color=AXIS
-                    cue.collar.Color=AXIS
+                    local accent=if kind=="Spring" then MOVABLE
+                        elseif kind=="Bolt" then GEAR
+                        elseif kind=="Weld" then GROUNDED else AXIS
+                    cue.shaft.Color=accent
+                    cue.collar.Color=accent
                     cue.shaft.Transparency=0.18
                     local point=target:GetPivot().Position
                     local vector=target:GetPivot():VectorToWorldSpace(axis)
@@ -169,7 +179,17 @@ function Visuals:Update()
                     cue.collar.CFrame=CFrame.new(point)
                         * (target:GetPivot().Rotation)
                 else
-                    cue.shaft.Transparency=1
+                    if kind=="Spring" or kind=="Weld" then
+                        local accent=if kind=="Spring" then MOVABLE else GROUNDED
+                        cue.shaft.Color=accent
+                        cue.collar.Color=accent
+                        cue.shaft.Transparency=0.16
+                        cylinderBetween(cue.shaft,target:GetPivot().Position,
+                            source:GetPivot().Position,0.028)
+                        cue.collar.CFrame=source:GetPivot()
+                    else
+                        cue.shaft.Transparency=1
+                    end
                 end
             end
         end

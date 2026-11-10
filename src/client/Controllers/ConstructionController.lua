@@ -591,7 +591,12 @@ function Controller:RecognizeAttachment(raw,hit)
         end
         if match.kind=="Bore" then
             match.relationKind=self.SmartBoreKind
-            local offset=math.clamp(match.offsetUnits+self.SmartOffsetDeltaU,-64,64)
+            local shaft=if match.reverse then match.target else match.source
+            local hole=if match.reverse then match.source else match.target
+            local lower,upper=AlignmentMath.OffsetBounds(shaft,hole)
+            if not lower then return nil end
+            local offset=math.clamp(
+                match.offsetUnits+self.SmartOffsetDeltaU,lower,upper)
             local roll=math.clamp(match.rollDegrees+self.SmartRollDelta,-360,360)
             local moving=SmartPlacement.Members(preview)
             local plan=if match.reverse then

@@ -17,6 +17,8 @@ local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
 local MechanicalService = require(script.Parent:WaitForChild("MechanicalService"))
 local SimulationService = require(script.Parent:WaitForChild("SimulationService"))
 local GearLibrary = require(script.Parent:WaitForChild("GearLibrary"))
+local FastenerLibrary = require(script.Parent:WaitForChild("FastenerLibrary"))
+local AssemblyService = require(script.Parent:WaitForChild("AssemblyService"))
 local RotationMath = require(construction:WaitForChild("RotationMath"))
 
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
@@ -30,6 +32,7 @@ local components
 local alignmentService
 local mechanical
 local simulation
+local assemblies
 
 local function historyFor(player)
     local state = histories[player]
@@ -107,6 +110,8 @@ local function snapshot(model)
         numericPrecision = model:GetAttribute("NumericPrecision") == true,
         alignedOpeningId = model:GetAttribute("AlignedOpeningId"),
         grounded = model:GetAttribute("Grounded") == true,
+        assemblyId = model:GetAttribute("AssemblyId"),
+        assemblyName = model:GetAttribute("AssemblyName"),
         orientation = model:GetAttribute("AuthoredRotation"),
         shaftRollDegrees = model:GetAttribute("ShaftRollDegrees") or 0,
         alignedOffsetU = model:GetAttribute("AlignedOffsetU") or 0,
@@ -257,6 +262,8 @@ local function applyState(model, data)
     model:SetAttribute("NumericPrecision", data.numericPrecision == true)
     model:SetAttribute("AlignedOpeningId", data.alignedOpeningId)
     model:SetAttribute("Grounded", data.grounded == true)
+    model:SetAttribute("AssemblyId",data.assemblyId)
+    model:SetAttribute("AssemblyName",data.assemblyName)
     model:SetAttribute("AuthoredRotation", data.orientation)
     model:SetAttribute("ShaftRollDegrees", data.shaftRollDegrees or 0)
     model:SetAttribute("AlignedOffsetU", data.alignedOffsetU or 0)
@@ -350,9 +357,18 @@ local function restoreBatch(player, record, undo)
         boreSourceId=relation.sourceId
     end
     for _, model in ipairs(staged) do
-        if intersectsConstructed(model, affected,opening,boreSourceId) then
+        local ignore=affected
+        if relation and relation.kind=="Bolt"
+            and model:GetAttribute("InstanceId")==relation.boltId then
+            ignore=table.clone(affected)
+            local a=findOwned(player,relation.sourceId)
+            local b=findOwned(player,relation.targetId)
+            if a then ignore[a]=true end
+            if b then ignore[b]=true end
+        end
+        if intersectsConstructed(model,ignore,opening,boreSourceId) then
             discard()
-            return false, "Undo/redo blocked by another construction"
+            return false,"Undo/redo blocked by another construction"
         end
     end
 
@@ -448,6 +464,8 @@ local function update(player, payload)
             or payload.numericPrecision == true,
         alignedOpeningId = model:GetAttribute("AlignedOpeningId"),
         grounded = model:GetAttribute("Grounded") == true,
+        assemblyId = model:GetAttribute("AssemblyId"),
+        assemblyName = model:GetAttribute("AssemblyName"),
         -- Resizing/moving a fine-rotated shaft must preserve its authored
         -- free-angle orientation. If the discrete steps change, compose the
         -- requested world-axis turn on top of its existing rotation.
@@ -489,14 +507,11 @@ local function update(player, payload)
                 -opening:GetPivot().Position):Dot(axis)/Grid.Unit
             model:SetAttribute("AlignedOffsetU",proposed.alignedOffsetU)
         else
-            -- Moving one primitive OUT of its rigid component's hole
-            -- disengages the old fit so the size grips become ordinary.
-            proposed.alignedOpeningId=nil
-            proposed.alignedOffsetU=0
-            proposed.shaftRollDegrees=0
-            model:SetAttribute("AlignedOpeningId",nil)
-            model:SetAttribute("AlignedOffsetU",0)
-            model:SetAttribute("ShaftRollDegrees",0)
+            -- Never silently detach a guided or rigidly joined shaft.
+            -- Disconnect the relationship/ungroup first, then reposition.
+            applyState(model,before)
+            return false,
+                "Shaft must stay engaged; disconnect or ungroup before removing it"
         end
     end
 
@@ -683,6 +698,8 @@ local function handle(player, payload)
         or action == "FitShaft" or action == "CreateGearMesh"
         or action == "AdjustJoint" or action == "PoseShaft"
         or action == "SetGrounded" or action == "GetMechanismInfo"
+        or action == "CreateSpring" or action == "TuneSpring"
+        or action == "CreateWeld" or action == "CreateBolt"
     local simulationAction = action == "StartSimulation"
         or action == "StopSimulation" or action == "ToggleSimulationMotor"
         or action == "TuneSimulationMotor"
@@ -692,9 +709,11 @@ local function handle(player, payload)
         or action == "DeleteComponent" or action == "RotateComponent"
         or action == "RotatePrimitiveWorld"
     local smartAction = action == "SmartMate"
+    local assemblyAction=action=="RegisterAssembly"
+        or action=="AddAssemblyMember"
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
-        and not componentAction and not smartAction
+        and not componentAction and not smartAction and not assemblyAction
         and not alignmentAction and not mechanicalAction
         and not simulationAction then
         return { ok = false, message = "Unknown action" }
@@ -717,7 +736,8 @@ local function handle(player, payload)
             and not hasEquippedTool(player,"Edit") then
             return {ok=false,message="Equip Edit to modify relationships"}
         end
-    elseif componentAction or alignmentAction or smartAction then
+    elseif componentAction or alignmentAction or smartAction
+        or assemblyAction then
         if not hasEquippedTool(player, "Edit") then
             return { ok = false, message = "Equip Edit to modify components" }
         end
@@ -736,7 +756,7 @@ local function handle(player, payload)
     end
     lastRequest[player] = now
 
-    local ok, result, extra = pcall(function()
+    local ok,result,extra,detail=pcall(function()
         if action == "StartSimulation" then return simulation:Start(player, payload) end
         if action == "StopSimulation" then return simulation:Stop(player) end
         if action == "ToggleSimulationMotor" then return simulation:Motor(player) end
@@ -762,6 +782,24 @@ local function handle(player, payload)
             return rotatePrimitiveWorld(player,payload)
         end
         if action == "CreateGearMesh" then return mechanical:CreateGearMesh(player, payload) end
+        if action=="CreateSpring" then
+            return mechanical:CreateSpring(player,payload)
+        end
+        if action=="TuneSpring" then
+            return mechanical:TuneSpring(player,payload)
+        end
+        if action=="CreateWeld" then
+            return mechanical:CreateWeld(player,payload)
+        end
+        if action=="CreateBolt" then
+            return mechanical:CreateBolt(player,payload)
+        end
+        if action=="RegisterAssembly" then
+            return assemblies:Register(player,payload)
+        end
+        if action=="AddAssemblyMember" then
+            return assemblies:Add(player,payload)
+        end
         if action == "AdjustJoint" then return mechanical:AdjustJoint(player, payload) end
         if action == "PoseShaft" then return mechanical:PoseShaft(player, payload) end
         if action == "GetMechanismInfo" then
@@ -788,11 +826,13 @@ local function handle(player, payload)
         instanceId = if result and action == "Place" then extra else nil,
         componentId = if result and (action == "Group" or action == "DuplicateComponent")
             then extra else nil,
+        assemblyId=if result and assemblyAction then detail else nil,
     }
 end
 
 function Service.Start()
     GearLibrary.Ensure()
+    FastenerLibrary.Ensure()
     folder = workspace:FindFirstChild(Config.FolderName)
     if not folder then
         folder = Instance.new("Folder")
@@ -846,6 +886,17 @@ function Service.Start()
         commitRecord = commitRecord,
         commitBatch = commitBatch,
         commitJointEdit = commitJointEdit,
+        createFromTemplate = createFromTemplate,
+    })
+
+    assemblies=AssemblyService.new({
+        folder=folder,
+        findOwned=findOwned,
+        nearPlayer=nearPlayer,
+        snapshot=snapshot,
+        applyState=applyState,
+        commitBatch=commitBatch,
+        mechanical=mechanical,
     })
 
     simulation = SimulationService.new({
@@ -881,6 +932,7 @@ function Service.Start()
 
     Players.PlayerRemoving:Connect(function(player)
         if simulation then simulation:ClearPlayer(player) end
+        if assemblies then assemblies:ClearPlayer(player) end
         for _, model in ipairs(folder:GetChildren()) do
             if model:IsA("Model") and model:GetAttribute("OwnerUserId") == player.UserId then
                 model:Destroy()

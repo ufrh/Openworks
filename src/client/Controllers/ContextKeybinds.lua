@@ -83,7 +83,19 @@ function Context:Lines()
         end
     elseif tool == "Edit" then
         if a.ManualActive then
-            if a.Stage=="GearFirst" or a.Stage=="GearSecond" then
+            if a.Stage=="PairFirst" or a.Stage=="PairSecond" then
+                append(lines,"LMB",if a.Stage=="PairFirst"
+                    then "Select first part" else "Select second part")
+                append(lines,"Mode",tostring(a.PairKind))
+                if a.PairKind=="Spring" then
+                    append(lines,"Valid","Shaft + tube OR matching plates")
+                elseif a.PairKind=="Bolt" then
+                    append(lines,"Valid","Two matching coaxial holes")
+                else
+                    append(lines,"Valid","Touching solid faces")
+                end
+                append(lines,"Esc","Cancel")
+            elseif a.Stage=="GearFirst" or a.Stage=="GearSecond" then
                 append(lines,"Click","Choose gear to mesh")
                 append(lines,"K / Esc","Cancel gear connection")
             elseif a.Stage=="JointSettings" then
@@ -145,15 +157,21 @@ function Context:Lines()
             end
             append(lines, "R / T / Y", "World-axis rotation")
             append(lines, "L", "Manual align")
-            append(lines, "K / J / H", "Gears / joint limits / relationship")
+            append(lines,"K / J / H","Gear mesh / joint settings / manual")
+            append(lines,"Shift+J","Create suspension or plate spring")
+            append(lines,"B / Shift+B","Bolt holes / weld touching parts")
+            append(lines,"Ctrl+G","Register whole connected assembly")
+            append(lines,"Ctrl+Shift+G","Add to registered assembly")
             append(lines, "C / U", "Combine / Ungroup")
             append(lines, "E", "Edit group interior")
             append(lines, "F / Del", "Duplicate / Delete")
             append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
         end
     elseif tool=="Simulate" then
+        append(lines,"Green","Grounded / stationary")
+        append(lines,"Orange","Movable / dynamic")
         append(lines,"Click / G","Toggle grounding on aimed body")
-        append(lines,"P / Shift+P","Simulate grounded / free")
+        append(lines,"P / Shift+P","Simulate entire assembly / free")
         append(lines,"M","Motor on/off during simulation")
     elseif tool == "Inspect" then
         append(lines, "LMB", "Inspect")

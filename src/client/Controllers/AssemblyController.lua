@@ -99,6 +99,9 @@ function Controller.new(tools)
         OffsetUnits = 0,
         RollDegrees = 0,
         GearFirst = nil,
+        PairFirst = nil,
+        PairKind = nil,
+        SelectedAssemblyId = nil,
         Joint = nil,
         LastRollSend = 0,
         PreviewModel = nil,
@@ -174,6 +177,15 @@ function Controller:RefreshHUD()
         and (self.Mode == "Simulate" or self.ManualActive)
     if not self.Gui.Enabled then return end
 
+    if self.Mode=="Simulate" and not self:IsSimulating() then
+        self.Header.Text="OPENWORKS / SIMULATE"
+        self.Detail.Text="GREEN grounded / ORANGE moving"
+        self.Help.Text="Click/G ground • P simulate all connected / entire assembly"
+        if self.LastMessage and os.clock()<self.MessageUntil then
+            self.Detail.Text=self.LastMessage
+        end
+        return
+    end
     if self:IsSimulating() then
         self.Header.Text = "OPENWORKS / PHYSICS SIMULATION"
         local motor = player:GetAttribute("OPENWORKS_MotorOn") == true
@@ -202,13 +214,31 @@ function Controller:RefreshHUD()
         self.Header.Text = "OPENWORKS / GEAR TRANSMISSION"
         self.Detail.Text = "Choose the mating gear"
         self.Help.Text = "Click second gear • tooth pitch / spacing validated"
+    elseif self.Stage=="PairFirst" or self.Stage=="PairSecond" then
+        self.Header.Text="OPENWORKS / "..string.upper(
+            tostring(self.PairKind or "MECHANICAL"))
+        self.Detail.Text=if self.Stage=="PairFirst"
+            then "Choose first mechanical part" else "Choose second physical part"
+        self.Help.Text=if self.PairKind=="Spring"
+            then "Shaft + tube OR two equally sized plates • Esc cancel"
+            elseif self.PairKind=="Bolt"
+            then "Choose two aligned holes • physical bolt inserted"
+            else "Choose two touching surfaces • permanent weld"
     elseif self.Stage == "JointSettings" then
         local kind = self.Joint and self.Joint:GetAttribute("Kind") or "Joint"
         local low = self.Joint and self.Joint:GetAttribute("LowerLimit") or -90
         local high = self.Joint and self.Joint:GetAttribute("UpperLimit") or 90
         self.Header.Text = "OPENWORKS / " .. string.upper(kind) .. " LIMITS"
-        self.Detail.Text = tostring(low) .. " — " .. tostring(high)
-        self.Help.Text = "U toggle limits • [ ] adjust travel • Esc close"
+        if kind=="Spring" then
+            self.Detail.Text=string.format("Stiffness %.0f / damping %.0f / rest %.2f U",
+                self.Joint:GetAttribute("Stiffness") or 120,
+                self.Joint:GetAttribute("Damping") or 14,
+                (self.Joint:GetAttribute("FreeLength") or 0.5)/Grid.Unit)
+            self.Help.Text="[ ] strength • Shift+[ ] damping • -/= rest length • Esc"
+        else
+            self.Detail.Text = tostring(low) .. " — " .. tostring(high)
+            self.Help.Text = "U toggle limits • [ ] adjust travel • Esc close"
+        end
     elseif self.Stage == "Housing" then
         self.Detail.Text = "Choose the housing or opening"
         self.Help.Text = "Click opening • R relationship • Esc close"
@@ -273,6 +303,8 @@ function Controller:Reset()
     self.OffsetUnits = 0
     self.RollDegrees = 0
     self.GearFirst = nil
+    self.PairFirst = nil
+    self.PairKind = nil
     self.Joint = nil
     self:RefreshHUD()
 end
@@ -403,7 +435,7 @@ function Controller:Request(payload)
         return false
     end
     self:Message(result.message or "")
-    return result.ok == true
+    return result.ok == true,result
 end
 
 function Controller:AdjustFit(direction)
@@ -455,6 +487,37 @@ function Controller:ToggleGearMode()
     end
 end
 
+-- Distinct authoring actions remain in Edit, but no extra native tool
+-- is required. A two-click pair is only needed for explicit springs,
+-- structural welds and physical bolt holes.
+function Controller:StartPair(kind)
+    self:Reset()
+    self.ManualActive=true
+    self.PairKind=kind
+    self.Stage="PairFirst"
+    self:RefreshHUD()
+end
+
+function Controller:RegisterAssembly(add)
+    local part=self:Pick()
+    if not part then
+        self:Message("Aim at a component to register or add")
+        return
+    end
+    if add and not self.SelectedAssemblyId then
+        self:Message("Register assembly first with Ctrl+G")
+        return
+    end
+    local ok,response=self:Request({
+        action=if add then "AddAssemblyMember" else "RegisterAssembly",
+        seedId=part:GetAttribute("InstanceId"),
+        assemblyId=if add then self.SelectedAssemblyId else nil,
+    })
+    if ok and response and response.assemblyId then
+        self.SelectedAssemblyId=response.assemblyId
+    end
+end
+
 function Controller:StartManualJoint()
     self:Reset()
     self.ManualActive=true
@@ -487,13 +550,21 @@ function Controller:OpenJointSettings()
     local id=target:GetAttribute("InstanceId")
     local folder=workspace:FindFirstChild("OPENWORKS_Relationships")
     if not folder then return end
-    for _,joint in ipairs(folder:GetChildren()) do
+    -- Prefer springs when multiple constraints share one shaft,
+    -- otherwise a J press would always pick the older bearing.
+    local ordered=folder:GetChildren()
+    table.sort(ordered,function(a,b)
+        return (if a:GetAttribute("Kind")=="Spring" then 0 else 1)
+            <(if b:GetAttribute("Kind")=="Spring" then 0 else 1)
+    end)
+    for _,joint in ipairs(ordered) do
         if joint:GetAttribute("OwnerUserId")==player.UserId
             and (joint:GetAttribute("SourceId")==id
                 or joint:GetAttribute("TargetId")==id)
             and (joint:GetAttribute("Kind")=="Bearing"
                 or joint:GetAttribute("Kind")=="Slider"
-                or joint:GetAttribute("Kind")=="Cylindrical") then
+                or joint:GetAttribute("Kind")=="Cylindrical"
+                or joint:GetAttribute("Kind")=="Spring") then
             self:Reset()
             self.ManualActive=true
             self.Joint=joint
@@ -505,10 +576,31 @@ function Controller:OpenJointSettings()
     self:Message("No adjustable bearing or slider under the crosshair")
 end
 
-function Controller:UpdateJoint(delta,toggle)
+function Controller:UpdateJoint(delta,toggle,changeRest)
     local joint=self.Joint
     if not joint or not joint.Parent then self:Reset() return end
     local kind=joint:GetAttribute("Kind")
+    if kind=="Spring" then
+        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        local stiffness=joint:GetAttribute("Stiffness") or 120
+        local damping=joint:GetAttribute("Damping") or 14
+        local rest=joint:GetAttribute("FreeLength") or 0.5
+        if changeRest then
+            rest=math.clamp(rest+(delta or 0)*Grid.Unit*0.25,
+                Grid.Unit*0.2,Grid.Unit*32)
+        elseif shift then
+            damping=math.clamp(damping+(delta or 0)*5,0,300)
+        else
+            stiffness=math.clamp(stiffness+(delta or 0)*25,10,3000)
+        end
+        self:Request({
+            action="TuneSpring",relationId=joint:GetAttribute("RelationId"),
+            stiffness=stiffness,damping=damping,freeLength=rest,
+        })
+        self:RefreshHUD()
+        return
+    end
     local isHinge=kind=="Bearing"
     local limit=if isHinge then 180 else 32
     local previous=math.max(
@@ -531,6 +623,35 @@ end
 
 function Controller:Activate()
     if not self.Active or self.Busy or self:IsSimulating() then return end
+    if self.Stage=="PairFirst" then
+        local first=self:Pick()
+        if not first then self:Message("Aim at a construction you own") return end
+        self.PairFirst=first
+        self.Stage="PairSecond"
+        self:RefreshHUD()
+        return
+    elseif self.Stage=="PairSecond" then
+        local second=self:Pick({[self.PairFirst]=true})
+        if not second then
+            self:Message("Select another part of the mechanical connection")
+            return
+        end
+        local first=self.PairFirst
+        local request={
+            action="Create"..self.PairKind,
+            sourceId=first:GetAttribute("InstanceId"),
+            targetId=second:GetAttribute("InstanceId"),
+        }
+        if self.PairKind=="Spring" then
+            -- Piston source MUST be the shaft and target the opening.
+            if Alignment.IsShaft(second) and Alignment.TargetAxis(first) then
+                request.sourceId=second:GetAttribute("InstanceId")
+                request.targetId=first:GetAttribute("InstanceId")
+            end
+        end
+        if self:Request(request) then self:Reset() end
+        return
+    end
     if self.Stage=="GearFirst" then
         local candidate=self:Pick()
         if not candidate or not candidate:GetAttribute("GearTeeth") then
@@ -732,11 +853,28 @@ function Controller:Start()
         -- K/J/H interactions capture clicks; ordinary selection and drag
         -- continue to belong to ConstructionController.
         if self.Mode~="Edit" or processed then return end
+        local control=UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        if control and key==Enum.KeyCode.G then
+            self:RegisterAssembly(shift)
+            return
+        end
+        if key==Enum.KeyCode.J and shift then
+            self:StartPair("Spring")
+            return
+        end
+        if key==Enum.KeyCode.B and shift then
+            self:StartPair("Weld")
+            return
+        elseif key==Enum.KeyCode.B then
+            self:StartPair("Bolt")
+            return
+        end
         if key==Enum.KeyCode.K then self:ToggleGearMode() return end
         if key==Enum.KeyCode.J then self:OpenJointSettings() return end
         if key==Enum.KeyCode.H then self:StartManualJoint() return end
-        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
         if shift and (key==Enum.KeyCode.Delete
             or key==Enum.KeyCode.Backspace) then
             self:DeleteRelationship()
@@ -749,6 +887,11 @@ function Controller:Start()
             self:UpdateJoint(0,true)
         elseif key==Enum.KeyCode.R and self.Stage~="JointSettings" then
             self:CycleType()
+        elseif self.Stage=="JointSettings"
+            and self.Joint and self.Joint:GetAttribute("Kind")=="Spring"
+            and (key==Enum.KeyCode.Minus or key==Enum.KeyCode.Equals) then
+            self:UpdateJoint(if key==Enum.KeyCode.Equals then 1 else -1,
+                false,true)
         elseif key==Enum.KeyCode.LeftBracket or key==Enum.KeyCode.RightBracket then
             local delta=if key==Enum.KeyCode.RightBracket then 1 else -1
             if self.Stage=="JointSettings" then

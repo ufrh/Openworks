@@ -9,6 +9,10 @@ local Alignment = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
 local JointFrames = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("JointFrames"))
+local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("SpringMath"))
+local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("GridMath"))
 
 local Simulation = {}
 Simulation.__index = Simulation
@@ -99,7 +103,8 @@ function Simulation:Graph(player, seed)
             local kind = relation:GetAttribute("Kind")
             if source and target
                 and (kind == "Bearing" or kind == "Slider"
-                    or kind == "Cylindrical" or kind == "Fixed" or kind == "Gear") then
+                    or kind == "Cylindrical" or kind == "Fixed" or kind == "Gear"
+                    or kind == "Spring" or kind == "Weld" or kind == "Bolt") then
                 local a, b = bodyKey(source), bodyKey(target)
                 if a ~= b then
                     local edge = {source = source, target = target, kind = kind,
@@ -116,12 +121,32 @@ function Simulation:Graph(player, seed)
 
     local visited = { [seedKey] = true }
     local queue = { seedKey }
+    -- Registered assemblies include disconnected member components;
+    -- unrelated mechanisms outside the registered assembly are excluded.
+    local assemblyId=seed:GetAttribute("AssemblyId")
+    local assemblyKeys={}
+    if type(assemblyId)=="string" and assemblyId~="" then
+        for _,model in pairs(owned) do
+            if model:GetAttribute("AssemblyId")==assemblyId then
+                local k=bodyKey(model)
+                assemblyKeys[k]=true
+                if not visited[k] then
+                    visited[k]=true
+                    table.insert(queue,k)
+                end
+            end
+        end
+    end
     local index = 1
     while index <= #queue do
         local key = queue[index]
         index += 1
         for _, edge in ipairs(adjacent[key] or {}) do
             local nextKey = if edge.a == key then edge.b else edge.a
+            if type(assemblyId)=="string" and assemblyId~=""
+                and not assemblyKeys[nextKey] then
+                continue
+            end
             if not visited[nextKey] then
                 visited[nextKey] = true
                 table.insert(queue, nextKey)
@@ -141,15 +166,17 @@ function Simulation:Graph(player, seed)
             table.insert(connected, edge)
         end
     end
-    if #connected == 0 then
-        return nil, "Add a Bearing, Slider, or Fixed relationship first"
+    if #connected==0 and not (type(assemblyId)=="string"
+        and assemblyId~="" and #models>0) then
+        return nil,"Register an assembly (A) or add a mechanical relationship"
     end
     if #models > MAX_PARTS or #connected > MAX_JOINTS then
-        return nil, "Mechanism exceeds simulation limits (128 parts / 64 joints)"
+        return nil, "Assembly exceeds simulation safety limits (128 parts / 64 joints)"
     end
 
     return { models = models, edges = connected,
-        bodies = bodies, included = visited, rootKey = seedKey }
+        bodies = bodies, included = visited, rootKey = seedKey,
+        assemblyId=assemblyId,assemblyName=seed:GetAttribute("AssemblyName") }
 end
 
 function Simulation:Stop(player)
@@ -206,6 +233,7 @@ function Simulation:Start(player, payload)
         MotorFactors = {},
         Constraints = {},
         SeedId = payload.seedId,
+        AssemblyName = graph.assemblyName,
     }
     local created = Instance.new("Folder")
     created.Name = "Simulation_" .. tostring(player.UserId)
@@ -310,12 +338,85 @@ function Simulation:Start(player, payload)
                 -- mechanical constraint is fabricated. Gear ratios are
                 -- applied to the bearing motors of these rotating bodies.
                 continue
-            elseif edge.kind == "Fixed" then
+            elseif edge.kind == "Fixed" or edge.kind=="Weld"
+                or edge.kind=="Bolt" then
                 local weld = Instance.new("WeldConstraint")
                 weld.Name = "FixedRelationship"
                 weld.Part0 = p0
                 weld.Part1 = p1
                 weld.Parent = runtime
+            elseif edge.kind=="Spring" then
+                local mode=edge.relation:GetAttribute("SpringMode")
+                if mode~="Piston" and mode~="Plates" then
+                    error("Unsupported spring mechanism")
+                end
+                local world0,world1=SpringMath.Frames(
+                    edge.source,edge.target,mode
+                )
+                local s0=Instance.new("Attachment")
+                s0.Name="SimSpringFixed"
+                s0.CFrame=p0.CFrame:ToObjectSpace(CFrame.new(world0))
+                s0.Parent=p0
+                local s1=Instance.new("Attachment")
+                s1.Name="SimSpringMoving"
+                s1.CFrame=p1.CFrame:ToObjectSpace(CFrame.new(world1))
+                s1.Parent=p1
+                local spring=Instance.new("SpringConstraint")
+                spring.Name="Spring_"..mode
+                spring.Attachment0=s0
+                spring.Attachment1=s1
+                spring.Stiffness=edge.relation:GetAttribute("Stiffness") or 120
+                spring.Damping=edge.relation:GetAttribute("Damping") or 14
+                spring.FreeLength=edge.relation:GetAttribute("FreeLength")
+                    or (world1-world0).Magnitude
+                spring.MaxForce=40000
+                spring.LimitsEnabled=true
+                spring.MinLength=0.01
+                spring.MaxLength=math.max(spring.FreeLength*1.8,0.25)
+                spring.Coils=8
+                spring.Radius=0.13
+                spring.Thickness=0.025
+                spring.Visible=true
+                spring.Parent=runtime
+                table.insert(session.Constraints,spring)
+                if mode=="Piston" then
+                    -- Exactly ONE guide if a slider/cylindrical connection
+                    -- already constrains the same two mechanical bodies.
+                    local guided=false
+                    for _,other in ipairs(graph.edges) do
+                        if other~=edge
+                            and (other.kind=="Slider" or other.kind=="Cylindrical")
+                            and ((other.a==edge.a and other.b==edge.b)
+                                or (other.a==edge.b and other.b==edge.a)) then
+                            guided=true break
+                        end
+                    end
+                    if not guided then
+                        local frame=JointFrames.ForOpening(edge.target)
+                        if not frame then error("Piston spring missing opening axis") end
+                        local g0=Instance.new("Attachment")
+                        g0.CFrame=p0.CFrame:ToObjectSpace(frame)
+                        g0.Parent=p0
+                        local g1=Instance.new("Attachment")
+                        g1.CFrame=p1.CFrame:ToObjectSpace(frame)
+                        g1.Parent=p1
+                        local guide=Instance.new("PrismaticConstraint")
+                        guide.Name="SpringTravelGuide"
+                        guide.Attachment0=g0
+                        guide.Attachment1=g1
+                        local low,high=Alignment.OffsetBounds(edge.source,edge.target)
+                        local normal=edge.target:GetPivot():VectorToWorldSpace(
+                            Alignment.TargetAxis(edge.target)
+                        )
+                        local at=(edge.source:GetPivot().Position
+                            -edge.target:GetPivot().Position):Dot(normal)/Grid.Unit
+                        guide.LimitsEnabled=true
+                        guide.LowerLimit=(low-at)*Grid.Unit
+                        guide.UpperLimit=(high-at)*Grid.Unit
+                        guide.Parent=runtime
+                        table.insert(session.Constraints,guide)
+                    end
+                end
             else
                 local worldFrame = JointFrames.ForOpening(edge.target)
                 if not worldFrame then error("Joint opening axis is unavailable") end
@@ -336,14 +437,30 @@ function Simulation:Start(player, payload)
                 constraint.Attachment0 = a0
                 constraint.Attachment1 = a1
                 constraint.Enabled = true
-                if constraint:IsA("PrismaticConstraint") then
-                    local travel = math.clamp(source.PrimaryPart.Size.X, 0.25, 2)
-                    local limits = edge.relation:GetAttribute("LimitsEnabled") == true
-                    constraint.LimitsEnabled = limits
-                    constraint.LowerLimit = (edge.relation:GetAttribute("LowerLimit")
-                        or (-travel / 0.25)) * 0.25
-                    constraint.UpperLimit = (edge.relation:GetAttribute("UpperLimit")
-                        or (travel / 0.25)) * 0.25
+                if constraint:IsA("PrismaticConstraint")
+                    or constraint:IsA("CylindricalConstraint") then
+                    local low,high=Alignment.OffsetBounds(edge.source,edge.target)
+                    local normal=edge.target:GetPivot():VectorToWorldSpace(
+                        Alignment.TargetAxis(edge.target)
+                    ).Unit
+                    local authored=(edge.source:GetPivot().Position
+                        -edge.target:GetPivot().Position):Dot(normal)/Grid.Unit
+                    local lower=(low-authored)
+                    local upper=(high-authored)
+                    local authoredLow=edge.relation:GetAttribute("LowerLimit")
+                    local authoredHigh=edge.relation:GetAttribute("UpperLimit")
+                    -- User travel restrictions can ONLY narrow the physical
+                    -- shaft bounds. Never permit the slider to disconnect.
+                    if edge.relation:GetAttribute("LimitsEnabled")==true
+                        and type(authoredLow)=="number"
+                        and type(authoredHigh)=="number" then
+                        local a=math.max(lower,authoredLow)
+                        local b=math.min(upper,authoredHigh)
+                        if a<b then lower,upper=a,b end
+                    end
+                    constraint.LimitsEnabled=true
+                    constraint.LowerLimit=lower*Grid.Unit
+                    constraint.UpperLimit=upper*Grid.Unit
                 end
                 if constraint:IsA("HingeConstraint") then
                     constraint.LimitsEnabled =
@@ -360,7 +477,8 @@ function Simulation:Start(player, payload)
                 setMotor(constraint, false, session.SpeedMultiplier, session.Direction)
                 constraint.Parent = runtime
                 if constraint:IsA("HingeConstraint")
-                    or constraint:IsA("PrismaticConstraint") then
+                    or constraint:IsA("PrismaticConstraint")
+                    or constraint:IsA("CylindricalConstraint") then
                     table.insert(session.Motors, constraint)
                 end
                 table.insert(session.Constraints, constraint)
@@ -427,6 +545,27 @@ function Simulation:Start(player, payload)
             session.GroundKeys[graph.rootKey] = true
         end
 
+        -- Subtle green/orange physical outlines tell players which
+        -- complete bodies are anchored and which will be free to move.
+        for key, originals in pairs(graph.bodies) do
+            if graph.included[key] then
+                for _,original in ipairs(originals) do
+                    local clone=copies[original:GetAttribute("InstanceId")]
+                    if clone then
+                        local cue=Instance.new("Highlight")
+                        cue.Name="PhysicalBodyState"
+                        cue.FillColor=if session.GroundKeys[key]
+                            then Color3.fromRGB(66,220,135)
+                            else Color3.fromRGB(255,156,60)
+                        cue.OutlineColor=cue.FillColor
+                        cue.FillTransparency=0.93
+                        cue.OutlineTransparency=0.42
+                        cue.Adornee=clone
+                        cue.Parent=clone
+                    end
+                end
+            end
+        end
         for key, originals in pairs(graph.bodies) do
             if graph.included[key] then
                 local rootAnchor = bodyAnchors[key]
@@ -460,9 +599,11 @@ function Simulation:Start(player, payload)
     self:SetStatus(player, true, false, session.SpeedMultiplier,
         session.Direction, next(session.GroundKeys) ~= nil)
     player:SetAttribute("OPENWORKS_SimulationPaused",false)
-    return true, if next(session.GroundKeys)
-        then "Physics running • assigned grounds fixed • M motor / P stop"
-        else "Free physics running • ungrounded • M motor / P stop"
+    return true,(session.AssemblyName
+        and (tostring(session.AssemblyName).." • ") or "")
+        .. (if next(session.GroundKeys)
+            then "green grounded / orange movable • P stop"
+            else "free assembly • orange bodies • P stop")
 end
 
 function Simulation:Motor(player)
@@ -582,8 +723,8 @@ function Simulation:Info(player,payload)
     local session = self.Sessions[player]
     local grounded = model:GetAttribute("Grounded") == true
     local lines = {
-        tostring(model.Name)
-            .. (if grounded then " • GROUNDED" else " • FREE"),
+        tostring(model:GetAttribute("AssemblyName") or model.Name)
+            .. (if grounded then " • GROUNDED" else " • MOVABLE"),
     }
     local current = 0
     for _, relation in ipairs(self.D.mechanical.Folder:GetChildren()) do

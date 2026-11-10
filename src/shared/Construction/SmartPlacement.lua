@@ -147,8 +147,10 @@ local function socketPlan(members, shaft, target, forcedByAim)
             target.PrimaryPart.Size.Magnitude+1.5)) then
         depth=0
     end
+    local low,high=Alignment.OffsetBounds(shaft,target)
+    if not low then return nil end
     local units=math.clamp(math.round(depth/(Grid.Unit*0.5))*0.5,
-        -Smart.MaxAxialOffsetUnits,Smart.MaxAxialOffsetUnits)
+        low,high)
     local roll=shaft:GetAttribute("ShaftRollDegrees") or 0
     local plan=Alignment.Plan(members,shaft,target,units,roll)
     if not plan then return nil end
@@ -178,8 +180,10 @@ local function reverseSocketPlan(members, opening, shaft, forcedByAim)
             opening.PrimaryPart.Size.Magnitude+1.5)) then
         axial=0
     end
+    local low,high=Alignment.OffsetBounds(shaft,opening)
+    if not low then return nil end
     local units=math.clamp(math.round((-axial)/(Grid.Unit*0.5))*0.5,
-        -Smart.MaxAxialOffsetUnits,Smart.MaxAxialOffsetUnits)
+        low,high)
     local roll=shaft:GetAttribute("ShaftRollDegrees") or 0
     local plan=Alignment.ReversePlan(members,opening,shaft,units,roll)
     if not plan then return nil end

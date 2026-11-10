@@ -16,6 +16,8 @@ local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
 local ComponentGeometry = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("ComponentGeometry"))
+local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("SpringMath"))
 
 local Mechanical = {}
 Mechanical.__index = Mechanical
@@ -24,6 +26,7 @@ local MAX_RELATIONSHIPS_PER_PLAYER = 128
 local function relationValid(kind)
     return kind == "Bearing" or kind == "Slider"
         or kind == "Cylindrical" or kind == "Fixed" or kind == "Gear"
+        or kind == "Spring" or kind == "Weld" or kind == "Bolt"
 end
 
 function Mechanical.new(deps)
@@ -70,6 +73,11 @@ function Mechanical:Snapshot(relation)
         limitsEnabled = relation:GetAttribute("LimitsEnabled") == true,
         driveScale = relation:GetAttribute("DriveScale") or 1,
         gearRatio = relation:GetAttribute("GearRatio"),
+        springMode = relation:GetAttribute("SpringMode"),
+        stiffness = relation:GetAttribute("Stiffness"),
+        damping = relation:GetAttribute("Damping"),
+        freeLength = relation:GetAttribute("FreeLength"),
+        boltId = relation:GetAttribute("BoltId"),
     }
 end
 
@@ -118,6 +126,11 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("LimitsEnabled", spec.limitsEnabled == true)
     folder:SetAttribute("DriveScale", spec.driveScale or 1)
     folder:SetAttribute("GearRatio", spec.gearRatio)
+    folder:SetAttribute("SpringMode",spec.springMode)
+    folder:SetAttribute("Stiffness",spec.stiffness)
+    folder:SetAttribute("Damping",spec.damping)
+    folder:SetAttribute("FreeLength",spec.freeLength)
+    folder:SetAttribute("BoltId",spec.boltId)
 
     local targetPart, sourcePart = target.PrimaryPart, source.PrimaryPart
     if not targetPart or not sourcePart then
@@ -133,12 +146,79 @@ function Mechanical:Restore(player, spec)
         end
         -- Gear-to-gear motion is synchronized in the simulation runtime,
         -- never falsely represented as a native Roblox GearConstraint.
-    elseif spec.kind == "Fixed" then
+    elseif spec.kind == "Fixed" or spec.kind=="Weld"
+        or spec.kind=="Bolt" then
         local weld = Instance.new("WeldConstraint")
         weld.Name = "Fixed"
         weld.Part0 = targetPart
         weld.Part1 = sourcePart
         weld.Parent = folder
+    elseif spec.kind=="Spring" then
+        local mode,why=SpringMath.Validate(source,target)
+        if not mode or (spec.springMode and spec.springMode~=mode) then
+            folder:Destroy()
+            return false,why or "Spring type no longer matches geometry"
+        end
+        local world0,world1=SpringMath.Frames(source,target,mode)
+        local att0=Instance.new("Attachment")
+        att0.Name="SpringFixedEnd"
+        att0.CFrame=targetPart.CFrame:ToObjectSpace(CFrame.new(world0))
+        att0.Parent=targetPart
+        local att1=Instance.new("Attachment")
+        att1.Name="SpringMovingEnd"
+        att1.CFrame=sourcePart.CFrame:ToObjectSpace(CFrame.new(world1))
+        att1.Parent=sourcePart
+        for _,a in ipairs({att0,att1}) do
+            local ref=Instance.new("ObjectValue")
+            ref.Name="ManagedAttachment"
+            ref.Value=a
+            ref.Parent=folder
+        end
+        local spring=Instance.new("SpringConstraint")
+        spring.Name="Spring"
+        spring.Attachment0=att0
+        spring.Attachment1=att1
+        spring.Stiffness=spec.stiffness or 120
+        spring.Damping=spec.damping or 14
+        spring.FreeLength=spec.freeLength or (world1-world0).Magnitude
+        spring.MaxForce=40000
+        spring.LimitsEnabled=true
+        spring.MinLength=0.01
+        spring.MaxLength=math.max(spring.FreeLength*1.8,0.25)
+        spring.Visible=true
+        spring.Coils=8
+        spring.Radius=0.13
+        spring.Thickness=0.025
+        spring.Parent=folder
+        if mode=="Piston" then
+            -- The guide and restoring force are separate physical
+            -- constraints. Avoid an unconstrained sideways spring.
+            local frame=JointFrames.ForOpening(target)
+            if frame then
+                local g0=Instance.new("Attachment")
+                g0.CFrame=targetPart.CFrame:ToObjectSpace(frame)
+                g0.Parent=targetPart
+                local g1=Instance.new("Attachment")
+                g1.CFrame=sourcePart.CFrame:ToObjectSpace(frame)
+                g1.Parent=sourcePart
+                for _,ga in ipairs({g0,g1}) do
+                    local ref=Instance.new("ObjectValue")
+                    ref.Name="ManagedAttachment"
+                    ref.Value=ga
+                    ref.Parent=folder
+                end
+                local guide=Instance.new("PrismaticConstraint")
+                guide.Name="SpringGuide"
+                guide.Attachment0=g0
+                guide.Attachment1=g1
+                local low,high=Alignment.OffsetBounds(source,target)
+                local at=source:GetAttribute("AlignedOffsetU") or 0
+                guide.LimitsEnabled=true
+                guide.LowerLimit=(low-at)*self.D.Grid.Unit
+                guide.UpperLimit=(high-at)*self.D.Grid.Unit
+                guide.Parent=folder
+            end
+        end
     else
         local axisLocal = Alignment.TargetAxis(target)
         if not axisLocal or not Alignment.IsShaft(source) then
@@ -175,14 +255,32 @@ function Mechanical:Restore(player, spec)
         constraint.Attachment0 = attachment0
         constraint.Attachment1 = attachment1
         constraint.Enabled = true
-        constraint.LimitsEnabled = spec.limitsEnabled == true
+        -- A slider/cylinder ALWAYS has hard mechanical travel stops.
+        -- User limits can narrow them but can never permit the shaft
+        -- to slide entirely clear of its real opening.
+        local linear=constraint:IsA("PrismaticConstraint")
+            or constraint:IsA("CylindricalConstraint")
+        local low,high
+        if linear then
+            low,high=Alignment.OffsetBounds(source,target)
+            if not low or high-low<0.5 then
+                folder:Destroy()
+                return false,"Shaft is too short for a sliding relationship"
+            end
+            local at=source:GetAttribute("AlignedOffsetU") or 0
+            low-=at
+            high-=at
+        end
+        constraint.LimitsEnabled=linear or spec.limitsEnabled==true
         if constraint.LimitsEnabled then
             if constraint:IsA("HingeConstraint") then
                 constraint.LowerAngle = spec.lowerLimit or -180
                 constraint.UpperAngle = spec.upperLimit or 180
             else
-                constraint.LowerLimit = (spec.lowerLimit or -4) * self.D.Grid.Unit
-                constraint.UpperLimit = (spec.upperLimit or 4) * self.D.Grid.Unit
+                constraint.LowerLimit = math.max(low or -4,
+                    spec.lowerLimit or (low or -4))*self.D.Grid.Unit
+                constraint.UpperLimit = math.min(high or 4,
+                    spec.upperLimit or (high or 4))*self.D.Grid.Unit
             end
         end
         constraint.Parent = folder
@@ -193,13 +291,13 @@ end
 
 function Mechanical:Create(player, request)
     local d = self.D
-    -- Gear meshes have distinct geometry/teeth validation and must use
-    -- CreateGearMesh, never the shaft-in-hole relationship pathway.
-    if request.kind == "Gear" then
-        return false, "Use Gear Mesh (K) to connect two gears"
-    end
-    if not relationValid(request.kind) then
-        return false, "Choose Bearing, Slider, Cylindrical, or Fixed"
+    -- New spring/bolt/weld mechanisms require their own geometry validation.
+    -- Prevent the older generic route from bypassing prefab/plate rules.
+    if type(request)~="table" or
+        (request.kind~="Bearing" and request.kind~="Slider"
+            and request.kind~="Cylindrical" and request.kind~="Fixed") then
+        return false,
+            "Use dedicated spring, bolt, weld or gear connection controls"
     end
     if type(request.targetId) ~= "string"
         or type(request.sourceId) ~= "string" then
@@ -258,11 +356,11 @@ function Mechanical:Create(player, request)
             targetState.position = item.position
             targetState.orientation = item.orientation
             targetState.grounded = old.grounded
-            targetState.shaftRollDegrees = if member == source
+            targetState.shaftRollDegrees = if item.model == source
                 then request.rollDegrees or 0 else old.shaftRollDegrees
-            targetState.alignedOffsetU = if member == source
+            targetState.alignedOffsetU = if item.model == source
                 then request.offsetUnits else old.alignedOffsetU
-            targetState.alignedOpeningId = if member == source
+            targetState.alignedOpeningId = if item.model == source
                 then target:GetAttribute("InstanceId") else old.alignedOpeningId
             targetState.assemblyPrecision = true
             targetState.freePosition = true
@@ -282,6 +380,11 @@ function Mechanical:Create(player, request)
     if request.kind ~= "Fixed" then
         for index, member in ipairs(members) do
             d.applyState(member, planned[index])
+        end
+        local fits,why=Bore.ShaftFits(source,target)
+        if not fits then
+            for index,old in ipairs(before) do d.applyState(members[index],old) end
+            return false,why or "Shaft does not fit its housing"
         end
         for _, member in ipairs(members) do
             if d.intersectsConstructed(member, ignore, target,
@@ -582,11 +685,17 @@ function Mechanical:SmartMate(player, request, newSource)
         for _,member in ipairs(combined) do
             if member:GetAttribute("Grounded")==true then grounded=true end
         end
+        local assemblyId=target:GetAttribute("AssemblyId")
+            or source:GetAttribute("AssemblyId")
+        local assemblyName=target:GetAttribute("AssemblyName")
+            or source:GetAttribute("AssemblyName")
         local after={}
         for _,member in ipairs(combined) do
             member:SetAttribute("ComponentId",groupId)
             member:SetAttribute("ComponentAnchorId",anchorId)
             member:SetAttribute("Grounded",grounded)
+            member:SetAttribute("AssemblyId",assemblyId)
+            member:SetAttribute("AssemblyName",assemblyName)
             table.insert(after,d.snapshot(member))
         end
         d.commitBatch(player,before,after)
@@ -625,6 +734,262 @@ function Mechanical:SmartMate(player, request, newSource)
     end
     d.commitAssembly(player,before,after,spec)
     return true,typeName.." connected"
+end
+
+local function sameBody(left,right)
+    local id=left:GetAttribute("ComponentId")
+    return type(id)=="string" and id~=""
+        and id==right:GetAttribute("ComponentId")
+end
+
+local function validEndpoints(self,player,request)
+    local d=self.D
+    local source=d.findOwned(player,request.sourceId)
+    local target=d.findOwned(player,request.targetId)
+    if not source or not target or source==target then
+        return nil,nil,"Select two different parts you own"
+    end
+    if sameBody(source,target) then
+        return nil,nil,"Connection requires separate rigid bodies"
+    end
+    if not d.nearPlayer(player,source:GetPivot().Position)
+        or not d.nearPlayer(player,target:GetPivot().Position) then
+        return nil,nil,"Both parts must be within construction range"
+    end
+    if self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
+        return nil,nil,"Relationship limit reached"
+    end
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId")==player.UserId
+            and ((relation:GetAttribute("SourceId")==request.sourceId
+                and relation:GetAttribute("TargetId")==request.targetId)
+                or (relation:GetAttribute("SourceId")==request.targetId
+                and relation:GetAttribute("TargetId")==request.sourceId))
+            and relation:GetAttribute("Kind")==request.kind then
+            return nil,nil,"These parts already have this connection"
+        end
+    end
+    return source,target
+end
+
+function Mechanical:CreateSpring(player,request)
+    if type(request)~="table" then return false,"Invalid spring request" end
+    request.kind="Spring"
+    local source,target,reason=validEndpoints(self,player,request)
+    if not source then return false,reason end
+    local mode,why=SpringMath.Validate(source,target)
+    if not mode then return false,why end
+    if mode=="Piston" then
+        local fits,problem=Bore.ShaftFits(source,target)
+        if not fits then return false,problem end
+        local low,high=Alignment.OffsetBounds(source,target)
+        if not low or high-low<0.5 then
+            return false,"Spring shaft must have enough guided travel"
+        end
+    end
+    local point0,point1=SpringMath.Frames(source,target,mode)
+    local settings,problem=SpringMath.Settings(
+        request,(point1-point0).Magnitude
+    )
+    if not settings then return false,problem end
+    local spec={
+        relationId=HttpService:GenerateGUID(false),
+        ownerUserId=player.UserId,kind="Spring",
+        sourceId=request.sourceId,targetId=request.targetId,
+        componentId=source:GetAttribute("ComponentId"),
+        springMode=mode,stiffness=settings.stiffness,
+        damping=settings.damping,freeLength=settings.freeLength,
+    }
+    local created,err=self:Restore(player,spec)
+    if not created then return false,err end
+    self.D.commitAssembly(player,{}, {},spec)
+    return true,if mode=="Piston"
+        then "Suspension spring created (guided along shaft)"
+        else "Equal-plate compression spring created"
+end
+
+function Mechanical:TuneSpring(player,request)
+    local relation=self:OwnedRelation(player,request.relationId)
+    if not relation or relation:GetAttribute("Kind")~="Spring" then
+        return false,"Aim at a spring relationship first (J)"
+    end
+    local stiffness=request.stiffness
+    local damping=request.damping
+    local freeLength=if type(request.freeLength)=="number"
+        then request.freeLength
+        else relation:GetAttribute("FreeLength") or 0.5
+    if type(stiffness)~="number" or stiffness~=stiffness
+        or stiffness<10 or stiffness>3000
+        or type(damping)~="number" or damping~=damping
+        or damping<0 or damping>300
+        or type(freeLength)~="number" or freeLength~=freeLength
+        or freeLength<0.05 or freeLength>32*self.D.Grid.Unit then
+        return false,"Spring stiffness 10–3000 / damping 0–300 / rest 0.2–32 U"
+    end
+    local before=self:Snapshot(relation)
+    relation:SetAttribute("Stiffness",stiffness)
+    relation:SetAttribute("Damping",damping)
+    relation:SetAttribute("FreeLength",freeLength)
+    local spring=relation:FindFirstChildOfClass("SpringConstraint")
+    if spring then
+        spring.Stiffness=stiffness
+        spring.Damping=damping
+        spring.FreeLength=freeLength
+        spring.MaxLength=math.max(freeLength*1.8,0.25)
+    end
+    self.D.commitJointEdit(player,before,self:Snapshot(relation))
+    return true,string.format("Spring %.0f stiffness / %.0f damping / %.2f U rest",
+        stiffness,damping,freeLength/self.D.Grid.Unit)
+end
+
+function Mechanical:CreateWeld(player,request)
+    request.kind="Weld"
+    local source,target,reason=validEndpoints(self,player,request)
+    if not source then return false,reason end
+    -- The parts must be in REAL contact; being nearby is insufficient.
+    local close=false
+    local overlap=OverlapParams.new()
+    overlap.FilterType=Enum.RaycastFilterType.Include
+    overlap.FilterDescendantsInstances={target}
+    for _,part in ipairs(source:GetDescendants()) do
+        if part:IsA("BasePart") and part.CanCollide then
+            local probe=part:Clone()
+            probe.Size=part.Size+Vector3.one*0.065
+            probe.Anchored=true
+            probe.CanCollide=false
+            probe.CanQuery=true
+            probe.Parent=workspace
+            local ok,hit=pcall(function()
+                return workspace:GetPartsInPart(probe,overlap)
+            end)
+            probe:Destroy()
+            if ok and #hit>0 then close=true break end
+        end
+    end
+    if not close then return false,"Weld requires touching solid surfaces" end
+    local spec={
+        relationId=HttpService:GenerateGUID(false),
+        ownerUserId=player.UserId,kind="Weld",
+        sourceId=request.sourceId,targetId=request.targetId,
+        componentId=source:GetAttribute("ComponentId"),
+    }
+    local ok,err=self:Restore(player,spec)
+    if not ok then return false,err end
+    self.D.commitAssembly(player,{}, {},spec)
+    return true,"Welded • permanent rigid connection"
+end
+
+function Mechanical:CreateBolt(player,request)
+    request.kind="Bolt"
+    local first,second,why=validEndpoints(self,player,request)
+    if not first then return false,why end
+    local axis0=Alignment.TargetAxis(first)
+    local axis1=Alignment.TargetAxis(second)
+    if not axis0 or not axis1 then
+        return false,"Bolts require two drilled or hollow openings"
+    end
+    local cf0,cf1=first:GetPivot(),second:GetPivot()
+    local direction=cf0:VectorToWorldSpace(axis0).Unit
+    local opposite=cf1:VectorToWorldSpace(axis1).Unit
+    if math.abs(direction:Dot(opposite))<0.999 then
+        return false,"Bolt holes must share a parallel axis"
+    end
+    local delta=cf1.Position-cf0.Position
+    local distance=delta:Dot(direction)
+    local transverse=(delta-direction*distance).Magnitude
+    if transverse>self.D.Grid.Unit*0.12 then
+        return false,"Bolt holes must be directly coaxial"
+    end
+    if math.abs(distance)<self.D.Grid.Unit*0.1 then
+        return false,"Bolt connection requires distinct physical hole positions"
+    end
+    if distance<0 then direction=-direction end
+    local hole0=Bore.OpeningDiameter(first)
+    local hole1=Bore.OpeningDiameter(second)
+    if not hole0 or not hole1 then
+        return false,"Hole geometry has no measurable bolt clearance"
+    end
+    local bestId,bestDiameter,bestLen
+    for _,entry in ipairs({
+        {id="Bolt_050U",u=0.5,length=4},
+        {id="Bolt_100U",u=1,length=8},
+        {id="Bolt_150U",u=1.5,length=12},
+    }) do
+        local diameter=entry.u*self.D.Grid.Unit
+        local length=entry.length*self.D.Grid.Unit
+        if diameter<=math.min(hole0,hole1)-0.002
+            and length>=math.abs(distance)
+                +(math.abs(axis0.X)*first.PrimaryPart.Size.X
+                    +math.abs(axis0.Y)*first.PrimaryPart.Size.Y
+                    +math.abs(axis0.Z)*first.PrimaryPart.Size.Z)*0.5
+                +(math.abs(axis1.X)*second.PrimaryPart.Size.X
+                    +math.abs(axis1.Y)*second.PrimaryPart.Size.Y
+                    +math.abs(axis1.Z)*second.PrimaryPart.Size.Z)*0.5
+                +self.D.Grid.Unit*0.1
+            and (not bestDiameter or diameter>bestDiameter) then
+            bestId=entry.id
+            bestDiameter=diameter
+            bestLen=length
+        end
+    end
+    if not bestId then
+        return false,"No bolt prefab fits both hole diameters and reach"
+    end
+    local bolt,problem=self.D.createFromTemplate(player,bestId)
+    if not bolt then return false,problem end
+    local before={}
+    local group=first:GetAttribute("ComponentId")
+    if type(group)~="string" or group=="" then
+        group=HttpService:GenerateGUID(false)
+        table.insert(before,self.D.snapshot(first))
+        first:SetAttribute("ComponentId",group)
+        first:SetAttribute("ComponentAnchorId",first:GetAttribute("InstanceId"))
+    end
+    local origin=cf0.Position+direction*math.abs(distance)*0.5
+    local reference=if math.abs(direction:Dot(Vector3.yAxis))<0.9
+        then Vector3.yAxis else Vector3.zAxis
+    local up=(reference-direction*direction:Dot(reference)).Unit
+    local pose=CFrame.fromMatrix(origin,direction,up,direction:Cross(up))
+    local template=self.D.Registry.Get(bestId)
+    local size=template.Model.PrimaryPart.Size
+    local state={
+        position=pose.Position,orientation=pose.Rotation,
+        steps=Alignment.MatchSteps(pose.Rotation) or {x=0,y=0,z=0},
+        size=size,
+        componentId=group,
+        componentAnchorId=first:GetAttribute("ComponentAnchorId")
+            or first:GetAttribute("InstanceId"),
+        assemblyId=first:GetAttribute("AssemblyId"),
+        assemblyName=first:GetAttribute("AssemblyName"),
+        freePosition=true,
+    }
+    self.D.applyState(bolt,state)
+    local ignored={[first]=true,[second]=true}
+    if self.D.intersectsConstructed(bolt,ignored) then
+        bolt:Destroy()
+        if #before>0 then self.D.applyState(first,before[1]) end
+        return false,"Bolt interferes with another construction"
+    end
+    bolt.Parent=self.D.folder
+    -- Fastener body is a rigid member of the first (bolt-head) side.
+    local spec={
+        relationId=HttpService:GenerateGUID(false),
+        ownerUserId=player.UserId,kind="Bolt",
+        sourceId=request.sourceId,targetId=request.targetId,
+        componentId=group,boltId=bolt:GetAttribute("InstanceId"),
+    }
+    local success,err=self:Restore(player,spec)
+    if not success then
+        bolt:Destroy()
+        if #before>0 then self.D.applyState(first,before[1]) end
+        return false,err
+    end
+    local after={self.D.snapshot(bolt)}
+    for _,original in ipairs(before) do
+        table.insert(after,self.D.snapshot(first))
+    end
+    self.D.commitAssembly(player,before,after,spec)
+    return true,"Physical "..bestId.." placed • bolted rigid connection"
 end
 
 -- Independent gear mesh: both gear primitives must have the same
@@ -715,6 +1080,13 @@ function Mechanical:PoseShaft(player, request)
     if not d.nearPlayer(player, target:GetPivot().Position) then
         return false, "Opening out of range"
     end
+    local minOffset,maxOffset=Alignment.OffsetBounds(source,target)
+    if not minOffset or offset<minOffset or offset>maxOffset then
+        return false,string.format(
+            "Insertion must stay between %.1f and %.1f U",
+            minOffset or 0,maxOffset or 0
+        )
+    end
     local relation
     for _, current in ipairs(self.Folder:GetChildren()) do
         if current:GetAttribute("OwnerUserId") == player.UserId
@@ -765,6 +1137,11 @@ function Mechanical:PoseShaft(player, request)
         ignored[member] = true
     end
     for i, member in ipairs(members) do d.applyState(member,planned[i]) end
+    local fits,why=Bore.ShaftFits(source,target)
+    if not fits then
+        for i,restore in ipairs(members) do d.applyState(restore,before[i]) end
+        return false,why or "Shaft must remain inside housing"
+    end
     for _, member in ipairs(members) do
         if d.intersectsConstructed(member, ignored, target, request.sourceId) then
             for i, restore in ipairs(members) do d.applyState(restore,before[i]) end
@@ -793,8 +1170,25 @@ function Mechanical:AdjustJoint(player, request)
         or lower ~= lower or upper ~= upper or lower >= upper then
         return false, "Invalid joint limits"
     end
-    local max = if kind == "Bearing" then 180 else 32
-    if lower < -max or upper > max then return false, "Joint limits outside range" end
+    if kind=="Slider" or kind=="Cylindrical" then
+        local source=self.D.findOwned(player,joint:GetAttribute("SourceId"))
+        local target=self.D.findOwned(player,joint:GetAttribute("TargetId"))
+        if not source or not target then return false,"Shaft or housing deleted" end
+        local min,max=Alignment.OffsetBounds(source,target)
+        if not min then return false,max end
+        local authored=source:GetAttribute("AlignedOffsetU") or 0
+        min-=authored
+        max-=authored
+        if lower<min or upper>max then
+            return false,string.format(
+                "Slide must remain on shaft: %.1f to %.1f U",min,max)
+        end
+        on=true
+    else
+        if lower< -180 or upper>180 then
+            return false,"Bearing angle limit must be within +/-180°"
+        end
+    end
     local old = self:Snapshot(joint)
     joint:SetAttribute("LimitsEnabled", on)
     joint:SetAttribute("LowerLimit",lower)
@@ -820,6 +1214,19 @@ function Mechanical:ApplyJointEdit(player, record, undo)
     local spec = if undo then record.before else record.after
     local relation = self:OwnedRelation(player, spec.relationId)
     if not relation then return false, "Joint was deleted" end
+    if spec.kind=="Spring" then
+        relation:SetAttribute("Stiffness",spec.stiffness)
+        relation:SetAttribute("Damping",spec.damping)
+        relation:SetAttribute("FreeLength",spec.freeLength)
+        local spring=relation:FindFirstChildOfClass("SpringConstraint")
+        if spring then
+            spring.Stiffness=spec.stiffness or 120
+            spring.Damping=spec.damping or 14
+            spring.FreeLength=spec.freeLength or spring.FreeLength
+            spring.MaxLength=math.max(spring.FreeLength*1.8,0.25)
+        end
+        return true
+    end
     relation:SetAttribute("LowerLimit",spec.lowerLimit)
     relation:SetAttribute("UpperLimit",spec.upperLimit)
     relation:SetAttribute("LimitsEnabled",spec.limitsEnabled == true)
@@ -830,8 +1237,17 @@ function Mechanical:ApplyJointEdit(player, record, undo)
             constraint.LowerAngle = spec.lowerLimit or -180
             constraint.UpperAngle = spec.upperLimit or 180
         elseif spec.kind == "Slider" or spec.kind == "Cylindrical" then
-            constraint.LowerLimit = (spec.lowerLimit or -4) * self.D.Grid.Unit
-            constraint.UpperLimit = (spec.upperLimit or 4) * self.D.Grid.Unit
+            local source=self.D.findOwned(player,spec.sourceId)
+            local target=self.D.findOwned(player,spec.targetId)
+            if source and target then
+                local lo,hi=Alignment.OffsetBounds(source,target)
+                local at=source:GetAttribute("AlignedOffsetU") or 0
+                constraint.LimitsEnabled=true
+                constraint.LowerLimit=math.max(lo-at,spec.lowerLimit or lo-at)
+                    *self.D.Grid.Unit
+                constraint.UpperLimit=math.min(hi-at,spec.upperLimit or hi-at)
+                    *self.D.Grid.Unit
+            end
         end
     end
     return true
@@ -924,10 +1340,19 @@ end
 function Mechanical:Remove(player, request)
     local relation = self:OwnedRelation(player, request.relationId)
     if not relation then return false, "Select a relationship you own" end
-    local spec = self:Snapshot(relation)
+    local spec=self:Snapshot(relation)
+    local before={}
+    if spec.kind=="Bolt" and type(spec.boltId)=="string" then
+        local bolt=self.D.findOwned(player,spec.boltId)
+        if bolt then
+            table.insert(before,self.D.snapshot(bolt))
+            bolt:Destroy()
+        end
+    end
     self:DestroyRelation(relation)
-    self.D.commitAssembly(player, {}, {}, spec, true)
-    return true, "Relationship removed"
+    self.D.commitAssembly(player,before,{},spec,true)
+    return true,if spec.kind=="Bolt"
+        then "Bolt and its connection removed" else "Relationship removed"
 end
 
 function Mechanical:ApplyHistory(player, record, undo, restoreBatch)
