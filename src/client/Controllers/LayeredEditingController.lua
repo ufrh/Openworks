@@ -4,6 +4,8 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ContextActionService = game:GetService("ContextActionService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("Construction")
@@ -491,12 +493,35 @@ function Layered:OnInput(input, processed)
 end
 
 function Layered:Start()
+    -- Roblox's stock leaderboard also consumes Tab. Capture it in the
+    -- construction tools before the default player-list shortcut.
+    ContextActionService:BindActionAtPriority(
+        "OPENWORKS_DepthSelect",
+        function(_, inputState)
+            local mode = self.Parent.Mode
+            if mode ~= "Edit" and mode ~= "Inspect" then
+                return Enum.ContextActionResult.Pass
+            end
+            if inputState == Enum.UserInputState.Begin
+                and not UserInputService:GetFocusedTextBox() then
+                local reverse = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+                    or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+                self:CycleDepth(reverse)
+            end
+            return Enum.ContextActionResult.Sink
+        end,
+        false,
+        3000,
+        Enum.KeyCode.Tab
+    )
+
     table.insert(self.Connections, RunService.RenderStepped:Connect(function()
         self:RefreshTargetCue()
     end))
 end
 
 function Layered:Destroy()
+    ContextActionService:UnbindAction("OPENWORKS_DepthSelect")
     for _, connection in ipairs(self.Connections) do connection:Disconnect() end
     table.clear(self.Connections)
     self:CancelAlignment()
