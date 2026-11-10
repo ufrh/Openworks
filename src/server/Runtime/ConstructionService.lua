@@ -374,6 +374,9 @@ function Service.Start()
         gallery.Parent = game:GetService("ServerStorage")
     end
 
+    local oldRemote = ReplicatedStorage:FindFirstChild(Config.RequestName)
+    if oldRemote then oldRemote:Destroy() end
+
     remote = Instance.new("RemoteFunction")
     remote.Name = Config.RequestName
     remote.OnServerInvoke = handle
