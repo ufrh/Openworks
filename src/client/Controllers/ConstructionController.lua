@@ -24,6 +24,7 @@ local MUTED = Color3.fromRGB(167, 186, 199)
 
 local Controller = {}
 Controller.__index = Controller
+local SIZE_STEPS_U = { 0.25, 0.5, 1, 2 }
 
 local function create(className, fields, parent)
     local instance = Instance.new(className)
@@ -98,6 +99,8 @@ function Controller.new(tools)
         PreviewCF = nil,
         CatalogOpen = false,
         ScaleMode = false,
+        ScaleStepIndex = 1,
+        ScaleStepU = Grid.DefaultSizeStepU,
         ScaleGhost = nil,
         ScaleCF = nil,
         ScaleSize = nil,
@@ -304,7 +307,8 @@ function Controller:RefreshHUD()
             "  •  " .. string.format("%.2g × %.2g × %.2g U",
                 self.ScaleSize.X / Grid.Unit, self.ScaleSize.Y / Grid.Unit, self.ScaleSize.Z / Grid.Unit)
             else "")
-        self.HelpLabel.Text = "Aim at X/Y/Z grip • hold click + drag • V/Esc finish"
+        self.HelpLabel.Text = "Scale step: " .. tostring(self.ScaleStepU)
+            .. " U  •  [ / ] adjust  •  hold click + move/look  •  V exit"
     elseif mode == "Build" then
         self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
             size.X / Grid.Unit, size.Y / Grid.Unit, size.Z / Grid.Unit) else "")
@@ -833,7 +837,10 @@ function Controller:Rotate(axis)
         if not ok then self.Steps = oldSteps end
     elseif self.Mode == "Edit" and self.Selected and not self.Pending then
         local rotation = Grid.Rotation(self.Steps)
-        local position = Grid.SnapCenter(self.Selected:GetPivot().Position, self.CurrentSize, rotation)
+        local position = if self.Selected:GetAttribute("ResizePrecision") == true
+            or Grid.HasFractionalSize(self.CurrentSize)
+            then Grid.SnapSizeCenter(self.Selected:GetPivot().Position, self.CurrentSize, rotation)
+            else Grid.SnapCenter(self.Selected:GetPivot().Position, self.CurrentSize, rotation)
         self:ModifySelected(position, self.Steps, self.CurrentSize)
     end
     self:RefreshHUD()
@@ -907,6 +914,7 @@ function Controller:BeginScale()
         model.PrimaryPart.LocalTransparencyModifier = 1
     end
 
+    self.ScaleHandles:SetIncrement(self.ScaleStepU)
     self.ScaleHandles:Open(cf, self.ScaleSize, entry.ResizeMode, entry.Model.PrimaryPart.Size)
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshPointer()
@@ -943,6 +951,7 @@ function Controller:CommitScale(cf, size, oldCF, oldSize)
         position = cf.Position,
         steps = stepsCopy(self.Steps),
         size = size,
+        resizePrecision = true,
     })
     if ok then
         self.CurrentSize = size
@@ -1013,6 +1022,16 @@ function Controller:OnInput(input, processed)
         and self.Mode ~= "Inspect" then return end
 
     if self.Layered and self.Layered:OnInput(input, processed) then return end
+
+    if self.ScaleMode and not processed
+        and (key == Enum.KeyCode.LeftBracket or key == Enum.KeyCode.RightBracket) then
+        local direction = if key == Enum.KeyCode.RightBracket then 1 else -1
+        self.ScaleStepIndex = math.clamp(self.ScaleStepIndex + direction, 1, #SIZE_STEPS_U)
+        self.ScaleStepU = SIZE_STEPS_U[self.ScaleStepIndex]
+        self.ScaleHandles:SetIncrement(self.ScaleStepU)
+        self:RefreshHUD()
+        return
+    end
 
     if key == Enum.KeyCode.Escape then
         if self.ScaleMode then self:EndScale() end

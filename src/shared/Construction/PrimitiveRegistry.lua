@@ -7,6 +7,21 @@ local LIBRARY_NAME = "OPENWORKS_PrimitiveLibrary_DRAFT"
 
 local Registry = {}
 
+-- Studio's draft tube templates were generated with LengthOnly_1U.
+-- The runtime kernel can resize their cross sections without regenerating
+-- the library; circular profiles keep Y and Z tied to one diameter.
+function Registry.ResolveResizeMode(model)
+    local name = string.lower(model.Name)
+    if string.find(name, "circulartube", 1, true)
+        or string.find(name, "halftube", 1, true) then
+        return "LengthAndDiameter_1U"
+    elseif string.find(name, "squaretube", 1, true)
+        or string.find(name, "rectangulartube", 1, true) then
+        return "XYZ_1U"
+    end
+    return model:GetAttribute("ResizeMode") or "None"
+end
+
 function Registry.List()
     local source = ReplicatedStorage:FindFirstChild(LIBRARY_NAME)
     local entries = {}
@@ -30,7 +45,7 @@ function Registry.List()
                 table.insert(entries, {
                     Id = model.Name,
                     Category = category.Name,
-                    ResizeMode = model:GetAttribute("ResizeMode") or "None",
+                    ResizeMode = Registry.ResolveResizeMode(model),
                     Model = model,
                 })
             end

@@ -12,6 +12,7 @@ local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
 local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
+local MechanicalService = require(script.Parent:WaitForChild("MechanicalService"))
 
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
 
@@ -22,6 +23,7 @@ local histories = {}
 local lastRequest = {}
 local components
 local alignmentService
+local mechanical
 
 local function historyFor(player)
     local state = histories[player]
@@ -93,6 +95,7 @@ local function snapshot(model)
         componentId = model:GetAttribute("ComponentId"),
         componentAnchorId = model:GetAttribute("ComponentAnchorId"),
         assemblyPrecision = model:GetAttribute("AssemblyPrecision") == true,
+        resizePrecision = model:GetAttribute("ResizePrecision") == true,
     }
 end
 
@@ -204,9 +207,15 @@ local function validState(player, entry, proposed)
     end
 
     local rotation = Grid.Rotation(proposed.steps)
-    if proposed.assemblyPrecision == true then
+    if proposed.resizePrecision == true or Grid.HasFractionalSize(proposed.size) then
+        if not Grid.IsSizeSnapped(proposed.position, proposed.size, rotation)
+            and not (proposed.assemblyPrecision == true
+                and Grid.IsAssemblySnapped(proposed.position)) then
+            return false, "Resize position is not aligned to the 0.25-U sizing grid"
+        end
+    elseif proposed.assemblyPrecision == true then
         if not Grid.IsAssemblySnapped(proposed.position) then
-            return false, "Assembly position is not on the half-Unit precision grid"
+            return false, "Assembly position is not on the assembly precision lattice"
         end
     elseif not Grid.IsSnapped(proposed.position, proposed.size, rotation) then
         return false, "Position is not aligned to the Unit grid"
@@ -223,6 +232,8 @@ local function applyState(model, data)
     model:SetAttribute("ComponentId", data.componentId)
     model:SetAttribute("ComponentAnchorId", data.componentAnchorId)
     model:SetAttribute("AssemblyPrecision", data.assemblyPrecision == true)
+    model:SetAttribute("ResizePrecision", data.resizePrecision == true
+        or Grid.HasFractionalSize(data.size))
 end
 
 local function commitRecord(player, before, after)
@@ -240,6 +251,19 @@ local function commitBatch(player, before, after)
     if #state.undo > Config.UndoLimit then
         table.remove(state.undo, 1)
     end
+    table.clear(state.redo)
+end
+
+local function commitAssembly(player, before, after, relation, removed)
+    local state = historyFor(player)
+    table.insert(state.undo, {
+        kind = "Assembly",
+        before = before,
+        after = after,
+        relation = relation,
+        removed = removed == true,
+    })
+    if #state.undo > Config.UndoLimit then table.remove(state.undo, 1) end
     table.clear(state.redo)
 end
 
@@ -306,6 +330,7 @@ local function place(player, payload)
         steps = payload.steps,
         size = payload.size or (template and template.Size),
     }
+    proposed.resizePrecision = Grid.HasFractionalSize(proposed.size)
 
     local valid, reason = validState(player, entry, proposed)
     if not valid then return false, reason end
@@ -340,6 +365,8 @@ local function update(player, payload)
         componentId = model:GetAttribute("ComponentId"),
         componentAnchorId = model:GetAttribute("ComponentAnchorId"),
         assemblyPrecision = model:GetAttribute("AssemblyPrecision") == true,
+        resizePrecision = model:GetAttribute("ResizePrecision") == true
+            or payload.resizePrecision == true,
     }
     local valid, reason = validState(player, entry, proposed)
     if not valid then return false, reason end
@@ -437,6 +464,9 @@ local function restore(player, data)
 end
 
 local function applyRecord(player, record, undo)
+    if record.kind == "Assembly" then
+        return mechanical:ApplyHistory(player, record, undo, restoreBatch)
+    end
     if record.kind == "Batch" then
         return restoreBatch(player, record, undo)
     end
@@ -473,18 +503,25 @@ local function handle(player, payload)
 
     local action = payload.action
     local alignmentAction = action == "Align"
+    local mechanicalAction = action == "CreateRelation" or action == "RemoveRelation"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
         or action == "DeleteComponent"
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
-        and not componentAction and not alignmentAction then
+        and not componentAction and not alignmentAction and not mechanicalAction then
         return { ok = false, message = "Unknown action" }
     end
-    if componentAction or alignmentAction then
+    if mechanicalAction then
+        if not hasEquippedTool(player, "Assemble") then
+            return { ok = false, message = "Equip Assemble to edit relationships" }
+        end
+    elseif componentAction or alignmentAction then
         if not hasEquippedTool(player, "Edit") then
             return { ok = false, message = "Equip Edit to modify components" }
         end
+    elseif (action == "Undo" or action == "Redo") and hasEquippedTool(player, "Assemble") then
+        -- Relationship history is shared with construction history.
     elseif not accessFor(player, action) then
         return { ok = false, message = "Equip Build or Edit" }
     end
@@ -501,6 +538,8 @@ local function handle(player, payload)
         if action == "Delete" then return delete(player, payload) end
         if componentAction then return components:Handle(player, action, payload) end
         if alignmentAction then return alignmentService:Align(player, payload) end
+        if action == "CreateRelation" then return mechanical:Create(player, payload) end
+        if action == "RemoveRelation" then return mechanical:Remove(player, payload) end
         return historyAction(player, action == "Undo")
     end)
 
@@ -508,6 +547,7 @@ local function handle(player, payload)
         warn("[OPENWORKS] Construction request error: " .. tostring(result))
         return { ok = false, message = "Construction error (check Output)" }
     end
+    if result and mechanical then mechanical:RebuildRelations() end
     local message = tostring(extra or "")
     if result and action == "Place" then message = "Placed" end
     if result and action == "Update" then message = "Updated" end
@@ -560,6 +600,20 @@ function Service.Start()
         components = components,
     })
 
+    mechanical = MechanicalService.new({
+        folder = folder,
+        Grid = Grid,
+        Registry = Registry,
+        findOwned = findOwned,
+        nearPlayer = nearPlayer,
+        snapshot = snapshot,
+        applyState = applyState,
+        validState = validState,
+        intersectsConstructed = intersectsConstructed,
+        components = components,
+        commitAssembly = commitAssembly,
+    })
+
     -- The gallery is an Edit-mode inspection aid, never buildable world geometry.
     -- This only moves it during Play; the Studio place remains unchanged.
     local gallery = workspace:FindFirstChild(Config.GalleryName)
@@ -581,6 +635,7 @@ function Service.Start()
                 model:Destroy()
             end
         end
+        if mechanical then mechanical:ClearPlayer(player) end
         histories[player] = nil
         lastRequest[player] = nil
     end)

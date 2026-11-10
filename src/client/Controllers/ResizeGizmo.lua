@@ -65,8 +65,8 @@ local function withAxis(size, axis, value)
     return Vector3.new(size.X, size.Y, value)
 end
 
-local function nextSize(mode, initial, axis, amount)
-    local delta = amount * Grid.Unit
+local function nextSize(mode, initial, axis, amount, incrementU)
+    local delta = amount * Grid.Unit * incrementU
     if mode == "XYZ_1U" then
         return withAxis(initial, axis, initial[AXIS_NAMES[axis]] + delta)
     elseif mode == "UniformDiameter_1U" then
@@ -102,6 +102,7 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
         Active = false,
         Hovered = nil,
         Drag = nil,
+        IncrementU = Grid.DefaultSizeStepU,
     }, Gizmo)
 
     for axis = 1, 3 do
@@ -168,6 +169,13 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
     end))
 
     return self
+end
+
+function Gizmo:SetIncrement(stepU)
+    if type(stepU) ~= "number" or stepU < Grid.MinSizeStepU
+        or stepU > 2 then return end
+    self.IncrementU = stepU
+    -- A step change takes effect on the next drag, never mid-grab.
 end
 
 function Gizmo:Open(cf, size, mode, templateSize)
@@ -269,6 +277,7 @@ function Gizmo:BeginDrag()
         PlaneNormal = planeNormal,
         StartAxisCoordinate = (startHit - startFace):Dot(outward),
         LastSteps = 0,
+        StepU = self.IncrementU,
     }
 
     -- Never freeze the camera. Moving or looking around changes the world
@@ -289,11 +298,11 @@ function Gizmo:UpdateDrag()
 
     local axisCoordinate = (hit - drag.PlanePoint):Dot(drag.Direction)
     local distance = axisCoordinate - drag.StartAxisCoordinate
-    local steps = math.floor(distance / Grid.Unit + 0.5)
+    local steps = math.floor(distance / (Grid.Unit * drag.StepU) + 0.5)
 
     if steps == drag.LastSteps then return end
 
-    local size = nextSize(self.Mode, drag.StartSize, drag.Axis, steps)
+    local size = nextSize(self.Mode, drag.StartSize, drag.Axis, steps, drag.StepU)
     if not size or not Grid.ValidSize(self.TemplateSize, size, self.Mode) then
         return
     end
@@ -301,9 +310,10 @@ function Gizmo:UpdateDrag()
     -- The grabbed face moves along its world-space outward axis while the
     -- opposite face remains anchored. The grid function only resolves
     -- center parity; no pixel scaling or camera locking is involved.
-    local shifted = drag.StartCF.Position + drag.Direction * (steps * Grid.Unit / 2)
+    local shifted = drag.StartCF.Position
+        + drag.Direction * (steps * Grid.Unit * drag.StepU / 2)
     local rotation = drag.StartCF.Rotation
-    local snapped = Grid.SnapCenter(shifted, size, rotation)
+    local snapped = Grid.SnapSizeCenter(shifted, size, rotation)
     local cf = CFrame.new(snapped) * rotation
 
     drag.LastSteps = steps

@@ -2,7 +2,7 @@
 -- Shared, deterministic phase-04 coaxial placement math.
 -- This positions geometry ONLY. It does not create a bearing/revolute joint.
 -- A shaft is a full Cylinder primitive (local X axis).
--- A target is a circular/square tube (local X) or drilled block (local Z).
+-- A target is a circular/square tube (local X) or drilled block (local Y).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
@@ -48,7 +48,8 @@ function Alignment.TargetAxis(model)
     end
     if string.find(name, "drilledblock", 1, true)
         or string.find(name, "holeblock", 1, true) then
-        return Vector3.zAxis
+        -- Studio primitive generator subtracts a Y_AXIS cylinder.
+        return Vector3.yAxis
     end
     return nil
 end
@@ -136,7 +137,7 @@ function Alignment.Plan(members, shaft, target, offsetUnits)
     -- ordinary part-parity grid, which could shift it out of the bore.
     local center = Grid.SnapAssemblyCenter(rawCenter)
     if (center - rawCenter).Magnitude > 0.001 then
-        return nil, "Opening center is not on the assembly half-Unit grid"
+        return nil, "Opening center is not on the assembly precision grid"
     end
     local desiredShaft = CFrame.new(center) * Grid.Rotation(steps)
     local delta = desiredShaft * shaft:GetPivot():Inverse()
@@ -148,7 +149,7 @@ function Alignment.Plan(members, shaft, target, offsetUnits)
         local partSteps = Alignment.MatchSteps(world.Rotation)
         if not partSteps then return nil, "A member cannot rotate to a 90-degree orientation" end
         if not Grid.IsAssemblySnapped(world.Position) then
-            return nil, "Component geometry exceeds the assembly half-Unit grid"
+            return nil, "Component geometry exceeds the assembly precision grid"
         end
         table.insert(items, {
             model = member,

@@ -1,7 +1,8 @@
 --!strict
 -- All player-facing construction dimensions are in U, never mm.
 local UNIT = 0.25
-local Grid = { Unit = UNIT, MaxUnits = 64, MaxDistance = 55 }
+local Grid = { Unit = UNIT, MaxUnits = 64, MaxDistance = 55,
+    MinSizeStepU = 0.25, DefaultSizeStepU = 0.25 }
 
 local function nearest(value, step, offset)
     return math.floor((value - offset) / step + 0.5) * step + offset
@@ -22,10 +23,20 @@ local function dimensions(size, rotation)
     )
 end
 
-local function axisCenter(value, length)
-    local cells = math.floor(length / UNIT + 0.5)
-    local offset = (cells % 2 == 1) and UNIT / 2 or 0
-    return nearest(value, UNIT, offset)
+local function axisCenter(value, length, increment)
+    local cells = math.floor(length / increment + 0.5)
+    local offset = (cells % 2 == 1) and increment / 2 or 0
+    return nearest(value, increment, offset)
+end
+
+function Grid.HasFractionalSize(size)
+    if typeof(size) ~= "Vector3" then return false end
+    for _, n in ipairs({ size.X, size.Y, size.Z }) do
+        if math.abs(n / UNIT - math.round(n / UNIT)) > 0.0001 then
+            return true
+        end
+    end
+    return false
 end
 
 function Grid.Rotation(steps)
@@ -37,13 +48,22 @@ function Grid.Rotation(steps)
     )
 end
 
-function Grid.SnapCenter(position, size, rotation)
+function Grid.SnapCenter(position, size, rotation, stepU)
     local extent = dimensions(size, rotation)
+    local increment = UNIT * (stepU or 1)
     return Vector3.new(
-        axisCenter(position.X, extent.X),
-        axisCenter(position.Y, extent.Y),
-        axisCenter(position.Z, extent.Z)
+        axisCenter(position.X, extent.X, increment),
+        axisCenter(position.Y, extent.Y, increment),
+        axisCenter(position.Z, extent.Z, increment)
     )
+end
+
+function Grid.SnapSizeCenter(position, size, rotation)
+    return Grid.SnapCenter(position, size, rotation, Grid.MinSizeStepU)
+end
+
+function Grid.IsSizeSnapped(position, size, rotation)
+    return (position - Grid.SnapSizeCenter(position, size, rotation)).Magnitude < 0.001
 end
 
 function Grid.FromSurface(hitPosition, surfaceNormal, size, rotation)
@@ -61,19 +81,22 @@ function Grid.FromSurface(hitPosition, surfaceNormal, size, rotation)
         + math.abs(normal.Y) * dimensionsWorld.Y
         + math.abs(normal.Z) * dimensionsWorld.Z
     local desired = hitPosition + normal * (depth / 2 + 0.001)
-    return CFrame.new(Grid.SnapCenter(desired, size, rotation)) * rotation
+    local target = if Grid.HasFractionalSize(size)
+        then Grid.SnapSizeCenter(desired, size, rotation)
+        else Grid.SnapCenter(desired, size, rotation)
+    return CFrame.new(target) * rotation
 end
 
 function Grid.IsSnapped(position, size, rotation)
     return (position - Grid.SnapCenter(position, size, rotation)).Magnitude < 0.01
 end
 
--- Coaxial assembly may need an extra half Unit (0.125 studs) of
--- center precision when opening/shaft dimensions have opposite parity.
--- Only a server-validated Align operation can opt into this precision;
--- ordinary Build/Move stays on the original 1 U face grid.
+-- Assembly centers must support HALF of the smallest 0.25-U sizing
+-- increment (0.125 U = 0.03125 studs). This preserves perfect coaxial
+-- placement even when independently sized profiles have different parity.
+-- Ordinary Build/Move still uses its own face-grid rules.
 function Grid.SnapAssemblyCenter(position)
-    local step = UNIT / 2
+    local step = UNIT * Grid.MinSizeStepU / 2
     return Vector3.new(
         nearest(position.X, step, 0),
         nearest(position.Y, step, 0),
@@ -121,8 +144,9 @@ function Grid.ValidSize(templateSize, proposed, resizeMode)
 
     local function unitValid(value)
         local u = value / UNIT
-        return u >= 1 - 0.0001 and u <= Grid.MaxUnits + 0.0001
-            and math.abs(u - math.floor(u + 0.5)) < 0.0001
+        local ticks = u / Grid.MinSizeStepU
+        return u >= Grid.MinSizeStepU - 0.0001 and u <= Grid.MaxUnits + 0.0001
+            and math.abs(ticks - math.floor(ticks + 0.5)) < 0.0001
     end
 
     if resizeMode == "XYZ_1U" then
