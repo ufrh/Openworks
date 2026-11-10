@@ -6,18 +6,14 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Alignment = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
+local JointFrames = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("JointFrames"))
+local Bore = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("BoreClearance"))
 
 local Mechanical = {}
 Mechanical.__index = Mechanical
 local MAX_RELATIONSHIPS_PER_PLAYER = 128
-
-local function axisFrame(point, axis)
-    local x = axis.Unit
-    local up = if math.abs(x:Dot(Vector3.yAxis)) > 0.9
-        then Vector3.zAxis else Vector3.yAxis
-    local y = (up - x * up:Dot(x)).Unit
-    return CFrame.fromMatrix(point, x, y, x:Cross(y))
-end
 
 local function relationValid(kind)
     return kind == "Bearing" or kind == "Slider" or kind == "Fixed"
@@ -122,9 +118,11 @@ function Mechanical:Restore(player, spec)
             folder:Destroy()
             return false, "Bearing/slider requires a shaft and an opening"
         end
-        local axis = target:GetPivot():VectorToWorldSpace(axisLocal)
-        local point = target:GetPivot().Position
-        local worldCF = axisFrame(point, axis)
+        local worldCF = JointFrames.ForOpening(target)
+        if not worldCF then
+            folder:Destroy()
+            return false, "Opening has no valid joint orientation"
+        end
         local attachment0 = Instance.new("Attachment")
         attachment0.Name = "OPENWORKS_RelationHousing"
         attachment0.CFrame = targetPart.CFrame:ToObjectSpace(worldCF)
@@ -256,6 +254,90 @@ function Mechanical:Create(player, request)
     end
     d.commitAssembly(player, before, planned, spec)
     return true, spec.kind .. " relationship created (physics when shipped)"
+end
+
+-- A dedicated post-alignment micro-fit operation. A client cannot grant
+-- itself fine sizing permission: it must own BOTH parts and have an authored
+-- relationship or a server-recorded Align connection between them.
+function Mechanical:Fit(player, request)
+    local d = self.D
+    if type(request.sourceId) ~= "string" or type(request.targetId) ~= "string"
+        or (request.step ~= 1 and request.step ~= -1) then
+        return false, "Choose an aligned shaft and use the wheel to fit it"
+    end
+    local source = d.findOwned(player, request.sourceId)
+    local target = d.findOwned(player, request.targetId)
+    if not source or not target or source == target
+        or not Alignment.IsShaft(source) or not Alignment.TargetAxis(target) then
+        return false, "Fit requires your Cylinder shaft inside a supported opening"
+    end
+    if not d.nearPlayer(player, source:GetPivot().Position)
+        or not d.nearPlayer(player, target:GetPivot().Position) then
+        return false, "Shaft is outside your building range"
+    end
+
+    local connected = source:GetAttribute("AlignedOpeningId")
+        == target:GetAttribute("InstanceId")
+    if not connected then
+        for _, relation in ipairs(self.Folder:GetChildren()) do
+            if relation:GetAttribute("OwnerUserId") == player.UserId
+                and relation:GetAttribute("SourceId") == request.sourceId
+                and relation:GetAttribute("TargetId") == request.targetId
+                and (relation:GetAttribute("Kind") == "Bearing"
+                    or relation:GetAttribute("Kind") == "Slider") then
+                connected = true
+                break
+            end
+        end
+    end
+    if not connected then
+        return false, "Align or connect this shaft to the opening first"
+    end
+
+    local maxDiameter, why = Bore.MaxShaftDiameter(source, target)
+    if not maxDiameter then return false, why end
+
+    local current = source.PrimaryPart.Size
+    local stepU = 0.05
+    local oldDiameterU = current.Y / d.Grid.Unit
+    -- Diameter is uniform in Y/Z; X is never altered by fitting.
+    local nextTicks = math.round(oldDiameterU / stepU) + request.step
+    local nextDiameter = nextTicks * stepU * d.Grid.Unit
+    if nextDiameter < 0.25 * d.Grid.Unit - 1e-6 then
+        return false, "Minimum shaft diameter reached (0.25 U)"
+    end
+    if nextDiameter > maxDiameter + 1e-6 then
+        local remainingU = math.max(0, (maxDiameter - current.Y) / d.Grid.Unit)
+        return false, string.format(
+            "Snug fit reached — %.2f U clearance remaining", remainingU)
+    end
+
+    local before = d.snapshot(source)
+    local proposed = table.clone(before)
+    proposed.size = Vector3.new(current.X, nextDiameter, nextDiameter)
+    proposed.fitPrecision = true
+
+    local entry = d.Registry.Get(before.templateId)
+    if not entry then return false, "Missing shaft template" end
+    local valid, reason = d.validState(player, entry, proposed)
+    if not valid then return false, reason end
+
+    d.applyState(source, proposed)
+    local fits, fitReason = Bore.ShaftFits(source, target)
+    if not fits or d.intersectsConstructed(
+        source, source, target, source:GetAttribute("InstanceId")
+    ) then
+        d.applyState(source, before)
+        return false, fitReason or "Shaft interferes with another solid"
+    end
+
+    local after = d.snapshot(source)
+    d.commitRecord(player, before, after)
+    return true, string.format(
+        "Shaft %.2f U diameter • %.2f U clearance",
+        nextDiameter / d.Grid.Unit,
+        math.max(0, (maxDiameter - nextDiameter) / d.Grid.Unit)
+    )
 end
 
 function Mechanical:Remove(player, request)

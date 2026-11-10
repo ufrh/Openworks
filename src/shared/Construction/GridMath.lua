@@ -132,7 +132,7 @@ function Grid.ValidPosition(position)
     return true
 end
 
-function Grid.ValidSize(templateSize, proposed, resizeMode)
+function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter)
     if typeof(proposed) ~= "Vector3" then return false end
     if typeof(templateSize) ~= "Vector3" then return false end
 
@@ -145,9 +145,10 @@ function Grid.ValidSize(templateSize, proposed, resizeMode)
         return (proposed - templateSize).Magnitude < 0.01
     end
 
-    local function unitValid(value)
+    local function unitValid(value, step)
         local u = value / UNIT
-        local ticks = u / Grid.MinSizeStepU
+        local increment = step or Grid.MinSizeStepU
+        local ticks = u / increment
         return u >= Grid.MinSizeStepU - 0.0001 and u <= Grid.MaxUnits + 0.0001
             and math.abs(ticks - math.floor(ticks + 0.5)) < 0.0001
     end
@@ -159,7 +160,11 @@ function Grid.ValidSize(templateSize, proposed, resizeMode)
             and math.abs(proposed.X - proposed.Y) < 0.001
             and math.abs(proposed.X - proposed.Z) < 0.001
     elseif resizeMode == "LengthAndDiameter_1U" then
-        return unitValid(proposed.X) and unitValid(proposed.Y)
+        -- Only shafts explicitly marked FitPrecision by the server may
+        -- use the 0.05-U diameter lattice. Length stays on the 0.25-U
+        -- sizing lattice, including the dedicated cylinder gizmo step.
+        local diameterStep = if fineDiameter == true then 0.05 else Grid.MinSizeStepU
+        return unitValid(proposed.X) and unitValid(proposed.Y, diameterStep)
             and math.abs(proposed.Y - proposed.Z) < 0.001
     elseif resizeMode == "LengthOnly_1U" then
         return unitValid(proposed.X)

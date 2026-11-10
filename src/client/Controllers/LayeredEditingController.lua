@@ -394,9 +394,21 @@ end
 
 function Layered:AdjustOffset(wheel)
     local align = self.Alignment
-    if not align or align.Stage ~= "Preview" then return false end
+    if not align or (align.Stage ~= "Preview" and align.Stage ~= "Fit") then
+        return false
+    end
     local amount = if wheel > 0 then 1 elseif wheel < 0 then -1 else 0
     if amount == 0 then return true end
+
+    if align.Stage == "Fit" then
+        self.Parent:Request({
+            action = "FitShaft",
+            sourceId = align.Shaft:GetAttribute("InstanceId"),
+            targetId = align.Target:GetAttribute("InstanceId"),
+            step = amount,
+        })
+        return true
+    end
 
     align.OffsetUnits = math.clamp(
         align.OffsetUnits + amount * INSERTION_INCREMENT_U,
@@ -424,7 +436,14 @@ function Layered:ConfirmAlignment()
         offsetUnits = align.OffsetUnits,
     })
     if ok then
-        self:CancelAlignment()
+        -- The placement is finished. Stay in a dedicated fine-fit state
+        -- so scrolling changes only shaft diameter, not insertion depth.
+        if align.Preview then align.Preview:Destroy() end
+        align.Preview = nil
+        align.Stage = "Fit"
+        self:RefreshVisuals()
+        player:SetAttribute("OPENWORKS_Inserting", true)
+        self.Parent:Message("Aligned • scroll to tighten shaft by 0.05 U • click/Esc done")
         self.Parent:RefreshHUD()
     end
 end
@@ -433,7 +452,11 @@ function Layered:Click()
     local align = self.Alignment
     if align then
         if align.Stage == "PickTarget" then self:ChooseTarget()
-        elseif align.Stage == "Preview" then self:ConfirmAlignment() end
+        elseif align.Stage == "Preview" then self:ConfirmAlignment()
+        elseif align.Stage == "Fit" then
+            self:CancelAlignment()
+            self.Parent:RefreshHUD()
+        end
         return true
     end
 
@@ -476,7 +499,8 @@ function Layered:OnInput(input, processed)
     end
     if processed then return false end
 
-    if self.Alignment and self.Alignment.Stage == "Preview" then
+    if self.Alignment and (self.Alignment.Stage == "Preview"
+        or self.Alignment.Stage == "Fit") then
         if key == Enum.KeyCode.LeftBracket or key == Enum.KeyCode.Minus then
             self:AdjustOffset(-1)
         elseif key == Enum.KeyCode.RightBracket or key == Enum.KeyCode.Equals then

@@ -70,6 +70,9 @@ function Service:Align(player, request)
             componentAnchorId = old.componentAnchorId,
             assemblyPrecision = true,
             freePosition = true,
+            fitPrecision = old.fitPrecision,
+            alignedOpeningId = if member == shaft then
+                target:GetAttribute("InstanceId") else old.alignedOpeningId,
         }
         local entry = d.Registry.Get(old.templateId)
         if not entry then return false, "A component template is missing" end

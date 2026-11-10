@@ -286,6 +286,14 @@ function Controller:RefreshHUD()
         if alignment.Stage == "PickTarget" then
             self.DetailLabel.Text = "ALIGN SHAFT  /  choose an opening"
             self.HelpLabel.Text = "Aim at tube or drilled hole • click • Tab behind • Esc cancel"
+        elseif alignment.Stage == "Fit" then
+            local shaft = alignment.Shaft
+            local diameter = if shaft and shaft.PrimaryPart
+                then shaft.PrimaryPart.Size.Y / Grid.Unit else 0
+            self.DetailLabel.Text = string.format(
+                "SHAFT FIT  /  %.2f U diameter", diameter)
+            self.HelpLabel.Text =
+                "Scroll 0.05 U to snug fit • click / Esc to finish"
         else
             self.DetailLabel.Text = "INSERTION OFFSET  /  "
                 .. tostring(alignment.OffsetUnits) .. " U"
@@ -312,7 +320,8 @@ function Controller:RefreshHUD()
             "  •  " .. string.format("%.2g × %.2g × %.2g U",
                 self.ScaleSize.X / Grid.Unit, self.ScaleSize.Y / Grid.Unit, self.ScaleSize.Z / Grid.Unit)
             else "")
-        self.HelpLabel.Text = "Scale: 0.5 U  •  aim at colored sphere, hold + move/look  •  V exit"
+        self.HelpLabel.Text = "Scale: " .. tostring(self.ScaleHandles.IncrementU)
+            .. " U • colored sphere, hold + move/look • V exit"
     elseif mode == "Build" then
         self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
             size.X / Grid.Unit, size.Y / Grid.Unit, size.Z / Grid.Unit) else "")
@@ -1008,7 +1017,14 @@ function Controller:BeginScale()
         model.PrimaryPart.LocalTransparencyModifier = 1
     end
 
-    self.ScaleHandles:Open(cf, self.ScaleSize, entry.ResizeMode, entry.Model.PrimaryPart.Size)
+    local templateName = string.lower(tostring(id))
+    local cylinder = string.find(templateName, "cylinder", 1, true)
+        and not string.find(templateName, "halfcylinder", 1, true)
+    local step = if cylinder then 0.25 else Grid.DefaultSizeStepU
+    self.ScaleHandles:Open(
+        cf, self.ScaleSize, entry.ResizeMode, entry.Model.PrimaryPart.Size,
+        step, model:GetAttribute("FitPrecision") == true
+    )
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshPointer()
     self:RefreshHUD()

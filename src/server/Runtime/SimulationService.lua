@@ -7,6 +7,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Alignment = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
+local JointFrames = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("JointFrames"))
 
 local Simulation = {}
 Simulation.__index = Simulation
@@ -23,14 +25,6 @@ local function bodyKey(model)
     return "p:" .. tostring(model:GetAttribute("InstanceId"))
 end
 
-local function axisFrame(position, axis)
-    local x = axis.Unit
-    local ref = if math.abs(x:Dot(Vector3.yAxis)) > 0.9
-        then Vector3.zAxis else Vector3.yAxis
-    local y = (ref - x * ref:Dot(x)).Unit
-    return CFrame.fromMatrix(position, x, y, x:Cross(y))
-end
-
 local function allParts(model)
     local parts = {}
     for _, part in ipairs(model:GetDescendants()) do
@@ -39,16 +33,17 @@ local function allParts(model)
     return parts
 end
 
-local function setMotor(constraint, on)
+local function setMotor(constraint, on, speedMultiplier, direction)
+    local signed = (speedMultiplier or 1) * (direction or 1)
     if constraint:IsA("HingeConstraint") then
         constraint.ActuatorType = if on then Enum.ActuatorType.Motor
             else Enum.ActuatorType.None
-        constraint.AngularVelocity = 1.5
+        constraint.AngularVelocity = 1.5 * signed
         constraint.MotorMaxTorque = 50000
     elseif constraint:IsA("PrismaticConstraint") then
         constraint.ActuatorType = if on then Enum.ActuatorType.Motor
             else Enum.ActuatorType.None
-        constraint.Speed = 0.75
+        constraint.Speed = 0.75 * signed
         constraint.MotorMaxForce = 50000
     end
 end
@@ -67,9 +62,12 @@ function Simulation:IsRunning(player)
     return self.Sessions[player] ~= nil
 end
 
-function Simulation:SetStatus(player, running, motorsOn)
+function Simulation:SetStatus(player, running, motorsOn, speed, direction, grounded)
     player:SetAttribute("OPENWORKS_Simulating", running)
     player:SetAttribute("OPENWORKS_MotorOn", motorsOn)
+    player:SetAttribute("OPENWORKS_MotorSpeed", speed or 1)
+    player:SetAttribute("OPENWORKS_MotorDirection", direction or 1)
+    player:SetAttribute("OPENWORKS_Grounded", grounded ~= false)
 end
 
 function Simulation:Graph(player, seed)
@@ -195,6 +193,9 @@ function Simulation:Start(player, payload)
         Originals = {},
         Motors = {},
         MotorOn = false,
+        SpeedMultiplier = 1,
+        Direction = 1,
+        Grounded = payload.grounded ~= false,
         World = nil,
     }
     local created = Instance.new("Folder")
@@ -268,10 +269,8 @@ function Simulation:Start(player, payload)
                 weld.Part1 = p1
                 weld.Parent = runtime
             else
-                local targetAxis = Alignment.TargetAxis(edge.target)
-                if not targetAxis then error("Joint opening axis is unavailable") end
-                local axis = edge.target:GetPivot():VectorToWorldSpace(targetAxis)
-                local worldFrame = axisFrame(edge.target:GetPivot().Position, axis)
+                local worldFrame = JointFrames.ForOpening(edge.target)
+                if not worldFrame then error("Joint opening axis is unavailable") end
                 local a0 = Instance.new("Attachment")
                 a0.Name = "SimHousing"
                 a0.CFrame = p0.CFrame:ToObjectSpace(worldFrame)
@@ -293,7 +292,7 @@ function Simulation:Start(player, payload)
                     constraint.LowerLimit = -travel
                     constraint.UpperLimit = travel
                 end
-                setMotor(constraint, false)
+                setMotor(constraint, false, session.SpeedMultiplier, session.Direction)
                 constraint.Parent = runtime
                 table.insert(session.Motors, constraint)
             end
@@ -346,7 +345,8 @@ function Simulation:Start(player, payload)
                 local rootAnchor = bodyAnchors[key]
                 for _, original in ipairs(originals) do
                     for _, part in ipairs(copyParts[original:GetAttribute("InstanceId")] or {}) do
-                        part.Anchored = key == graph.rootKey and part == rootAnchor
+                        part.Anchored = session.Grounded
+                            and key == graph.rootKey and part == rootAnchor
                     end
                 end
             end
@@ -370,8 +370,11 @@ function Simulation:Start(player, payload)
         return false, "Could not compile simulation (see Studio Output)"
     end
 
-    self:SetStatus(player, true, false)
-    return true, "Simulation running — housing anchored. M: motor; P: stop"
+    self:SetStatus(player, true, false, session.SpeedMultiplier,
+        session.Direction, session.Grounded)
+    return true, if session.Grounded
+        then "Physics running • selected housing grounded • M motor / P stop"
+        else "Free physics running • ungrounded • M motor / P stop"
 end
 
 function Simulation:Motor(player)
@@ -382,11 +385,45 @@ function Simulation:Motor(player)
     end
     session.MotorOn = not session.MotorOn
     for _, constraint in ipairs(session.Motors) do
-        if constraint.Parent then setMotor(constraint, session.MotorOn) end
+        if constraint.Parent then
+            setMotor(constraint, session.MotorOn,
+                session.SpeedMultiplier, session.Direction)
+        end
     end
-    self:SetStatus(player, true, session.MotorOn)
+    self:SetStatus(player, true, session.MotorOn,
+        session.SpeedMultiplier, session.Direction, session.Grounded)
     return true, if session.MotorOn then "Motor drive enabled"
         else "Motor drive disabled"
+end
+
+function Simulation:TuneMotor(player, payload)
+    local session = self.Sessions[player]
+    if not session then return false, "Start a mechanism simulation first" end
+    if #session.Motors == 0 then
+        return false, "This mechanism has no powered Bearing or Slider"
+    end
+    if payload.flip == true and payload.speedDelta == nil then
+        session.Direction *= -1
+    elseif payload.flip == nil
+        and (payload.speedDelta == 1 or payload.speedDelta == -1) then
+        session.SpeedMultiplier = math.clamp(
+            session.SpeedMultiplier + payload.speedDelta * 0.5, 0.5, 4
+        )
+    else
+        return false, "Invalid drive adjustment"
+    end
+
+    for _, constraint in ipairs(session.Motors) do
+        if constraint.Parent then
+            setMotor(constraint, session.MotorOn,
+                session.SpeedMultiplier, session.Direction)
+        end
+    end
+    self:SetStatus(player, true, session.MotorOn,
+        session.SpeedMultiplier, session.Direction, session.Grounded)
+    return true, string.format("Drive %.1fx / %s",
+        session.SpeedMultiplier,
+        if session.Direction == 1 then "forward" else "reverse")
 end
 
 function Simulation:ClearPlayer(player)

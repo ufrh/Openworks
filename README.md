@@ -81,3 +81,13 @@ See `docs/REBUILD_NOTES.md` for the reset boundary and next design step.
 - Press **M** during simulation to start/stop simple hinge and linear motors. Press **P** again to discard the running simulation and restore the EXACT original editable construction. Motors start off by default.
 - Server owns simulation physics where supported. During simulation, edits and relationship changes are rejected; other players cannot simulate your work. The graph is bounded to 128 primitive models and 64 joints. Leaving the server or respawning clears simulation safely.
 - This phase adds a **reversible physics simulation / compile preview**, not persistent shipping, sophisticated mechanical drives, electronics, mass calibration, or player-saved builds. Motion and stability must be tested in Roblox Studio, particularly CSG collision fidelity.
+
+
+## Phase 07 — Shaft Fit & Physics Drive (2026.11.10.PHASE07.FIT-DRIVE)
+- In Edit, choose a full Cylinder, press L, select a tube or drilled opening, align and confirm. The editor now enters a **Fit** stage. Scroll or [ / ] to change the aligned shaft's **diameter** in **0.05 U** steps. Click/Esc finishes. The axial offset and component position are not changed.
+- In Assemble, create a Bearing or Slider; after confirmation, the same Fit stage opens. Scroll for 0.05-U diameter adjustments. A Fixed connection does not create a shaft-fitting stage.
+- Diameter changes are server-authorized ONLY for owned full Cylinder shafts with a valid recorded Align association or a Bearing/Slider relationship to that opening. The bore metadata determines maximum allowed diameter at the shaft's actual radial offset. Invalid/oversized steps are rejected; every accepted adjustment supports undo/redo.
+- Normal **V scaling on full Cylinders uses 0.25 U**, while ordinary blocks/tubes retain **0.5 U**. Fine-fit Y/Z diameters persist across subsequent scaling, history and future alignment.
+- Mechanical attachment frames now inherit the housing's LOCAL bore orientation (including DrilledBlock local Y) rather than an arbitrary world-up roll basis, preventing rotation-dependent attachment-frame flips.
+- Physics mode: in Assemble, aim at the chosen support and press P for grounded simulation; **Shift+P** starts an entirely ungrounded/free simulation (can fall under gravity). During simulation press **M** for motor on/off, **N** to reverse, **[ / ]** to change speed from 0.5x–4x by 0.5x, and **P** to stop and restore editing. Motor settings are session-only and reset when a new simulation starts.
+- This phase does not add persistent shipping or electrical wiring; native-physics runtime stability still needs Roblox Studio testing.

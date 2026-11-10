@@ -29,9 +29,10 @@ function Context:Lines()
     local lines = {}
     if not tool then return { "Choose a tool: 1–4" } end
     if player:GetAttribute("OPENWORKS_Simulating") == true then
-        append(lines, "P", "Stop physics (Assemble)")
-        append(lines, "M", "Toggle joint motors (Assemble)")
-        append(lines, "1–4", "Select native Tool")
+        append(lines, "P", "Stop physics")
+        append(lines, "M", "Motor on / off")
+        append(lines, "N", "Reverse motor direction")
+        append(lines, "[  ]", "Motor speed ±0.5x")
         return lines
     end
 
@@ -41,7 +42,7 @@ function Context:Lines()
         if c.ScaleMode then
             append(lines, "LMB hold", "Grab face")
             append(lines, "Move / Look", "Resize in 3D")
-            append(lines, "Fixed", "0.5 U per step")
+            append(lines, "Step", tostring(c.ScaleHandles.IncrementU) .. " U")
             append(lines, "Release", "Apply size")
             append(lines, "V / Esc", "Exit scale")
         elseif c.CatalogOpen then
@@ -57,7 +58,7 @@ function Context:Lines()
         if c.ScaleMode then
             append(lines, "LMB hold", "Grab face")
             append(lines, "Move / Look", "Resize in 3D")
-            append(lines, "Fixed", "0.5 U per step")
+            append(lines, "Step", tostring(c.ScaleHandles.IncrementU) .. " U")
             append(lines, "Release", "Apply size")
             append(lines, "V / Esc", "Exit scale")
         elseif c.Layered and c.Layered.Alignment then
@@ -65,6 +66,9 @@ function Context:Lines()
             if align.Stage == "PickTarget" then
                 append(lines, "LMB", "Choose opening")
                 append(lines, "Tab", "Cycle depth")
+            elseif align.Stage == "Fit" then
+                append(lines, "Wheel / [ ]", "Shaft fit ±0.05 U")
+                append(lines, "LMB / Esc", "Finish fitting")
             else
                 append(lines, "Wheel / [ ]", "Insertion depth")
                 append(lines, "LMB", "Confirm when blue")
@@ -88,12 +92,16 @@ function Context:Lines()
         end
     elseif tool == "Assemble" then
         append(lines, "P", "Simulate aimed assembly")
+        append(lines, "Shift+P", "Simulate without grounding")
         if a.Stage == "Housing" then
             append(lines, "LMB", "Choose housing")
             append(lines, "R", "Change relationship")
         elseif a.Stage == "Source" then
             append(lines, "LMB", "Choose shaft/body")
             append(lines, "R", "Change relationship")
+        elseif a.Stage == "Fit" then
+            append(lines, "Wheel / [ ]", "Shaft fit ±0.05 U")
+            append(lines, "LMB / Esc", "Finish fitting")
         else
             append(lines, "Wheel / [ ]", "Insertion depth")
             append(lines, "LMB", "Finalize when blue")

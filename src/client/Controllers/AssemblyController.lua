@@ -133,7 +133,10 @@ function Controller:ToggleSimulation()
     -- Clear staged assembly ghosts before physics starts. This does not
     -- modify the authored construction.
     self:Reset()
-    self:Request({ action = "StartSimulation", seedId = id })
+    local free = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    self:Request({ action = "StartSimulation", seedId = id,
+        grounded = not free })
 end
 
 function Controller:ToggleMotor()
@@ -142,6 +145,13 @@ function Controller:ToggleMotor()
     else
         self:Message("Press P to start simulation first")
     end
+end
+
+function Controller:TuneMotor(flip, delta)
+    if not self:IsSimulating() then return end
+    local payload = { action = "TuneSimulationMotor" }
+    if flip then payload.flip = true else payload.speedDelta = delta end
+    self:Request(payload)
 end
 
 function Controller:Message(message)
@@ -157,10 +167,17 @@ function Controller:RefreshHUD()
 
     if self:IsSimulating() then
         self.Header.Text = "OPENWORKS / PHYSICS SIMULATION"
-        self.Detail.Text = if player:GetAttribute("OPENWORKS_MotorOn") == true
-            then "MOTORS ACTIVE  /  moving assembly"
-            else "PHYSICS ACTIVE  /  unpowered joints"
-        self.Help.Text = "M motor drive on/off  •  P return to editing"
+        local motor = player:GetAttribute("OPENWORKS_MotorOn") == true
+        local multiplier = player:GetAttribute("OPENWORKS_MotorSpeed") or 1
+        local direction = player:GetAttribute("OPENWORKS_MotorDirection") or 1
+        local grounded = player:GetAttribute("OPENWORKS_Grounded") ~= false
+        self.Detail.Text = string.format(
+            "%s  /  %.1fx %s  /  %s",
+            if motor then "MOTOR ON" else "MOTOR OFF",
+            multiplier, if direction == 1 then "FWD" else "REV",
+            if grounded then "GROUNDED" else "FREE"
+        )
+        self.Help.Text = "M motor • N reverse • [ ] speed • P stop"
         if self.LastMessage and os.clock() < self.MessageUntil then
             self.Detail.Text = self.LastMessage
         end
@@ -174,6 +191,11 @@ function Controller:RefreshHUD()
     elseif self.Stage == "Source" then
         self.Detail.Text = "Choose the shaft or source component"
         self.Help.Text = "Click shaft/component • P simulate aimed mechanism • Esc reset"
+    elseif self.Stage == "Fit" then
+        local u = if self.Source and self.Source.PrimaryPart then
+            self.Source.PrimaryPart.Size.Y / Grid.Unit else 0
+        self.Detail.Text = string.format("SHAFT DIAMETER  /  %.2f U", u)
+        self.Help.Text = "Wheel / [ ]  •  0.05 U fit • click / Esc done • P simulate"
     else
         self.Detail.Text = "Insertion offset: " .. tostring(self.OffsetUnits) .. " U"
         self.Help.Text = "Wheel: 0.5 U depth • blue=clear, red=blocked • click finalize"
@@ -344,6 +366,19 @@ function Controller:Request(payload)
     return result.ok == true
 end
 
+function Controller:AdjustFit(direction)
+    if self.Stage ~= "Fit" or not self.Source or not self.Housing then
+        return
+    end
+    self:Request({
+        action = "FitShaft",
+        sourceId = self.Source:GetAttribute("InstanceId"),
+        targetId = self.Housing:GetAttribute("InstanceId"),
+        step = direction,
+    })
+    self:RefreshHUD()
+end
+
 function Controller:Activate()
     if not self.Active or self.Busy or self:IsSimulating() then return end
     if self.Stage == "Housing" then
@@ -384,6 +419,9 @@ function Controller:Activate()
         self.OffsetUnits = 0
         self.Stage = "Preview"
         self:MakePreview()
+    elseif self.Stage == "Fit" then
+        self:Reset()
+        return
     else
         if not self.Housing or not self.Source then self:Reset() return end
         if self:Kind() ~= "Fixed" and not self.PreviewValid then
@@ -397,7 +435,14 @@ function Controller:Activate()
             sourceId = self.Source:GetAttribute("InstanceId"),
             offsetUnits = self.OffsetUnits,
         }) then
-            self:Reset()
+            if self:Kind() ~= "Fixed" then
+                self:ClearPreview()
+                self.Stage = "Fit"
+                player:SetAttribute("OPENWORKS_Inserting", true)
+                self:Message("Connected • wheel fits shaft diameter by 0.05 U")
+            else
+                self:Reset()
+            end
         end
     end
     self:RefreshHUD()
@@ -441,6 +486,7 @@ function Controller:DeleteRelationship()
 end
 
 function Controller:CycleType()
+    if self.Stage == "Fit" then self:Reset() end
     self.KindIndex = self.KindIndex % #TYPES + 1
     if self.Stage == "Preview" then
         if self:Kind() ~= "Fixed" and (not Alignment.IsShaft(self.Source)
@@ -488,7 +534,16 @@ function Controller:Start()
             self:ToggleMotor()
             return
         end
-        if self:IsSimulating() then return end
+        if self:IsSimulating() then
+            if not processed and input.KeyCode == Enum.KeyCode.N then
+                self:TuneMotor(true)
+            elseif not processed and input.KeyCode == Enum.KeyCode.LeftBracket then
+                self:TuneMotor(false, -1)
+            elseif not processed and input.KeyCode == Enum.KeyCode.RightBracket then
+                self:TuneMotor(false, 1)
+            end
+            return
+        end
         if input.KeyCode == Enum.KeyCode.Escape then
             self:Reset()
         elseif processed then
@@ -508,9 +563,14 @@ function Controller:Start()
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
             self:Request({ action = "Redo" })
             self:Reset()
-        elseif self.Stage == "Preview" and
+        elseif (self.Stage == "Preview" or self.Stage == "Fit") and
             (input.KeyCode == Enum.KeyCode.LeftBracket or
             input.KeyCode == Enum.KeyCode.RightBracket) then
+            if self.Stage == "Fit" then
+                self:AdjustFit(if input.KeyCode == Enum.KeyCode.RightBracket
+                    then 1 else -1)
+                return
+            end
             self.OffsetUnits = math.clamp(
                 self.OffsetUnits + (if input.KeyCode == Enum.KeyCode.RightBracket
                     then INSERTION_STEP_U else -INSERTION_STEP_U),
@@ -520,8 +580,14 @@ function Controller:Start()
         end
     end))
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
-        if not self.Active or self.Stage ~= "Preview" or self:Kind() == "Fixed" then return end
+        if not self.Active
+            or (self.Stage ~= "Preview" and self.Stage ~= "Fit")
+            or self:Kind() == "Fixed" then return end
         if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+        if self.Stage == "Fit" then
+            self:AdjustFit(if input.Position.Z > 0 then 1 else -1)
+            return
+        end
         self.OffsetUnits = math.clamp(
             self.OffsetUnits + (if input.Position.Z > 0
                 then INSERTION_STEP_U else -INSERTION_STEP_U),
@@ -537,6 +603,11 @@ function Controller:Start()
         "OPENWORKS_MotorOn"):Connect(function()
             self:RefreshHUD()
         end))
+    for _, name in ipairs({ "OPENWORKS_MotorSpeed",
+        "OPENWORKS_MotorDirection", "OPENWORKS_Grounded" }) do
+        table.insert(self.Connections, player:GetAttributeChangedSignal(
+            name):Connect(function() self:RefreshHUD() end))
+    end
     -- Use the state of the already-equipped native tool on client startup.
     self:OnModeChanged(self.Tools.ActiveId)
 end

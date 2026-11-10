@@ -100,6 +100,8 @@ local function snapshot(model)
         assemblyPrecision = model:GetAttribute("AssemblyPrecision") == true,
         resizePrecision = model:GetAttribute("ResizePrecision") == true,
         freePosition = model:GetAttribute("FreePosition") == true,
+        fitPrecision = model:GetAttribute("FitPrecision") == true,
+        alignedOpeningId = model:GetAttribute("AlignedOpeningId"),
     }
 end
 
@@ -213,7 +215,14 @@ local function validState(player, entry, proposed)
 
     local original = entry.Model.PrimaryPart
     if not original then return false, "Missing primitive geometry" end
-    if not Grid.ValidSize(original.Size, proposed.size, entry.ResizeMode) then
+    local id = string.lower(tostring(entry.Id))
+    local isCylinder = string.find(id, "cylinder", 1, true)
+        and not string.find(id, "halfcylinder", 1, true)
+    if proposed.fitPrecision == true and not isCylinder then
+        return false, "Fine-fit precision is reserved for full Cylinder shafts"
+    end
+    if not Grid.ValidSize(original.Size, proposed.size,
+        entry.ResizeMode, proposed.fitPrecision == true) then
         return false, "Size does not match allowed Unit increments"
     end
 
@@ -235,6 +244,8 @@ local function applyState(model, data)
     model:SetAttribute("ResizePrecision", data.resizePrecision == true
         or Grid.HasFractionalSize(data.size))
     model:SetAttribute("FreePosition", data.freePosition == true)
+    model:SetAttribute("FitPrecision", data.fitPrecision == true)
+    model:SetAttribute("AlignedOpeningId", data.alignedOpeningId)
 end
 
 local function commitRecord(player, before, after)
@@ -372,6 +383,8 @@ local function update(player, payload)
         -- position; they still undergo range and full geometry validation.
         freePosition = model:GetAttribute("FreePosition") == true
             or payload.freePosition == true,
+        fitPrecision = model:GetAttribute("FitPrecision") == true,
+        alignedOpeningId = model:GetAttribute("AlignedOpeningId"),
     }
     local valid, reason = validState(player, entry, proposed)
     if not valid then return false, reason end
@@ -509,8 +522,10 @@ local function handle(player, payload)
     local action = payload.action
     local alignmentAction = action == "Align"
     local mechanicalAction = action == "CreateRelation" or action == "RemoveRelation"
+        or action == "FitShaft"
     local simulationAction = action == "StartSimulation"
         or action == "StopSimulation" or action == "ToggleSimulationMotor"
+        or action == "TuneSimulationMotor"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
         or action == "DeleteComponent"
@@ -527,7 +542,12 @@ local function handle(player, payload)
     elseif simulation and simulation:IsRunning(player) then
         return { ok = false, message = "Stop simulation (P) before editing" }
     elseif mechanicalAction then
-        if not hasEquippedTool(player, "Assemble") then
+        if action == "FitShaft" then
+            if not hasEquippedTool(player, "Assemble")
+                and not hasEquippedTool(player, "Edit") then
+                return { ok = false, message = "Equip Edit or Assemble to fit the shaft" }
+            end
+        elseif not hasEquippedTool(player, "Assemble") then
             return { ok = false, message = "Equip Assemble to edit relationships" }
         end
     elseif componentAction or alignmentAction then
@@ -541,7 +561,12 @@ local function handle(player, payload)
     end
 
     local now = os.clock()
-    if now - (lastRequest[player] or 0) < Config.MinActionInterval then
+    -- Wheel-fitting is a short, discrete, server-validated operation.
+    -- Give it a slightly shorter cooldown than placement so a normal
+    -- wheel notch doesn't feel missed, without disabling request throttling.
+    local interval = if action == "FitShaft" or action == "TuneSimulationMotor"
+        then 0.035 else Config.MinActionInterval
+    if now - (lastRequest[player] or 0) < interval then
         return { ok = false, message = "Try again" }
     end
     lastRequest[player] = now
@@ -550,6 +575,9 @@ local function handle(player, payload)
         if action == "StartSimulation" then return simulation:Start(player, payload) end
         if action == "StopSimulation" then return simulation:Stop(player) end
         if action == "ToggleSimulationMotor" then return simulation:Motor(player) end
+        if action == "TuneSimulationMotor" then
+            return simulation:TuneMotor(player, payload)
+        end
         if action == "Place" then return place(player, payload) end
         if action == "Update" then return update(player, payload) end
         if action == "Delete" then return delete(player, payload) end
@@ -557,6 +585,7 @@ local function handle(player, payload)
         if alignmentAction then return alignmentService:Align(player, payload) end
         if action == "CreateRelation" then return mechanical:Create(player, payload) end
         if action == "RemoveRelation" then return mechanical:Remove(player, payload) end
+        if action == "FitShaft" then return mechanical:Fit(player, payload) end
         return historyAction(player, action == "Undo")
     end)
 
@@ -631,6 +660,7 @@ function Service.Start()
         intersectsConstructed = intersectsConstructed,
         components = components,
         commitAssembly = commitAssembly,
+        commitRecord = commitRecord,
     })
 
     simulation = SimulationService.new({

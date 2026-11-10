@@ -149,6 +149,9 @@ function ComponentService:Plan(player, payload)
         position = payload.position, steps = payload.steps,
         size = anchorState.size,
         freePosition = true,
+        -- A fitted shaft may be the center primitive of its component.
+        -- Preserve server-authorized 0.05-U diameter precision when moving it.
+        fitPrecision = anchorState.fitPrecision,
     }
     local valid, why = d.validState(player, anchorEntry, newAnchor)
     if not valid then return nil, nil, why end

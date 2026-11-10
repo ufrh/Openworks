@@ -63,34 +63,43 @@ local function boreProfile(target)
     }
 end
 
-function Bore.ShaftFits(source, target)
+function Bore.MaxShaftDiameter(source, target): (number?, string?)
     if not Alignment.IsShaft(source) or not source.PrimaryPart then
-        return false, "Not a cylindrical shaft"
+        return nil, "Select a cylindrical shaft"
     end
     local profile = boreProfile(target)
-    if not profile then return false, "Opening lacks verifiable bore dimensions" end
+    if not profile then return nil, "Opening has no verifiable bore dimensions" end
 
-    local shaftCF = source:GetPivot()
+    local sourceCF = source:GetPivot()
     local targetCF = target:GetPivot()
-    local shaftAxis = shaftCF.RightVector
+    local shaftAxis = sourceCF.RightVector
     local holeAxis = targetCF:VectorToWorldSpace(profile.axis)
     if math.abs(shaftAxis:Dot(holeAxis)) < 0.9999 then
-        return false, "Shaft and bore axes do not match"
+        return nil, "Align the shaft axis before adjusting the fit"
     end
 
-    local diff = shaftCF.Position - targetCF.Position
-    local radial = diff - holeAxis * diff:Dot(holeAxis)
-    local alongY = math.abs(radial:Dot(targetCF:VectorToWorldSpace(profile.localY)))
-    local alongZ = math.abs(radial:Dot(targetCF:VectorToWorldSpace(profile.localZ)))
-    local diameter = math.max(source.PrimaryPart.Size.Y, source.PrimaryPart.Size.Z)
-    local radius = diameter/2
+    local delta = sourceCF.Position - targetCF.Position
+    local radial = delta - holeAxis * delta:Dot(holeAxis)
+    local y = math.abs(radial:Dot(targetCF:VectorToWorldSpace(profile.localY)))
+    local z = math.abs(radial:Dot(targetCF:VectorToWorldSpace(profile.localZ)))
+    local usableRadius
     if profile.circular then
-        if math.sqrt(alongY^2 + alongZ^2) + radius + TOL > math.min(profile.radiusY,profile.radiusZ) then
-            return false, "Shaft exceeds circular bore clearance"
-        end
-    elseif alongY + radius + TOL > profile.radiusY
-        or alongZ + radius + TOL > profile.radiusZ then
-        return false, "Shaft exceeds opening clearance"
+        usableRadius = math.min(profile.radiusY, profile.radiusZ)
+            - math.sqrt(y * y + z * z)
+    else
+        usableRadius = math.min(profile.radiusY - y, profile.radiusZ - z)
+    end
+    local diameter = math.max(0, 2 * (usableRadius - TOL))
+    if diameter <= 0 then return nil, "Shaft has no available bore clearance" end
+    return diameter
+end
+
+function Bore.ShaftFits(source, target)
+    local maxDiameter, reason = Bore.MaxShaftDiameter(source, target)
+    if not maxDiameter then return false, reason end
+    local diameter = math.max(source.PrimaryPart.Size.Y, source.PrimaryPart.Size.Z)
+    if diameter > maxDiameter + 1e-5 then
+        return false, "Shaft diameter exceeds available bore clearance"
     end
     return true
 end

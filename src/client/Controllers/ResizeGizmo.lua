@@ -103,6 +103,8 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
         Active = false,
         Hovered = nil,
         Drag = nil,
+        IncrementU = Grid.DefaultSizeStepU,
+        FineDiameter = false,
     }, Gizmo)
 
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input)
@@ -125,8 +127,10 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
     return self
 end
 
-function Gizmo:Open(cf, size, mode, templateSize)
+function Gizmo:Open(cf, size, mode, templateSize, incrementU, fineDiameter)
     self.Drag = nil
+    self.IncrementU = incrementU or Grid.DefaultSizeStepU
+    self.FineDiameter = fineDiameter == true
     self.Active = true
     self.CFrame = cf
     self.Size = size
@@ -181,7 +185,7 @@ function Gizmo:BeginDrag()
         PlaneNormal = planeNormal,
         StartAxisCoordinate = (startHit - startFace):Dot(outward),
         LastSteps = 0,
-        StepU = Grid.DefaultSizeStepU,
+        StepU = self.IncrementU,
     }
 
     -- Never freeze the camera. Moving or looking around changes the world
@@ -207,7 +211,8 @@ function Gizmo:UpdateDrag()
     if steps == drag.LastSteps then return end
 
     local size = nextSize(self.Mode, drag.StartSize, drag.Axis, steps, drag.StepU)
-    if not size or not Grid.ValidSize(self.TemplateSize, size, self.Mode) then
+    if not size or not Grid.ValidSize(self.TemplateSize, size,
+        self.Mode, self.FineDiameter) then
         return
     end
 
