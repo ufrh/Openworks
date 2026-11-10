@@ -82,7 +82,7 @@ function ToolController:BindTool(tool)
         end
 
         self.Activated:Fire(id)
-        print("[OPENWORKS] " .. id .. " activated (interaction pending)")
+        -- The phase 02 construction controller consumes this activation.
     end))
 
     table.insert(connections, tool.Destroying:Connect(function()

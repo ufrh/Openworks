@@ -8,13 +8,16 @@ local FORGE = require(ReplicatedStorage:WaitForChild("FORGE"))
 local ServerBridge = require(ServerScriptService:WaitForChild("FORGE")
     :WaitForChild("Kernel"):WaitForChild("Networking"):WaitForChild("ServerBridge"))
 
-local provisioner = require(script:WaitForChild("Runtime"):WaitForChild("NativeToolProvisioner"))
+local runtime = script:WaitForChild("Runtime")
+local provisioner = require(runtime:WaitForChild("NativeToolProvisioner"))
+local ConstructionService = require(runtime:WaitForChild("ConstructionService"))
 
 local bridge = ServerBridge.new()
 FORGE.Start({ Bridge = bridge, Roots = {} })
 provisioner.Start()
+ConstructionService.Start()
 
-print(string.format("[OPENWORKS] FORGE %s | Phase 01 server ready", tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] FORGE %s | Phase 02 server ready", tostring(FORGE.Version)))
 
 game:BindToClose(function()
     FORGE.Shutdown()

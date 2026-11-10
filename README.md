@@ -1,6 +1,6 @@
 # OPENWORKS
 
-A Roblox mechanical construction and engineering sandbox. This repository is a **clean design-first rebuild baseline** as of November 8, 2026.
+A Roblox mechanical construction and engineering sandbox. The active `dev` branch now includes the Phase 02 construction prototype: first-person native Roblox tools, primitive catalog, placement/selection, resizing, transform controls, and server-side undo/redo. The pre-redesign editor is preserved in an archive branch.
 
 ## Direction
 
@@ -21,7 +21,7 @@ Current guiding decisions (details will be finalized in the new design document)
 - `default.project.json` — existing Rojo mappings, place ID, and port 34872.
 - Local scripts and Roblox toolchain configuration.
 
-The game-specific `src/client/`, `src/server/`, and `src/shared/` trees have been reduced to minimal bootstrap stubs. They intentionally contain **no playable construction editor** yet.
+Game-specific code lives in `src/client/`, `src/server/`, and `src/shared/Construction/`. The primitive library comes from the Studio generator and must be saved in the place. Phase 02 is not yet playtested in Studio; consult `docs/PHASE_02_SMOKE_TEST.md`.
 
 ## Run
 
