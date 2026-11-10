@@ -5,7 +5,9 @@ local ContextActionService=game:GetService("ContextActionService")
 local StarterGui=game:GetService("StarterGui")
 local Mate={}
 Mate.__index=Mate
-local TYPES={"Rigid","Bearing","Slider","Cylindrical"}
+-- Kinematic joints are the default. Rigid bonds require the Weld tool.
+-- A FreeFit places geometry only; it adds no invisible solver constraint.
+local TYPES={"Cylindrical","Slider","Bearing","FreeFit"}
 local KEYS={Enum.KeyCode.One,Enum.KeyCode.Two,Enum.KeyCode.Three,
     Enum.KeyCode.Four,Enum.KeyCode.KeypadOne,Enum.KeyCode.KeypadTwo,
     Enum.KeyCode.KeypadThree,Enum.KeyCode.KeypadFour}
@@ -38,14 +40,14 @@ function Mate.new(gui)
             TextXAlignment=Enum.TextXAlignment.Left,ZIndex=121,
         })
     end
-    label("SHAFT / HOUSING",12,28,16)
-    label("How should these parts connect?",42,19,12,
+    local heading=label("SHAFT / HOUSING",12,28,16)
+    local detail=label("Choose the allowed motion (no automatic welds)",42,19,12,
         Color3.fromRGB(167,194,208))
     local subtitles={
-        "Group   •   editor only (not physically welded)",
-        "Bearing   •   rotation only",
-        "Slider   •   linear travel only",
-        "Cylindrical   •   rotation + travel",
+        "Rotate + slide   •   DEFAULT",
+        "Slide only   •   guided carriage",
+        "Rotate only   •   bearing",
+        "Fit only   •   physical contact, no joint",
     }
     for i,k in ipairs(TYPES) do
         local button=instance("TextButton",frame,{
@@ -64,14 +66,23 @@ function Mate.new(gui)
             self:Choose(i)
         end)
     end
-    label("1–4 to confirm     •     Esc to cancel",238,18,11,
+    label("1–4 / Enter (default)   •   Esc cancels",238,18,11,
         Color3.fromRGB(158,184,196))
     self.Frame=frame
+    self.Heading=heading
+    self.Detail=detail
     return self
 end
 
-function Mate:Show(callback)
+function Mate:Show(callback,fitCount)
     if self.Active then return end
+    fitCount=math.max(1,math.floor(tonumber(fitCount) or 1))
+    self.Heading.Text=if fitCount>1
+        then "MULTI-POINT FIT  /  "..tostring(fitCount).." GUIDES"
+        else "SHAFT / HOUSING"
+    self.Detail.Text=if fitCount>1
+        then "Slide only recommended for parallel guide rods"
+        else "Choose motion; no automatic welding"
     self.Active=true
     self.Callback=callback
     self.Frame.Visible=true
@@ -89,6 +100,11 @@ function Mate:Show(callback)
             if state~=Enum.UserInputState.Begin then
                 return Enum.ContextActionResult.Sink
             end
+            if key.KeyCode==Enum.KeyCode.Return
+                or key.KeyCode==Enum.KeyCode.KeypadEnter then
+                self:Choose(1)
+                return Enum.ContextActionResult.Sink
+            end
             if key.KeyCode==Enum.KeyCode.Escape then
                 self:Cancel()
                 return Enum.ContextActionResult.Sink
@@ -104,7 +120,8 @@ function Mate:Show(callback)
         Enum.KeyCode.One,Enum.KeyCode.Two,Enum.KeyCode.Three,
         Enum.KeyCode.Four,Enum.KeyCode.KeypadOne,
         Enum.KeyCode.KeypadTwo,Enum.KeyCode.KeypadThree,
-        Enum.KeyCode.KeypadFour,Enum.KeyCode.Escape
+        Enum.KeyCode.KeypadFour,Enum.KeyCode.Escape,
+        Enum.KeyCode.Return,Enum.KeyCode.KeypadEnter
     )
 end
 

@@ -5,6 +5,7 @@
 local Alignment = require(script.Parent:WaitForChild("AlignmentMath"))
 local GearMath = require(script.Parent:WaitForChild("GearMath"))
 local Grid = require(script.Parent:WaitForChild("GridMath"))
+local MultiFit = require(script.Parent:WaitForChild("MultiFitMath"))
 local Smart = {}
 Smart.SnapDistance = 2.0 -- studs; generous magnet near a component
 Smart.MaxAxialOffsetUnits = 64
@@ -202,7 +203,8 @@ end
 -- caller has positioned ghost at unsnapped world pose. Targets must be
 -- the caller's owned construction. Aim ray is optional and allows
 -- recognition THROUGH empty holes and behind other nested geometry.
-function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, aimRay)
+function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, aimRay,
+    allTargets: {Model}?)
 
     local members=Smart.Members(ghost)
     if #members==0 then return nil end
@@ -280,14 +282,26 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 end
             end
             if cf then
+                -- Evaluate the WHOLE moving component under the proposed pose:
+                -- a 4-hole plate should score four valid fits, not one click.
+                local fitted=nil
+                if kind=="Bore" then
+                    local delta=cf*ghost:GetPivot():Inverse()
+                    fitted=MultiFit.Find(members,allTargets or targets,delta,ignored)
+                    if fitted and #fitted>1 then
+                        score-=math.min(12,(#fitted-1)*2.5)
+                    end
+                end
                 local candidate={kind=kind,target=target,source=source,
                     cf=cf,offsetUnits=offset or 0,rollDegrees=roll or 0,
                     relationKind=if kind=="Bore" then "Rigid"
                         elseif kind=="Hub" then "Fixed" else "Gear",
                     reverse=kind=="Bore" and isOpening,
-                    approach=approach,score=score}
-                table.insert(matches,candidate)
+                    approach=approach,score=score,
+                    fittedCount=fitted and #fitted or 0}
                 if target==preferred then score-=1.5 end
+                candidate.score=score
+                table.insert(matches,candidate)
                 if score<bestScore then
                     bestScore=score
                     best=candidate

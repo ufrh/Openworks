@@ -29,10 +29,10 @@ function Context:Lines()
     local lines = {}
     if not tool then return { "Choose a tool: 1–5" } end
     if c.PendingMateChoice then
-        append(lines,"1","Group • edit together, no physical weld")
-        append(lines,"2","Bearing • rotation")
-        append(lines,"3","Slider • linear travel")
-        append(lines,"4","Cylindrical • slide + rotate")
+        append(lines,"1 / Enter","Rotate + slide (default)")
+        append(lines,"2","Slide only (4-rod guides)")
+        append(lines,"3","Rotate only")
+        append(lines,"4","Fit only, no relationship")
         append(lines,"Esc","Cancel connection")
         return lines
     end

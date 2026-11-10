@@ -22,7 +22,7 @@ overlap.RespectCanCollide = false
 overlap.MaxParts = 0
 
 function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
-    sourceId: string?, opening: Model?): (boolean, string?)
+    sourceId: string?, opening: Model?, fittedContacts): (boolean, string?)
     local built = workspace:FindFirstChild(Config.FolderName)
     if not built then return true end
     overlap.FilterDescendantsInstances = { built }
@@ -62,6 +62,13 @@ function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
                     and movingModel:GetAttribute("InstanceId") == sourceId
                 local fits = false
                 if eligible then fits = Bore.ShaftFits(movingModel, target) end
+                -- Each approved physical shaft/hole fit is checked separately
+                -- before being omitted from the penetration collision test.
+                if fittedContacts and movingModel
+                    and fittedContacts[movingModel]
+                    and fittedContacts[movingModel][target] then
+                    fits=true
+                end
                 if BoltMath.IsBolt(movingModel) then
                     fits=BoltMath.Fits(movingModel,target)
                 end
