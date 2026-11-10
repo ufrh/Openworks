@@ -1,6 +1,6 @@
 # OPENWORKS Phase 04 — Layered Editing & Axial Insertion
 
-Build marker: `2026.11.09.PHASE04.SCALE-SENSITIVITY`
+Build marker: `2026.11.09.PHASE04.WORLD-DRAG`
 Branch: `dev` — Rojo port `34872`
 
 Phase 04 extends the approved first-person construction controls. There is
@@ -160,3 +160,23 @@ The input path now converts delta.X/delta.Y to Vector2 first.
   update quickly, in the same small amount of mouse travel.
 - Dragging sideways along a handle's indicated direction should immediately
   move by 1 U without camera freeze. Existing grid validation still applies.
+
+
+## World-space first-person resizing (latest)
+
+- Press V while holding Build or Edit, aim at a resize face, hold LMB.
+- The original handle's **world-space face** defines a stable drag plane.
+  The camera center ray intersects it every rendered frame; displacement
+  along the chosen world-axis drives whole-Unit resizing.
+- Move/strafe/jump while holding LMB **without moving the mouse**. The
+  object's dimensions should still respond if your changing camera position
+  shifts the ray's world-space intersection along the chosen axis.
+- Turn the camera while holding LMB. The drag should change using the same
+  world intersection, not the amount of mouse movement or current zoom.
+- The grabbed face should slide along its axis and the opposite face should
+  stay stationary for one-axis scaling of ordinary Blocks.
+- Release once to commit; Ctrl+Z should undo one drag. Esc or V cancels an
+  active drag without submitting the unfinished dimensions.
+- There is no per-pixel sensitivity setting or InputObject.Delta accumulation.
+- When the crosshair ray is nearly parallel to the drag plane, resizing holds
+  the last valid state until a meaningful ray/plane intersection returns.

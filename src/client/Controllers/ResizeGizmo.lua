@@ -1,7 +1,8 @@
 --!strict
 -- First-person resize gizmo. The mouse NEVER unlocks for scaling.
 -- Aim the central crosshair at a projected face handle, hold left mouse,
--- and drag with relative MouseMovement while still turning the camera.
+-- drag using the crosshair ray's intersection with a world-space plane.
+-- Camera rotation AND player movement both change the projected world point.
 -- One server edit on release.
 
 local RunService = game:GetService("RunService")
@@ -26,10 +27,37 @@ local COLORS = {
 -- In Scale mode, select the nearest on-screen face grip even when the
 -- crosshair is not exactly over its 28px label. No inactive clicks.
 local PICK_RADIUS = math.huge
--- Fixed sensitivity, independent of camera distance and zoom.
--- Previously screen-space projection could demand dozens/hundreds of
--- pixels for a single U when the part was close to the camera.
-local PIXELS_PER_UNIT = 7
+
+-- A plane through the grabbed face, containing its resize axis.
+-- The normal is chosen to face the camera while remaining perpendicular
+-- to the resize axis; this avoids the unstable line-to-ray closest-point
+-- calculation when the player looks almost directly along the axis.
+local function dragPlaneNormal(cameraCF: CFrame, axis: Vector3): Vector3
+    local view = cameraCF.LookVector
+    local projected = view - axis * view:Dot(axis)
+    if projected.Magnitude < 0.05 then
+        local up = cameraCF.UpVector
+        projected = up - axis * up:Dot(axis)
+    end
+    if projected.Magnitude < 0.05 then
+        local right = cameraCF.RightVector
+        projected = right - axis * right:Dot(axis)
+    end
+    return projected.Unit
+end
+
+-- World-space mouse/crosshair intersection. The plane stays fixed during a
+-- drag; evaluating the moving first-person camera ray each frame means WASD,
+-- jumping and camera rotation all participate in the resize interaction.
+local function crosshairPlaneHit(camera: Camera, planePoint: Vector3, planeNormal: Vector3): Vector3?
+    local midpoint = camera.ViewportSize * 0.5
+    local ray = camera:ViewportPointToRay(midpoint.X, midpoint.Y)
+    local denominator = planeNormal:Dot(ray.Direction)
+    if math.abs(denominator) < 0.001 then return nil end
+    local depth = planeNormal:Dot(planePoint - ray.Origin) / denominator
+    if depth < 0 or depth > 4096 then return nil end
+    return ray.Origin + ray.Direction * depth
+end
 
 local function withAxis(size, axis, value)
     if axis == 1 then return Vector3.new(value, size.Y, size.Z) end
@@ -126,14 +154,6 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
         end
     end))
 
-    table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
-        if self.Drag and input.UserInputType == Enum.UserInputType.MouseMovement then
-            -- InputObject.Delta is Vector3, while a projected screen axis
-            -- is Vector2. Calling Vector3:Dot(Vector2) throws at runtime.
-            self:UpdateDrag(Vector2.new(input.Delta.X, input.Delta.Y))
-        end
-    end))
-
     table.insert(self.Connections, UserInputService.InputEnded:Connect(function(input)
         if self.Drag and input.UserInputType == Enum.UserInputType.MouseButton1 then
             self:FinishDrag()
@@ -141,7 +161,10 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
     end))
 
     table.insert(self.Connections, RunService.RenderStepped:Connect(function()
-        if self.Active then self:UpdateHandles() end
+        if self.Active then
+            if self.Drag then self:UpdateDrag() end
+            self:UpdateHandles()
+        end
     end))
 
     return self
@@ -198,10 +221,6 @@ function Gizmo:UpdateHandles()
         local screenPoint = Vector2.new(projected.X, projected.Y) + direction * 30
         handle.Point = screenPoint
         handle.Direction = direction
-        -- Resizing is a discrete 1-U operation, not a physically sized
-        -- cursor gizmo. Keep the mouse travel required per Unit consistent
-        -- at all FOV values and distances.
-        handle.PixelsPerUnit = PIXELS_PER_UNIT
         handle.Visible = visible and projected.Z > 0
         grip.Position = UDim2.fromOffset(screenPoint.X, screenPoint.Y)
         grip.Visible = handle.Visible
@@ -234,6 +253,11 @@ function Gizmo:BeginDrag()
     if not camera then return false end
 
     local outward = self.CFrame:VectorToWorldSpace(AXES[handle.Axis] * handle.Sign)
+    local startFace = self.CFrame.Position
+        + outward * self.Size[AXIS_NAMES[handle.Axis]] / 2
+    local planeNormal = dragPlaneNormal(camera.CFrame, outward)
+    local startHit = crosshairPlaneHit(camera, startFace, planeNormal)
+    if not startHit then return false end
 
     self.Drag = {
         Handle = handle,
@@ -241,40 +265,48 @@ function Gizmo:BeginDrag()
         StartSize = self.Size,
         Axis = handle.Axis,
         Direction = outward,
-        ScreenDirection = handle.Direction,
-        PixelsPerUnit = handle.PixelsPerUnit,
-        PixelTravel = 0,
+        PlanePoint = startFace,
+        PlaneNormal = planeNormal,
+        StartAxisCoordinate = (startHit - startFace):Dot(outward),
+        LastSteps = 0,
     }
 
-    -- Do not touch CameraType or Camera.CFrame. Native first-person
-    -- mouse-look remains active while the handle follows the drag.
+    -- Never freeze the camera. Moving or looking around changes the world
+    -- intersection and therefore the resize, even without MouseMovement.
     UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
     if self.OnDragStarted then self.OnDragStarted(handle.Axis, handle.Sign) end
     return true
 end
 
-function Gizmo:UpdateDrag(delta: Vector2)
+function Gizmo:UpdateDrag()
     local drag = self.Drag
     if not drag then return end
+    local camera = workspace.CurrentCamera
+    if not camera then return end
 
-    -- Locked mouse position does not move. Convert InputObject.Delta's
-    -- XY components to Vector2 before projecting onto the screen axis.
-    drag.PixelTravel += delta:Dot(drag.ScreenDirection)
+    local hit = crosshairPlaneHit(camera, drag.PlanePoint, drag.PlaneNormal)
+    if not hit then return end
 
-    local steps = math.floor(drag.PixelTravel / drag.PixelsPerUnit + 0.5)
+    local axisCoordinate = (hit - drag.PlanePoint):Dot(drag.Direction)
+    local distance = axisCoordinate - drag.StartAxisCoordinate
+    local steps = math.floor(distance / Grid.Unit + 0.5)
+
+    if steps == drag.LastSteps then return end
+
     local size = nextSize(self.Mode, drag.StartSize, drag.Axis, steps)
-
     if not size or not Grid.ValidSize(self.TemplateSize, size, self.Mode) then
         return
     end
 
-    local dragged = drag.StartCF + drag.Direction * (steps * Grid.Unit / 2)
-    -- Diameter and uniform scale can resize two or three axes at once.
-    -- Keep every resulting center on the proper half-Unit grid parity, or
-    -- the server correctly rejects an otherwise valid-looking face drag.
+    -- The grabbed face moves along its world-space outward axis while the
+    -- opposite face remains anchored. The grid function only resolves
+    -- center parity; no pixel scaling or camera locking is involved.
+    local shifted = drag.StartCF.Position + drag.Direction * (steps * Grid.Unit / 2)
     local rotation = drag.StartCF.Rotation
-    local position = Grid.SnapCenter(dragged.Position, size, rotation)
-    local cf = CFrame.new(position) * rotation
+    local snapped = Grid.SnapCenter(shifted, size, rotation)
+    local cf = CFrame.new(snapped) * rotation
+
+    drag.LastSteps = steps
     self.CFrame = cf
     self.Size = size
     self.OnChange(cf, size)
