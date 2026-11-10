@@ -536,7 +536,31 @@ function Mechanical:SmartMate(player, request, newSource)
             return false,"Invalid shaft insertion or roll"
         end
         local plan,reason
-        if reverse then
+        -- The client supplies the exact preview pose of the selected moving
+        -- primitive. Reconstruct its entire component transform, rather than
+        -- re-solving roll from a different visual starting orientation.
+        -- This is NOT trusted: all bounds, every hole and unrelated solid
+        -- collision are independently verified immediately below.
+        if typeof(request.position)=="Vector3"
+            and typeof(request.orientation)=="CFrame"
+            and d.Grid.ValidPosition(request.position) then
+            local desired=CFrame.new(request.position)
+                *request.orientation.Rotation
+            local movement=desired*source:GetPivot():Inverse()
+            plan={items={}}
+            for _,member in ipairs(members) do
+                local world=movement*member:GetPivot()
+                table.insert(plan.items,{
+                    model=member,position=world.Position,
+                    orientation=world.Rotation,
+                    steps=Alignment.MatchSteps(world.Rotation) or {
+                        x=member:GetAttribute("RotX") or 0,
+                        y=member:GetAttribute("RotY") or 0,
+                        z=member:GetAttribute("RotZ") or 0,
+                    },
+                })
+            end
+        elseif reverse then
             plan,reason=Alignment.ReversePlan(
                 members,opening,shaft,offset,roll
             )
@@ -702,9 +726,20 @@ function Mechanical:SmartMate(player, request, newSource)
             restoreMoving()
             return false,reason or "Multi-point fitting failed"
         end
-        if not MultiFit.Contains(fitPairs,request.sourceId,request.targetId) then
+        local primary
+        for _,pair in ipairs(fitPairs) do
+            if pair.movingId==request.sourceId
+                and pair.stationaryId==request.targetId then
+                primary=pair break
+            end
+        end
+        if not primary then
             restoreMoving()
             return false,"Primary shaft/hole fit is no longer aligned"
+        end
+        if math.abs(primary.depthU-offset)>0.04 then
+            restoreMoving()
+            return false,"Fitted depth does not match the selected insertion"
         end
         if request.fitTargets~=nil then
             if type(request.fitTargets)~="table"

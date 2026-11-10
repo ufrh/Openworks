@@ -1001,6 +1001,9 @@ function Controller:UpdatePreview()
     )
     local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+    -- Start each scan from the authored, unsnapped ghost pose. A damped
+    -- visual from the previous frame must never accumulate extra roll.
+    self.Preview:PivotTo(cf)
     local old=self.SmartMatch
     local match=nil
     if not alt and self.Pending~="Copy"
@@ -1144,7 +1147,9 @@ function Controller:Place(chosenKind)
         steps = stepsCopy(self.Steps),
         size = self.CurrentSize,
         numericPrecision=self.NumericPrecision==true,
-        orientation=if self.SmartMatch and self.SmartMatch.kind=="BoltHole"
+        orientation=if self.SmartMatch
+            and (self.SmartMatch.kind=="BoltHole"
+                or self.SmartMatch.kind=="Bore")
             then self.PreviewCF.Rotation else nil,
         autoMate=if self.SmartMatch then {
             kind=self.SmartMatch.kind,

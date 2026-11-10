@@ -392,9 +392,12 @@ local function place(player, payload)
         position = payload.position,
         steps = payload.steps,
         size = payload.size or (template and template.Size),
-        orientation = if payload.autoMate and payload.autoMate.kind=="BoltHole"
+        orientation = if payload.autoMate
+            and (payload.autoMate.kind=="BoltHole"
+                or payload.autoMate.kind=="Bore")
             then payload.orientation else nil,
-        freePosition=payload.autoMate and payload.autoMate.kind=="BoltHole",
+        freePosition=payload.autoMate and (payload.autoMate.kind=="BoltHole"
+            or payload.autoMate.kind=="Bore"),
     }
     proposed.resizePrecision = Grid.HasFractionalSize(proposed.size)
     proposed.numericPrecision = payload.numericPrecision == true
@@ -443,6 +446,7 @@ local function place(player, payload)
             fitTargets=mate.fitTargets,
             approach=payload.position,
             position=payload.position,
+            orientation=payload.orientation,
         },true)
         if not ok then
             model:Destroy()
