@@ -32,6 +32,25 @@ local function createGui()
     gui.Enabled = false
     gui.Parent = player:WaitForChild("PlayerGui")
 
+    -- The Build/Edit crosshair is inside a ScreenGui that is disabled
+    -- while Assemble is equipped. Give Assemble the same aim reference,
+    -- centered on the exact camera ray used by Pick().
+    local crosshair = Instance.new("TextLabel")
+    crosshair.Name = "AssemblyCrosshair"
+    crosshair.BackgroundTransparency = 1
+    crosshair.BorderSizePixel = 0
+    crosshair.Size = UDim2.fromOffset(20, 20)
+    crosshair.Position = UDim2.fromScale(0.5, 0.5)
+    crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
+    crosshair.Text = "+"
+    crosshair.TextSize = 21
+    crosshair.Font = Enum.Font.GothamMedium
+    crosshair.TextColor3 = Color3.fromRGB(229, 238, 245)
+    crosshair.TextXAlignment = Enum.TextXAlignment.Center
+    crosshair.TextYAlignment = Enum.TextYAlignment.Center
+    crosshair.ZIndex = 50
+    crosshair.Parent = gui
+
     local panel = Instance.new("Frame")
     panel.Size = UDim2.fromOffset(380, 116)
     panel.Position = UDim2.new(1, -396, 0, 20)
