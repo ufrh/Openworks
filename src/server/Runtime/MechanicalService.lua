@@ -1524,6 +1524,15 @@ function Mechanical:RebuildRelations()
                     local weld = relation:FindFirstChildOfClass("WeldConstraint")
                     weld.Part0 = target.PrimaryPart
                     weld.Part1 = source.PrimaryPart
+                    if spec.kind=="Bolt" and spec.secondTargetId then
+                        local other=self.D.findOwned(player,spec.secondTargetId)
+                        local second=relation:FindFirstChild("BoltedSecondBody")
+                        if other and other.PrimaryPart and second
+                            and second:IsA("WeldConstraint") then
+                            second.Part0=source.PrimaryPart
+                            second.Part1=other.PrimaryPart
+                        end
+                    end
                 end
             end
         end

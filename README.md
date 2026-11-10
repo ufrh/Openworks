@@ -1,6 +1,6 @@
 # OPENWORKS
 
-A Roblox mechanical construction and engineering sandbox. The active `dev` branch includes the Phase 05 mechanical relationship authoring prototype: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment (L in Edit), first-person Assemble tool authoring Bearing/Slider/Fixed constraints, and fixed 0.5-U sizing and movement increments. The pre-redesign editor is preserved in an archive branch.
+A Roblox mechanical construction and engineering sandbox. The active `dev` branch is currently on **Phase 10: explicit welds, real bolt prefab fastening, and mouse-driven Simulate Properties**. Earlier milestones included Phase 05 mechanical relationship authoring: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment (L in Edit), first-person Assemble tool authoring Bearing/Slider/Fixed constraints, and fixed 0.5-U sizing and movement increments. The pre-redesign editor is preserved in an archive branch.
 
 ## Direction
 

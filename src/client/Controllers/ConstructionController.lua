@@ -321,9 +321,13 @@ function Controller:RefreshHUD()
                 .. " • Tab target • Alt free"
             elseif match.kind=="Hub"
             then (if self.Mode=="Build" then "Click to mount on shaft" else "Release to mount on shaft")
-                .. " • wheel insertion depth • rigid hub • Alt free"
-            else (if self.Mode=="Build" then "Click to attach surfaces" else "Release to attach surfaces")
-                .. " • Alt free"
+                .. " • wheel insertion depth • editor group (weld manually)"
+            elseif match.kind=="BoltHole" then
+                (if self.Mode=="Build" then "Click to place bolt"
+                    else "Release to fasten bolt")
+                .. " • shaft connects all pierced aligned holes"
+            else (if self.Mode=="Build" then "Click to place" else "Release to place")
+                .. " • touching is NOT welded • Alt free"
     elseif self.Layered and self.Layered.Alignment then
         local alignment = self.Layered.Alignment
         if alignment.Stage == "PickTarget" then
