@@ -27,7 +27,7 @@ function Context:Lines()
     local c = self.Construction
     local a = self.Assembly
     local lines = {}
-    if not tool then return { "Choose a tool: 1–4" } end
+    if not tool then return { "Choose a tool: 1–5" } end
     if c.PendingMateChoice then
         append(lines,"1","Rigid • one component")
         append(lines,"2","Bearing • rotation")

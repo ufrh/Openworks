@@ -77,9 +77,20 @@ function Visuals:JointCue(id)
 end
 
 function Visuals:Update()
+    -- Authored spring coils are construction-only visuals.
+    local simulating=localPlayer:GetAttribute("OPENWORKS_Simulating")==true
+    local authored=workspace:FindFirstChild("OPENWORKS_Relationships")
+    if authored then
+        for _,relation in ipairs(authored:GetChildren()) do
+            if relation:GetAttribute("OwnerUserId")==localPlayer.UserId
+                and relation:GetAttribute("Kind")=="Spring" then
+                local spring=relation:FindFirstChildOfClass("SpringConstraint")
+                if spring then spring.Visible=not simulating end
+            end
+        end
+    end
     -- Live simulation replaces authored bodies with moving clones.
-    -- Hide construction guides to avoid ghost axes at old edit positions.
-    if localPlayer:GetAttribute("OPENWORKS_Simulating")==true then
+    if simulating then
         self.Folder.Parent=nil
         return
     end

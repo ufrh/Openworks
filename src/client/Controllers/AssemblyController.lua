@@ -192,7 +192,7 @@ function Controller:RefreshHUD()
     if self.Mode=="Simulate" and not self:IsSimulating() then
         self.Header.Text="OPENWORKS / SIMULATE"
         self.Detail.Text="GREEN grounded / ORANGE moving"
-        self.Help.Text="Click/G ground • P simulate all connected / entire assembly"
+        self.Help.Text="Select bodies and relationships in the Properties panel"
         if self.LastMessage and os.clock()<self.MessageUntil then
             self.Detail.Text=self.LastMessage
         end
@@ -210,7 +210,7 @@ function Controller:RefreshHUD()
             multiplier, if direction == 1 then "FWD" else "REV",
             if grounded then "GROUNDED" else "FREE"
         )
-        self.Help.Text = "M motor • N reverse • [ ] speed • O pause • U reset • P stop"
+        self.Help.Text = "Properties edits joints • M motor • O pause • P stop"
         if self.LastMessage and os.clock() < self.MessageUntil then
             self.Detail.Text = self.LastMessage
         end

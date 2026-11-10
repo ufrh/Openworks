@@ -770,9 +770,8 @@ local function validEndpoints(self,player,request)
     if not source or not target or source==target then
         return nil,nil,"Select two different parts you own"
     end
-    if sameBody(source,target) then
-        return nil,nil,"Connection requires separate rigid bodies"
-    end
+    -- Component grouping is not physical welding; individually grouped
+    -- primitives may still need an explicitly authored weld or spring.
     if not d.nearPlayer(player,source:GetPivot().Position)
         or not d.nearPlayer(player,target:GetPivot().Position) then
         return nil,nil,"Both parts must be within construction range"
@@ -832,7 +831,7 @@ end
 function Mechanical:TuneSpring(player,request)
     local relation=self:OwnedRelation(player,request.relationId)
     if not relation or relation:GetAttribute("Kind")~="Spring" then
-        return false,"Aim at a spring relationship first (J)"
+        return false,"Choose a spring in Simulate Properties"
     end
     local stiffness=request.stiffness
     local damping=request.damping

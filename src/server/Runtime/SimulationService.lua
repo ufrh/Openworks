@@ -293,7 +293,8 @@ function Simulation:Start(player, payload)
                 -- The GearLibrary root is only a transform/pivot, not metal.
                 -- Keep the through-bore physically open in simulation.
                 part.CanCollide = part:GetAttribute("GearPivotOnly") ~= true
-                part.CanQuery = false
+                -- Needed for mouse selection of running physics clones.
+                part.CanQuery = part:GetAttribute("GearPivotOnly") ~= true
                 part.CanTouch = false
             end
             copies[id] = clone
