@@ -328,6 +328,7 @@ function Controller:RebuildPreview()
             part.CanTouch = false
             part.CastShadow = false
             part.Transparency = 0.58
+            part.LocalTransparencyModifier = 0 -- cloned move previews must remain visible
             part.Color = BLUE
             if self.CurrentSize and part == ghost.PrimaryPart then
                 part.Size = self.CurrentSize
