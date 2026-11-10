@@ -48,7 +48,7 @@ function CameraController:Start()
         end
         -- Do not zoom behind a UI that has captured the cursor.
         -- In first person, Roblox's camera scripts may mark scroll as processed.
-        if processed and UserInputService.MouseBehavior == Enum.MouseBehavior.Default then
+        if UserInputService.MouseBehavior == Enum.MouseBehavior.Default then
             return
         end
 

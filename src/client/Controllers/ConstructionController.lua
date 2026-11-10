@@ -12,6 +12,7 @@ local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("C
 local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
+local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
 
 local BLUE = Color3.fromRGB(96, 174, 207)
 local DARK = Color3.fromRGB(22, 29, 38)
@@ -77,40 +78,6 @@ local function attributesSteps(model)
     }
 end
 
-local function getAxis(size, axis)
-    if axis == 1 then return size.X end
-    if axis == 2 then return size.Y end
-    return size.Z
-end
-
-local function resize(size, mode, axis, delta)
-    local u = Grid.Unit
-    if mode == "None" then return nil end
-
-    local x, y, z = size.X, size.Y, size.Z
-    if mode == "XYZ_1U" then
-        if axis == 1 then x += delta * u end
-        if axis == 2 then y += delta * u end
-        if axis == 3 then z += delta * u end
-    elseif mode == "UniformDiameter_1U" then
-        x += delta * u
-        y, z = x, x
-    elseif mode == "LengthAndDiameter_1U" then
-        if axis == 1 then
-            x += delta * u
-        else
-            y += delta * u
-            z = y
-        end
-    elseif mode == "LengthOnly_1U" then
-        x += delta * u
-    else
-        return nil
-    end
-
-    return Vector3.new(x, y, z)
-end
-
 function Controller.new(tools)
     return setmetatable({
         Tools = tools,
@@ -118,12 +85,16 @@ function Controller.new(tools)
         CurrentId = nil,
         CurrentSize = nil,
         Steps = { x = 0, y = 0, z = 0 },
-        Axis = 1,
         Selected = nil,
         Pending = nil, -- "Move", "Copy", or nil
         Preview = nil,
         PreviewCF = nil,
         CatalogOpen = false,
+        ScaleMode = false,
+        ScaleGhost = nil,
+        ScaleCF = nil,
+        ScaleSize = nil,
+        ScaleHandles = nil,
         Busy = false,
         Connections = {},
         Started = false,
@@ -160,6 +131,7 @@ function Controller:MakeUI()
 
     local catalog = rounded(create("Frame", {
         Name = "PrimitiveCatalog",
+        ZIndex = 10,
         Size = UDim2.fromOffset(330, 470),
         Position = UDim2.fromOffset(18, 70),
         BackgroundColor3 = DARK,
@@ -187,15 +159,18 @@ function Controller:MakeUI()
     }, catalog)
     create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, list)
 
-    -- A visible modal GuiButton tells Roblox's first-person camera to
-    -- release the mouse, without switching CameraMode or replacing the hotbar.
+    -- Keep a visible, full-viewport modal GuiButton behind the catalog/scale
+    -- grips to release LockFirstPerson. Roblox controls stay native.
     local unlock = create("TextButton", {
-        Name = "CatalogMouseUnlock",
-        Position = UDim2.new(1, -2, 1, -2),
-        Size = UDim2.fromOffset(1, 1),
+        Name = "MouseReleaseSurface",
+        Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
+        BorderSizePixel = 0,
         Text = "",
+        Active = true,
         Modal = true,
+        ZIndex = 1,
         Visible = false,
     }, gui)
 
@@ -207,6 +182,11 @@ function Controller:MakeUI()
     self.List = list
     self.Unlock = unlock
     self.Crosshair = crosshair
+    self.ScaleHandles = ResizeGizmo.new(gui, function(cf, size)
+        self:UpdateScalePreview(cf, size)
+    end, function(cf, size, oldCF, oldSize)
+        return self:CommitScale(cf, size, oldCF, oldSize)
+    end)
 end
 
 function Controller:RefreshCatalog()
@@ -235,15 +215,25 @@ function Controller:RefreshCatalog()
     end
 end
 
+function Controller:RefreshPointer()
+    local unlocked = self.CatalogOpen or self.ScaleMode
+    self.Unlock.Visible = unlocked
+    self.Crosshair.Visible = not unlocked
+    UserInputService.MouseIconEnabled = unlocked
+    if unlocked then
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    end
+end
+
 function Controller:ShowCatalog(visible)
+    if visible and self.ScaleMode then self:EndScale() end
     local wasOpen = self.CatalogOpen
     self.CatalogOpen = visible and self.Mode == "Build"
     if wasOpen and not self.CatalogOpen then
         self.IgnoreClickUntil = os.clock() + 0.2
     end
     self.Catalog.Visible = self.CatalogOpen
-    self.Unlock.Visible = self.CatalogOpen
-    self.Crosshair.Visible = not self.CatalogOpen
+    self:RefreshPointer()
 
     if self.CatalogOpen then
         self:RefreshCatalog()
@@ -264,15 +254,20 @@ function Controller:RefreshHUD()
 
     local mode = self.Mode
     local current = self.CurrentId or "Choose a primitive"
-    local axisName = ({ "X", "Y", "Z" })[self.Axis]
     local size = self.CurrentSize
 
     self.TitleLabel.Text = "OPENWORKS  /  " .. string.upper(mode)
-    if mode == "Build" then
+    if self.ScaleMode then
+        self.DetailLabel.Text = current .. (if self.ScaleSize then
+            "  •  " .. string.format("%.2g × %.2g × %.2g U",
+                self.ScaleSize.X / Grid.Unit, self.ScaleSize.Y / Grid.Unit, self.ScaleSize.Z / Grid.Unit)
+            else "")
+        self.HelpLabel.Text = "Drag X/Y/Z face grips to resize • 1 U steps • V/Esc finish"
+    elseif mode == "Build" then
         self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
             size.X / Grid.Unit, size.Y / Grid.Unit, size.Z / Grid.Unit) else "")
         self.HelpLabel.Text = if self.CatalogOpen then "Choose a primitive • B/Esc close"
-            else "B catalog  •  R/T/Y rotate  •  X axis (" .. axisName .. ")  •  [ ] resize"
+            else "B catalog  •  R/T/Y rotate  •  V drag resize"
     elseif self.Pending == "Move" then
         self.DetailLabel.Text = "MOVE  /  " .. (self.Selected and self.Selected.Name or "")
         self.HelpLabel.Text = "Click to place  •  R/T/Y rotate  •  Esc cancel"
@@ -281,8 +276,8 @@ function Controller:RefreshHUD()
         self.HelpLabel.Text = "Click to place copy  •  R/T/Y rotate  •  Esc cancel"
     else
         local target = self.Selected
-        self.DetailLabel.Text = if target then target.Name .. "  /  axis " .. axisName else "Click a constructed piece"
-        self.HelpLabel.Text = "G move  •  F duplicate  •  R/T/Y rotate  •  [ ] resize  •  Del"
+        self.DetailLabel.Text = if target then target.Name .. "  /  drag scale with V" else "Click a constructed piece"
+        self.HelpLabel.Text = "V drag resize  •  G move  •  F duplicate  •  R/T/Y rotate"
     end
 
     if self.StatusMessage and os.clock() < self.MessageUntil then
@@ -389,6 +384,7 @@ function Controller:CancelPending()
 end
 
 function Controller:OnModeChanged(mode)
+    self:EndScale()
     self:CancelPending()
     self.Mode = mode
     self:ShowCatalog(false)
@@ -446,6 +442,7 @@ function Controller:CastCenter(excludeSelected)
 end
 
 function Controller:UpdatePreview()
+    if self.ScaleMode then return end
     if not self.Preview or self.CatalogOpen then
         self.PreviewCF = nil
         if self.Preview then self.Preview.Parent = nil end
@@ -541,7 +538,8 @@ function Controller:ConfirmMove()
 end
 
 function Controller:Activate(mode)
-    if self.CatalogOpen or self.Busy or os.clock() < (self.IgnoreClickUntil or 0) then return end
+    if self.CatalogOpen or self.ScaleMode or self.Busy
+        or os.clock() < (self.IgnoreClickUntil or 0) then return end
 
     if mode == "Build" then
         self:Place()
@@ -602,31 +600,113 @@ function Controller:Rotate(axis)
     self:RefreshHUD()
 end
 
-function Controller:Resize(delta)
-    local templateId = self.CurrentId
-    if not templateId or not self.CurrentSize then return end
-    local entry = Registry.Get(templateId)
-    if not entry then return end
+-- Face drag scaling is an explicit pointer interaction to avoid moving the
+-- first-person camera accidentally. V opens the grips, Esc/V closes them.
+function Controller:BeginScale()
+    if self.ScaleMode or self.CatalogOpen or self.Pending then return end
+    local model = if self.Mode == "Edit" then self.Selected else self.Preview
+    if not model or not model.PrimaryPart then
+        self:Message("Aim at a surface or select a piece first")
+        return
+    end
 
-    local newSize = resize(self.CurrentSize, entry.ResizeMode, self.Axis, delta)
-    if not newSize then
+    local id = if self.Mode == "Edit" then model:GetAttribute("TemplateId") else self.CurrentId
+    local entry = id and Registry.Get(id)
+    if not entry or entry.ResizeMode == "None" then
         self:Message("This module has fixed dimensions")
         return
     end
 
-    if not Grid.ValidSize(entry.Model.PrimaryPart.Size, newSize, entry.ResizeMode) then
-        self:Message("Minimum 1 U, maximum 64 U")
+    local cf = if self.Mode == "Edit" then model:GetPivot() else self.PreviewCF
+    if not cf then
+        self:Message("Aim at a surface before resizing")
         return
     end
 
-    self.CurrentSize = newSize
-    if self.Mode == "Edit" and self.Selected and not self.Pending then
-        local rotation = Grid.Rotation(self.Steps)
-        local position = Grid.SnapCenter(self.Selected:GetPivot().Position, newSize, rotation)
-        self:ModifySelected(position, self.Steps, newSize)
-    else
-        self:RebuildPreview()
+    self.ScaleMode = true
+    self.ScaleCF = cf
+    self.ScaleSize = self.CurrentSize
+
+    if self.Mode == "Edit" then
+        local ghost = model:Clone()
+        ghost.Name = "OPENWORKS_ResizePreview"
+        for _, part in ipairs(ghost:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Anchored = true
+                part.CanCollide = false
+                part.CanQuery = false
+                part.CanTouch = false
+                part.LocalTransparencyModifier = 0
+                part.Transparency = 0.45
+                part.Color = BLUE
+            end
+        end
+        ghost.Parent = workspace
+        self.ScaleGhost = ghost
+        model.PrimaryPart.LocalTransparencyModifier = 1
     end
+
+    self.ScaleHandles:Open(cf, self.ScaleSize, entry.ResizeMode, entry.Model.PrimaryPart.Size)
+    self:RefreshPointer()
+    self:RefreshHUD()
+end
+
+function Controller:UpdateScalePreview(cf, size)
+    if not self.ScaleMode then return end
+
+    self.ScaleCF = cf
+    self.ScaleSize = size
+    self.CurrentSize = size
+
+    local ghost = if self.Mode == "Edit" then self.ScaleGhost else self.Preview
+    if ghost and ghost.PrimaryPart then
+        ghost.PrimaryPart.Size = size
+        ghost:PivotTo(cf)
+        if not ghost.Parent then ghost.Parent = workspace end
+    end
+    self:RefreshHUD()
+end
+
+function Controller:CommitScale(cf, size, oldCF, oldSize)
+    if not self.ScaleMode then return false end
+    if self.Mode == "Build" then
+        return true -- Build only updates its ghost; placement is a later click.
+    end
+    if not self.Selected or not self.Selected.Parent then return false end
+
+    -- A full drag is one history entry; no per-frame server calls.
+    local ok = self:Request({
+        action = "Update",
+        instanceId = self.Selected:GetAttribute("InstanceId"),
+        position = cf.Position,
+        steps = stepsCopy(self.Steps),
+        size = size,
+    })
+    if ok then
+        self.CurrentSize = size
+    else
+        self.CurrentSize = oldSize
+    end
+    return ok
+end
+
+function Controller:EndScale()
+    if not self.ScaleMode then return end
+    self.ScaleMode = false
+    self.ScaleHandles:Close()
+
+    if self.ScaleGhost then
+        self.ScaleGhost:Destroy()
+        self.ScaleGhost = nil
+    end
+    if self.Selected and self.Selected.PrimaryPart then
+        self.Selected.PrimaryPart.LocalTransparencyModifier = 0
+    end
+
+    self.ScaleCF = nil
+    self.ScaleSize = nil
+    self.IgnoreClickUntil = os.clock() + 0.2
+    self:RefreshPointer()
     self:RefreshHUD()
 end
 
@@ -653,10 +733,16 @@ function Controller:OnInput(input, processed)
     if self.Mode ~= "Build" and self.Mode ~= "Edit" then return end
 
     if key == Enum.KeyCode.Escape then
+        if self.ScaleMode then self:EndScale() end
         if self.CatalogOpen then self:ShowCatalog(false) end
         if self.Pending then self:CancelPending() self:RefreshHUD() end
         return
     end
+    if key == Enum.KeyCode.V and not processed then
+        if self.ScaleMode then self:EndScale() else self:BeginScale() end
+        return
+    end
+    if self.ScaleMode then return end
     if processed then return end
 
     local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
@@ -681,13 +767,6 @@ function Controller:OnInput(input, processed)
         self:Rotate("x")
     elseif key == Enum.KeyCode.Y then
         self:Rotate("z")
-    elseif key == Enum.KeyCode.X then
-        self.Axis = self.Axis % 3 + 1
-        self:RefreshHUD()
-    elseif key == Enum.KeyCode.LeftBracket or key == Enum.KeyCode.Minus then
-        self:Resize(-1)
-    elseif key == Enum.KeyCode.RightBracket or key == Enum.KeyCode.Equals then
-        self:Resize(1)
     elseif self.Mode == "Edit" and key == Enum.KeyCode.G then
         self:StartMove(false)
     elseif self.Mode == "Edit" and key == Enum.KeyCode.F then
@@ -711,6 +790,15 @@ function Controller:Start()
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
         self:OnInput(input, processed)
     end))
+    RunService:BindToRenderStep("OPENWORKS_CursorUnlock",
+        Enum.RenderPriority.Camera.Value + 2, function()
+            if self.CatalogOpen or self.ScaleMode then
+                -- Camera scripts can re-lock this during the camera step.
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                UserInputService.MouseIconEnabled = true
+            end
+        end)
+
     table.insert(self.Connections, RunService.RenderStepped:Connect(function()
         if self.Mode == "Build" or (self.Mode == "Edit" and self.Pending) then
             self:UpdatePreview()
@@ -726,6 +814,9 @@ function Controller:Start()
 end
 
 function Controller:Destroy()
+    self:EndScale()
+    RunService:UnbindFromRenderStep("OPENWORKS_CursorUnlock")
+    if self.ScaleHandles then self.ScaleHandles:Destroy() end
     self:CancelPending()
     self:ClearPreview()
     if self.SelectionHighlight then self.SelectionHighlight:Destroy() end
