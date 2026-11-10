@@ -748,6 +748,7 @@ function Service.Start()
         components = components,
         commitAssembly = commitAssembly,
         commitRecord = commitRecord,
+        commitBatch = commitBatch,
         commitJointEdit = commitJointEdit,
     })
 
