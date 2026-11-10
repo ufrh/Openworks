@@ -57,7 +57,7 @@ function Context:Lines()
                 append(lines, "Tab", "Next compatible target")
                 if c.SmartMatch.kind=="Bore" then
                     append(lines, "Wheel / Q E", "Depth / shaft roll")
-                    append(lines, "C", "Bearing / Slider / Cylindrical")
+                    append(lines, "C", "Rigid / Bearing / Slider / Cylindrical")
                 elseif c.SmartMatch.kind=="Hub" then
                     append(lines, "Hub", "Rigid gear-on-shaft mount")
                 end
@@ -96,7 +96,7 @@ function Context:Lines()
                 append(lines, "Tab / Alt", "Change target / bypass")
                 if c.SmartMatch.kind=="Bore" then
                     append(lines, "Wheel / Q E", "Depth / shaft roll")
-                    append(lines, "C", "Bearing / Slider / Cylindrical")
+                    append(lines, "C", "Rigid / Bearing / Slider / Cylindrical")
                 elseif c.SmartMatch.kind=="Hub" then
                     append(lines, "Hub", "Rigid gear-on-shaft mount")
                 end
@@ -105,10 +105,14 @@ function Context:Lines()
             end
             append(lines, "Esc", "Cancel")
         else
-            append(lines, "LMB", "Select without moving")
+            append(lines, "LMB", "Select component")
+            append(lines, "Double click", "Edit member inside component")
             append(lines, "Hold selected", "Drag to auto-align")
-            append(lines, "Alt+LMB", "Select inner layer")
+            append(lines, "Alt+LMB", "Cycle deeper layers")
             append(lines, "V / G", "Scale / Move")
+            if c.Selected and type(c.Selected:GetAttribute("AlignedOpeningId"))=="string" then
+                append(lines,"V","Resize aligned shaft length only")
+            end
             append(lines, "R / T / Y", "World-axis rotation")
             append(lines, "L", "Align shaft")
             append(lines, "C / U", "Combine / Ungroup")

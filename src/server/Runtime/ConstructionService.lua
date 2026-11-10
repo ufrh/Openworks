@@ -10,6 +10,7 @@ local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("C
 local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Bore = require(construction:WaitForChild("BoreClearance"))
+local Alignment = require(construction:WaitForChild("AlignmentMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
 local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
@@ -401,6 +402,7 @@ local function place(player, payload)
             relationKind=mate.relationKind,
             offsetUnits=mate.offsetUnits,
             rollDegrees=mate.rollDegrees,
+            reverse=mate.reverse==true,
             approach=payload.position,
             position=payload.position,
         },true)
@@ -452,20 +454,61 @@ local function update(player, payload)
         shaftRollDegrees = model:GetAttribute("ShaftRollDegrees") or 0,
         alignedOffsetU = model:GetAttribute("AlignedOffsetU") or 0,
     }
+    local before=snapshot(model)
+    local opening=before.alignedOpeningId
+        and findOwned(player,before.alignedOpeningId) or nil
+    if opening and Alignment.IsShaft(model) then
+        -- A seated shaft may change its X-axis length only.
+        -- Fine-fit diameter remains controlled by the dedicated 0.05 U
+        -- fitting workflow, not ordinary scale grips/remote updates.
+        if math.abs(proposed.size.Y-before.size.Y)>0.0001
+            or math.abs(proposed.size.Z-before.size.Z)>0.0001 then
+            return false,"Aligned shafts resize along length only (X axis)"
+        end
+    end
     local valid, reason = validState(player, entry, proposed)
     if not valid then return false, reason end
 
-    local before = snapshot(model)
     applyState(model, proposed)
-
-    if intersectsConstructed(model, model) then
-        applyState(model, before)
-        return false, "Edit intersects another piece"
+    local stillAligned=false
+    if opening and Alignment.IsShaft(model) then
+        stillAligned=Bore.ShaftFits(model,opening)
+        if stillAligned then
+            local axis=opening:GetPivot():VectorToWorldSpace(
+                Alignment.TargetAxis(opening)
+            ).Unit
+            proposed.alignedOffsetU=(model:GetPivot().Position
+                -opening:GetPivot().Position):Dot(axis)/Grid.Unit
+            model:SetAttribute("AlignedOffsetU",proposed.alignedOffsetU)
+        else
+            -- Moving one primitive OUT of its rigid component's hole
+            -- disengages the old fit so the size grips become ordinary.
+            proposed.alignedOpeningId=nil
+            proposed.alignedOffsetU=0
+            proposed.shaftRollDegrees=0
+            model:SetAttribute("AlignedOpeningId",nil)
+            model:SetAttribute("AlignedOffsetU",0)
+            model:SetAttribute("ShaftRollDegrees",0)
+        end
     end
 
-    local after = snapshot(model)
-    commitRecord(player, before, after)
-    return true, after.instanceId
+    local ignore={[model]=true}
+    if model:GetAttribute("ComponentId") then
+        for _,member in ipairs(components:Members(
+            player,model:GetAttribute("ComponentId"))) do
+            ignore[member]=true
+        end
+    end
+    if intersectsConstructed(model,ignore,
+        if stillAligned then opening else nil,
+        if stillAligned then before.instanceId else nil) then
+        applyState(model,before)
+        return false,"Edit intersects another piece"
+    end
+
+    local after=snapshot(model)
+    commitRecord(player,before,after)
+    return true,after.instanceId
 end
 
 local function rotatePrimitiveWorld(player,payload)
@@ -563,13 +606,22 @@ local function restore(player, data)
     local before = if model.Parent then snapshot(model) else nil
     applyState(model, data)
 
-    if intersectsConstructed(model, model) then
+    local ignore={[model]=true}
+    if data.componentId then
+        for _,member in ipairs(components:Members(player,data.componentId)) do
+            ignore[member]=true
+        end
+    end
+    local opening=data.alignedOpeningId
+        and findOwned(player,data.alignedOpeningId) or nil
+    if intersectsConstructed(model,ignore,opening,
+        if opening then data.instanceId else nil) then
         if before then
-            applyState(model, before)
+            applyState(model,before)
         else
             model:Destroy()
         end
-        return false, "Undo/redo blocked by another piece"
+        return false,"Undo/redo blocked by another piece"
     end
 
     model.Parent = folder

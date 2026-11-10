@@ -38,6 +38,8 @@ function Layered.new(controller)
         Alignment = nil,
         DepthIndex = 0,
         TargetDepthIndex = 0,
+        LastClickedModel = nil,
+        LastClickAt = 0,
         Connections = {},
         TargetHighlight = nil,
         HoveredCandidate = nil,
@@ -180,21 +182,46 @@ end
 
 function Layered:PickCurrent()
     local layers=self:DepthModels(nil)
-    if #layers==0 then self:Select(nil) return end
+    if #layers==0 then
+        self.LastClickedModel=nil
+        self:Select(nil)
+        return
+    end
     local alt=game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftAlt)
         or game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.RightAlt)
+    local choice=layers[1]
     if alt then
-        -- One-click layer cycling: Alt+click selects the next physical
-        -- object behind the same crosshair, including shafts in housings.
+        -- Alt+click still cycles through physical depth layers.
         local current=self.Parent.Selected or self.Parent.GroupAnchor
         local index=table.find(layers,current) or 0
         self.DepthIndex=index%#layers
-        self:Select(layers[self.DepthIndex+1])
+        choice=layers[self.DepthIndex+1]
+        self.LastClickedModel=nil
+        self:Select(choice)
         self.Parent:Message("Selected layer "..(self.DepthIndex+1)
             .."/"..#layers)
+        return
+    end
+
+    local now=os.clock()
+    local id=choice:GetAttribute("ComponentId")
+    local doubleClick=type(id)=="string"
+        and self.LastClickedModel==choice
+        and now-self.LastClickAt<=0.34
+    self.DepthIndex=0
+    if doubleClick then
+        -- Single click selects the rigid component; a second deliberate
+        -- click selects its actual primitive, with all group metadata intact.
+        self.LastClickedModel=nil
+        self.LastClickAt=0
+        self.Parent.DirectDragCandidate=nil
+        self.Parent.EditingComponentId=id
+        self:Select(choice)
+        self.Parent:Message("Editing a member of the component • E exits")
     else
-        self.DepthIndex=0
-        self:Select(layers[1])
+        self.LastClickedModel=choice
+        self.LastClickAt=now
+        self:Select(choice)
     end
 end
 

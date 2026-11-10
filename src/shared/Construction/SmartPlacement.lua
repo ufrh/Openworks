@@ -155,6 +155,37 @@ local function socketPlan(members, shaft, target, forcedByAim)
     return plan,units,roll,radial+math.abs(depth)*0.12
 end
 
+local function reverseSocketPlan(members, opening, shaft, forcedByAim)
+    local shaftCF=shaft:GetPivot()
+    local holeCF=opening:GetPivot()
+    local shaftAxis=shaftCF.RightVector
+    local holeAxis=holeCF:VectorToWorldSpace(
+        Alignment.TargetAxis(opening)
+    )
+    local axis=if holeAxis:Dot(shaftAxis)>=0 then shaftAxis
+        else -shaftAxis
+    local delta=holeCF.Position-shaftCF.Position
+    local axial=delta:Dot(axis)
+    local radial=(delta-axis*axial).Magnitude
+    local reach=math.max(0.65,math.min(1.6,
+        opening.PrimaryPart.Size.Magnitude*0.58))
+    if (radial>reach+0.65 or math.abs(axial)>math.max(
+        2.5,opening.PrimaryPart.Size.Magnitude+1.5)) and not forcedByAim then
+        return nil
+    end
+    if forcedByAim and (radial>reach+0.65 or
+        math.abs(axial)>math.max(2.5,
+            opening.PrimaryPart.Size.Magnitude+1.5)) then
+        axial=0
+    end
+    local units=math.clamp(math.round((-axial)/(Grid.Unit*0.5))*0.5,
+        -Smart.MaxAxialOffsetUnits,Smart.MaxAxialOffsetUnits)
+    local roll=shaft:GetAttribute("ShaftRollDegrees") or 0
+    local plan=Alignment.ReversePlan(members,opening,shaft,units,roll)
+    if not plan then return nil end
+    return plan,units,roll,radial+math.abs(axial)*0.12
+end
+
 local function aimDistance(ray, worldPosition)
     if not ray then return math.huge end
     local direction=ray.Direction.Unit
@@ -176,13 +207,21 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
     for _,source in ipairs(members) do
         local isShaft=Alignment.IsShaft(source)
         local isGear=gear(source)
-        if not isShaft and not isGear then continue end
+        local isOpening=Alignment.TargetAxis(source)~=nil
+        if not isShaft and not isGear and not isOpening then continue end
         for _,target in ipairs(targets) do
             if not target or not target.Parent or not target.PrimaryPart
                 or (ignored and ignored[target]) then continue end
             if source:GetAttribute("InstanceId") ~= nil
                 and source:GetAttribute("InstanceId")==target:GetAttribute("InstanceId")
                 then continue end
+            local sourceComponent=source:GetAttribute("ComponentId")
+            if type(sourceComponent)=="string" and sourceComponent~=""
+                and sourceComponent==target:GetAttribute("ComponentId") then
+                -- Interior editing must never magnetize a member onto
+                -- another member of its OWN already-rigid component.
+                continue
+            end
             local rayError=aimDistance(aimRay,target:GetPivot().Position)
             local aimReach=math.clamp(target.PrimaryPart.Size.Magnitude*0.38,0.48,1.5)
             local aimed=rayError<=aimReach
@@ -200,6 +239,18 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     approach=pose.Position
                     offset=u
                     score=if aimed then rayError+0.07 else dist
+                end
+            elseif isOpening and Alignment.IsShaft(target) then
+                local plan,u,r,dist=reverseSocketPlan(
+                    members,source,target,aimed
+                )
+                if plan then
+                    kind="Bore"
+                    cf=plan.delta*ghost:GetPivot()
+                    offset=u
+                    roll=r
+                    score=if aimed then math.min(dist,rayError+0.12) else dist
+                    approach=source:GetPivot().Position
                 end
             elseif isShaft and Alignment.TargetAxis(target) then
                 local plan,u,r,dist=socketPlan(members,source,target,aimed)
@@ -227,8 +278,9 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
             if cf then
                 local candidate={kind=kind,target=target,source=source,
                     cf=cf,offsetUnits=offset or 0,rollDegrees=roll or 0,
-                    relationKind=if kind=="Bore" then "Bearing"
+                    relationKind=if kind=="Bore" then "Rigid"
                         elseif kind=="Hub" then "Fixed" else "Gear",
+                    reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score}
                 table.insert(matches,candidate)
                 if target==preferred then score-=1.5 end

@@ -188,4 +188,69 @@ function Alignment.Plan(members, shaft, target, offsetUnits, rollDegrees)
     }
 end
 
+-- Inverted alignment: the shaft stays fixed, and a housing (possibly
+-- one primitive within a larger rigid component) is moved onto its axis.
+-- Reusing the forward alignment math keeps both drag directions exactly
+-- consistent in clearance, handedness, offset and roll.
+function Alignment.ReversePlan(members, opening, fixedShaft, offsetUnits, rollDegrees)
+    if not Alignment.TargetAxis(opening) or not Alignment.IsShaft(fixedShaft) then
+        return nil,"Choose a hole-bearing body and a fixed Cylinder shaft"
+    end
+    if not Alignment.IsOffsetValid(offsetUnits) then
+        return nil,"Insertion depth uses 0.5 U increments"
+    end
+    rollDegrees=rollDegrees or 0
+    if type(rollDegrees)~="number" or rollDegrees~=rollDegrees
+        or math.abs(rollDegrees)>360 then
+        return nil,"Invalid shaft roll"
+    end
+
+    local shaftCF=fixedShaft:GetPivot()
+    local holeCF=opening:GetPivot()
+    local currentAxis=holeCF:VectorToWorldSpace(
+        Alignment.TargetAxis(opening)
+    ).Unit
+    local shaftAxis=shaftCF.RightVector.Unit
+    -- Preserve whichever direction the user approached the existing hole
+    -- from, avoiding a sudden 180° body flip.
+    local targetAxis=if currentAxis:Dot(shaftAxis)>=0
+        then shaftAxis else -shaftAxis
+    local cross=currentAxis:Cross(targetAxis)
+    local angle=math.acos(math.clamp(currentAxis:Dot(targetAxis),-1,1))
+    local alignedRotation=if cross.Magnitude>1e-6
+        then CFrame.fromAxisAngle(cross.Unit,angle)
+        else CFrame.identity
+    local axialRoll=CFrame.fromAxisAngle(shaftAxis,math.rad(rollDegrees))
+    local desiredCenter=shaftCF.Position
+        -targetAxis*(offsetUnits*Grid.Unit)
+    local destination=CFrame.new(desiredCenter)
+        *axialRoll*alignedRotation*holeCF.Rotation
+    local delta=destination*holeCF:Inverse()
+    local items={}
+    for _,member in ipairs(members) do
+        if not member.PrimaryPart then
+            return nil,"Moving component geometry is incomplete"
+        end
+        local world=delta*member:GetPivot()
+        table.insert(items,{
+            model=member,
+            position=world.Position,
+            orientation=world.Rotation,
+            steps=Alignment.MatchSteps(world.Rotation) or {
+                x=member:GetAttribute("RotX") or 0,
+                y=member:GetAttribute("RotY") or 0,
+                z=member:GetAttribute("RotZ") or 0,
+            },
+            size=member.PrimaryPart.Size,
+        })
+    end
+    return {
+        delta=delta,
+        items=items,
+        center=desiredCenter,
+        targetAxis=targetAxis,
+        rollDegrees=rollDegrees,
+    }
+end
+
 return table.freeze(Alignment)

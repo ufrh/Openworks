@@ -21,6 +21,7 @@ local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local RotationMath = require(construction:WaitForChild("RotationMath"))
 local SmartPlacement = require(construction:WaitForChild("SmartPlacement"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
+local BoreClearance = require(construction:WaitForChild("BoreClearance"))
 
 local BLUE = Color3.fromRGB(96, 174, 207)
 local DARK = Color3.fromRGB(22, 29, 38)
@@ -110,7 +111,7 @@ function Controller.new(tools)
         SmartHighlight = nil,
         SmartOffsetDeltaU = 0,
         SmartRollDelta = 0,
-        SmartBoreKind = "Bearing",
+        SmartBoreKind = "Rigid",
         SmartLastScan = 0,
         CatalogOpen = false,
         ScaleMode = false,
@@ -301,8 +302,10 @@ function Controller:RefreshHUD()
         self.DetailLabel.Text=string.upper(match.relationKind)
             .. " / "..tostring(match.target.Name)
         self.HelpLabel.Text=if match.kind=="Bore"
-            then (if self.Mode=="Build" then "Click to connect" else "Release to connect")
-                .. " • wheel depth • Q/E roll • C joint • Tab target"
+            then (if self.Mode=="Build" then "Click to align" else "Release to align")
+                .. " • "..(if match.relationKind=="Rigid" then "auto-group"
+                    else match.relationKind)
+                .. " • wheel depth • Q/E roll • C mode • Tab target"
             elseif match.kind=="Gear"
             then (if self.Mode=="Build" then "Click to mesh gears" else "Release to mesh gears")
                 .. " • Tab target • Alt free"
@@ -350,7 +353,12 @@ function Controller:RefreshHUD()
             "  •  " .. string.format("%.2g × %.2g × %.2g U",
                 self.ScaleSize.X / Grid.Unit, self.ScaleSize.Y / Grid.Unit, self.ScaleSize.Z / Grid.Unit)
             else "")
-        self.HelpLabel.Text = "Scale: " .. tostring(self.ScaleHandles.IncrementU)
+        local aligned=self.Mode=="Edit" and self.Selected
+            and type(self.Selected:GetAttribute("AlignedOpeningId"))=="string"
+        self.HelpLabel.Text = (if aligned
+            then "Aligned shaft • X-axis length only • "
+            else "Scale: ")
+            .. tostring(self.ScaleHandles.IncrementU)
             .. " U • colored sphere, hold + move/look • V exit"
     elseif mode == "Build" then
         self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
@@ -369,14 +377,14 @@ function Controller:RefreshHUD()
             else "Rigid component") .. "  /  " .. tostring(#self.SelectedParts) .. " primitives"
         self.HelpLabel.Text = if self.Pending then
             "Aim and click to confirm  •  R/T/Y rotate  •  Esc cancel"
-            else "G move • F duplicate • L align shaft • E edit • U ungroup"
+            else "Double-click member to edit • G move • E interior • U ungroup"
     elseif #self.SelectedParts > 1 then
         self.DetailLabel.Text = tostring(#self.SelectedParts) .. " primitives selected"
         self.HelpLabel.Text = "C combine  •  Shift+click to change selection"
     elseif self.EditingComponentId then
         self.DetailLabel.Text = (self.Selected and self.Selected.Name or "Editing component")
             .. "  /  component interior"
-        self.HelpLabel.Text = "Tab depth • V scale • L align • E exit component"
+        self.HelpLabel.Text = "Click other members • V scale • E select whole component"
     else
         local target = self.Selected
         self.DetailLabel.Text = if target then target.Name .. "  /  drag scale with V" else "Click a constructed piece"
@@ -422,7 +430,7 @@ function Controller:ClearSmartMatch()
     self.SmartPreferred=nil
     self.SmartOffsetDeltaU=0
     self.SmartRollDelta=0
-    self.SmartBoreKind="Bearing"
+    self.SmartBoreKind="Rigid"
     self.SmartLastScan=0
     if self.SmartHighlight then self.SmartHighlight:Destroy() end
     self.SmartHighlight=nil
@@ -485,6 +493,7 @@ function Controller:SmartDrop()
         relationKind=match.relationKind,
         offsetUnits=match.offsetUnits,
         rollDegrees=match.rollDegrees,
+        reverse=match.reverse==true,
         approach=match.approach or exactSourcePosition,
         position=exactSourcePosition,
         orientation=exactSourceCF.Rotation,
@@ -548,10 +557,12 @@ function Controller:RecognizeAttachment(raw,hit)
             match.relationKind=self.SmartBoreKind
             local offset=math.clamp(match.offsetUnits+self.SmartOffsetDeltaU,-64,64)
             local roll=math.clamp(match.rollDegrees+self.SmartRollDelta,-360,360)
-            local plan=AlignmentMath.Plan(
-                SmartPlacement.Members(preview),match.source,match.target,
-                offset,roll
-            )
+            local moving=SmartPlacement.Members(preview)
+            local plan=if match.reverse then
+                AlignmentMath.ReversePlan(moving,match.source,match.target,
+                    offset,roll)
+                else AlignmentMath.Plan(moving,match.source,match.target,
+                    offset,roll)
             if plan then
                 match.cf=plan.delta*preview:GetPivot()
                 match.offsetUnits=offset
@@ -932,10 +943,20 @@ function Controller:UpdatePreview()
         end
         self.PreviewValid,self.PreviewReason=PreviewFeedback.Check(
             self.Preview,ignore,
-            match and match.source and
-                match.source:GetAttribute("InstanceId") or nil,
-            match and match.kind=="Bore" and match.target or nil
+            match and match.kind=="Bore" and not match.reverse
+                and match.source:GetAttribute("InstanceId") or nil,
+            match and match.kind=="Bore" and not match.reverse
+                and match.target or nil
         )
+        if match and match.kind=="Bore" and self.PreviewValid then
+            local shaft=if match.reverse then match.target else match.source
+            local hole=if match.reverse then match.source else match.target
+            local fits,why=BoreClearance.ShaftFits(shaft,hole)
+            if not fits then
+                self.PreviewValid=false
+                self.PreviewReason=why or "Shaft cannot fit the selected hole"
+            end
+        end
         PreviewFeedback.Paint(self.Preview,self.PreviewValid)
     end
 
@@ -989,6 +1010,7 @@ function Controller:Place()
             relationKind=self.SmartMatch.relationKind,
             offsetUnits=self.SmartMatch.offsetUnits,
             rollDegrees=self.SmartMatch.rollDegrees,
+            reverse=self.SmartMatch.reverse==true,
         } else nil,
     })
     if success and self.Pending == "Copy" then
@@ -1294,8 +1316,13 @@ function Controller:BeginScale()
     local cylinder = string.find(templateName, "cylinder", 1, true)
         and not string.find(templateName, "halfcylinder", 1, true)
     local step = if cylinder then 0.25 else Grid.DefaultSizeStepU
+    -- Once inside a hole, the fitted diameter is locked for ordinary
+    -- resizing. Only the cylinder's X-axis end grips are offered.
+    local aligned = self.Mode=="Edit" and cylinder
+        and type(model:GetAttribute("AlignedOpeningId"))=="string"
+    local mode=if aligned then "LengthOnly_1U" else entry.ResizeMode
     self.ScaleHandles:Open(
-        cf, self.ScaleSize, entry.ResizeMode, entry.Model.PrimaryPart.Size,
+        cf, self.ScaleSize, mode, entry.Model.PrimaryPart.Size,
         step, model:GetAttribute("FitPrecision") == true
     )
     if self.Layered then self.Layered:RefreshVisuals() end
@@ -1481,7 +1508,7 @@ function Controller:OnInput(input, processed)
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
             if self:CycleSmartTarget(reverse) then return end
         elseif key==Enum.KeyCode.C and self.SmartMatch.kind=="Bore" then
-            local kinds={"Bearing","Slider","Cylindrical"}
+            local kinds={"Rigid","Bearing","Slider","Cylindrical"}
             local index=table.find(kinds,self.SmartBoreKind) or 1
             self.SmartBoreKind=kinds[index%#kinds+1]
             self.SmartMatch.relationKind=self.SmartBoreKind
