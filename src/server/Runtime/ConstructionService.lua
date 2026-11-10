@@ -10,12 +10,16 @@ local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("C
 local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
+local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
+
+local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
 
 local Service = {}
 local folder
 local remote
 local histories = {}
 local lastRequest = {}
+local components
 
 local function historyFor(player)
     local state = histories[player]
@@ -84,13 +88,15 @@ local function snapshot(model)
             z = model:GetAttribute("RotZ") or 0,
         },
         size = primary.Size,
+        componentId = model:GetAttribute("ComponentId"),
+        componentAnchorId = model:GetAttribute("ComponentAnchorId"),
     }
 end
 
-local function createFromTemplate(player, templateId, instanceId)
+local function createFromTemplate(player, templateId, instanceId, bypassLimit)
     local entry = Registry.Get(templateId)
     if not entry then return nil, "Unknown primitive template" end
-    if ownedCount(player) >= Config.MaxPartsPerPlayer then
+    if not bypassLimit and ownedCount(player) >= Config.MaxPartsPerPlayer then
         return nil, "Construction limit reached"
     end
 
@@ -107,10 +113,24 @@ local function createFromTemplate(player, templateId, instanceId)
     end
 
     model.PrimaryPart = primary
-    primary.Anchored = true
-    primary.CanCollide = true
-    primary.CanQuery = true
-    primary.CanTouch = false
+
+    -- All constructed primitives have one consistent dark gray metal finish.
+    -- Apply to every BasePart, including precompiled UnionOperations/MeshParts.
+    for _, descendant in ipairs(model:GetDescendants()) do
+        if descendant:IsA("BasePart") then
+            descendant.MaterialVariant = ""
+            descendant.Material = Enum.Material.Metal
+            descendant.Color = DEFAULT_METAL_COLOR
+            if descendant:IsA("PartOperation") then
+                -- Precompiled CSG can otherwise retain its original face colors.
+                descendant.UsePartColor = true
+            end
+            descendant.Anchored = true
+            descendant.CanCollide = true
+            descendant.CanQuery = true
+            descendant.CanTouch = false
+        end
+    end
 
     return model
 end
@@ -150,9 +170,15 @@ local function intersectsConstructed(candidate, except)
     end
 
     for _, part in ipairs(results) do
-        if not except or not part:IsDescendantOf(except) then
-            return true
+        local isIgnored = false
+        if typeof(except) == "Instance" then
+            isIgnored = part:IsDescendantOf(except)
+        elseif type(except) == "table" then
+            local model = part:FindFirstAncestorOfClass("Model")
+            isIgnored = model ~= nil and except[model] == true
         end
+
+        if not isIgnored then return true end
     end
     return false
 end
@@ -187,6 +213,8 @@ local function applyState(model, data)
     model:SetAttribute("RotX", data.steps.x)
     model:SetAttribute("RotY", data.steps.y)
     model:SetAttribute("RotZ", data.steps.z)
+    model:SetAttribute("ComponentId", data.componentId)
+    model:SetAttribute("ComponentAnchorId", data.componentAnchorId)
 end
 
 local function commitRecord(player, before, after)
@@ -196,6 +224,68 @@ local function commitRecord(player, before, after)
         table.remove(state.undo, 1)
     end
     table.clear(state.redo)
+end
+
+local function commitBatch(player, before, after)
+    local state = historyFor(player)
+    table.insert(state.undo, { kind = "Batch", before = before, after = after })
+    if #state.undo > Config.UndoLimit then
+        table.remove(state.undo, 1)
+    end
+    table.clear(state.redo)
+end
+
+-- Restore an entire component operation atomically: prepare all replacement
+-- primitives, check all collisions against untouched models, then swap.
+-- Member IDs and component metadata are restored with geometry.
+local function restoreBatch(player, record, undo)
+    local target = if undo then record.before else record.after
+    local affected, current = {}, {}
+
+    for _, group in ipairs({ record.before, record.after }) do
+        for _, data in ipairs(group) do
+            local model = findOwned(player, data.instanceId)
+            if model and not affected[model] then
+                affected[model] = true
+                table.insert(current, model)
+            end
+        end
+    end
+
+    local finalCount = ownedCount(player) - #current + #target
+    if finalCount > Config.MaxPartsPerPlayer then
+        return false, "Construction limit reached"
+    end
+
+    local staged = {}
+    local function discard()
+        for _, model in ipairs(staged) do model:Destroy() end
+    end
+
+    for _, desired in ipairs(target) do
+        local entry = Registry.Get(desired.templateId)
+        if not entry then discard() return false, "Template unavailable" end
+        local valid, reason = validState(player, entry, desired)
+        if not valid then discard() return false, reason end
+
+        local model, why = createFromTemplate(
+            player, desired.templateId, desired.instanceId, true
+        )
+        if not model then discard() return false, why end
+        applyState(model, desired)
+        table.insert(staged, model)
+    end
+
+    for _, model in ipairs(staged) do
+        if intersectsConstructed(model, affected) then
+            discard()
+            return false, "Undo/redo blocked by another construction"
+        end
+    end
+
+    for _, model in ipairs(current) do model:Destroy() end
+    for _, model in ipairs(staged) do model.Parent = folder end
+    return true
 end
 
 local function place(player, payload)
@@ -238,6 +328,9 @@ local function update(player, payload)
         position = payload.position,
         steps = payload.steps,
         size = payload.size,
+        -- Editing one primitive inside a component must preserve membership.
+        componentId = model:GetAttribute("ComponentId"),
+        componentAnchorId = model:GetAttribute("ComponentAnchorId"),
     }
     local valid, reason = validState(player, entry, proposed)
     if not valid then return false, reason end
@@ -258,10 +351,49 @@ end
 local function delete(player, payload)
     local model = findOwned(player, payload.instanceId)
     if not model then return false, "Select a piece you own" end
-    local before = snapshot(model)
+
+    local componentId = model:GetAttribute("ComponentId")
+    if not componentId then
+        local before = snapshot(model)
+        model:Destroy()
+        commitRecord(player, before, nil)
+        return true, "Deleted"
+    end
+
+    -- If removing a primitive from inside a component, update its membership
+    -- and anchor atomically with deletion so undo recreates the old component.
+    local members = components:Members(player, componentId)
+    local before = {}
+    for _, member in ipairs(members) do
+        table.insert(before, snapshot(member))
+    end
+
     model:Destroy()
-    commitRecord(player, before, nil)
-    return true, "Deleted"
+    local remaining = {}
+    for _, member in ipairs(members) do
+        if member ~= model then table.insert(remaining, member) end
+    end
+
+    local after = {}
+    if #remaining <= 1 then
+        for _, member in ipairs(remaining) do
+            member:SetAttribute("ComponentId", nil)
+            member:SetAttribute("ComponentAnchorId", nil)
+            table.insert(after, snapshot(member))
+        end
+    else
+        local anchor = remaining[1]:GetAttribute("ComponentAnchorId")
+        if anchor == model:GetAttribute("InstanceId") then
+            anchor = remaining[1]:GetAttribute("InstanceId")
+        end
+        for _, member in ipairs(remaining) do
+            member:SetAttribute("ComponentAnchorId", anchor)
+            table.insert(after, snapshot(member))
+        end
+    end
+
+    commitBatch(player, before, after)
+    return true, "Primitive removed from component"
 end
 
 local function restore(player, data)
@@ -296,6 +428,9 @@ local function restore(player, data)
 end
 
 local function applyRecord(player, record, undo)
+    if record.kind == "Batch" then
+        return restoreBatch(player, record, undo)
+    end
     local target = if undo then record.before else record.after
     local other = if undo then record.after else record.before
     if target == nil then
@@ -328,11 +463,18 @@ local function handle(player, payload)
     end
 
     local action = payload.action
+    local componentAction = action == "Group" or action == "Ungroup"
+        or action == "TransformComponent" or action == "DuplicateComponent"
+        or action == "DeleteComponent"
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
-        and action ~= "Undo" and action ~= "Redo" then
+        and action ~= "Undo" and action ~= "Redo" and not componentAction then
         return { ok = false, message = "Unknown action" }
     end
-    if not accessFor(player, action) then
+    if componentAction then
+        if not hasEquippedTool(player, "Edit") then
+            return { ok = false, message = "Equip Edit to modify components" }
+        end
+    elseif not accessFor(player, action) then
         return { ok = false, message = "Equip Build or Edit" }
     end
 
@@ -346,6 +488,7 @@ local function handle(player, payload)
         if action == "Place" then return place(player, payload) end
         if action == "Update" then return update(player, payload) end
         if action == "Delete" then return delete(player, payload) end
+        if componentAction then return components:Handle(player, action, payload) end
         return historyAction(player, action == "Undo")
     end)
 
@@ -356,7 +499,14 @@ local function handle(player, payload)
     local message = tostring(extra or "")
     if result and action == "Place" then message = "Placed" end
     if result and action == "Update" then message = "Updated" end
-    return { ok = result == true, message = message, instanceId = if result and action == "Place" then extra else nil }
+    return {
+        ok = result == true,
+        message = if result and (action == "Group" or action == "DuplicateComponent")
+            then "Component created" else message,
+        instanceId = if result and action == "Place" then extra else nil,
+        componentId = if result and (action == "Group" or action == "DuplicateComponent")
+            then extra else nil,
+    }
 end
 
 function Service.Start()
@@ -366,6 +516,22 @@ function Service.Start()
         folder.Name = Config.FolderName
         folder.Parent = workspace
     end
+
+    components = ComponentService.new({
+        folder = folder,
+        Config = Config,
+        Grid = Grid,
+        Registry = Registry,
+        findOwned = findOwned,
+        ownedCount = ownedCount,
+        snapshot = snapshot,
+        createFromTemplate = createFromTemplate,
+        validState = validState,
+        applyState = applyState,
+        nearPlayer = nearPlayer,
+        intersectsConstructed = intersectsConstructed,
+        commitBatch = commitBatch,
+    })
 
     -- The gallery is an Edit-mode inspection aid, never buildable world geometry.
     -- This only moves it during Play; the Studio place remains unchanged.

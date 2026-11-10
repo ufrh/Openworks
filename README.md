@@ -1,6 +1,6 @@
 # OPENWORKS
 
-A Roblox mechanical construction and engineering sandbox. The active `dev` branch now includes the Phase 02 construction prototype: first-person native Roblox tools, primitive catalog, placement/selection, resizing, transform controls, and server-side undo/redo. The pre-redesign editor is preserved in an archive branch.
+A Roblox mechanical construction and engineering sandbox. The active `dev` branch includes the Phase 03 component-building prototype: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, and a dark gray Metal default appearance. The pre-redesign editor is preserved in an archive branch.
 
 ## Direction
 
@@ -21,7 +21,7 @@ Current guiding decisions (details will be finalized in the new design document)
 - `default.project.json` — existing Rojo mappings, place ID, and port 34872.
 - Local scripts and Roblox toolchain configuration.
 
-Game-specific code lives in `src/client/`, `src/server/`, and `src/shared/Construction/`. The primitive library comes from the Studio generator and must be saved in the place. Phase 02 is not yet playtested in Studio; consult `docs/PHASE_02_SMOKE_TEST.md`.
+Game-specific code lives in `src/client/`, `src/server/`, and `src/shared/Construction/`. The primitive library comes from the Studio generator and must be saved in the place. Phase 03 needs a Studio playtest; see `docs/PHASE_03_SMOKE_TEST.md`. Components are logical rigid groups in anchored construction mode; physics compilation is a later phase.
 
 ## Run
 

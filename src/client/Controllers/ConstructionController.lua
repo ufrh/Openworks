@@ -86,6 +86,11 @@ function Controller.new(tools)
         CurrentSize = nil,
         Steps = { x = 0, y = 0, z = 0 },
         Selected = nil,
+        SelectedParts = {},
+        SelectedComponentId = nil,
+        EditingComponentId = nil,
+        SelectionHighlights = {},
+        GroupAnchor = nil,
         Pending = nil, -- "Move", "Copy", or nil
         Preview = nil,
         PreviewCF = nil,
@@ -279,10 +284,24 @@ function Controller:RefreshHUD()
     elseif self.Pending == "Copy" then
         self.DetailLabel.Text = "DUPLICATE  /  " .. current
         self.HelpLabel.Text = "Click to place copy  •  R/T/Y rotate  •  Esc cancel"
+    elseif self.SelectedComponentId then
+        self.DetailLabel.Text = (if self.Pending == "ComponentMove" then "MOVING COMPONENT"
+            elseif self.Pending == "ComponentCopy" then "COPYING COMPONENT"
+            else "Rigid component") .. "  /  " .. tostring(#self.SelectedParts) .. " primitives"
+        self.HelpLabel.Text = if self.Pending then
+            "Aim and click to confirm  •  R/T/Y rotate  •  Esc cancel"
+            else "G move  •  F duplicate  •  E edit inside  •  U ungroup  •  Del"
+    elseif #self.SelectedParts > 1 then
+        self.DetailLabel.Text = tostring(#self.SelectedParts) .. " primitives selected"
+        self.HelpLabel.Text = "C combine  •  Shift+click to change selection"
+    elseif self.EditingComponentId then
+        self.DetailLabel.Text = (self.Selected and self.Selected.Name or "Editing component")
+            .. "  /  component interior"
+        self.HelpLabel.Text = "Click primitive • V scale • G move • E exit component"
     else
         local target = self.Selected
         self.DetailLabel.Text = if target then target.Name .. "  /  drag scale with V" else "Click a constructed piece"
-        self.HelpLabel.Text = "V drag resize  •  G move  •  F duplicate  •  R/T/Y rotate"
+        self.HelpLabel.Text = "Shift+click multi-select • C combine • V scale • G move"
     end
 
     if self.StatusMessage and os.clock() < self.MessageUntil then
@@ -312,7 +331,15 @@ function Controller:RebuildPreview()
     self:ClearPreview()
 
     local source
-    if self.Pending == "Move" and self.Selected then
+    if (self.Pending == "ComponentMove" or self.Pending == "ComponentCopy") and self.GroupAnchor then
+        local combined = Instance.new("Model")
+        combined.Name = "OPENWORKS_ComponentGhost"
+        for _, model in ipairs(self.SelectedParts) do
+            if model and model.Parent then model:Clone().Parent = combined end
+        end
+        combined.WorldPivot = self.GroupAnchor:GetPivot()
+        source = combined
+    elseif self.Pending == "Move" and self.Selected then
         source = self.Selected
     elseif self.Pending == "Copy" and self.Selected then
         source = self.Selected
@@ -322,7 +349,7 @@ function Controller:RebuildPreview()
     end
     if not source then return end
 
-    local ghost = source:Clone()
+    local ghost = if source.Name == "OPENWORKS_ComponentGhost" then source else source:Clone()
     ghost.Name = "OPENWORKS_Ghost"
     for _, part in ipairs(ghost:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -353,28 +380,104 @@ function Controller:RebuildPreview()
     self.Preview = ghost
 end
 
-function Controller:SetSelection(model)
-    if self.Selected == model then return end
-    self:CancelPending()
-    self.Selected = model
+function Controller:RefreshSelectionHighlights()
     if self.SelectionHighlight then
         self.SelectionHighlight:Destroy()
         self.SelectionHighlight = nil
     end
+    for _, highlight in ipairs(self.SelectionHighlights) do highlight:Destroy() end
+    table.clear(self.SelectionHighlights)
 
-    if model then
-        self.SelectionHighlight = create("Highlight", {
-            Adornee = model,
-            FillColor = BLUE,
-            FillTransparency = 0.78,
-            OutlineColor = Color3.fromRGB(151, 214, 245),
-            OutlineTransparency = 0,
-            DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-        }, self.Gui)
+    for _, model in ipairs(self.SelectedParts) do
+        if model and model.Parent then
+            local h = create("Highlight", {
+                Adornee = model,
+                FillColor = BLUE,
+                FillTransparency = 0.78,
+                OutlineColor = Color3.fromRGB(151, 214, 245),
+                OutlineTransparency = 0,
+                DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+            }, self.Gui)
+            table.insert(self.SelectionHighlights, h)
+        end
+    end
+end
+
+function Controller:SetSelection(model)
+    if self.Selected == model and not self.SelectedComponentId and #self.SelectedParts <= 1 then return end
+    self:CancelPending()
+    self.Selected = model
+    self.SelectedComponentId = nil
+    self.GroupAnchor = nil
+    self.SelectedParts = if model then { model } else {}
+    if model and model.PrimaryPart then
         self.CurrentId = model:GetAttribute("TemplateId")
         self.CurrentSize = model.PrimaryPart.Size
         self.Steps = attributesSteps(model)
     end
+    self:RefreshSelectionHighlights()
+    self:RefreshHUD()
+end
+
+function Controller:ComponentMembers(componentId)
+    local built = workspace:FindFirstChild(Config.FolderName)
+    local members = {}
+    if built then
+        for _, model in ipairs(built:GetChildren()) do
+            if model:IsA("Model")
+                and model:GetAttribute("OwnerUserId") == player.UserId
+                and model:GetAttribute("ComponentId") == componentId then
+                table.insert(members, model)
+            end
+        end
+    end
+    return members
+end
+
+function Controller:SetComponentSelection(componentId, membersOverride)
+    self:CancelPending()
+    self.Selected = nil
+    self.SelectedComponentId = componentId
+    self.SelectedParts = membersOverride or self:ComponentMembers(componentId)
+    if #self.SelectedParts == 0 then
+        self.SelectedComponentId = nil
+    else
+        local anchorId = self.SelectedParts[1]:GetAttribute("ComponentAnchorId")
+        self.GroupAnchor = nil
+        for _, model in ipairs(self.SelectedParts) do
+            if model:GetAttribute("InstanceId") == anchorId then self.GroupAnchor = model end
+        end
+        self.GroupAnchor = self.GroupAnchor or self.SelectedParts[1]
+        self.CurrentId = self.GroupAnchor:GetAttribute("TemplateId")
+        self.CurrentSize = self.GroupAnchor.PrimaryPart.Size
+        self.Steps = attributesSteps(self.GroupAnchor)
+    end
+    self:RefreshSelectionHighlights()
+    self:RefreshHUD()
+end
+
+function Controller:ToggleMultiSelection(model)
+    if model:GetAttribute("ComponentId") then return end
+    self:CancelPending()
+    -- Starting multi-selection after selecting a component begins a fresh
+    -- selection; grouped primitives cannot be mixed into a new component.
+    local members = if self.SelectedComponentId then {} else table.clone(self.SelectedParts)
+    local index = table.find(members, model)
+    if index then
+        table.remove(members, index)
+    else
+        table.insert(members, model)
+    end
+    self.SelectedParts = members
+    self.SelectedComponentId = nil
+    self.GroupAnchor = nil
+    self.Selected = if #members == 1 then members[1] else nil
+    if self.Selected then
+        self.CurrentId = self.Selected:GetAttribute("TemplateId")
+        self.CurrentSize = self.Selected.PrimaryPart.Size
+        self.Steps = attributesSteps(self.Selected)
+    end
+    self:RefreshSelectionHighlights()
     self:RefreshHUD()
 end
 
@@ -382,6 +485,11 @@ function Controller:CancelPending()
     if self.Pending then
         if self.Selected and self.Selected.PrimaryPart then
             self.Selected.PrimaryPart.LocalTransparencyModifier = 0
+        end
+        for _, model in ipairs(self.SelectedParts) do
+            if model and model.PrimaryPart then
+                model.PrimaryPart.LocalTransparencyModifier = 0
+            end
         end
         self.Pending = nil
         self:ClearPreview()
@@ -395,6 +503,7 @@ function Controller:OnModeChanged(mode)
     self:ShowCatalog(false)
     self:ClearPreview()
     if mode ~= "Edit" then
+        self.EditingComponentId = nil
         self:SetSelection(nil)
     end
     if mode == "Build" then
@@ -420,7 +529,12 @@ function Controller:CastCenter(excludeSelected)
     local ignored = {}
     if player.Character then table.insert(ignored, player.Character) end
     if self.Preview then table.insert(ignored, self.Preview) end
-    if excludeSelected and self.Selected then table.insert(ignored, self.Selected) end
+    if excludeSelected then
+        if self.Selected then table.insert(ignored, self.Selected) end
+        if self.SelectedComponentId then
+            for _, model in ipairs(self.SelectedParts) do table.insert(ignored, model) end
+        end
+    end
 
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
@@ -454,7 +568,7 @@ function Controller:UpdatePreview()
         return
     end
 
-    local hit = self:CastCenter(self.Pending == "Move")
+    local hit = self:CastCenter(self.Pending == "Move" or self.Pending == "ComponentMove")
     if not hit or not self.CurrentSize then
         self.PreviewCF = nil
         self.Preview.Parent = nil
@@ -488,7 +602,7 @@ function Controller:Request(payload)
         return false
     end
     self:Message(tostring(result.message ~= "" and result.message or "Updated"))
-    return true
+    return true, result
 end
 
 function Controller:Place()
@@ -514,15 +628,72 @@ function Controller:Pick()
     end
 
     local built = workspace:FindFirstChild(Config.FolderName)
+    if not built then return end
     local node = hit.Instance
-    while node and node.Parent ~= built do
-        node = node.Parent
+    while node and node.Parent ~= built do node = node.Parent end
+
+    if not node or not node:IsA("Model")
+        or node:GetAttribute("OwnerUserId") ~= player.UserId then
+        self:SetSelection(nil)
+        return
     end
 
-    if node and node:IsA("Model")
-        and node:GetAttribute("OwnerUserId") == player.UserId then
-        self:SetSelection(node)
+    local cid = node:GetAttribute("ComponentId")
+    if self.EditingComponentId then
+        if cid == self.EditingComponentId then
+            self:SetSelection(node)
+        else
+            self:SetSelection(nil)
+        end
+        return
+    end
+
+    if cid then
+        self:SetComponentSelection(cid)
+    elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
+        self:ToggleMultiSelection(node)
     else
+        self:SetSelection(node)
+    end
+end
+
+function Controller:CreateComponent()
+    if self.Mode ~= "Edit" or self.Pending or #self.SelectedParts < 2
+        or self.SelectedComponentId or self.EditingComponentId then return end
+    local ids = {}
+    for _, part in ipairs(self.SelectedParts) do
+        if not part or not part.Parent or part:GetAttribute("ComponentId") then
+            self:Message("Select ungrouped primitives")
+            return
+        end
+        table.insert(ids, part:GetAttribute("InstanceId"))
+    end
+
+    local ok, response = self:Request({ action = "Group", ids = ids })
+    if ok and response and response.componentId then
+        self:SetComponentSelection(response.componentId, table.clone(self.SelectedParts))
+    end
+end
+
+function Controller:UngroupComponent()
+    if not self.SelectedComponentId then return end
+    local ok = self:Request({
+        action = "Ungroup", componentId = self.SelectedComponentId,
+    })
+    if ok then
+        self.EditingComponentId = nil
+        self:SetSelection(nil)
+    end
+end
+
+function Controller:ToggleComponentEdit()
+    if self.EditingComponentId then
+        local id = self.EditingComponentId
+        self.EditingComponentId = nil
+        self:SetComponentSelection(id)
+    elseif self.SelectedComponentId then
+        self.EditingComponentId = self.SelectedComponentId
         self:SetSelection(nil)
     end
 end
@@ -542,6 +713,29 @@ function Controller:ConfirmMove()
     end
 end
 
+function Controller:ConfirmComponentPlacement()
+    if not self.SelectedComponentId or not self.GroupAnchor or not self.PreviewCF then return end
+    local isCopy = self.Pending == "ComponentCopy"
+    local ok = self:Request({
+        action = if isCopy then "DuplicateComponent" else "TransformComponent",
+        componentId = self.SelectedComponentId,
+        anchorId = self.GroupAnchor:GetAttribute("InstanceId"),
+        position = self.PreviewCF.Position,
+        steps = stepsCopy(self.Steps),
+    })
+
+    if ok then
+        self:CancelPending()
+        if not isCopy then
+            -- Replication of new primitive transforms can lag the response.
+            self:Message("Component moved")
+        else
+            self:Message("Component duplicated")
+        end
+        self:RefreshHUD()
+    end
+end
+
 function Controller:Activate(mode)
     if self.CatalogOpen or self.ScaleMode or self.Busy
         or os.clock() < (self.IgnoreClickUntil or 0) then return end
@@ -549,7 +743,9 @@ function Controller:Activate(mode)
     if mode == "Build" then
         self:Place()
     elseif mode == "Edit" then
-        if self.Pending == "Move" then
+        if self.Pending == "ComponentMove" or self.Pending == "ComponentCopy" then
+            self:ConfirmComponentPlacement()
+        elseif self.Pending == "Move" then
             self:ConfirmMove()
         elseif self.Pending == "Copy" then
             self:Place()
@@ -560,14 +756,27 @@ function Controller:Activate(mode)
 end
 
 function Controller:StartMove(copy)
-    if self.Mode ~= "Edit" or not self.Selected then return end
-    self.Pending = if copy then "Copy" else "Move"
-    self.CurrentId = self.Selected:GetAttribute("TemplateId")
-    self.CurrentSize = self.Selected.PrimaryPart.Size
-    self.Steps = attributesSteps(self.Selected)
-
-    if not copy then
-        self.Selected.PrimaryPart.LocalTransparencyModifier = 1
+    if self.Mode ~= "Edit" or self.Pending then return end
+    if self.SelectedComponentId and self.GroupAnchor then
+        self.Pending = if copy then "ComponentCopy" else "ComponentMove"
+        self.CurrentId = self.GroupAnchor:GetAttribute("TemplateId")
+        self.CurrentSize = self.GroupAnchor.PrimaryPart.Size
+        self.Steps = attributesSteps(self.GroupAnchor)
+        if not copy then
+            for _, part in ipairs(self.SelectedParts) do
+                if part.PrimaryPart then part.PrimaryPart.LocalTransparencyModifier = 1 end
+            end
+        end
+    elseif self.Selected then
+        self.Pending = if copy then "Copy" else "Move"
+        self.CurrentId = self.Selected:GetAttribute("TemplateId")
+        self.CurrentSize = self.Selected.PrimaryPart.Size
+        self.Steps = attributesSteps(self.Selected)
+        if not copy then
+            self.Selected.PrimaryPart.LocalTransparencyModifier = 1
+        end
+    else
+        return
     end
     self:RebuildPreview()
     self:RefreshHUD()
@@ -595,9 +804,22 @@ function Controller:ModifySelected(position, steps, size)
 end
 
 function Controller:Rotate(axis)
+    local oldSteps = stepsCopy(self.Steps)
     self.Steps[axis] = (self.Steps[axis] + 1) % 4
 
-    if self.Mode == "Edit" and self.Selected and not self.Pending then
+    if self.Mode == "Edit" and self.SelectedComponentId and self.GroupAnchor and not self.Pending then
+        local rotation = Grid.Rotation(self.Steps)
+        local position = Grid.SnapCenter(self.GroupAnchor:GetPivot().Position,
+            self.GroupAnchor.PrimaryPart.Size, rotation)
+        local ok = self:Request({
+            action = "TransformComponent",
+            componentId = self.SelectedComponentId,
+            anchorId = self.GroupAnchor:GetAttribute("InstanceId"),
+            position = position,
+            steps = stepsCopy(self.Steps),
+        })
+        if not ok then self.Steps = oldSteps end
+    elseif self.Mode == "Edit" and self.Selected and not self.Pending then
         local rotation = Grid.Rotation(self.Steps)
         local position = Grid.SnapCenter(self.Selected:GetPivot().Position, self.CurrentSize, rotation)
         self:ModifySelected(position, self.Steps, self.CurrentSize)
@@ -724,18 +946,26 @@ function Controller:EndScale()
 end
 
 function Controller:Delete()
-    if not self.Selected or self.Pending then return end
-    local success = self:Request({
-        action = "Delete",
-        instanceId = self.Selected:GetAttribute("InstanceId"),
-    })
-    if success then self:SetSelection(nil) end
+    if self.Pending then return end
+    local payload
+    if self.SelectedComponentId then
+        payload = { action = "DeleteComponent", componentId = self.SelectedComponentId }
+    elseif self.Selected then
+        payload = {
+            action = "Delete",
+            instanceId = self.Selected:GetAttribute("InstanceId"),
+        }
+    else
+        return
+    end
+    if self:Request(payload) then self:SetSelection(nil) end
 end
 
 function Controller:History(redo)
     if self.Mode ~= "Build" and self.Mode ~= "Edit" then return end
     local success = self:Request({ action = if redo then "Redo" else "Undo" })
     if success then
+        self.EditingComponentId = nil
         self:SetSelection(nil)
     end
 end
@@ -774,7 +1004,13 @@ function Controller:OnInput(input, processed)
     end
     if self.CatalogOpen then return end
 
-    if key == Enum.KeyCode.R then
+    if self.Mode == "Edit" and key == Enum.KeyCode.C then
+        self:CreateComponent()
+    elseif self.Mode == "Edit" and key == Enum.KeyCode.E then
+        self:ToggleComponentEdit()
+    elseif self.Mode == "Edit" and key == Enum.KeyCode.U then
+        self:UngroupComponent()
+    elseif key == Enum.KeyCode.R then
         self:Rotate("y")
     elseif key == Enum.KeyCode.T then
         self:Rotate("x")
@@ -837,6 +1073,8 @@ function Controller:Destroy()
     self:CancelPending()
     self:ClearPreview()
     if self.SelectionHighlight then self.SelectionHighlight:Destroy() end
+    for _, h in ipairs(self.SelectionHighlights) do h:Destroy() end
+    table.clear(self.SelectionHighlights)
     for _, connection in ipairs(self.Connections) do connection:Disconnect() end
     table.clear(self.Connections)
     if self.Gui then self.Gui:Destroy() end
