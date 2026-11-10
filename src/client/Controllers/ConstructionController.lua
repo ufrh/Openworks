@@ -21,6 +21,7 @@ local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEdit
 local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local RotationMath = require(construction:WaitForChild("RotationMath"))
 local SmartPlacement = require(construction:WaitForChild("SmartPlacement"))
+local MultiFit = require(construction:WaitForChild("MultiFitMath"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local BoreClearance = require(construction:WaitForChild("BoreClearance"))
 local NumericSizePanel = require(script.Parent:WaitForChild("NumericSizePanel"))
@@ -114,7 +115,7 @@ function Controller.new(tools)
         SmartHighlight = nil,
         SmartOffsetDeltaU = 0,
         SmartRollDelta = 0,
-        SmartBoreKind = "Rigid",
+        SmartBoreKind = "Cylindrical",
         SmartLastScan = 0,
         CatalogOpen = false,
         ScaleMode = false,
@@ -311,11 +312,11 @@ function Controller:RefreshHUD()
         local match=self.SmartMatch
         self.DetailLabel.Text=string.upper(match.relationKind)
             .. " / "..tostring(match.target.Name)
+            .. (if match.kind=="Bore" and (match.fittedCount or 0)>1
+                then "  •  "..tostring(match.fittedCount).." points" else "")
         self.HelpLabel.Text=if match.kind=="Bore"
             then (if self.Mode=="Build" then "Click to align" else "Release to align")
-                .. " • "..(if match.relationKind=="Rigid" then "auto-group"
-                    else match.relationKind)
-                .. " • wheel depth • Q/E roll • confirm then 1–4"
+                .. " • wheel depth • Q/E roll • select motion (no weld)"
             elseif match.kind=="Gear"
             then (if self.Mode=="Build" then "Click to mesh gears" else "Release to mesh gears")
                 .. " • Tab target • Alt free"
@@ -501,7 +502,7 @@ function Controller:OpenMateChoice(mode)
             self:CancelPending()
         end
         self:RefreshHUD()
-    end)
+    end, match.fittedCount or 1)
     return true
 end
 
@@ -536,6 +537,7 @@ function Controller:SmartDrop(chosenKind)
         offsetUnits=match.offsetUnits,
         rollDegrees=match.rollDegrees,
         reverse=match.reverse==true,
+        fitTargets=match.fitTargets,
         approach=match.approach or exactSourcePosition,
         position=exactSourcePosition,
         orientation=exactSourceCF.Rotation,
@@ -615,8 +617,17 @@ function Controller:RecognizeAttachment(raw,hit)
         targets=if self.SmartMatch and self.SmartMatch.target.Parent
             then {self.SmartMatch.target} else {}
     end
+    local allTargets={}
+    for _,model in ipairs(folder:GetChildren()) do
+        if model:IsA("Model") and model.PrimaryPart
+            and model:GetAttribute("OwnerUserId")==player.UserId
+            and not ignore[model] then
+            table.insert(allTargets,model)
+        end
+    end
     local match,list=SmartPlacement.Find(preview,targets,ignore,
-        self.SmartPreferred or (self.SmartMatch and self.SmartMatch.target),ray)
+        self.SmartPreferred or (self.SmartMatch and self.SmartMatch.target),
+        ray,allTargets)
     if match then
         if fullScan then self.SmartMatches=list end
         if match.kind=="Hub" and self.SmartOffsetDeltaU~=0 then
@@ -1017,26 +1028,66 @@ function Controller:UpdatePreview()
         elseif self.Pending == "ComponentMove" then
             for _, member in ipairs(self.SelectedParts) do ignore[member] = true end
         end
-        self.PreviewValid,self.PreviewReason=PreviewFeedback.Check(
-            self.Preview,ignore,
-            match and match.kind=="Bore" and not match.reverse
-                and match.source:GetAttribute("InstanceId") or nil,
-            match and match.kind=="Bore" and not match.reverse
-                and match.target or nil
-        )
+        local approved=nil
+        if match and match.kind=="Bore" then
+            local allTargets={}
+            local folder=workspace:FindFirstChild(Config.FolderName)
+            if folder then
+                for _,model in ipairs(folder:GetChildren()) do
+                    if model:IsA("Model")
+                        and model:GetAttribute("OwnerUserId")==player.UserId
+                        and not ignore[model] then
+                        table.insert(allTargets,model)
+                    end
+                end
+            end
+            local matches,why=MultiFit.Find(
+                SmartPlacement.Members(self.Preview),allTargets)
+            if matches then
+                approved=MultiFit.AllowMap(matches)
+                match.fittedCount=#matches
+                local names={}
+                local seen={}
+                for _,pair in ipairs(matches) do
+                    if not seen[pair.stationaryId] then
+                        table.insert(names,pair.stationaryId)
+                        seen[pair.stationaryId]=true
+                    end
+                end
+                table.sort(names)
+                match.fitTargets=names
+                local primary=false
+                for _,pair in ipairs(matches) do
+                    if pair.moving==match.source
+                        and pair.stationary==match.target then
+                        primary=true break
+                    end
+                end
+                if not primary then
+                    self.PreviewValid=false
+                    self.PreviewReason="Shaft/hole fit is not coaxial or lacks clearance"
+                end
+            else
+                self.PreviewValid=false
+                self.PreviewReason=why
+            end
+        end
+        local clear,obstruction=PreviewFeedback.Check(
+            self.Preview,ignore,nil,nil,approved)
+        if self.PreviewValid==false then
+            -- Keep the more specific fitting error.
+        else
+            self.PreviewValid,self.PreviewReason=clear,obstruction
+        end
         if match and match.kind=="BoltHole" and self.PreviewValid
             and not BoltMath.Fits(self.Preview,match.target) then
             self.PreviewValid=false
             self.PreviewReason="Bolt must pass through the selected hole"
         end
-        if match and match.kind=="Bore" and self.PreviewValid then
-            local shaft=if match.reverse then match.target else match.source
-            local hole=if match.reverse then match.source else match.target
-            local fits,why=BoreClearance.ShaftFits(shaft,hole)
-            if not fits then
-                self.PreviewValid=false
-                self.PreviewReason=why or "Shaft cannot fit the selected hole"
-            end
+        if match and match.kind=="Bore" and
+            (not self.LastFitCount or self.LastFitCount~=match.fittedCount) then
+            self.LastFitCount=match.fittedCount
+            self:RefreshHUD()
         end
         PreviewFeedback.Paint(self.Preview,self.PreviewValid)
     end
@@ -1100,6 +1151,7 @@ function Controller:Place(chosenKind)
             offsetUnits=self.SmartMatch.offsetUnits,
             rollDegrees=self.SmartMatch.rollDegrees,
             reverse=self.SmartMatch.reverse==true,
+            fitTargets=self.SmartMatch.fitTargets,
         } else nil,
     })
     if success and self.Pending == "Copy" then
