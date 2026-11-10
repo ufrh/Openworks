@@ -6,6 +6,8 @@ local Config = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("BuildConfig"))
 local Bore = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("BoreClearance"))
+local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("GearMath"))
 
 local Feedback = {}
 Feedback.ValidColor = Color3.fromRGB(83, 176, 241)
@@ -23,7 +25,8 @@ function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
     overlap.FilterDescendantsInstances = { built }
 
     for _, part in ipairs(ghost:GetDescendants()) do
-        if not part:IsA("BasePart") then continue end
+        if not part:IsA("BasePart")
+            or part:GetAttribute("GearPivotOnly")==true then continue end
         local probe = part:Clone()
         -- Actual precompiled CSG geometry, not a bounding-box-only check.
         probe.Name = "OPENWORKS_LocalPreviewProbe"
@@ -48,6 +51,7 @@ function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
         for _, object in ipairs(touching) do
             local target = object:FindFirstAncestorOfClass("Model")
             if target and target.Parent == built
+                and object:GetAttribute("GearPivotOnly")~=true
                 and not (ignored and ignored[target]) then
                 local movingModel = part:FindFirstAncestorOfClass("Model")
                 local eligible = target == opening and sourceId
@@ -55,7 +59,7 @@ function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
                     and movingModel:GetAttribute("InstanceId") == sourceId
                 local fits = false
                 if eligible then fits = Bore.ShaftFits(movingModel, target) end
-                if not fits then
+                if not fits and not GearMath.Meshable(movingModel,target) then
                     return false, tostring(movingModel and movingModel.Name or part.Name)
                         .. " interferes with " .. tostring(target.Name)
                 end
@@ -79,6 +83,7 @@ function Feedback.Paint(ghost: Model?, valid: boolean)
         elseif object:IsA("Highlight") then
             object.FillColor = color
             object.OutlineColor = color
+            object.OutlineTransparency = 1
         end
     end
 end

@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS phase 01: native first-person tools and camera controls.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.10.PHASE07.FIT-DRIVE"
+local BUILD = "2026.11.10.PHASE08.MECHANICAL-WORLD"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -15,6 +15,7 @@ local ToolController = require(controllers:WaitForChild("ToolController"))
 local ConstructionController = require(controllers:WaitForChild("ConstructionController"))
 local AssemblyController = require(controllers:WaitForChild("AssemblyController"))
 local ContextKeybinds = require(controllers:WaitForChild("ContextKeybinds"))
+local WorldVisuals = require(controllers:WaitForChild("WorldVisuals"))
 
 FORGE.Start({ Roots = {} })
 
@@ -35,6 +36,9 @@ local contextKeybinds = ContextKeybinds.new(
 )
 contextKeybinds:Start()
 
+local worldVisuals = WorldVisuals.new()
+worldVisuals:Start()
+
 local entries = PrimitiveRegistry.List()
 if not PrimitiveRegistry.IsAvailable() then
     warn("[OPENWORKS] Primitive library not found in ReplicatedStorage; run the Studio generator and save the place.")
@@ -42,4 +46,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | Phase 07 client ready", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | Phase 08 client ready", BUILD, tostring(FORGE.Version)))

@@ -53,7 +53,9 @@ function Service:Align(player, request)
         end
     end
 
-    local plan, reason = Alignment.Plan(members, shaft, target, request.offsetUnits)
+    local plan, reason = Alignment.Plan(
+        members, shaft, target, request.offsetUnits, request.rollDegrees
+    )
     if not plan then return false, reason end
 
     local before, planned, ignored = {}, {}, {}
@@ -65,6 +67,7 @@ function Service:Align(player, request)
             templateId = old.templateId,
             position = item.position,
             steps = item.steps,
+            orientation = item.orientation,
             size = old.size,
             componentId = old.componentId,
             componentAnchorId = old.componentAnchorId,
@@ -73,6 +76,11 @@ function Service:Align(player, request)
             fitPrecision = old.fitPrecision,
             alignedOpeningId = if member == shaft then
                 target:GetAttribute("InstanceId") else old.alignedOpeningId,
+            shaftRollDegrees = if member == shaft
+                then request.rollDegrees or 0 else old.shaftRollDegrees,
+            alignedOffsetU = if member == shaft
+                then request.offsetUnits else old.alignedOffsetU,
+            grounded = old.grounded,
         }
         local entry = d.Registry.Get(old.templateId)
         if not entry then return false, "A component template is missing" end

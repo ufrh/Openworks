@@ -15,9 +15,10 @@ local Config = require(construction:WaitForChild("BuildConfig"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Alignment = require(construction:WaitForChild("AlignmentMath"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
+local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local INSERTION_STEP_U = 0.5
 
-local TYPES = { "Bearing", "Slider", "Fixed" }
+local TYPES = { "Bearing", "Slider", "Cylindrical", "Fixed" }
 local Controller = {}
 Controller.__index = Controller
 
@@ -94,6 +95,10 @@ function Controller.new(tools)
         Source = nil,
         Members = {},
         OffsetUnits = 0,
+        RollDegrees = 0,
+        GearFirst = nil,
+        Joint = nil,
+        LastRollSend = 0,
         PreviewModel = nil,
         PreviewValid = true,
         LastMessage = nil,
@@ -121,7 +126,7 @@ function Controller:ToggleSimulation()
 
     local seed = self:Pick()
     if not seed then
-        self:Message("Aim at the housing of a connected mechanism, then press P")
+        self:Message("Aim at a connected mechanism, then press P")
         return
     end
     local id = seed:GetAttribute("InstanceId")
@@ -135,6 +140,7 @@ function Controller:ToggleSimulation()
     self:Reset()
     local free = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    self.SimSeedId = id
     self:Request({ action = "StartSimulation", seedId = id,
         grounded = not free })
 end
@@ -177,7 +183,7 @@ function Controller:RefreshHUD()
             multiplier, if direction == 1 then "FWD" else "REV",
             if grounded then "GROUNDED" else "FREE"
         )
-        self.Help.Text = "M motor • N reverse • [ ] speed • P stop"
+        self.Help.Text = "M motor • N reverse • [ ] speed • O pause • U reset • P stop"
         if self.LastMessage and os.clock() < self.MessageUntil then
             self.Detail.Text = self.LastMessage
         end
@@ -185,7 +191,22 @@ function Controller:RefreshHUD()
     end
 
     self.Header.Text = "OPENWORKS / ASSEMBLE / " .. string.upper(self:Kind())
-    if self.Stage == "Housing" then
+    if self.Stage == "GearFirst" then
+        self.Header.Text = "OPENWORKS / GEAR TRANSMISSION"
+        self.Detail.Text = "Choose the first gear"
+        self.Help.Text = "Click first gear • K/Esc cancel"
+    elseif self.Stage == "GearSecond" then
+        self.Header.Text = "OPENWORKS / GEAR TRANSMISSION"
+        self.Detail.Text = "Choose the mating gear"
+        self.Help.Text = "Click second gear • tooth pitch / spacing validated"
+    elseif self.Stage == "JointSettings" then
+        local kind = self.Joint and self.Joint:GetAttribute("Kind") or "Joint"
+        local low = self.Joint and self.Joint:GetAttribute("LowerLimit") or -90
+        local high = self.Joint and self.Joint:GetAttribute("UpperLimit") or 90
+        self.Header.Text = "OPENWORKS / " .. string.upper(kind) .. " LIMITS"
+        self.Detail.Text = tostring(low) .. " — " .. tostring(high)
+        self.Help.Text = "U toggle limits • [ ] adjust travel • Esc close"
+    elseif self.Stage == "Housing" then
         self.Detail.Text = "Choose the housing or opening"
         self.Help.Text = "Click an opening • R relationship • P simulate aimed mechanism"
     elseif self.Stage == "Source" then
@@ -195,10 +216,11 @@ function Controller:RefreshHUD()
         local u = if self.Source and self.Source.PrimaryPart then
             self.Source.PrimaryPart.Size.Y / Grid.Unit else 0
         self.Detail.Text = string.format("SHAFT DIAMETER  /  %.2f U", u)
-        self.Help.Text = "Wheel / [ ]  •  0.05 U fit • click / Esc done • P simulate"
+        self.Help.Text = "Wheel fit • Alt+wheel depth • Shift+wheel/Q/E rotate • click done"
     else
-        self.Detail.Text = "Insertion offset: " .. tostring(self.OffsetUnits) .. " U"
-        self.Help.Text = "Wheel: 0.5 U depth • blue=clear, red=blocked • click finalize"
+        self.Detail.Text = string.format("Insertion %.1f U  /  rotation %.0f°",
+            self.OffsetUnits,self.RollDegrees)
+        self.Help.Text = "Wheel depth • Q/E rotate • blue clear / red blocked • click create"
     end
 
     if self.Stage == "Preview" and self:Kind() ~= "Fixed" and not self.PreviewValid then
@@ -223,7 +245,7 @@ local function highlight(model, color)
     h.FillColor = color
     h.OutlineColor = color
     h.FillTransparency = 0.8
-    h.OutlineTransparency = 0
+    h.OutlineTransparency = 1
     h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     h.Parent = model
     return h
@@ -232,6 +254,8 @@ end
 function Controller:ClearPreview()
     if self.PreviewModel then self.PreviewModel:Destroy() end
     self.PreviewModel = nil
+    self.VisualPose = nil
+    self.TargetPose = nil
     player:SetAttribute("OPENWORKS_Inserting", false)
 end
 
@@ -243,6 +267,9 @@ function Controller:Reset()
     self.Source = nil
     self.Members = {}
     self.OffsetUnits = 0
+    self.RollDegrees = 0
+    self.GearFirst = nil
+    self.Joint = nil
     self:RefreshHUD()
 end
 
@@ -312,7 +339,8 @@ function Controller:MakePreview()
                 part.CanTouch = false
                 part.CastShadow = false
                 part.LocalTransparencyModifier = 0
-                part.Transparency = 0.45
+                part.Transparency = if part:GetAttribute("GearPivotOnly")==true
+                    then 1 else 0.45
                 part.Color = Color3.fromRGB(91, 201, 187)
             end
         end
@@ -321,6 +349,8 @@ function Controller:MakePreview()
     ghost.Parent = workspace
     self.PreviewModel = ghost
     self.GhostStart = ghost:GetPivot()
+    self.VisualPose = self.GhostStart
+    self.TargetPose = self.GhostStart
     player:SetAttribute("OPENWORKS_Inserting", true)
     self:UpdatePreview()
 end
@@ -332,14 +362,17 @@ function Controller:UpdatePreview()
     if self:Kind() == "Fixed" then return end
 
     local plan, reason = Alignment.Plan(
-        self.Members, self.Source, self.Housing, self.OffsetUnits
+        self.Members, self.Source, self.Housing, self.OffsetUnits,
+        self.RollDegrees
     )
     if not plan then
         self:Message(tostring(reason))
         return
     end
     if self.PreviewModel then
-        self.PreviewModel:PivotTo(plan.delta * self.GhostStart)
+        local goal = plan.delta * self.GhostStart
+        local visual = self.VisualPose or self.PreviewModel:GetPivot()
+        self.PreviewModel:PivotTo(goal)
         local ignore = {}
         for _, member in ipairs(self.Members) do ignore[member] = true end
         self.PreviewValid, self.PreviewReason = PreviewFeedback.Check(
@@ -347,6 +380,9 @@ function Controller:UpdatePreview()
             self.Housing
         )
         PreviewFeedback.Paint(self.PreviewModel, self.PreviewValid)
+        self.TargetPose = goal
+        self.VisualPose = visual
+        self.PreviewModel:PivotTo(visual)
     end
     self:RefreshHUD()
 end
@@ -379,9 +415,120 @@ function Controller:AdjustFit(direction)
     self:RefreshHUD()
 end
 
+function Controller:PoseConnected(offset,roll)
+    if self.Stage~="Fit" or not self.Source or not self.Housing then return end
+    local ok=self:Request({
+        action="PoseShaft",
+        sourceId=self.Source:GetAttribute("InstanceId"),
+        targetId=self.Housing:GetAttribute("InstanceId"),
+        offsetUnits=offset,
+        rollDegrees=roll,
+    })
+    if ok then
+        self.OffsetUnits=offset
+        self.RollDegrees=roll
+    end
+end
+
+function Controller:ChangeRoll(delta)
+    local degrees=math.clamp(math.round(self.RollDegrees+delta),-360,360)
+    if self.Stage=="Preview" then
+        self.RollDegrees=degrees
+        self:UpdatePreview()
+    elseif self.Stage=="Fit" then
+        self:PoseConnected(self.OffsetUnits,degrees)
+    end
+end
+
+function Controller:ToggleGearMode()
+    if self.Stage=="GearFirst" or self.Stage=="GearSecond" then
+        self:Reset()
+    else
+        self:Reset()
+        self.Stage="GearFirst"
+        self:RefreshHUD()
+    end
+end
+
+function Controller:ToggleGround()
+    local target=self:Pick()
+    if not target then self:Message("Aim at a body to toggle grounding") return end
+    self:Request({action="SetGrounded",
+        instanceId=target:GetAttribute("InstanceId")})
+end
+
+function Controller:OpenJointSettings()
+    local target=self:Pick()
+    if not target then self:Message("Aim at a connected body") return end
+    local id=target:GetAttribute("InstanceId")
+    local folder=workspace:FindFirstChild("OPENWORKS_Relationships")
+    if not folder then return end
+    for _,joint in ipairs(folder:GetChildren()) do
+        if joint:GetAttribute("OwnerUserId")==player.UserId
+            and (joint:GetAttribute("SourceId")==id
+                or joint:GetAttribute("TargetId")==id)
+            and (joint:GetAttribute("Kind")=="Bearing"
+                or joint:GetAttribute("Kind")=="Slider"
+                or joint:GetAttribute("Kind")=="Cylindrical") then
+            self:Reset()
+            self.Joint=joint
+            self.Stage="JointSettings"
+            self:RefreshHUD()
+            return
+        end
+    end
+    self:Message("No adjustable bearing or slider under the crosshair")
+end
+
+function Controller:UpdateJoint(delta,toggle)
+    local joint=self.Joint
+    if not joint or not joint.Parent then self:Reset() return end
+    local kind=joint:GetAttribute("Kind")
+    local isHinge=kind=="Bearing"
+    local limit=if isHinge then 180 else 32
+    local previous=math.max(
+        math.abs(joint:GetAttribute("LowerLimit") or (if isHinge then -90 else -4)),
+        math.abs(joint:GetAttribute("UpperLimit") or (if isHinge then 90 else 4))
+    )
+    local half=math.clamp(previous+(delta or 0)*(if isHinge then 15 else 0.5),
+        if isHinge then 15 else 0.5,limit)
+    local on=joint:GetAttribute("LimitsEnabled")==true
+    if toggle then on=not on end
+    self:Request({
+        action="AdjustJoint",
+        relationId=joint:GetAttribute("RelationId"),
+        lowerLimit=-half,
+        upperLimit=half,
+        limitsEnabled=on,
+    })
+    self:RefreshHUD()
+end
+
 function Controller:Activate()
     if not self.Active or self.Busy or self:IsSimulating() then return end
-    if self.Stage == "Housing" then
+    if self.Stage=="GearFirst" then
+        local candidate=self:Pick()
+        if not candidate or not candidate:GetAttribute("GearTeeth") then
+            self:Message("Select a toothed Transmission gear") return
+        end
+        self.GearFirst=candidate
+        self.Stage="GearSecond"
+        self:RefreshHUD()
+        return
+    elseif self.Stage=="GearSecond" then
+        local candidate=self:Pick({[self.GearFirst]=true})
+        if not candidate or not candidate:GetAttribute("GearTeeth") then
+            self:Message("Aim at a second Transmission gear") return
+        end
+        if self:Request({action="CreateGearMesh",
+            sourceId=self.GearFirst:GetAttribute("InstanceId"),
+            targetId=candidate:GetAttribute("InstanceId")}) then
+            self:Reset()
+        end
+        return
+    elseif self.Stage=="JointSettings" then
+        return
+    elseif self.Stage == "Housing" then
         local candidate = self:Pick()
         if not candidate then
             self:Message("Aim at a constructed housing/opening")
@@ -417,6 +564,7 @@ function Controller:Activate()
         self.Members = members
         self.SourceHighlight = highlight(candidate, Color3.fromRGB(236, 174, 102))
         self.OffsetUnits = 0
+        self.RollDegrees = 0
         self.Stage = "Preview"
         self:MakePreview()
     elseif self.Stage == "Fit" then
@@ -434,6 +582,7 @@ function Controller:Activate()
             targetId = self.Housing:GetAttribute("InstanceId"),
             sourceId = self.Source:GetAttribute("InstanceId"),
             offsetUnits = self.OffsetUnits,
+            rollDegrees = self.RollDegrees,
         }) then
             if self:Kind() ~= "Fixed" then
                 self:ClearPreview()
@@ -535,7 +684,13 @@ function Controller:Start()
             return
         end
         if self:IsSimulating() then
-            if not processed and input.KeyCode == Enum.KeyCode.N then
+            if not processed and input.KeyCode == Enum.KeyCode.O then
+                self:Request({action="PauseSimulation"})
+            elseif not processed and input.KeyCode == Enum.KeyCode.U then
+                self:Request({action="ResetSimulation"})
+            elseif not processed and input.KeyCode == Enum.KeyCode.I then
+                self:Request({action="GetMechanismInfo",seedId=self.SimSeedId})
+            elseif not processed and input.KeyCode == Enum.KeyCode.N then
                 self:TuneMotor(true)
             elseif not processed and input.KeyCode == Enum.KeyCode.LeftBracket then
                 self:TuneMotor(false, -1)
@@ -548,6 +703,14 @@ function Controller:Start()
             self:Reset()
         elseif processed then
             return
+        elseif input.KeyCode == Enum.KeyCode.G then
+            self:ToggleGround()
+        elseif input.KeyCode == Enum.KeyCode.K then
+            self:ToggleGearMode()
+        elseif input.KeyCode == Enum.KeyCode.J then
+            self:OpenJointSettings()
+        elseif input.KeyCode == Enum.KeyCode.U and self.Stage=="JointSettings" then
+            self:UpdateJoint(0,true)
         elseif input.KeyCode == Enum.KeyCode.R then
             self:CycleType()
         elseif input.KeyCode == Enum.KeyCode.Delete
@@ -563,6 +726,14 @@ function Controller:Start()
                 or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
             self:Request({ action = "Redo" })
             self:Reset()
+        elseif self.Stage=="JointSettings" and
+            (input.KeyCode==Enum.KeyCode.LeftBracket
+                or input.KeyCode==Enum.KeyCode.RightBracket) then
+            self:UpdateJoint(if input.KeyCode==Enum.KeyCode.RightBracket
+                then 1 else -1,false)
+        elseif (self.Stage=="Preview" or self.Stage=="Fit") and
+            (input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.E) then
+            self:ChangeRoll(if input.KeyCode==Enum.KeyCode.E then 5 else -5)
         elseif (self.Stage == "Preview" or self.Stage == "Fit") and
             (input.KeyCode == Enum.KeyCode.LeftBracket or
             input.KeyCode == Enum.KeyCode.RightBracket) then
@@ -584,6 +755,21 @@ function Controller:Start()
             or (self.Stage ~= "Preview" and self.Stage ~= "Fit")
             or self:Kind() == "Fixed" then return end
         if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+        local direction=if input.Position.Z>0 then 1 else -1
+        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+        if shift then
+            self:ChangeRoll(direction*5)
+            return
+        end
+        if alt and self.Stage=="Fit" then
+            local offset=math.clamp(self.OffsetUnits+direction*INSERTION_STEP_U,
+                -Alignment.MaxOffsetUnits,Alignment.MaxOffsetUnits)
+            self:PoseConnected(offset,self.RollDegrees)
+            return
+        end
         if self.Stage == "Fit" then
             self:AdjustFit(if input.Position.Z > 0 then 1 else -1)
             return
@@ -594,6 +780,33 @@ function Controller:Start()
             -Alignment.MaxOffsetUnits, Alignment.MaxOffsetUnits
         )
         self:UpdatePreview()
+    end))
+    table.insert(self.Connections, RunService.RenderStepped:Connect(function(dt)
+        if not self.Active or self:IsSimulating() then return end
+        if self.Stage=="Preview" and self.PreviewModel and self.TargetPose then
+            self.VisualPose=WorldMotion.Step(
+                self.VisualPose,self.TargetPose,dt,17)
+            self.PreviewModel:PivotTo(self.VisualPose)
+        end
+        if self.Stage=="Preview" or self.Stage=="Fit" then
+            local direction=if UserInputService:IsKeyDown(Enum.KeyCode.Q) then -1
+                elseif UserInputService:IsKeyDown(Enum.KeyCode.E) then 1 else 0
+            if direction~=0 then
+                local now=os.clock()
+                if self.Stage=="Preview" then
+                    self.RollAccumulator=(self.RollAccumulator or 0)
+                        + dt*95*direction
+                    local step=(if self.RollAccumulator>=0 then math.floor(self.RollAccumulator) else math.ceil(self.RollAccumulator))
+                    if step~=0 then
+                        self.RollAccumulator-=step
+                        self:ChangeRoll(step)
+                    end
+                elseif now-(self.LastRollSend or 0)>0.115 then
+                    self.LastRollSend=now
+                    self:ChangeRoll(direction*5)
+                end
+            end
+        end
     end))
     table.insert(self.Connections, player:GetAttributeChangedSignal(
         "OPENWORKS_Simulating"):Connect(function()

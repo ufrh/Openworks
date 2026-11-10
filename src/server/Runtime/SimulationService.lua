@@ -40,10 +40,11 @@ local function setMotor(constraint, on, speedMultiplier, direction)
             else Enum.ActuatorType.None
         constraint.AngularVelocity = 1.5 * signed
         constraint.MotorMaxTorque = 50000
-    elseif constraint:IsA("PrismaticConstraint") then
+    elseif constraint:IsA("PrismaticConstraint")
+                    or constraint:IsA("CylindricalConstraint") then
         constraint.ActuatorType = if on then Enum.ActuatorType.Motor
             else Enum.ActuatorType.None
-        constraint.Speed = 0.75 * signed
+        constraint.Velocity = 0.75 * signed
         constraint.MotorMaxForce = 50000
     end
 end
@@ -97,11 +98,12 @@ function Simulation:Graph(player, seed)
             local target = owned[relation:GetAttribute("TargetId")]
             local kind = relation:GetAttribute("Kind")
             if source and target
-                and (kind == "Bearing" or kind == "Slider" or kind == "Fixed") then
+                and (kind == "Bearing" or kind == "Slider"
+                    or kind == "Cylindrical" or kind == "Fixed" or kind == "Gear") then
                 local a, b = bodyKey(source), bodyKey(target)
                 if a ~= b then
                     local edge = {source = source, target = target, kind = kind,
-                        a = a, b = b}
+                        relation = relation, a = a, b = b}
                     table.insert(edges, edge)
                     adjacent[a] = adjacent[a] or {}
                     adjacent[b] = adjacent[b] or {}
@@ -170,6 +172,7 @@ function Simulation:Stop(player)
         end
     end
     self:SetStatus(player, false, false)
+    player:SetAttribute("OPENWORKS_SimulationPaused",false)
     return true, "Simulation stopped — editable construction restored"
 end
 
@@ -197,6 +200,12 @@ function Simulation:Start(player, payload)
         Direction = 1,
         Grounded = payload.grounded ~= false,
         World = nil,
+        Paused = false,
+        PausedParts = nil,
+        GearFactors = {},
+        MotorFactors = {},
+        Constraints = {},
+        SeedId = payload.seedId,
     }
     local created = Instance.new("Folder")
     created.Name = "Simulation_" .. tostring(player.UserId)
@@ -222,7 +231,9 @@ function Simulation:Start(player, payload)
             end
             for _, part in ipairs(allParts(clone)) do
                 part.Anchored = true
-                part.CanCollide = true
+                -- The GearLibrary root is only a transform/pivot, not metal.
+                -- Keep the through-bore physically open in simulation.
+                part.CanCollide = part:GetAttribute("GearPivotOnly") ~= true
                 part.CanQuery = false
                 part.CanTouch = false
             end
@@ -255,6 +266,38 @@ function Simulation:Start(player, payload)
             end
         end
 
+        -- Ratio propagation is deterministic across the graph. A gear pair
+        -- uses an EXTERNAL mesh ratio, so connected shafts spin opposite
+        -- directions with magnitude inversely proportional to teeth.
+        session.GearFactors[graph.rootKey] = 1
+        local changed = true
+        local passes = 0
+        while changed and passes < #graph.edges + 1 do
+            changed = false
+            passes += 1
+            for _, edge in ipairs(graph.edges) do
+                if edge.kind ~= "Gear" then continue end
+                local ratio = edge.relation:GetAttribute("GearRatio")
+                if type(ratio) ~= "number" or ratio == 0 then
+                    error("Invalid gear ratio")
+                end
+                if session.GearFactors[edge.a]==nil
+                    and session.GearFactors[edge.b]==nil then
+                    session.GearFactors[edge.a]=1
+                    changed=true
+                end
+                local fa = session.GearFactors[edge.a]
+                local fb = session.GearFactors[edge.b]
+                if fa and not fb then
+                    session.GearFactors[edge.b] = fa * ratio
+                    changed = true
+                elseif fb and not fa then
+                    session.GearFactors[edge.a] = fb / ratio
+                    changed = true
+                end
+            end
+        end
+
         -- 3. Rebuild authored relationships against the CLONED bodies.
         local collisionExclusions = 0
         for _, edge in ipairs(graph.edges) do
@@ -262,7 +305,12 @@ function Simulation:Start(player, payload)
             local source = copies[edge.source:GetAttribute("InstanceId")]
             if not target or not source then error("Missing joint endpoint") end
             local p0, p1 = target.PrimaryPart, source.PrimaryPart
-            if edge.kind == "Fixed" then
+            if edge.kind == "Gear" then
+                -- Actual tooth parts remain collidable and no fake
+                -- mechanical constraint is fabricated. Gear ratios are
+                -- applied to the bearing motors of these rotating bodies.
+                continue
+            elseif edge.kind == "Fixed" then
                 local weld = Instance.new("WeldConstraint")
                 weld.Name = "FixedRelationship"
                 weld.Part0 = p0
@@ -281,20 +329,41 @@ function Simulation:Start(player, payload)
                 a1.Parent = p1
                 local constraint = if edge.kind == "Bearing"
                     then Instance.new("HingeConstraint")
-                    else Instance.new("PrismaticConstraint")
+                    elseif edge.kind == "Slider"
+                    then Instance.new("PrismaticConstraint")
+                    else Instance.new("CylindricalConstraint")
                 constraint.Name = edge.kind
                 constraint.Attachment0 = a0
                 constraint.Attachment1 = a1
                 constraint.Enabled = true
                 if constraint:IsA("PrismaticConstraint") then
                     local travel = math.clamp(source.PrimaryPart.Size.X, 0.25, 2)
-                    constraint.LimitsEnabled = true
-                    constraint.LowerLimit = -travel
-                    constraint.UpperLimit = travel
+                    local limits = edge.relation:GetAttribute("LimitsEnabled") == true
+                    constraint.LimitsEnabled = limits
+                    constraint.LowerLimit = (edge.relation:GetAttribute("LowerLimit")
+                        or (-travel / 0.25)) * 0.25
+                    constraint.UpperLimit = (edge.relation:GetAttribute("UpperLimit")
+                        or (travel / 0.25)) * 0.25
                 end
+                if constraint:IsA("HingeConstraint") then
+                    constraint.LimitsEnabled =
+                        edge.relation:GetAttribute("LimitsEnabled") == true
+                    constraint.LowerAngle =
+                        edge.relation:GetAttribute("LowerLimit") or -180
+                    constraint.UpperAngle =
+                        edge.relation:GetAttribute("UpperLimit") or 180
+                end
+                session.MotorFactors[constraint] = {
+                    bodyKey = edge.a,
+                    driveScale = edge.relation:GetAttribute("DriveScale") or 1,
+                }
                 setMotor(constraint, false, session.SpeedMultiplier, session.Direction)
                 constraint.Parent = runtime
-                table.insert(session.Motors, constraint)
+                if constraint:IsA("HingeConstraint")
+                    or constraint:IsA("PrismaticConstraint") then
+                    table.insert(session.Motors, constraint)
+                end
+                table.insert(session.Constraints, constraint)
             end
 
             -- Avoid numerical instability from deliberately intersecting
@@ -338,15 +407,33 @@ function Simulation:Start(player, payload)
             end
         end
 
-        -- 5. Ground only the selected body. Welds keep its other members
-        -- fixed while connected bodies can rotate or slide.
+        -- 5. Ground every explicitly grounded rigid body, if any.
+        -- Otherwise retain the established aim-at-housing grounding fallback.
+        local explicitGround = {}
+        if session.Grounded then
+            for key, originals in pairs(graph.bodies) do
+                if graph.included[key] then
+                    for _, member in ipairs(originals) do
+                        if member:GetAttribute("Grounded") == true then
+                            explicitGround[key] = true
+                        end
+                    end
+                end
+            end
+        end
+        local hasExplicitGround = next(explicitGround) ~= nil
+        session.GroundKeys = explicitGround
+        if not hasExplicitGround and session.Grounded then
+            session.GroundKeys[graph.rootKey] = true
+        end
+
         for key, originals in pairs(graph.bodies) do
             if graph.included[key] then
                 local rootAnchor = bodyAnchors[key]
                 for _, original in ipairs(originals) do
                     for _, part in ipairs(copyParts[original:GetAttribute("InstanceId")] or {}) do
-                        part.Anchored = session.Grounded
-                            and key == graph.rootKey and part == rootAnchor
+                        part.Anchored = session.GroundKeys[key] == true
+                            and part == rootAnchor
                     end
                 end
             end
@@ -371,9 +458,10 @@ function Simulation:Start(player, payload)
     end
 
     self:SetStatus(player, true, false, session.SpeedMultiplier,
-        session.Direction, session.Grounded)
-    return true, if session.Grounded
-        then "Physics running • selected housing grounded • M motor / P stop"
+        session.Direction, next(session.GroundKeys) ~= nil)
+    player:SetAttribute("OPENWORKS_SimulationPaused",false)
+    return true, if next(session.GroundKeys)
+        then "Physics running • assigned grounds fixed • M motor / P stop"
         else "Free physics running • ungrounded • M motor / P stop"
 end
 
@@ -386,8 +474,11 @@ function Simulation:Motor(player)
     session.MotorOn = not session.MotorOn
     for _, constraint in ipairs(session.Motors) do
         if constraint.Parent then
+            local settings = session.MotorFactors[constraint] or {}
+            local ratio = session.GearFactors[settings.bodyKey] or 1
             setMotor(constraint, session.MotorOn,
-                session.SpeedMultiplier, session.Direction)
+                session.SpeedMultiplier * ratio * (settings.driveScale or 1),
+                session.Direction)
         end
     end
     self:SetStatus(player, true, session.MotorOn,
@@ -415,8 +506,11 @@ function Simulation:TuneMotor(player, payload)
 
     for _, constraint in ipairs(session.Motors) do
         if constraint.Parent then
+            local settings = session.MotorFactors[constraint] or {}
+            local ratio = session.GearFactors[settings.bodyKey] or 1
             setMotor(constraint, session.MotorOn,
-                session.SpeedMultiplier, session.Direction)
+                session.SpeedMultiplier * ratio * (settings.driveScale or 1),
+                session.Direction)
         end
     end
     self:SetStatus(player, true, session.MotorOn,
@@ -424,6 +518,97 @@ function Simulation:TuneMotor(player, payload)
     return true, string.format("Drive %.1fx / %s",
         session.SpeedMultiplier,
         if session.Direction == 1 then "forward" else "reverse")
+end
+
+function Simulation:Pause(player)
+    local session = self.Sessions[player]
+    if not session then return false, "Start simulation first" end
+    if session.Paused then
+        for part, state in pairs(session.PausedParts or {}) do
+            if part.Parent then
+                part.Anchored = state.anchored
+                if not state.anchored then
+                    part.AssemblyLinearVelocity = state.linear
+                    part.AssemblyAngularVelocity = state.angular
+                end
+            end
+        end
+        session.PausedParts = nil
+        session.Paused = false
+        player:SetAttribute("OPENWORKS_SimulationPaused",false)
+        for _,motor in ipairs(session.Motors) do
+            if motor.Parent then
+                local settings = session.MotorFactors[motor] or {}
+                local ratio = session.GearFactors[settings.bodyKey] or 1
+                setMotor(motor,session.MotorOn,
+                    session.SpeedMultiplier * ratio * (settings.driveScale or 1),
+                    session.Direction)
+            end
+        end
+        return true,"Simulation resumed"
+    end
+
+    local state = {}
+    for _, item in ipairs(session.World:GetDescendants()) do
+        if item:IsA("BasePart") then
+            state[item] = {
+                anchored = item.Anchored,
+                linear = item.AssemblyLinearVelocity,
+                angular = item.AssemblyAngularVelocity,
+            }
+            item.Anchored = true
+        end
+    end
+    session.PausedParts = state
+    session.Paused = true
+    player:SetAttribute("OPENWORKS_SimulationPaused",true)
+    return true,"Simulation paused"
+end
+
+function Simulation:Reset(player)
+    local session = self.Sessions[player]
+    if not session then return false,"Start simulation first" end
+    local seedId = session.SeedId
+    local grounded = session.Grounded
+    self:Stop(player)
+    return self:Start(player,{seedId=seedId,grounded=grounded})
+end
+
+function Simulation:Info(player,payload)
+    local id = payload.seedId
+    if type(id) ~= "string" then return false,"Aim at a body to inspect" end
+    local model = self.D.findOwned(player,id)
+    if not model then return false,"Choose your own mechanism" end
+    local session = self.Sessions[player]
+    local grounded = model:GetAttribute("Grounded") == true
+    local lines = {
+        tostring(model.Name)
+            .. (if grounded then " • GROUNDED" else " • FREE"),
+    }
+    local current = 0
+    for _, relation in ipairs(self.D.mechanical.Folder:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId") == player.UserId
+            and (relation:GetAttribute("SourceId") == id
+                or relation:GetAttribute("TargetId") == id) then
+            current += 1
+            local kind = tostring(relation:GetAttribute("Kind") or "Joint")
+            local limit = relation:GetAttribute("LimitsEnabled") == true
+            table.insert(lines, kind .. (if limit then " • limited" else ""))
+        end
+    end
+    table.insert(lines, tostring(current) .. " direct relationships")
+    if session then
+        table.insert(lines,if session.Paused then "PAUSED" else "LIVE PHYSICS")
+        for _, constraint in ipairs(session.Constraints) do
+            if constraint:IsA("HingeConstraint") then
+                table.insert(lines,string.format("hinge %.1f°",constraint.CurrentAngle))
+            elseif constraint:IsA("PrismaticConstraint") then
+                table.insert(lines,string.format("slider %.3f studs",constraint.CurrentPosition))
+            end
+            if #lines > 12 then break end
+        end
+    end
+    return true,table.concat(lines,"  /  ")
 end
 
 function Simulation:ClearPlayer(player)

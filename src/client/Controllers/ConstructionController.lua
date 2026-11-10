@@ -17,6 +17,8 @@ local SurfacePlacement = require(construction:WaitForChild("SurfacePlacement"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
 local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEditingController"))
+local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
+local RotationMath = require(construction:WaitForChild("RotationMath"))
 
 local BLUE = Color3.fromRGB(96, 174, 207)
 local DARK = Color3.fromRGB(22, 29, 38)
@@ -98,6 +100,8 @@ function Controller.new(tools)
         Pending = nil, -- "Move", "Copy", or nil
         Preview = nil,
         PreviewCF = nil,
+        PreviewVisualPose = nil,
+        PreviewTime = 0,
         CatalogOpen = false,
         ScaleMode = false,
         ScaleStepU = Grid.DefaultSizeStepU,
@@ -417,7 +421,8 @@ function Controller:RebuildPreview()
             part.CanCollide = false
             part.CanTouch = false
             part.CastShadow = false
-            part.Transparency = 0.58
+            part.Transparency = if part:GetAttribute("GearPivotOnly")==true
+                then 1 else 0.58
             part.LocalTransparencyModifier = 0 -- cloned move previews must remain visible
             part.Color = BLUE
             if self.CurrentSize and part == ghost.PrimaryPart then
@@ -431,7 +436,7 @@ function Controller:RebuildPreview()
         FillColor = Color3.fromRGB(98, 219, 168),
         FillTransparency = 0.72,
         OutlineColor = Color3.fromRGB(181, 249, 213),
-        OutlineTransparency = 0.08,
+        OutlineTransparency = 1,
         DepthMode = Enum.HighlightDepthMode.Occluded,
     }, ghost)
 
@@ -439,6 +444,7 @@ function Controller:RebuildPreview()
     self.Preview = ghost
     self.PreviewValid = true
     self.LastPreviewCheck = 0
+    self.PreviewVisualPose = nil
 end
 
 function Controller:RefreshSelectionHighlights()
@@ -683,6 +689,11 @@ function Controller:UpdatePreview()
     end
 
     local rotation = Grid.Rotation(self.Steps)
+    if self.GroupAnchor and
+        (self.Pending=="ComponentMove" or self.Pending=="ComponentCopy") then
+        local base=Grid.Rotation(attributesSteps(self.GroupAnchor))
+        rotation = rotation * base:Inverse() * self.GroupAnchor:GetPivot().Rotation
+    end
     local proposed = Grid.FromSurface(hit.Position, hit.Normal, self.CurrentSize, rotation)
     if not self.Preview.Parent then self.Preview.Parent = workspace end
 
@@ -705,6 +716,15 @@ function Controller:UpdatePreview()
         self.PreviewValid, self.PreviewReason = PreviewFeedback.Check(self.Preview, ignore)
         PreviewFeedback.Paint(self.Preview, self.PreviewValid)
     end
+
+    -- Presentation is damped independently of the exact hit/validation CF.
+    local now = os.clock()
+    local dt = if self.PreviewTime > 0 then now - self.PreviewTime else 0
+    self.PreviewTime = now
+    self.PreviewVisualPose = WorldMotion.Step(
+        self.PreviewVisualPose, cf, dt, 15
+    )
+    self.Preview:PivotTo(self.PreviewVisualPose)
 end
 
 function Controller:Request(payload)
@@ -923,28 +943,49 @@ function Controller:ModifySelected(position, steps, size)
 end
 
 function Controller:Rotate(axis)
-    local oldSteps = stepsCopy(self.Steps)
-    self.Steps[axis] = (self.Steps[axis] + 1) % 4
+    local axisName = string.upper(axis)
+    local current = Grid.Rotation(self.Steps)
+    local direction = RotationMath.Axis(axisName)
+    if not direction then return end
 
-    if self.Mode == "Edit" and self.SelectedComponentId and self.GroupAnchor and not self.Pending then
-        local rotation = Grid.Rotation(self.Steps)
-        local position = Grid.SnapCenter(self.GroupAnchor:GetPivot().Position,
-            self.GroupAnchor.PrimaryPart.Size, rotation)
+    -- Quarter turns are in WORLD axes, rather than accumulating
+    -- unintuitive Euler rotations around the component's local frame.
+    local nextRotation = CFrame.fromAxisAngle(direction, math.pi/2) * current
+    local nextSteps = RotationMath.MatchSteps(nextRotation)
+    if not nextSteps then return end
+
+    if self.Mode == "Edit" and not self.Pending
+        and self.SelectedComponentId and #self.SelectedParts > 0 then
+        local center = ComponentGeometry.Bounds(self.SelectedParts)
+        local delta = center and RotationMath.Delta(axisName,1,center)
+        if not delta then return end
+        local stop = WorldMotion.AnimateTurn(self.SelectedParts,delta,0.24)
         local ok = self:Request({
-            action = "TransformComponent",
-            componentId = self.SelectedComponentId,
-            anchorId = self.GroupAnchor:GetAttribute("InstanceId"),
-            position = position,
-            steps = stepsCopy(self.Steps),
+            action="RotateComponent",
+            componentId=self.SelectedComponentId,
+            axis=axisName,
+            direction=1,
         })
-        if not ok then self.Steps = oldSteps end
-    elseif self.Mode == "Edit" and self.Selected and not self.Pending then
-        local rotation = Grid.Rotation(self.Steps)
-        local position = if self.Selected:GetAttribute("ResizePrecision") == true
-            or Grid.HasFractionalSize(self.CurrentSize)
-            then Grid.SnapSizeCenter(self.Selected:GetPivot().Position, self.CurrentSize, rotation)
-            else Grid.SnapCenter(self.Selected:GetPivot().Position, self.CurrentSize, rotation)
-        self:ModifySelected(position, self.Steps, self.CurrentSize)
+        if not ok then stop() end
+        if ok then self.Steps=nextSteps end
+    elseif self.Mode == "Edit" and not self.Pending and self.Selected then
+        local origin = self.Selected:GetPivot()
+        local delta = RotationMath.Delta(axisName,1,origin.Position)
+        local stop = WorldMotion.AnimateTurn({self.Selected},delta,0.22)
+        local ok=self:Request({
+            action="RotatePrimitiveWorld",
+            instanceId=self.Selected:GetAttribute("InstanceId"),
+            axis=axisName,
+            direction=1,
+        })
+        if not ok then
+            stop()
+            self.Steps=attributesSteps(self.Selected)
+        else
+            self.Steps=nextSteps
+        end
+    else
+        self.Steps=nextSteps
     end
     self:RefreshHUD()
 end

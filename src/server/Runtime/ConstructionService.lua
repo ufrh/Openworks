@@ -15,6 +15,8 @@ local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
 local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
 local MechanicalService = require(script.Parent:WaitForChild("MechanicalService"))
 local SimulationService = require(script.Parent:WaitForChild("SimulationService"))
+local GearLibrary = require(script.Parent:WaitForChild("GearLibrary"))
+local RotationMath = require(construction:WaitForChild("RotationMath"))
 
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
 
@@ -102,6 +104,10 @@ local function snapshot(model)
         freePosition = model:GetAttribute("FreePosition") == true,
         fitPrecision = model:GetAttribute("FitPrecision") == true,
         alignedOpeningId = model:GetAttribute("AlignedOpeningId"),
+        grounded = model:GetAttribute("Grounded") == true,
+        orientation = model:GetAttribute("AuthoredRotation"),
+        shaftRollDegrees = model:GetAttribute("ShaftRollDegrees") or 0,
+        alignedOffsetU = model:GetAttribute("AlignedOffsetU") or 0,
     }
 end
 
@@ -138,9 +144,12 @@ local function createFromTemplate(player, templateId, instanceId, bypassLimit)
                 descendant.UsePartColor = true
             end
             descendant.Anchored = true
-            descendant.CanCollide = true
-            descendant.CanQuery = true
+            local pivotOnly = descendant:GetAttribute("GearPivotOnly") == true
+            descendant.CanCollide = not pivotOnly
+            descendant.CanQuery = not pivotOnly
             descendant.CanTouch = false
+            descendant.Reflectance = if pivotOnly then 0 else 0.045
+            if pivotOnly then descendant.Transparency = 1 end
         end
     end
 
@@ -152,51 +161,46 @@ overlap.FilterType = Enum.RaycastFilterType.Include
 overlap.RespectCanCollide = false
 overlap.MaxParts = 0
 
+local GearMath = require(construction:WaitForChild("GearMath"))
 local function intersectsConstructed(candidate, except, opening: Model?, shaftId: string?)
-    -- Exact occupied-volume test rather than CSG bounding box.
-    -- Slight shrink distinguishes face-to-face placement from penetration.
-    local primary = candidate.PrimaryPart
-    local probe = primary:Clone()
-    probe.Name = "OPENWORKS_OverlapProbe"
-    probe.Size = Vector3.new(
-        math.max(0.015, primary.Size.X - 0.006),
-        math.max(0.015, primary.Size.Y - 0.006),
-        math.max(0.015, primary.Size.Z - 0.006)
-    )
-    probe.CFrame = primary.CFrame
-    probe.Transparency = 1
-    probe.CanCollide = false
-    probe.CanTouch = false
-    probe.CanQuery = true -- permit a geometry query while excluding the probe itself
-    probe.Anchored = true
-    probe.Parent = workspace
-
     overlap.FilterDescendantsInstances = { folder }
-    local ok, results = pcall(function()
-        return workspace:GetPartsInPart(probe, overlap)
-    end)
-    probe:Destroy()
-    if not ok then
-        warn("[OPENWORKS] Precise overlap test failed: " .. tostring(results))
-        return true
-    end
-
-    for _, part in ipairs(results) do
-        local isIgnored = false
-        if typeof(except) == "Instance" then
-            isIgnored = part:IsDescendantOf(except)
-        elseif type(except) == "table" then
-            local model = part:FindFirstAncestorOfClass("Model")
-            isIgnored = model ~= nil and except[model] == true
+    for _,solid in ipairs(candidate:GetDescendants()) do
+        if not solid:IsA("BasePart") or not solid.CanCollide then continue end
+        local probe=solid:Clone()
+        probe.Name="OPENWORKS_OverlapProbe"
+        probe.Size=Vector3.new(math.max(0.015,solid.Size.X-0.006),
+            math.max(0.015,solid.Size.Y-0.006),
+            math.max(0.015,solid.Size.Z-0.006))
+        probe.CFrame=solid.CFrame
+        probe.Transparency=1
+        probe.CanCollide=false
+        probe.CanTouch=false
+        probe.CanQuery=true
+        probe.Anchored=true
+        probe.Parent=workspace
+        local ok,results=pcall(function()
+            return workspace:GetPartsInPart(probe,overlap)
+        end)
+        probe:Destroy()
+        if not ok then
+            warn("[OPENWORKS] Collision query failed: "..tostring(results))
+            return true
         end
-
-        if not isIgnored then
-            local target = part:FindFirstAncestorOfClass("Model")
-            local isIntendedBore = target and target == opening and shaftId
-                and candidate:GetAttribute("InstanceId") == shaftId
-            if not (isIntendedBore and Bore.ShaftFits(candidate, target)) then
-                return true
+        for _,part in ipairs(results) do
+            if part:GetAttribute("GearPivotOnly")==true then continue end
+            local target=part:FindFirstAncestorOfClass("Model")
+            local ignored=false
+            if typeof(except)=="Instance" then
+                ignored=part:IsDescendantOf(except)
+            elseif type(except)=="table" then
+                ignored=target~=nil and except[target]==true
             end
+            if ignored then continue end
+            local intendedBore=target and target==opening and shaftId
+                and candidate:GetAttribute("InstanceId")==shaftId
+                and Bore.ShaftFits(candidate,target)
+            local intendedGear=target and GearMath.Meshable(candidate,target)
+            if not intendedBore and not intendedGear then return true end
         end
     end
     return false
@@ -234,7 +238,9 @@ end
 
 local function applyState(model, data)
     model.PrimaryPart.Size = data.size
-    model:PivotTo(CFrame.new(data.position) * Grid.Rotation(data.steps))
+    local rotation = if typeof(data.orientation) == "CFrame"
+        then data.orientation.Rotation else Grid.Rotation(data.steps)
+    model:PivotTo(CFrame.new(data.position) * rotation)
     model:SetAttribute("RotX", data.steps.x)
     model:SetAttribute("RotY", data.steps.y)
     model:SetAttribute("RotZ", data.steps.z)
@@ -246,6 +252,10 @@ local function applyState(model, data)
     model:SetAttribute("FreePosition", data.freePosition == true)
     model:SetAttribute("FitPrecision", data.fitPrecision == true)
     model:SetAttribute("AlignedOpeningId", data.alignedOpeningId)
+    model:SetAttribute("Grounded", data.grounded == true)
+    model:SetAttribute("AuthoredRotation", data.orientation)
+    model:SetAttribute("ShaftRollDegrees", data.shaftRollDegrees or 0)
+    model:SetAttribute("AlignedOffsetU", data.alignedOffsetU or 0)
 end
 
 local function commitRecord(player, before, after)
@@ -263,6 +273,13 @@ local function commitBatch(player, before, after)
     if #state.undo > Config.UndoLimit then
         table.remove(state.undo, 1)
     end
+    table.clear(state.redo)
+end
+
+local function commitJointEdit(player, before, after)
+    local state = historyFor(player)
+    table.insert(state.undo,{kind="JointConfig",before=before,after=after})
+    if #state.undo > Config.UndoLimit then table.remove(state.undo,1) end
     table.clear(state.redo)
 end
 
@@ -385,6 +402,18 @@ local function update(player, payload)
             or payload.freePosition == true,
         fitPrecision = model:GetAttribute("FitPrecision") == true,
         alignedOpeningId = model:GetAttribute("AlignedOpeningId"),
+        grounded = model:GetAttribute("Grounded") == true,
+        -- Resizing/moving a fine-rotated shaft must preserve its authored
+        -- free-angle orientation. If the discrete steps change, compose the
+        -- requested world-axis turn on top of its existing rotation.
+        orientation = if typeof(model:GetAttribute("AuthoredRotation"))=="CFrame"
+            then (
+                Grid.Rotation(payload.steps)
+                * Grid.Rotation(snapshot(model).steps):Inverse()
+                * model:GetPivot().Rotation
+            ) else nil,
+        shaftRollDegrees = model:GetAttribute("ShaftRollDegrees") or 0,
+        alignedOffsetU = model:GetAttribute("AlignedOffsetU") or 0,
     }
     local valid, reason = validState(player, entry, proposed)
     if not valid then return false, reason end
@@ -400,6 +429,35 @@ local function update(player, payload)
     local after = snapshot(model)
     commitRecord(player, before, after)
     return true, after.instanceId
+end
+
+local function rotatePrimitiveWorld(player,payload)
+    local model=findOwned(player,payload.instanceId)
+    if not model then return false,"Select a primitive you own" end
+    if model:GetAttribute("ComponentId") then
+        return false,"Rotate the complete body or enter component editing"
+    end
+    local delta=RotationMath.Delta(payload.axis,payload.direction,
+        model:GetPivot().Position)
+    if not delta then return false,"Choose world X, Y or Z" end
+    local before=snapshot(model)
+    local wanted=delta*model:GetPivot()
+    local proposed=table.clone(before)
+    proposed.position=wanted.Position
+    proposed.orientation=wanted.Rotation
+    proposed.steps=RotationMath.MatchSteps(wanted.Rotation) or before.steps
+    proposed.freePosition=true
+    local entry=Registry.Get(before.templateId)
+    if not entry then return false,"Missing primitive" end
+    local valid,reason=validState(player,entry,proposed)
+    if not valid then return false,reason end
+    applyState(model,proposed)
+    if intersectsConstructed(model,model) then
+        applyState(model,before)
+        return false,"Rotation intersects another construction"
+    end
+    commitRecord(player,before,snapshot(model))
+    return true,"Primitive rotated around world "..tostring(payload.axis)
 end
 
 local function delete(player, payload)
@@ -482,6 +540,9 @@ local function restore(player, data)
 end
 
 local function applyRecord(player, record, undo)
+    if record.kind == "JointConfig" then
+        return mechanical:ApplyJointEdit(player,record,undo)
+    end
     if record.kind == "Assembly" then
         return mechanical:ApplyHistory(player, record, undo, restoreBatch)
     end
@@ -522,27 +583,38 @@ local function handle(player, payload)
     local action = payload.action
     local alignmentAction = action == "Align"
     local mechanicalAction = action == "CreateRelation" or action == "RemoveRelation"
-        or action == "FitShaft"
+        or action == "FitShaft" or action == "CreateGearMesh"
+        or action == "AdjustJoint" or action == "PoseShaft"
+        or action == "SetGrounded" or action == "GetMechanismInfo"
     local simulationAction = action == "StartSimulation"
         or action == "StopSimulation" or action == "ToggleSimulationMotor"
         or action == "TuneSimulationMotor"
+        or action == "PauseSimulation" or action == "ResetSimulation"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
-        or action == "DeleteComponent"
+        or action == "DeleteComponent" or action == "RotateComponent"
+        or action == "RotatePrimitiveWorld"
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
         and not componentAction and not alignmentAction and not mechanicalAction
         and not simulationAction then
         return { ok = false, message = "Unknown action" }
     end
-    if simulationAction then
+    if action == "GetMechanismInfo" then
+        -- Read-only information is available even during simulation.
+    elseif simulationAction then
         if action ~= "StopSimulation" and not hasEquippedTool(player, "Assemble") then
             return { ok = false, message = "Equip Assemble to simulate a mechanism" }
         end
     elseif simulation and simulation:IsRunning(player) then
         return { ok = false, message = "Stop simulation (P) before editing" }
     elseif mechanicalAction then
-        if action == "FitShaft" then
+        if action == "SetGrounded" or action == "PoseShaft" then
+            if not hasEquippedTool(player, "Edit")
+                and not hasEquippedTool(player, "Assemble") then
+                return { ok = false, message = "Equip Edit or Assemble" }
+            end
+        elseif action == "FitShaft" then
             if not hasEquippedTool(player, "Assemble")
                 and not hasEquippedTool(player, "Edit") then
                 return { ok = false, message = "Equip Edit or Assemble to fit the shaft" }
@@ -575,6 +647,8 @@ local function handle(player, payload)
         if action == "StartSimulation" then return simulation:Start(player, payload) end
         if action == "StopSimulation" then return simulation:Stop(player) end
         if action == "ToggleSimulationMotor" then return simulation:Motor(player) end
+        if action == "PauseSimulation" then return simulation:Pause(player) end
+        if action == "ResetSimulation" then return simulation:Reset(player) end
         if action == "TuneSimulationMotor" then
             return simulation:TuneMotor(player, payload)
         end
@@ -586,6 +660,17 @@ local function handle(player, payload)
         if action == "CreateRelation" then return mechanical:Create(player, payload) end
         if action == "RemoveRelation" then return mechanical:Remove(player, payload) end
         if action == "FitShaft" then return mechanical:Fit(player, payload) end
+        if action == "SetGrounded" then return components:SetGrounded(player, payload) end
+        if action == "RotateComponent" then return components:RotateWorld(player, payload) end
+        if action == "RotatePrimitiveWorld" then
+            return rotatePrimitiveWorld(player,payload)
+        end
+        if action == "CreateGearMesh" then return mechanical:CreateGearMesh(player, payload) end
+        if action == "AdjustJoint" then return mechanical:AdjustJoint(player, payload) end
+        if action == "PoseShaft" then return mechanical:PoseShaft(player, payload) end
+        if action == "GetMechanismInfo" then
+            return simulation:Info(player, payload)
+        end
         return historyAction(player, action == "Undo")
     end)
 
@@ -593,7 +678,8 @@ local function handle(player, payload)
         warn("[OPENWORKS] Construction request error: " .. tostring(result))
         return { ok = false, message = "Construction error (check Output)" }
     end
-    if result and mechanical and not simulationAction then
+    if result and mechanical and not simulationAction
+        and action ~= "GetMechanismInfo" then
         mechanical:RebuildRelations()
     end
     local message = tostring(extra or "")
@@ -610,6 +696,7 @@ local function handle(player, payload)
 end
 
 function Service.Start()
+    GearLibrary.Ensure()
     folder = workspace:FindFirstChild(Config.FolderName)
     if not folder then
         folder = Instance.new("Folder")
@@ -661,6 +748,7 @@ function Service.Start()
         components = components,
         commitAssembly = commitAssembly,
         commitRecord = commitRecord,
+        commitJointEdit = commitJointEdit,
     })
 
     simulation = SimulationService.new({

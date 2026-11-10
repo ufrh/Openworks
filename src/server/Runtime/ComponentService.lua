@@ -11,6 +11,8 @@ local ComponentGeometry = require(
         :WaitForChild("Construction")
         :WaitForChild("ComponentGeometry")
 )
+local RotationMath = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("RotationMath"))
 
 local ComponentService = {}
 ComponentService.__index = ComponentService
@@ -156,18 +158,21 @@ function ComponentService:Plan(player, payload)
     local valid, why = d.validState(player, anchorEntry, newAnchor)
     if not valid then return nil, nil, why end
 
-    local delta = (CFrame.new(payload.position) * d.Grid.Rotation(payload.steps))
+    local stepDelta = d.Grid.Rotation(payload.steps)
+        * d.Grid.Rotation(anchorState.steps):Inverse()
+    local wantedRotation = stepDelta * anchor:GetPivot().Rotation
+    local delta = (CFrame.new(payload.position) * wantedRotation)
         * anchor:GetPivot():Inverse()
 
     local before, planned = {}, {}
     for _, member in ipairs(members) do
         local state = d.snapshot(member)
         local desiredCF = delta * member:GetPivot()
-        local steps = matchingRotation(desiredCF, d.Grid)
-        if not steps then return nil, nil, "Component rotation is not aligned to 90-degree axes" end
+        local steps = matchingRotation(desiredCF, d.Grid) or state.steps
         local target = copied(state)
         target.position = desiredCF.Position
         target.steps = steps
+        target.orientation = desiredCF.Rotation
         target.freePosition = true
 
         local entry = d.Registry.Get(state.templateId)
@@ -211,6 +216,70 @@ function ComponentService:Transform(player, payload)
 
     d.commitBatch(player, before, planned)
     return true, "Component moved"
+end
+
+-- A grounded setting is a property of the entire rigid BODY; never
+-- only the primitive currently under the crosshair.
+function ComponentService:SetGrounded(player, payload)
+    if type(payload.instanceId) ~= "string" then
+        return false, "Aim at a primitive or component to ground"
+    end
+    local model = self.D.findOwned(player, payload.instanceId)
+    if not model then return false, "Choose your own geometry" end
+    if not self.D.nearPlayer(player, model:GetPivot().Position) then
+        return false, "Ground target is out of range"
+    end
+    local members = model:GetAttribute("ComponentId")
+        and self:Members(player, model:GetAttribute("ComponentId")) or { model }
+    local newGrounded = not (model:GetAttribute("Grounded") == true)
+    local before, after = {}, {}
+    for _, member in ipairs(members) do
+        table.insert(before, self.D.snapshot(member))
+        member:SetAttribute("Grounded", newGrounded)
+        table.insert(after, self.D.snapshot(member))
+    end
+    self.D.commitBatch(player, before, after)
+    return true, if newGrounded then "Body grounded" else "Body ungrounded"
+end
+
+-- R/T/Y are WORLD-axis quarter turns about the whole body's geometric
+-- center, not the central primitive's local axes or an arbitrary pivot.
+function ComponentService:RotateWorld(player, payload)
+    local members, reason = self:RequireMembers(player, payload.componentId)
+    if not members then return false, reason end
+    local center = ComponentGeometry.Bounds(members)
+    local delta = center and RotationMath.Delta(payload.axis, payload.direction, center)
+    if not delta then return false, "Choose X, Y or Z rotation" end
+    local d = self.D
+    local before, planned, ignored = {}, {}, {}
+    for _, member in ipairs(members) do
+        local old = d.snapshot(member)
+        local cf = delta * member:GetPivot()
+        local target = table.clone(old)
+        target.position = cf.Position
+        target.steps = RotationMath.MatchSteps(cf.Rotation) or old.steps
+        target.orientation = cf.Rotation
+        target.freePosition = true
+        local entry = d.Registry.Get(old.templateId)
+        if not entry then return false, "Missing component template" end
+        local valid, why = d.validState(player, entry, target)
+        if not valid then return false, why end
+        if not d.nearPlayer(player, target.position) then
+            return false, "Rotated component exceeds build range"
+        end
+        ignored[member] = true
+        table.insert(before, old)
+        table.insert(planned, target)
+    end
+    for i, member in ipairs(members) do d.applyState(member, planned[i]) end
+    for _, member in ipairs(members) do
+        if d.intersectsConstructed(member, ignored) then
+            for i, restore in ipairs(members) do d.applyState(restore, before[i]) end
+            return false, "Rotation intersects another construction"
+        end
+    end
+    d.commitBatch(player, before, planned)
+    return true, "Component rotated about geometric center"
 end
 
 function ComponentService:Duplicate(player, payload)

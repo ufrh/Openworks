@@ -91,3 +91,24 @@ See `docs/REBUILD_NOTES.md` for the reset boundary and next design step.
 - Mechanical attachment frames now inherit the housing's LOCAL bore orientation (including DrilledBlock local Y) rather than an arbitrary world-up roll basis, preventing rotation-dependent attachment-frame flips.
 - Physics mode: in Assemble, aim at the chosen support and press P for grounded simulation; **Shift+P** starts an entirely ungrounded/free simulation (can fall under gravity). During simulation press **M** for motor on/off, **N** to reverse, **[ / ]** to change speed from 0.5x–4x by 0.5x, and **P** to stop and restore editing. Motor settings are session-only and reset when a new simulation starts.
 - This phase does not add persistent shipping or electrical wiring; native-physics runtime stability still needs Roblox Studio testing.
+
+
+## Phase 08 — Mechanical World (2026.11.10.PHASE08.MECHANICAL-WORLD)
+
+### Mechanical authoring
+- **Persistent grounding**: Equip Assemble (3), aim at any primitive/member of a rigid component, press **G** to toggle its entire body's Grounded assignment. Multiple grounded bodies are honored in physical simulation. With no explicit grounded parts, the aimed body remains the default support; **Shift+P** deliberately overrides both to simulate ungrounded.
+- **World-space R/T/Y**: in Edit, rotations occur around the chosen world's Y/X/Z axes; grouped components rotate as one rigid body about their *complete geometric bounds center*, not their central primitive's arbitrary local axes. Rotation previews animate smoothly; server geometry remains exact.
+- **Real-time shaft pose controls**: while inserting a cylindrical shaft in Edit L or Assemble, use **wheel** to change axial depth and **Q/E** (or **Shift+wheel**) to roll the shaft about the opening axis. The preview visually eases to its precise checked target. After confirming an alignment/Bearing/Slider/Cylindrical relationship, **wheel** fine-fits diameter by 0.05 U, **Alt+wheel** adjusts insertion depth, **Q/E** adjusts roll, and **click/Esc** ends fitting. Server validates full rigid component clearance.
+- **Additional physical joint**: Cylindrical allows both sliding and rotation, distinct from Bearing/Slider/Fixed. Existing joint configuration is entered by aiming at a connected part and pressing **J**. **U** toggles travel limits and **[ / ]** adjusts their symmetrical range.
+- **Dedicated gear transmission**: runtime generates a separate `Transmission` category containing **12T / 20T / 32T** tooth gears with open center bores, native metal segments and tooth-count/pitch metadata. In Assemble, press **K**, choose first and second gear to create a Gear Mesh relationship. Same tooth module, parallel axes, separate rigid bodies and pitch-center spacing are required. A gear pair's negative tooth ratio is applied to compatible bearing drive motors in simulated connected bodies. This is a *prototype* drive coupling: no electric controls, no gearbox config UI, and no claim of a native automatic angular GearConstraint.
+- **Physics controls**: P simulate/stop, Shift+P force ungrounded, M motor toggle, N reverse, [ / ] speed, O pause/resume, U restart at authored pose, I report connected joint telemetry. Original construction remains preserved; all physical simulation clones are temporary.
+
+### Physical look / feel
+- Geometry uses consistent satin steel reflectance with local-only subtle grade. Clear blue/red ghost fills have **no Highlight outlines**.
+- Grounded-body marks, slender bore-axis collars and gear-pair guides are rendered as **non-colliding 3D world cues**, not extra HUD panels. They disappear during simulation to avoid falsely indicating original part positions.
+- Build/move and insertion ghosts use render-step critically damped interpolation; commit/validation uses the exact target CFrame. Accepted R/T/Y rotations receive a short smooth visual animation.
+- Move arrow handles remain removed. Click once selects; a deliberate second hold-and-drag initiates the existing surface-aware move. Sphere scale grips remain unchanged.
+
+### Deliberate limits
+- Phase 08 is not electrical design, custom gear generator/profile editing, servo programming, persistent shipping, or full gear-force modeling. The 3D gear representation is faceted tooth geometry with ratio-aware motor coupling, subject to Roblox physics stability.
+- Grounded flags and joint settings participate in local edit/undo history; engine playtesting is required before judging collisions, physics stability, and aesthetics.

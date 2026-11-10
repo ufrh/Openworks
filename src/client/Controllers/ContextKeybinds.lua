@@ -31,8 +31,10 @@ function Context:Lines()
     if player:GetAttribute("OPENWORKS_Simulating") == true then
         append(lines, "P", "Stop physics")
         append(lines, "M", "Motor on / off")
-        append(lines, "N", "Reverse motor direction")
-        append(lines, "[  ]", "Motor speed ±0.5x")
+        append(lines, "N", "Reverse drive")
+        append(lines, "[  ]", "Motor speed")
+        append(lines, "O / U", "Pause / Reset physics")
+        append(lines, "I", "Inspect joint telemetry")
         return lines
     end
 
@@ -68,22 +70,25 @@ function Context:Lines()
                 append(lines, "Tab", "Cycle depth")
             elseif align.Stage == "Fit" then
                 append(lines, "Wheel / [ ]", "Shaft fit ±0.05 U")
+                append(lines, "Alt+wheel", "Change insertion depth")
+                append(lines, "Q / E", "Rotate shaft in bore")
                 append(lines, "LMB / Esc", "Finish fitting")
             else
                 append(lines, "Wheel / [ ]", "Insertion depth")
+                append(lines, "Q / E", "Live shaft roll")
                 append(lines, "LMB", "Confirm when blue")
             end
             append(lines, "L / Esc", "Cancel alignment")
         elseif c.Pending then
             append(lines, "Look / Walk", "Position preview")
             append(lines, "LMB", "Place when blue")
-            append(lines, "R / T / Y", "Rotate")
+            append(lines, "R / T / Y", "World-axis rotation")
             append(lines, "Esc", "Cancel")
         else
             append(lines, "LMB", "Select without moving")
             append(lines, "Hold selected", "Drag to move")
             append(lines, "V / G", "Scale / Move")
-            append(lines, "R / T / Y", "Rotate")
+            append(lines, "R / T / Y", "World-axis rotation")
             append(lines, "L", "Align shaft")
             append(lines, "C / U", "Combine / Ungroup")
             append(lines, "E", "Edit group interior")
@@ -91,24 +96,36 @@ function Context:Lines()
             append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
         end
     elseif tool == "Assemble" then
-        append(lines, "P", "Simulate aimed assembly")
-        append(lines, "Shift+P", "Simulate without grounding")
-        if a.Stage == "Housing" then
-            append(lines, "LMB", "Choose housing")
-            append(lines, "R", "Change relationship")
-        elseif a.Stage == "Source" then
-            append(lines, "LMB", "Choose shaft/body")
-            append(lines, "R", "Change relationship")
-        elseif a.Stage == "Fit" then
-            append(lines, "Wheel / [ ]", "Shaft fit ±0.05 U")
-            append(lines, "LMB / Esc", "Finish fitting")
+        if a.Stage=="GearFirst" then
+            append(lines,"LMB","Choose driving gear")
+            append(lines,"K / Esc","Cancel gear mesh")
+        elseif a.Stage=="GearSecond" then
+            append(lines,"LMB","Choose mating gear")
+            append(lines,"K / Esc","Cancel gear mesh")
+        elseif a.Stage=="JointSettings" then
+            append(lines,"U","Toggle motion limits")
+            append(lines,"[  ]","Adjust limit range")
+            append(lines,"Esc","Close joint settings")
+        elseif a.Stage=="Preview" then
+            append(lines,"Wheel / [ ]","Insertion depth")
+            append(lines,"Q / E","Rotate shaft around bore")
+            append(lines,"LMB","Create selected joint")
+            append(lines,"Esc","Cancel")
+        elseif a.Stage=="Fit" then
+            append(lines,"Wheel / [ ]","Diameter ±0.05 U")
+            append(lines,"Alt+wheel","Insertion depth")
+            append(lines,"Q / E","Shaft rotation")
+            append(lines,"LMB / Esc","Finish fitting")
         else
-            append(lines, "Wheel / [ ]", "Insertion depth")
-            append(lines, "LMB", "Finalize when blue")
-            append(lines, "R", "Change relationship")
+            append(lines,"LMB",if a.Stage=="Housing"
+                then "Choose housing" else "Choose shaft/body")
+            append(lines,"R","Bearing / Slider / Cylinder / Fixed")
+            append(lines,"K","Connect a gear pair")
+            append(lines,"G","Toggle body grounding")
+            append(lines,"J","Edit existing joint")
+            append(lines,"P / Shift+P","Simulate grounded / free")
+            append(lines,"Del","Delete aimed relationship")
         end
-        append(lines, "Del", "Remove aimed joint")
-        append(lines, "Esc", "Reset")
     elseif tool == "Inspect" then
         append(lines, "LMB", "Inspect")
         append(lines, "Tab", "Cycle depth")

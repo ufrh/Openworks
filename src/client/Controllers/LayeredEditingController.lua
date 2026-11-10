@@ -13,6 +13,7 @@ local Config = require(construction:WaitForChild("BuildConfig"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
+local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local INSERTION_INCREMENT_U = 0.5
 
 local Layered = {}
@@ -239,7 +240,7 @@ function Layered:RefreshTargetCue()
         local highlight = Instance.new("Highlight")
         highlight.Adornee = target
         highlight.FillTransparency = 0.83
-        highlight.OutlineTransparency = 0.05
+        highlight.OutlineTransparency = 1
         highlight.FillColor = if AlignmentMath.TargetAxis(target)
             then Color3.fromRGB(88, 209, 158)
             else Color3.fromRGB(228, 170, 98)
@@ -285,7 +286,8 @@ function Layered:CreatePreview()
             item.CanTouch = false
             item.CanQuery = false
             item.Anchored = true
-            item.Transparency = 0.48
+            item.Transparency = if item:GetAttribute("GearPivotOnly")==true
+                then 1 else 0.48
             item.LocalTransparencyModifier = 0
             item.Color = Color3.fromRGB(86, 188, 210)
             item.CastShadow = false
@@ -310,7 +312,8 @@ function Layered:UpdateAlignPreview()
     end
 
     local plan, reason = AlignmentMath.Plan(
-        align.Members, align.Shaft, align.Target, align.OffsetUnits
+        align.Members, align.Shaft, align.Target, align.OffsetUnits,
+        align.RollDegrees
     )
     if not plan then
         self.Parent:Message(tostring(reason))
@@ -319,13 +322,18 @@ function Layered:UpdateAlignPreview()
 
     align.Plan = plan
     if align.Preview then
-        align.Preview:PivotTo(plan.delta * align.StartGhostPivot)
+        local visual = align.VisualPose or align.Preview:GetPivot()
+        local goal = plan.delta * align.StartGhostPivot
+        align.Preview:PivotTo(goal)
         local ignore = {}
         for _, member in ipairs(align.Members) do ignore[member] = true end
         align.Valid, align.ConflictReason = PreviewFeedback.Check(
             align.Preview, ignore, align.Shaft:GetAttribute("InstanceId"), align.Target
         )
         PreviewFeedback.Paint(align.Preview, align.Valid)
+        align.TargetPose = goal
+        align.VisualPose = visual
+        align.Preview:PivotTo(visual)
     end
     self:RefreshVisuals()
     self.Parent:RefreshHUD()
@@ -353,6 +361,9 @@ function Layered:StartAlignment()
         Members = members,
         ComponentId = parent.SelectedComponentId,
         OffsetUnits = 0,
+        RollDegrees = 0,
+        LastRollSend = 0,
+        LastPreviewTime = 0,
     }
     self.TargetDepthIndex = 0
     self.HoveredCandidate = nil
@@ -387,6 +398,7 @@ function Layered:ChooseTarget()
     end
     self.HoveredCandidate = nil
     align.OffsetUnits = 0
+    align.RollDegrees = 0
     player:SetAttribute("OPENWORKS_Inserting", true)
     self:CreatePreview()
     self.Parent:Message("Scroll to adjust insertion depth, click to confirm")
@@ -399,6 +411,19 @@ function Layered:AdjustOffset(wheel)
     end
     local amount = if wheel > 0 then 1 elseif wheel < 0 then -1 else 0
     if amount == 0 then return true end
+
+    local alt = UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+    local shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    if shift then
+        self:AdjustRoll(amount * 5)
+        return true
+    end
+    if align.Stage == "Fit" and alt then
+        self:AdjustInsertion(amount * INSERTION_INCREMENT_U)
+        return true
+    end
 
     if align.Stage == "Fit" then
         self.Parent:Request({
@@ -420,6 +445,49 @@ function Layered:AdjustOffset(wheel)
     return true
 end
 
+function Layered:CommitPose(nextOffset, nextRoll)
+    local align=self.Alignment
+    if not align or not align.Target then return end
+    local ok=self.Parent:Request({
+        action="PoseShaft",
+        sourceId=align.Shaft:GetAttribute("InstanceId"),
+        targetId=align.Target:GetAttribute("InstanceId"),
+        offsetUnits=nextOffset,
+        rollDegrees=nextRoll,
+    })
+    if ok then
+        align.OffsetUnits=nextOffset
+        align.RollDegrees=nextRoll
+        self.Parent:RefreshHUD()
+    end
+end
+
+function Layered:AdjustInsertion(delta)
+    local align=self.Alignment
+    if not align then return end
+    local offset=math.clamp(align.OffsetUnits+delta,
+        -AlignmentMath.MaxOffsetUnits,AlignmentMath.MaxOffsetUnits)
+    if align.Stage=="Fit" then
+        self:CommitPose(offset,align.RollDegrees)
+    elseif align.Stage=="Preview" then
+        align.OffsetUnits=offset
+        self:UpdateAlignPreview()
+    end
+end
+
+function Layered:AdjustRoll(deltaDegrees)
+    local align=self.Alignment
+    if not align or (align.Stage~="Preview" and align.Stage~="Fit") then return end
+    local degrees=math.clamp(math.round(align.RollDegrees+deltaDegrees),-360,360)
+    if degrees==align.RollDegrees then return end
+    if align.Stage=="Fit" then
+        self:CommitPose(align.OffsetUnits,degrees)
+    else
+        align.RollDegrees=degrees
+        self:UpdateAlignPreview()
+    end
+end
+
 function Layered:ConfirmAlignment()
     local align = self.Alignment
     if not align or align.Stage ~= "Preview" then return end
@@ -434,6 +502,7 @@ function Layered:ConfirmAlignment()
         componentId = align.ComponentId,
         targetId = align.Target:GetAttribute("InstanceId"),
         offsetUnits = align.OffsetUnits,
+        rollDegrees = align.RollDegrees,
     })
     if ok then
         -- The placement is finished. Stay in a dedicated fine-fit state
@@ -505,6 +574,10 @@ function Layered:OnInput(input, processed)
             self:AdjustOffset(-1)
         elseif key == Enum.KeyCode.RightBracket or key == Enum.KeyCode.Equals then
             self:AdjustOffset(1)
+        elseif key == Enum.KeyCode.Q then
+            self:AdjustRoll(-5)
+        elseif key == Enum.KeyCode.E then
+            self:AdjustRoll(5)
         end
         return true
     end
@@ -552,8 +625,33 @@ function Layered:Start()
         Enum.KeyCode.Tab
     )
 
-    table.insert(self.Connections, RunService.RenderStepped:Connect(function()
+    table.insert(self.Connections, RunService.RenderStepped:Connect(function(dt)
         self:RefreshTargetCue()
+        local align=self.Alignment
+        if align and align.Stage=="Preview"
+            and align.Preview and align.TargetPose then
+            align.VisualPose=WorldMotion.Step(
+                align.VisualPose,align.TargetPose,dt,17)
+            align.Preview:PivotTo(align.VisualPose)
+        end
+        if align and (align.Stage=="Preview" or align.Stage=="Fit") then
+            local turn=if UserInputService:IsKeyDown(Enum.KeyCode.Q) then -1
+                elseif UserInputService:IsKeyDown(Enum.KeyCode.E) then 1 else 0
+            if turn~=0 then
+                local now=os.clock()
+                if align.Stage=="Preview" then
+                    align.RotationAccumulator=(align.RotationAccumulator or 0)+dt*95*turn
+                    local step=(if align.RotationAccumulator>=0 then math.floor(align.RotationAccumulator) else math.ceil(align.RotationAccumulator))
+                    if step~=0 then
+                        align.RotationAccumulator-=step
+                        self:AdjustRoll(step)
+                    end
+                elseif now-(align.LastRollSend or 0)>0.11 then
+                    align.LastRollSend=now
+                    self:AdjustRoll(turn*5)
+                end
+            end
+        end
     end))
 end
 

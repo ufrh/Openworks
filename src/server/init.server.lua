@@ -17,7 +17,7 @@ FORGE.Start({ Bridge = bridge, Roots = {} })
 provisioner.Start()
 ConstructionService.Start()
 
-print(string.format("[OPENWORKS] FORGE %s | Phase 07 server ready", tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] FORGE %s | Phase 08 server ready", tostring(FORGE.Version)))
 
 game:BindToClose(function()
     FORGE.Shutdown()

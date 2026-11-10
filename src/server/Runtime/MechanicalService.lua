@@ -16,7 +16,8 @@ Mechanical.__index = Mechanical
 local MAX_RELATIONSHIPS_PER_PLAYER = 128
 
 local function relationValid(kind)
-    return kind == "Bearing" or kind == "Slider" or kind == "Fixed"
+    return kind == "Bearing" or kind == "Slider"
+        or kind == "Cylindrical" or kind == "Fixed" or kind == "Gear"
 end
 
 function Mechanical.new(deps)
@@ -57,6 +58,12 @@ function Mechanical:Snapshot(relation)
         sourceId = relation:GetAttribute("SourceId"),
         componentId = relation:GetAttribute("ComponentId"),
         offsetUnits = relation:GetAttribute("OffsetUnits"),
+        rollDegrees = relation:GetAttribute("RollDegrees") or 0,
+        lowerLimit = relation:GetAttribute("LowerLimit"),
+        upperLimit = relation:GetAttribute("UpperLimit"),
+        limitsEnabled = relation:GetAttribute("LimitsEnabled") == true,
+        driveScale = relation:GetAttribute("DriveScale") or 1,
+        gearRatio = relation:GetAttribute("GearRatio"),
     }
 end
 
@@ -99,6 +106,12 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("SourceId", spec.sourceId)
     folder:SetAttribute("ComponentId", spec.componentId)
     folder:SetAttribute("OffsetUnits", spec.offsetUnits or 0)
+    folder:SetAttribute("RollDegrees", spec.rollDegrees or 0)
+    folder:SetAttribute("LowerLimit", spec.lowerLimit)
+    folder:SetAttribute("UpperLimit", spec.upperLimit)
+    folder:SetAttribute("LimitsEnabled", spec.limitsEnabled == true)
+    folder:SetAttribute("DriveScale", spec.driveScale or 1)
+    folder:SetAttribute("GearRatio", spec.gearRatio)
 
     local targetPart, sourcePart = target.PrimaryPart, source.PrimaryPart
     if not targetPart or not sourcePart then
@@ -106,7 +119,15 @@ function Mechanical:Restore(player, spec)
         return false, "Missing relationship geometry"
     end
 
-    if spec.kind == "Fixed" then
+    if spec.kind == "Gear" then
+        if not source:GetAttribute("GearTeeth")
+            or not target:GetAttribute("GearTeeth") then
+            folder:Destroy()
+            return false, "A Gear relationship requires two gear primitives"
+        end
+        -- Gear-to-gear motion is synchronized in the simulation runtime,
+        -- never falsely represented as a native Roblox GearConstraint.
+    elseif spec.kind == "Fixed" then
         local weld = Instance.new("WeldConstraint")
         weld.Name = "Fixed"
         weld.Part0 = targetPart
@@ -141,11 +162,23 @@ function Mechanical:Restore(player, spec)
 
         local constraint = if spec.kind == "Bearing"
             then Instance.new("HingeConstraint")
-            else Instance.new("PrismaticConstraint")
+            elseif spec.kind == "Slider"
+            then Instance.new("PrismaticConstraint")
+            else Instance.new("CylindricalConstraint")
         constraint.Name = spec.kind
         constraint.Attachment0 = attachment0
         constraint.Attachment1 = attachment1
         constraint.Enabled = true
+        constraint.LimitsEnabled = spec.limitsEnabled == true
+        if constraint.LimitsEnabled then
+            if constraint:IsA("HingeConstraint") then
+                constraint.LowerAngle = spec.lowerLimit or -180
+                constraint.UpperAngle = spec.upperLimit or 180
+            else
+                constraint.LowerLimit = (spec.lowerLimit or -4) * self.D.Grid.Unit
+                constraint.UpperLimit = (spec.upperLimit or 4) * self.D.Grid.Unit
+            end
+        end
         constraint.Parent = folder
     end
     folder.Parent = self.Folder
@@ -154,8 +187,13 @@ end
 
 function Mechanical:Create(player, request)
     local d = self.D
+    -- Gear meshes have distinct geometry/teeth validation and must use
+    -- CreateGearMesh, never the shaft-in-hole relationship pathway.
+    if request.kind == "Gear" then
+        return false, "Use Gear Mesh (K) to connect two gears"
+    end
     if not relationValid(request.kind) then
-        return false, "Choose Bearing, Slider, or Fixed"
+        return false, "Choose Bearing, Slider, Cylindrical, or Fixed"
     end
     if type(request.targetId) ~= "string"
         or type(request.sourceId) ~= "string" then
@@ -203,13 +241,23 @@ function Mechanical:Create(player, request)
         if not Alignment.IsOffsetValid(request.offsetUnits) then
             return false, "Invalid insertion offset"
         end
-        local plan, reason = Alignment.Plan(members, source, target, request.offsetUnits)
+        local plan, reason = Alignment.Plan(
+            members, source, target, request.offsetUnits, request.rollDegrees
+        )
         if not plan then return false, reason end
         for _, item in ipairs(plan.items) do
             local old = d.snapshot(item.model)
             local targetState = table.clone(old)
             targetState.steps = item.steps
             targetState.position = item.position
+            targetState.orientation = item.orientation
+            targetState.grounded = old.grounded
+            targetState.shaftRollDegrees = if member == source
+                then request.rollDegrees or 0 else old.shaftRollDegrees
+            targetState.alignedOffsetU = if member == source
+                then request.offsetUnits else old.alignedOffsetU
+            targetState.alignedOpeningId = if member == source
+                then target:GetAttribute("InstanceId") else old.alignedOpeningId
             targetState.assemblyPrecision = true
             targetState.freePosition = true
             local entry = d.Registry.Get(old.templateId)
@@ -246,6 +294,7 @@ function Mechanical:Create(player, request)
         targetId = request.targetId,
         componentId = componentId,
         offsetUnits = if request.kind == "Fixed" then 0 else request.offsetUnits,
+        rollDegrees = request.rollDegrees or 0,
     }
     local created, result = self:Restore(player, spec)
     if not created then
@@ -254,6 +303,216 @@ function Mechanical:Create(player, request)
     end
     d.commitAssembly(player, before, planned, spec)
     return true, spec.kind .. " relationship created (physics when shipped)"
+end
+
+-- Independent gear mesh: both gear primitives must have the same
+-- tooth module, coaxial-parallel shafts and compatible pitch-circle spacing.
+-- Teeth are real separate Parts; ratio coupling is done by paired hinge
+-- drives in SimulationService (Roblox has no native GearConstraint).
+function Mechanical:CreateGearMesh(player, request)
+    local d = self.D
+    local first = d.findOwned(player, request.sourceId)
+    local second = d.findOwned(player, request.targetId)
+    if not first or not second or first == second then
+        return false, "Choose two different gears you own"
+    end
+    local n1, n2 = first:GetAttribute("GearTeeth"), second:GetAttribute("GearTeeth")
+    if type(n1) ~= "number" or type(n2) ~= "number" then
+        return false, "Gear Mesh requires two Transmission gears"
+    end
+    if first:GetAttribute("ComponentId") ~= nil
+        and first:GetAttribute("ComponentId") == second:GetAttribute("ComponentId") then
+        return false, "Gears must belong to separate rotating bodies"
+    end
+    if not d.nearPlayer(player, first:GetPivot().Position)
+        or not d.nearPlayer(player, second:GetPivot().Position) then
+        return false, "Gear is outside build range"
+    end
+    local module1 = first:GetAttribute("GearModuleStuds")
+    local module2 = second:GetAttribute("GearModuleStuds")
+    if type(module1) ~= "number" or math.abs(module1 - module2) > 0.001 then
+        return false, "Gears have different tooth pitches"
+    end
+    local a, b = first:GetPivot(), second:GetPivot()
+    local axis = a.RightVector
+    if math.abs(axis:Dot(b.RightVector)) < 0.999 then
+        return false, "Gear shafts must be parallel"
+    end
+    local diff = b.Position - a.Position
+    local axial = math.abs(diff:Dot(axis))
+    local radial = (diff - axis * diff:Dot(axis)).Magnitude
+    local targetDistance = (n1 + n2) * module1 / (2 * math.pi)
+    if math.abs(radial - targetDistance) > 0.09 or axial > 0.18 then
+        return false, string.format(
+            "Place gear centers %.2f studs apart in their shared plane",
+            targetDistance
+        )
+    end
+    for _, relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId") == player.UserId
+            and relation:GetAttribute("Kind") == "Gear"
+            and ((relation:GetAttribute("SourceId") == request.sourceId
+                and relation:GetAttribute("TargetId") == request.targetId)
+                or (relation:GetAttribute("SourceId") == request.targetId
+                and relation:GetAttribute("TargetId") == request.sourceId)) then
+            return false, "Those gears are already meshed"
+        end
+    end
+    local spec = {
+        relationId = HttpService:GenerateGUID(false),
+        ownerUserId = player.UserId,
+        kind = "Gear",
+        sourceId = request.sourceId,
+        targetId = request.targetId,
+        gearRatio = -n1 / n2,
+    }
+    local ok, reason = self:Restore(player, spec)
+    if not ok then return false, reason end
+    d.commitAssembly(player, {}, {}, spec)
+    return true, string.format("Gear mesh %.0f:%.0f • ratio %.3f",
+        n1,n2, spec.gearRatio)
+end
+
+-- Precisely adjust an existing shaft on its real opening axis; all members
+-- of the moving component follow the same SE(3) transform. Axial offset
+-- and shaft roll may change together, without recreating the relationship.
+function Mechanical:PoseShaft(player, request)
+    local d = self.D
+    local source = d.findOwned(player, request.sourceId)
+    local target = d.findOwned(player, request.targetId)
+    if not source or not target or source == target
+        or not Alignment.IsShaft(source) or not Alignment.TargetAxis(target) then
+        return false, "Choose a shaft inside a valid opening"
+    end
+    local offset = request.offsetUnits
+    local roll = request.rollDegrees
+    if not Alignment.IsOffsetValid(offset)
+        or type(roll) ~= "number" or roll ~= roll or math.abs(roll) > 360 then
+        return false, "Invalid insertion or rotation angle"
+    end
+    if not d.nearPlayer(player, target:GetPivot().Position) then
+        return false, "Opening out of range"
+    end
+    local relation
+    for _, current in ipairs(self.Folder:GetChildren()) do
+        if current:GetAttribute("OwnerUserId") == player.UserId
+            and current:GetAttribute("SourceId") == request.sourceId
+            and current:GetAttribute("TargetId") == request.targetId
+            and (current:GetAttribute("Kind") == "Bearing"
+                or current:GetAttribute("Kind") == "Slider"
+                or current:GetAttribute("Kind") == "Cylindrical") then
+            relation = current
+            break
+        end
+    end
+    if not relation and source:GetAttribute("AlignedOpeningId")
+        ~= request.targetId then
+        return false, "Align or connect the shaft first"
+    end
+    local componentId = source:GetAttribute("ComponentId")
+    local members = if componentId then d.components:Members(player,componentId)
+        else {source}
+    local axis = target:GetPivot():VectorToWorldSpace(Alignment.TargetAxis(target)).Unit
+    local pivot = target:GetPivot().Position
+    local previousRoll = source:GetAttribute("ShaftRollDegrees") or 0
+    local previousOffset = source:GetAttribute("AlignedOffsetU") or 0
+    local delta = CFrame.new(axis * ((offset - previousOffset) * d.Grid.Unit))
+        * CFrame.new(pivot)
+        * CFrame.fromAxisAngle(axis, math.rad(roll - previousRoll))
+        * CFrame.new(-pivot)
+
+    local before, planned, ignored = {}, {}, {}
+    for _, member in ipairs(members) do
+        local old = d.snapshot(member)
+        local moved = delta * member:GetPivot()
+        local nextState = table.clone(old)
+        nextState.position = moved.Position
+        nextState.orientation = moved.Rotation
+        nextState.freePosition = true
+        if member == source then
+            nextState.shaftRollDegrees = roll
+            nextState.alignedOffsetU = offset
+            nextState.alignedOpeningId = request.targetId
+        end
+        local entry = d.Registry.Get(old.templateId)
+        if not entry then return false, "Missing component primitive" end
+        local valid, why = d.validState(player, entry, nextState)
+        if not valid then return false, why end
+        table.insert(before, old)
+        table.insert(planned, nextState)
+        ignored[member] = true
+    end
+    for i, member in ipairs(members) do d.applyState(member,planned[i]) end
+    for _, member in ipairs(members) do
+        if d.intersectsConstructed(member, ignored, target, request.sourceId) then
+            for i, restore in ipairs(members) do d.applyState(restore,before[i]) end
+            return false, "Pose interferes with the opening or another member"
+        end
+    end
+    if relation then
+        relation:SetAttribute("OffsetUnits", offset)
+        relation:SetAttribute("RollDegrees", roll)
+    end
+    d.commitBatch(player,before,planned)
+    return true, string.format("Insertion %.1f U • shaft angle %.1f°",offset,roll)
+end
+
+function Mechanical:AdjustJoint(player, request)
+    local joint = self:OwnedRelation(player,request.relationId)
+    if not joint then return false, "Select a joint you own" end
+    local kind = joint:GetAttribute("Kind")
+    if kind ~= "Bearing" and kind ~= "Slider" and kind ~= "Cylindrical" then
+        return false, "This relationship has no travel limits"
+    end
+    local lower,upper = request.lowerLimit,request.upperLimit
+    local on = request.limitsEnabled
+    if type(on) ~= "boolean"
+        or type(lower) ~= "number" or type(upper) ~= "number"
+        or lower ~= lower or upper ~= upper or lower >= upper then
+        return false, "Invalid joint limits"
+    end
+    local max = if kind == "Bearing" then 180 else 32
+    if lower < -max or upper > max then return false, "Joint limits outside range" end
+    local old = self:Snapshot(joint)
+    joint:SetAttribute("LimitsEnabled", on)
+    joint:SetAttribute("LowerLimit",lower)
+    joint:SetAttribute("UpperLimit",upper)
+    local constraint = joint:FindFirstChildWhichIsA("Constraint")
+    if constraint then
+        constraint.LimitsEnabled = on
+        if kind == "Bearing" then
+            constraint.LowerAngle = lower
+            constraint.UpperAngle = upper
+        else
+            constraint.LowerLimit = lower * self.D.Grid.Unit
+            constraint.UpperLimit = upper * self.D.Grid.Unit
+        end
+    end
+    if self.D.commitJointEdit then
+        self.D.commitJointEdit(player,old,self:Snapshot(joint))
+    end
+    return true, "Joint limits updated"
+end
+
+function Mechanical:ApplyJointEdit(player, record, undo)
+    local spec = if undo then record.before else record.after
+    local relation = self:OwnedRelation(player, spec.relationId)
+    if not relation then return false, "Joint was deleted" end
+    relation:SetAttribute("LowerLimit",spec.lowerLimit)
+    relation:SetAttribute("UpperLimit",spec.upperLimit)
+    relation:SetAttribute("LimitsEnabled",spec.limitsEnabled == true)
+    local constraint = relation:FindFirstChildWhichIsA("Constraint")
+    if constraint then
+        constraint.LimitsEnabled = spec.limitsEnabled == true
+        if spec.kind == "Bearing" then
+            constraint.LowerAngle = spec.lowerLimit or -180
+            constraint.UpperAngle = spec.upperLimit or 180
+        elseif spec.kind == "Slider" or spec.kind == "Cylindrical" then
+            constraint.LowerLimit = (spec.lowerLimit or -4) * self.D.Grid.Unit
+            constraint.UpperLimit = (spec.upperLimit or 4) * self.D.Grid.Unit
+        end
+    end
+    return true
 end
 
 -- A dedicated post-alignment micro-fit operation. A client cannot grant
@@ -382,6 +641,13 @@ function Mechanical:RebuildRelations()
             local spec = self:Snapshot(relation)
             local source = self.D.findOwned(player, spec.sourceId)
             local target = self.D.findOwned(player, spec.targetId)
+            if source and (spec.kind == "Bearing" or spec.kind == "Slider"
+                or spec.kind == "Cylindrical") then
+                relation:SetAttribute("OffsetUnits",
+                    source:GetAttribute("AlignedOffsetU") or spec.offsetUnits)
+                relation:SetAttribute("RollDegrees",
+                    source:GetAttribute("ShaftRollDegrees") or spec.rollDegrees)
+            end
             if not source or not target then
                 self:DestroyRelation(relation)
             else

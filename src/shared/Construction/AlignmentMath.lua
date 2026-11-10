@@ -116,7 +116,12 @@ local function closestOrientation(shaft, targetDirection)
     return best
 end
 
-function Alignment.Plan(members, shaft, target, offsetUnits)
+function Alignment.Plan(members, shaft, target, offsetUnits, rollDegrees)
+    rollDegrees = rollDegrees or 0
+    if type(rollDegrees) ~= "number" or rollDegrees ~= rollDegrees
+        or math.abs(rollDegrees) > 360 then
+        return nil, "Shaft roll must be between -360 and 360 degrees"
+    end
     if not Alignment.IsOffsetValid(offsetUnits) then
         return nil, "Insertion offset must be in 0.5-U increments within +/-64 U"
     end
@@ -138,26 +143,40 @@ function Alignment.Plan(members, shaft, target, offsetUnits)
     local center = target:GetPivot().Position + direction * (offsetUnits * Grid.Unit)
     local desiredShaft = CFrame.new(center) * Grid.Rotation(steps)
     local delta = desiredShaft * shaft:GetPivot():Inverse()
+    local roll = CFrame.new(center)
+        * CFrame.fromAxisAngle(direction, math.rad(rollDegrees))
+        * CFrame.new(-center)
     local items = {}
 
     for _, member in ipairs(members) do
         if not member.PrimaryPart then return nil, "Component geometry is incomplete" end
-        local world = delta * member:GetPivot()
-        local partSteps = Alignment.MatchSteps(world.Rotation)
-        if not partSteps then return nil, "A member cannot rotate to a 90-degree orientation" end
+        local base = delta * member:GetPivot()
+        local partSteps = Alignment.MatchSteps(base.Rotation)
+        if not partSteps then
+            -- Existing shafts may already have a free-angle authored roll.
+            -- Preserve the original valid 90-degree metadata as fallback.
+            partSteps = {
+                x = member:GetAttribute("RotX") or 0,
+                y = member:GetAttribute("RotY") or 0,
+                z = member:GetAttribute("RotZ") or 0,
+            }
+        end
+        local world = roll * base
         table.insert(items, {
             model = member,
             position = world.Position,
             steps = partSteps,
+            orientation = world.Rotation,
             size = member.PrimaryPart.Size,
         })
     end
 
     return {
-        delta = delta,
+        delta = roll * delta,
         center = center,
         items = items,
         targetAxis = direction,
+        rollDegrees = rollDegrees,
     }
 end
 
