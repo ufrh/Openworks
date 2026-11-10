@@ -20,6 +20,8 @@ local BoltMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("BoltMath"))
 local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SpringMath"))
+local MultiFit = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("MultiFitMath"))
 
 local Mechanical = {}
 Mechanical.__index = Mechanical
@@ -81,6 +83,9 @@ function Mechanical:Snapshot(relation)
         freeLength = relation:GetAttribute("FreeLength"),
         boltId = relation:GetAttribute("BoltId"),
         secondTargetId = relation:GetAttribute("SecondTargetId"),
+        fitPointsJSON = relation:GetAttribute("FitPointsJSON"),
+        fitPointCount = relation:GetAttribute("FitPointCount"),
+        fitTravelU = relation:GetAttribute("FitTravelU"),
     }
 end
 
@@ -135,6 +140,9 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("FreeLength",spec.freeLength)
     folder:SetAttribute("BoltId",spec.boltId)
     folder:SetAttribute("SecondTargetId",spec.secondTargetId)
+    folder:SetAttribute("FitPointsJSON",spec.fitPointsJSON)
+    folder:SetAttribute("FitPointCount",spec.fitPointCount)
+    folder:SetAttribute("FitTravelU",spec.fitTravelU)
 
     local targetPart, sourcePart = target.PrimaryPart, source.PrimaryPart
     if not targetPart or not sourcePart then
@@ -288,6 +296,14 @@ function Mechanical:Restore(player, spec)
             local at=source:GetAttribute("AlignedOffsetU") or 0
             low-=at
             high-=at
+            if type(spec.fitTravelU)=="number" then
+                low=math.max(low,-spec.fitTravelU)
+                high=math.min(high,spec.fitTravelU)
+            end
+            if low>=high then
+                folder:Destroy()
+                return false,"Multiple guides leave no safe linear travel"
+            end
         end
         constraint.LimitsEnabled=linear or spec.limitsEnabled==true
         if constraint.LimitsEnabled then
@@ -466,16 +482,18 @@ function Mechanical:SmartMate(player, request, newSource)
     local reverse=mode=="Bore" and request.reverse==true
     local shaft=if reverse then target else source
     local opening=if reverse then source else target
-    local typeName=if mode=="Bore" then (request.relationKind or "Rigid")
+    local typeName=if mode=="Bore" then (request.relationKind or "Cylindrical")
         elseif mode=="Gear" then "Gear" else "Fixed"
-    local rigid=(mode=="Bore" and typeName=="Rigid")
-        or mode=="Hub" -- a keyed gear hub is part of its shaft's rigid body
-    if mode=="Bore" and not rigid
-        and typeName~="Bearing" and typeName~="Slider"
-        and typeName~="Cylindrical" then
-        return false,"Choose Rigid, Bearing, Slider, or Cylindrical"
+    -- A bore fit never silently welds. Hub grouping is EDITOR-ONLY,
+    -- preserving the intentional keyed-gear placement workflow.
+    local rigid=mode=="Hub"
+    if mode=="Bore" and typeName~="Bearing"
+        and typeName~="Slider" and typeName~="Cylindrical"
+        and typeName~="FreeFit" then
+        return false,"Choose Rotate + Slide, Slide, Rotate or Fit Only"
     end
-    if not rigid and self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
+    if not rigid and typeName~="FreeFit"
+        and self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
         return false,"Relationship limit reached"
     end
 
@@ -668,11 +686,52 @@ function Mechanical:SmartMate(player, request, newSource)
         end
     end
 
+    local fitPairs=nil
+    local fitMap=nil
+    if mode=="Bore" then
+        local all={}
+        for _,candidate in ipairs(d.folder:GetChildren()) do
+            if candidate:IsA("Model")
+                and candidate:GetAttribute("OwnerUserId")==player.UserId then
+                table.insert(all,candidate)
+            end
+        end
+        local reason
+        fitPairs,reason=MultiFit.Find(members,all,nil,excluded)
+        if not fitPairs then
+            restoreMoving()
+            return false,reason or "Multi-point fitting failed"
+        end
+        if not MultiFit.Contains(fitPairs,request.sourceId,request.targetId) then
+            restoreMoving()
+            return false,"Primary shaft/hole fit is no longer aligned"
+        end
+        if request.fitTargets~=nil then
+            if type(request.fitTargets)~="table"
+                or #request.fitTargets>MultiFit.MaxPairs then
+                restoreMoving()
+                return false,"Invalid multi-point fit selection"
+            end
+            local confirmed={}
+            for _,pair in ipairs(fitPairs) do
+                confirmed[pair.stationaryId]=true
+            end
+            for _,id in ipairs(request.fitTargets) do
+                if type(id)~="string" or #id>64 or not confirmed[id] then
+                    restoreMoving()
+                    return false,"One or more guide holes shifted; realign the plate"
+                end
+            end
+        end
+        fitMap=MultiFit.AllowMap(fitPairs)
+    end
+
     for _,member in ipairs(members) do
         if d.intersectsConstructed(member,excluded,
             if mode=="Bore" and not reverse then opening else nil,
             if mode=="Bore" and not reverse then shaft:GetAttribute("InstanceId")
-                else nil) then
+                else nil,
+            fitMap) then
             restoreMoving()
             return false,"Attachment intersects another solid"
         end
@@ -720,10 +779,35 @@ function Mechanical:SmartMate(player, request, newSource)
             table.insert(after,d.snapshot(member))
         end
         d.commitBatch(player,before,after)
-        return true,"Aligned and added to one editable rigid component"
+        return true,"Aligned into one editor group (no physical weld)"
     end
 
     if reverse then table.insert(before,fixedShaftBefore) end
+    local fitted={}
+    for _,pair in ipairs(fitPairs or {}) do
+        table.insert(fitted,{
+            movingId=pair.movingId,
+            stationaryId=pair.stationaryId,
+        })
+    end
+    local fittedTravel=if fitPairs and #fitPairs>1
+        then MultiFit.SymmetricTravel(fitPairs) else nil
+    if (typeName=="Slider" or typeName=="Cylindrical")
+        and fittedTravel and fittedTravel<0.25 then
+        if reverse then d.applyState(shaft,fixedShaftBefore) end
+        restoreMoving()
+        return false,"The fitted rods leave no sliding travel; change insertion depth"
+    end
+    if typeName=="FreeFit" then
+        local after={}
+        for _,member in ipairs(members) do
+            table.insert(after,d.snapshot(member))
+        end
+        if reverse then table.insert(after,d.snapshot(shaft)) end
+        d.commitBatch(player,before,after)
+        return true,string.format("%d aligned hole/shaft fits • no joint or weld",
+            #fitted)
+    end
     local spec={
         relationId=HttpService:GenerateGUID(false),
         ownerUserId=player.UserId,
@@ -733,6 +817,9 @@ function Mechanical:SmartMate(player, request, newSource)
         componentId=if reverse then targetComponent else movingComponent,
         offsetUnits=offset,
         rollDegrees=roll,
+        fitPointsJSON=if mode=="Bore" then HttpService:JSONEncode(fitted) else nil,
+        fitPointCount=if mode=="Bore" then #fitted else nil,
+        fitTravelU=if mode=="Bore" then fittedTravel else nil,
         gearRatio=if mode=="Gear"
             then -(source:GetAttribute("GearTeeth")
                 /target:GetAttribute("GearTeeth")) else nil,
@@ -754,7 +841,10 @@ function Mechanical:SmartMate(player, request, newSource)
         return true,"Existing attachment repositioned"
     end
     d.commitAssembly(player,before,after,spec)
-    return true,typeName.." connected"
+    return true,if mode=="Bore" then
+        string.format("%d fitted points • %s motion • no automatic weld",
+            #fitted,typeName)
+        else typeName.." connected"
 end
 
 local function sameBody(left,right)
