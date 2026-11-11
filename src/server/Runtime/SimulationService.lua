@@ -157,6 +157,12 @@ end
 
 function Simulation:Graph(player, seed)
     local d = self.D
+    -- Simulation is NEVER allowed to compile an arbitrary graph. Every
+    -- participant must first belong to a deliberately registered Assembly.
+    local assemblyId=seed:GetAttribute("AssemblyId")
+    if type(assemblyId)~="string" or assemblyId=="" then
+        return nil,"Register the complete assembly in Edit (Ctrl+G) before simulating"
+    end
     local owned = {}
     local bodies = {}
     for _, model in ipairs(d.folder:GetChildren()) do
@@ -222,57 +228,41 @@ function Simulation:Graph(player, seed)
         end
     end
 
-    local visited = { [seedKey] = true }
-    local queue = { seedKey }
-    -- Registered assemblies include disconnected member components;
-    -- unrelated mechanisms outside the registered assembly are excluded.
-    local assemblyId=seed:GetAttribute("AssemblyId")
-    local assemblyKeys={}
-    if type(assemblyId)=="string" and assemblyId~="" then
-        for _,model in pairs(owned) do
-            if model:GetAttribute("AssemblyId")==assemblyId then
-                local k=bodyKey(model)
-                assemblyKeys[k]=true
-                if not visited[k] then
-                    visited[k]=true
-                    table.insert(queue,k)
-                end
+    -- A registered assembly is the ONLY scope. Disconnected mechanisms
+    -- deliberately added to the registration also simulate together;
+    -- registering one mechanism never silently includes other plots.
+    local visited={}
+    local queue={}
+    for _,model in pairs(owned) do
+        if model:GetAttribute("AssemblyId")==assemblyId then
+            local memberKey=bodyKey(model)
+            if not visited[memberKey] then
+                visited[memberKey]=true
+                table.insert(queue,memberKey)
             end
         end
     end
-    local index = 1
-    while index <= #queue do
-        local key = queue[index]
-        index += 1
-        -- Group members enter the same simulation SCOPE, not a welded body.
-        local current=bodies[key] and bodies[key][1]
-        local component=current and current:GetAttribute("ComponentId")
-        if component then
-            for _,peer in ipairs(editorGroups[component] or {}) do
-                if not visited[peer] then
-                    visited[peer]=true
-                    table.insert(queue,peer)
-                end
-            end
+    if not visited[seedKey] or #queue==0 then
+        return nil,"Selected component is not registered to that assembly"
+    end
+
+    -- Do not compile HALF of an assembled mechanism. If a player attached
+    -- a new shaft, crank or gear later, it must be explicitly added to
+    -- the assembly (Ctrl+Shift+G in Edit) before running physics.
+    for _,edge in ipairs(edges) do
+        local left=visited[edge.a]==true
+        local right=visited[edge.b]==true
+        if left~=right then
+            return nil,"A connected part is outside this assembly. In Edit, aim at it and use Ctrl+Shift+G to add it"
         end
-        for _, edge in ipairs(adjacent[key] or {}) do
-            local nextKey = if edge.a == key then edge.b else edge.a
-            if type(assemblyId)=="string" and assemblyId~=""
-                and not assemblyKeys[nextKey] then
-                -- Adding a real crank coupling after assembly registration
-                -- still makes the crank part of the physical mechanism.
-                -- This exception is ONLY for an explicit rigid link to
-                -- a HandCrank, never for editor ComponentId grouping.
-                local crankEdge=HandCrankMath.IsCrank(edge.source)
-                    or HandCrankMath.IsCrank(edge.target)
-                local rigid=edge.kind=="Weld" or edge.kind=="Fixed"
-                    or edge.kind=="Bolt"
-                if not (crankEdge and rigid) then continue end
-            end
-            if not visited[nextKey] then
-                visited[nextKey] = true
-                table.insert(queue, nextKey)
-            end
+    end
+    for _,members in pairs(editorGroups) do
+        local inside,outside=false,false
+        for _,key in ipairs(members) do
+            if visited[key] then inside=true else outside=true end
+        end
+        if inside and outside then
+            return nil,"An editor component has members outside this assembly. Add the entire component in Edit"
         end
     end
 
@@ -330,6 +320,10 @@ function Simulation:Start(player, payload)
     local d = self.D
     local seed = d.findOwned(player, payload.seedId)
     if not seed then return false, "Aim at a constructed part you own" end
+    local assemblyId=seed:GetAttribute("AssemblyId")
+    if type(assemblyId)~="string" or assemblyId=="" then
+        return false,"Simulation requires a registered assembly. In Edit, aim at the mechanism and press Ctrl+G"
+    end
     if not d.nearPlayer(player, seed:GetPivot().Position) then
         return false, "Mechanism is out of construction range"
     end
