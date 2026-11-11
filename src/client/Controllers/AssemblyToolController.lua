@@ -152,25 +152,18 @@ function Tool:Draw()
         Font=Enum.Font.Gotham,TextSize=11,TextWrapped=true,
         TextColor3=Theme.Muted,TextXAlignment=Enum.TextXAlignment.Left,
     })
-    local newButton=Theme.Button(make("TextButton",panel,{
-        Name="NewAssembly",Text="NEW   [N]",TextSize=12,
+    -- This tool retains the locked first-person pointer. Display actual
+    -- keyboard hints, not mouse buttons that cannot be clicked.
+    self.Shortcuts=make("TextLabel",panel,{
+        Name="AssemblyToolShortcutStrip",
+        Text="N  NEW               Enter  CONFIRM          Esc  CANCEL",
         Position=UDim2.fromOffset(12,116),
-        Size=UDim2.fromOffset(143,27),BorderSizePixel=0,
-        BackgroundColor3=Theme.Raised,
-    }),false)
-    local confirmButton=Theme.Button(make("TextButton",panel,{
-        Name="ConfirmAssembly",Text="CONFIRM   [Enter]",TextSize=12,
-        Position=UDim2.fromOffset(165,116),
-        Size=UDim2.fromOffset(151,27),BorderSizePixel=0,
-        BackgroundColor3=Theme.Raised,
-    }),false)
-    self.ConfirmButton=confirmButton
-    table.insert(self.Connections,newButton.Activated:Connect(function()
-        self:OpenName(false)
-    end))
-    table.insert(self.Connections,confirmButton.Activated:Connect(function()
-        self:Confirm()
-    end))
+        Size=UDim2.new(1,-24,0,27),
+        BackgroundColor3=Theme.Panel,BorderSizePixel=0,
+        Font=Enum.Font.GothamMedium,TextSize=11,
+        TextColor3=Theme.Text,
+        TextXAlignment=Enum.TextXAlignment.Center,
+    })
 
     local overlay=make("TextButton",gui,{
         Name="AssemblyNameModal",
@@ -232,10 +225,9 @@ function Tool:Refresh()
     if self.Mode~="Assembly" then return end
     local count=0
     for _ in pairs(self.Selected) do count+=1 end
-    self.ConfirmButton.Active=self.Stage=="Selecting" and not self.Busy
-    self.ConfirmButton.AutoButtonColor=self.ConfirmButton.Active
-    self.ConfirmButton.BackgroundColor3=if self.ConfirmButton.Active
-        then Theme.Active else Theme.Panel
+    self.Shortcuts.Text=if self.Stage=="Selecting"
+        then "N  NEW          Enter  CONFIRM          Esc  CANCEL"
+        else "N  NEW ASSEMBLY             Click  EDIT EXISTING"
     if self.Stage=="Selecting" then
         self.Title.Text="ASSEMBLY / "..self.Name
         self.Status.Text=tostring(count).." primitives selected"
