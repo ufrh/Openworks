@@ -369,6 +369,18 @@ local function commitAssembly(player, before, after, relation, removed, relation
     -- authored joint specifications. Single-relation history remains intact.
     local batch=type(relation)=="table"
         and (type(relation[1])=="table" or relationEdits~=nil)
+    local created=if batch then relation or {} else if relation then {relation} else {}
+    local exemptions={}
+    if removed~=true then
+        for _,spec in ipairs(created) do
+            exemptions[spec.relationId]=true
+        end
+        for _,edit in ipairs(relationEdits or {}) do
+            exemptions[edit.before.relationId]=true
+        end
+    end
+    local disconnected=if mechanical and removed~=true
+        then mechanical:DisconnectMoved(player,before,after,exemptions) else {}
     table.insert(state.undo, {
         kind = "Assembly",
         before = before,
@@ -376,6 +388,7 @@ local function commitAssembly(player, before, after, relation, removed, relation
         relation = if batch then nil else relation,
         relations = if batch then relation else nil,
         relationEdits=relationEdits,
+        disconnected=disconnected,
         removed = removed == true,
     })
     if #state.undo > Config.UndoLimit then table.remove(state.undo, 1) end

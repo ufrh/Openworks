@@ -661,6 +661,38 @@ def main() -> int:
           'group.BottomParts=parts' in gears
           and 'IDLE_SCAN_PERIOD=0.25' in gears
           and 'if moving then SCAN_PERIOD else IDLE_SCAN_PERIOD' in gears)
+    shaft_library=read("src/server/Runtime/ShaftLibrary.lua")
+    check("Default Shaft is a separate 0.95U diameter x 2U cylinder",
+          'model.Name="Shaft"' in shaft_library
+          and '0.95*Grid.Unit,0.95*Grid.Unit' in shaft_library
+          and '2*Grid.Unit' in shaft_library
+          and 'Enum.PartType.Cylinder' in shaft_library
+          and 'ShaftLibrary.Ensure()' in service
+          and 'payload.templateId=="Shaft"' in service)
+    check("Shaft uses native hole/shaft fitting with precision",
+          'PrimitiveFamily","CylinderShaft"' in shaft_library
+          and 'id=="shaft"' in service
+          and 'TemplateId") or model.Name))=="shaft"' in read("src/shared/Construction/AlignmentMath.lua"))
+    check("Independent transforms disconnect every non-spring relationship",
+          'function Mechanical:DisconnectMoved(' in mechanical
+          and 'relation:GetAttribute("Kind")=="Spring"' in mechanical
+          and 'local changed=false' in mechanical
+          and 'if changed and not keep then' in mechanical
+          and 'self:DestroyRelation(relation)' in mechanical
+          and 'mechanical:DisconnectMoved(player,prior,nextStates)' in service
+          and 'mechanical:DisconnectMoved(player,before,after)' in service)
+    check("Rigid joint batches preserve common motion and undo disconnections",
+          'motion.delta' in mechanical
+          and 'common and not matching(common,motion.delta)' in mechanical
+          and 'relations=disconnected,removed=true' in service
+          and 'disconnected=disconnected' in service
+          and 'local detached=record.disconnected or {}' in mechanical
+          and 'local remove=if undo then specs else detached' in mechanical
+          and 'local restore=if undo then detached else specs' in mechanical)
+    check("Moving a coupled shaft no longer blocks independent detachment",
+          'local crankDetaching=false' in service
+          and 'not crankDetaching' in service
+          and 'model:SetAttribute("AlignedOpeningId",nil)' in service)
     check("Assembly preview available before P",
           'mode=="Simulate"' in tool_ui
           and "self:OwnedAssembly(chosen)" in tool_ui)

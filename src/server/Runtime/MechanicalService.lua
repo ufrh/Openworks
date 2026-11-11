@@ -2259,7 +2259,7 @@ end
 -- a spring is an ordinary operation, not an authoring error.
 -- Both endpoints may move together ONLY under the same rigid world delta.
 -- Collect snapshots before removing constraints so undo restores every joint.
-function Mechanical:DisconnectMoved(player,beforeStates,afterStates)
+function Mechanical:DisconnectMoved(player,beforeStates,afterStates,exemptRelations)
     local beforeById,afterById={},{}
     for _,state in ipairs(beforeStates) do
         if state then beforeById[state.instanceId]=state end
@@ -2297,7 +2297,9 @@ function Mechanical:DisconnectMoved(player,beforeStates,afterStates)
     for _,relation in ipairs(self.Folder:GetChildren()) do
         if not relation:IsA("Folder")
             or relation:GetAttribute("OwnerUserId")~=player.UserId
-            or relation:GetAttribute("Kind")=="Spring" then continue end
+            or relation:GetAttribute("Kind")=="Spring"
+            or (exemptRelations and exemptRelations[relation:GetAttribute("RelationId")])
+            then continue end
         local ids={}
         local used={}
         for _,key in ipairs({"SourceId","TargetId","BoltId","SecondTargetId"}) do
@@ -2377,6 +2379,39 @@ function Mechanical:ApplyHistory(player, record, undo, restoreBatch)
     end
     local specs=record.relations or
         (record.relation and {record.relation} or {})
+    local detached=record.disconnected or {}
+    if #detached>0 and not record.removed then
+        -- Smart-mate can relocate an existing body while creating a NEW
+        -- relationship. Track both sets in one reversible transaction:
+        -- undo removes the new joint and restores the detached old ones.
+        local remove=if undo then specs else detached
+        local restore=if undo then detached else specs
+        for _,spec in ipairs(remove) do
+            local relation=self:OwnedRelation(player,spec.relationId)
+            if relation then self:DestroyRelation(relation) end
+        end
+        local moved,why=restoreBatch(player,record,undo)
+        if not moved then
+            for _,spec in ipairs(remove) do self:Restore(player,spec) end
+            return false,why
+        end
+        local completed={}
+        for _,spec in ipairs(restore) do
+            local ok,reason=self:Restore(player,spec)
+            if not ok then
+                for _,id in ipairs(completed) do
+                    local restored=self:OwnedRelation(player,id)
+                    if restored then self:DestroyRelation(restored) end
+                end
+                restoreBatch(player,record,not undo)
+                for _,prior in ipairs(remove) do self:Restore(player,prior) end
+                return false,reason
+            end
+            table.insert(completed,spec.relationId)
+        end
+        applyEdits(undo)
+        return true
+    end
     local removing=if record.removed then not undo else undo
 
     if removing then
