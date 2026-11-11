@@ -803,6 +803,7 @@ local function handle(player, payload)
         or action == "CoupleHandCrank"
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
     local simulationAction = action == "StartSimulation"
+        or action == "BeginCrank"
         or action == "StopSimulation"
         or action == "PauseSimulation" or action == "ResetSimulation"
     local componentAction = action == "Group" or action == "Ungroup"
@@ -872,6 +873,7 @@ local function handle(player, payload)
 
     local ok,result,extra,detail=pcall(function()
         if action == "StartSimulation" then return simulation:Start(player, payload) end
+        if action == "BeginCrank" then return simulation:BeginCrank(player,payload) end
         if action == "StopSimulation" then return simulation:Stop(player) end
         if action == "PauseSimulation" then return simulation:Pause(player) end
         if action == "ResetSimulation" then return simulation:Reset(player) end
@@ -1083,6 +1085,20 @@ function Service.Start()
     remote.Name = Config.RequestName
     remote.OnServerInvoke = handle
     remote.Parent = ReplicatedStorage
+
+    -- High-frequency manual input is deliberately separate from throttled
+    -- construction requests. Only a validated Simulate player with an
+    -- active, server-authorized hand crank can provide torque.
+    local oldCrankEvent=ReplicatedStorage:FindFirstChild("OPENWORKS_CrankControl")
+    if oldCrankEvent then oldCrankEvent:Destroy() end
+    local crankEvent=Instance.new("RemoteEvent")
+    crankEvent.Name="OPENWORKS_CrankControl"
+    crankEvent.Parent=ReplicatedStorage
+    crankEvent.OnServerEvent:Connect(function(player,crankId,speed,dragging,release)
+        if not hasEquippedTool(player,"Simulate") then return end
+        if type(crankId)~="string" or #crankId>64 then return end
+        simulation:InputCrank(player,crankId,speed,dragging,release)
+    end)
 
     Players.PlayerRemoving:Connect(function(player)
         if simulation then simulation:ClearPlayer(player) end
