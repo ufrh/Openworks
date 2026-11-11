@@ -64,6 +64,7 @@ function Context:Lines()
             append(lines,"I","Inspect joint telemetry")
             append(lines,"Click","Inspect body / relationships")
             append(lines,"Hold LMB","Drive crank at fixed speed; release to stop")
+            append(lines,"Hold Q / E","Push guided rack backward / forward; backdrive pinion")
         else
             append(lines,"P","Run registered assembly")
             append(lines,"Shift+P","Run assembly ungrounded")
