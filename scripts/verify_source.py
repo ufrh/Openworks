@@ -413,7 +413,9 @@ def main() -> int:
           and 'spec.sourceId=idMap[original.sourceId]' in component
           and 'spec.targetId=idMap[original.targetId]' in component
           and 'spec.componentId=componentId' in component
-          and 'fitSetMap[original.fitSetId]' in component)
+          and 'fitSetMap[original.fitSetId]' in component
+          and 'mapped.movingId=idMap[point.movingId]' in component
+          and 'mapped.stationaryId=idMap[point.stationaryId]' in component)
     check("Copied relationships restore atomically with geometry/undo",
           'local ok,detail=d.mechanical:Restore(player,spec)' in component
           and 'd.mechanical:DestroyRelation(rel)' in component
