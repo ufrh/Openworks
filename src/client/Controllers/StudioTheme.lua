@@ -57,4 +57,58 @@ function Theme.Label(object)
     return object
 end
 
+-- Consistent restyling for both static and dynamically created GUI trees.
+-- Construction, Numeric, Mate, Plot and Properties all share these rules.
+function Theme.Apply(object)
+    if object:IsA("UICorner") then
+        object.CornerRadius=UDim.new(0,Theme.Radius)
+        return
+    end
+    if object:IsA("UIStroke") then
+        if object.Parent and object.Parent:IsA("GuiObject") then
+            object.Color=Theme.Edge
+            object.Transparency=0.35
+            object.Thickness=1
+        end
+        return
+    end
+    if object:IsA("TextBox") then
+        if object.BackgroundTransparency<0.92 then
+            Theme.Chrome(object,Theme.Input)
+        end
+        object.Font=Enum.Font.Gotham
+        object.TextColor3=Theme.Text
+        object.TextSize=math.min(object.TextSize,13)
+    elseif object:IsA("TextButton") then
+        if object.BackgroundTransparency<0.92 and object.Text~="" then
+            Theme.Button(object,false)
+        end
+    elseif object:IsA("Frame") then
+        if object.BackgroundTransparency<0.92 then
+            local name=string.lower(object.Name)
+            local panel=string.find(name,"panel",1,true)
+                or string.find(name,"catalog",1,true)
+                or string.find(name,"status",1,true)
+                or string.find(name,"menu",1,true)
+                or string.find(name,"properties",1,true)
+            Theme.Chrome(object,if panel then Theme.Window else Theme.Panel)
+            object.BackgroundTransparency=math.min(object.BackgroundTransparency,0.04)
+        end
+    elseif object:IsA("TextLabel") then
+        if not string.find(string.lower(object.Name),"crosshair",1,true) then
+            object.Font=Enum.Font.GothamMedium
+            object.TextSize=math.min(object.TextSize,13)
+        end
+    end
+end
+
+function Theme.Attach(root)
+    for _,child in ipairs(root:GetDescendants()) do
+        Theme.Apply(child)
+    end
+    return root.DescendantAdded:Connect(function(child)
+        Theme.Apply(child)
+    end)
+end
+
 return table.freeze(Theme)
