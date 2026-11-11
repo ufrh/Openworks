@@ -2211,6 +2211,22 @@ function Controller:Start()
         end
     end))
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseWheel then
+            local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+                or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+            -- When nothing is being moved/aligned, Alt+wheel nudges the
+            -- selected primitive/component in WORLD Y. Otherwise preserve
+            -- the existing wheel behavior for shaft depth and editing.
+            if alt and self.Mode=="Edit" and not self.Pending
+                and not self.LockedAlignment and not self.ScaleMode
+                and not self.PendingMateChoice and not self.CatalogOpen
+                and (self.Selected or self.SelectedComponentId)
+                and not UserInputService:GetFocusedTextBox()
+                and input.Position.Z~=0 then
+                self:VerticalNudge(if input.Position.Z>0 then 1 else -1)
+                return
+            end
+        end
         if input.UserInputType==Enum.UserInputType.MouseWheel
             and not self.PendingMateChoice then
             if self.SmartMatch
