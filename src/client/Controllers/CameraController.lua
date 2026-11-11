@@ -167,9 +167,19 @@ function Camera:Start()
             self.Panning=false
         end
         self.Position=clampToPlot(self.Position)
+        -- ConstructionController writes pointer mode at Camera+2;
+        -- while actively looking/panning, enforce capture AFTER that
+        -- controller so freecam never stalls at the window boundary.
         camera.CFrame=CFrame.new(self.Position)*rotation
         camera.Focus=CFrame.new(self.Position+forward*24)
         camera.FieldOfView=self.TargetFov
+    end)
+    RunService:BindToRenderStep(RENDER_BINDING.."_Pointer",
+        Enum.RenderPriority.Camera.Value+3,function()
+        if (self.Rotating or self.Panning) and not uiCapturesPointer() then
+            UIS.MouseBehavior=Enum.MouseBehavior.LockCenter
+            UIS.MouseIconEnabled=false
+        end
     end)
 end
 
@@ -177,6 +187,7 @@ function Camera:Destroy()
     if not self.Started then return end
     self.Started=false
     RunService:UnbindFromRenderStep(RENDER_BINDING)
+    RunService:UnbindFromRenderStep(RENDER_BINDING.."_Pointer")
     for _,connection in ipairs(self.Connections) do
         connection:Disconnect()
     end
