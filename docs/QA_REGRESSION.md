@@ -25,6 +25,11 @@ Run after changing the shared geometry code, construction services, tool dispatc
 - [ ] Selection/ghost/inspector Highlights remain visible and clear after delete, undo, plot reload and respawn.
 
 ## Mechanical relationships and physics
+- [ ] Aim/place a shaft in a drilled hole, or a gear onto a shaft, using Build or Edit. A mouse-clickable relationship popup opens on the first valid fit (not keyboard-number selection); test every option by clicking the actual full-width button, including fast double-click prevention.
+- [ ] During relationship selection, the mouse cursor unlocks over a top-layer modal; no invisible construction hitbox catches the button click. Pressing 1–9 or numpad numbers must NOT select a relationship, equip a hotbar tool or move the popup. Esc, Cancel and clicking outside dismiss; the cursor and native Backpack return to their previous state.
+- [ ] For shaft/hole selection, choose Rotate+Slide, Slide, Rotate, or Fit Only. The Adjust depth/roll option returns to the locked preview without making a joint; scroll/Q/E, click again and choose a physical relationship. Test forward and reverse drilled-block fits and multi-guide shafts.
+- [ ] For gear/shaft selection, the popup offers ONLY Rotation and Rigid; both create the intended native physical connection. Check gear placement in both directions and undo/redo after selecting.
+- [ ] Manual Edit > L > choose drilled opening > confirm preview ALSO opens the same relationship picker. Choosing a real joint creates a bearing/slider/cylindrical relationship; Fit Only performs geometry-only Align; Cancel/Adjust remains in preview for further positioning.
 - [ ] Shaft in a hole: alignment first, then depth/roll adjustment, correct geometric collision handling both forward and reverse.
 - [ ] Bearing permits rotation; Slider permits travel inside shaft length; Cylindrical permits both. None self-actuates. Fixed, Weld and Bolt do not invent motion.
 - [ ] Springs are passive, obey their configured stiffness/damping and show their physical coil in simulation. No duplicate static spring visuals while simulating.
