@@ -1,160 +1,130 @@
 --!strict
--- Player-owned, non-rigid named assemblies. Components remain independent
--- physical bodies; the assembly is the SCOPE of simulation and inspection.
+-- Assemblies are manually named, explicitly selected sets of owned primitive
+-- models. A component selection EXPANDS to its primitives on the client,
+-- but ComponentId never welds them, and mechanical connectivity never
+-- implicitly registers unrelated parts. Each primitive stores AssemblyId/
+-- AssemblyName for existing snapshot, undo and manual DataStore persistence.
 local HttpService=game:GetService("HttpService")
+
 local Service={}
 Service.__index=Service
+local MAX_MEMBERS=128
+local MAX_NAME=48
 
 function Service.new(deps)
-    return setmetatable({D=deps,NextNumber={}},Service)
+    return setmetatable({D=deps},Service)
 end
 
-local function key(model)
-    local component=model:GetAttribute("ComponentId")
-    if type(component)=="string" and component~="" then
-        return "c:"..component
+local function cleanName(raw)
+    if type(raw)~="string" then return nil end
+    local normalized=raw:match("^%s*(.-)%s*$")
+    if not normalized or #normalized==0 or #normalized>MAX_NAME
+        or normalized:find("[%c]") then
+        return nil
     end
-    return "p:"..tostring(model:GetAttribute("InstanceId"))
+    return normalized
 end
 
-function Service:Connected(player,seed)
-    local d=self.D
-    local byId,bodies={},{}
-    for _,model in ipairs(d.folder:GetChildren()) do
-        if model:IsA("Model")
-            and model:GetAttribute("OwnerUserId")==player.UserId then
-            local id=model:GetAttribute("InstanceId")
-            if type(id)=="string" then
-                byId[id]=model
-                local k=key(model)
-                bodies[k]=bodies[k] or {}
-                table.insert(bodies[k],model)
-            end
-        end
-    end
-    local adjacent={}
-    for _,joint in ipairs(d.mechanical.Folder:GetChildren()) do
-        if joint:GetAttribute("OwnerUserId")==player.UserId then
-            local a=byId[joint:GetAttribute("SourceId")]
-            local b=byId[joint:GetAttribute("TargetId")]
-            if a and b then
-                local ka,kb=key(a),key(b)
-                if ka~=kb then
-                    adjacent[ka]=adjacent[ka] or {}
-                    adjacent[kb]=adjacent[kb] or {}
-                    table.insert(adjacent[ka],kb)
-                    table.insert(adjacent[kb],ka)
-                end
-            end
-        end
-    end
-    local visited={[key(seed)]=true}
-    local queue={key(seed)}
-    local index=1
-    while index<=#queue do
-        local current=queue[index]
-        index+=1
-        for _,other in ipairs(adjacent[current] or {}) do
-            if not visited[other] then
-                visited[other]=true
-                table.insert(queue,other)
-            end
-        end
-    end
+function Service:Members(player,id)
     local result={}
-    for _,body in ipairs(queue) do
-        for _,model in ipairs(bodies[body] or {}) do
+    for _,model in ipairs(self.D.folder:GetChildren()) do
+        if model:IsA("Model")
+            and model:GetAttribute("OwnerUserId")==player.UserId
+            and model:GetAttribute("AssemblyId")==id then
             table.insert(result,model)
         end
     end
     return result
 end
 
-function Service:Register(player,payload)
-    local d=self.D
-    local seed=d.findOwned(player,payload.seedId)
-    if not seed or not d.nearPlayer(player,seed:GetPivot().Position) then
-        return false,"Aim at one of your components to register an assembly"
+function Service:Requested(player,payload)
+    local ids=payload.memberIds
+    if type(ids)~="table" then
+        return nil,"Select at least one primitive or component"
     end
-    -- Reloaded assemblies already have persisted IDs. Ctrl+G on an
-    -- existing member should SELECT that assembly, not silently replace
-    -- its identifier and orphan other manually added members.
-    local existing=seed:GetAttribute("AssemblyId")
-    if type(existing)=="string" and existing~="" then
-        local name=seed:GetAttribute("AssemblyName") or "Assembly"
-        return true,"Selected "..tostring(name),existing
+    if #ids==0 or #ids>MAX_MEMBERS then
+        return nil,"Assemblies must contain 1–128 primitives"
     end
-    local connected=self:Connected(player,seed)
-    if #connected==0 or #connected>128 then
-        return false,"Assembly must contain 1–128 parts"
+    local unique,chosen={},{}
+    for _,id in ipairs(ids) do
+        if type(id)~="string" or #id==0 or #id>64
+            or unique[id] then
+            return nil,"Invalid or duplicate assembly member"
+        end
+        unique[id]=true
+        local model=self.D.findOwned(player,id)
+        if not model or not model.PrimaryPart then
+            return nil,"A selected primitive no longer exists or isn't yours"
+        end
+        table.insert(chosen,model)
     end
-    local id=HttpService:GenerateGUID(false)
-    local number=(self.NextNumber[player] or 0)+1
-    self.NextNumber[player]=number
-    local name="Assembly "..tostring(number)
-    local before,after={},{}
-    for _,model in ipairs(connected) do
-        table.insert(before,d.snapshot(model))
-        model:SetAttribute("AssemblyId",id)
-        model:SetAttribute("AssemblyName",name)
-        table.insert(after,d.snapshot(model))
-    end
-    d.commitBatch(player,before,after)
-    return true,name,id
+    return chosen
 end
 
-function Service:Add(player,payload)
-    local d=self.D
-    local seed=d.findOwned(player,payload.seedId)
-    if not seed or not d.nearPlayer(player,seed:GetPivot().Position) then
-        return false,"Aim at the part to add"
-    end
-    if type(payload.assemblyId)~="string" or #payload.assemblyId>64 then
-        return false,"Register an assembly first (A)"
-    end
-    local target,assemblyName
-    for _,member in ipairs(d.folder:GetChildren()) do
-        if member:IsA("Model")
-            and member:GetAttribute("OwnerUserId")==player.UserId
-            and member:GetAttribute("AssemblyId")==payload.assemblyId then
-            target=member
-            assemblyName=member:GetAttribute("AssemblyName")
-            break
+function Service:Write(player,payload,updating)
+    if type(payload)~="table" then return false,"Invalid assembly request" end
+    local name=cleanName(payload.name)
+    if not name then return false,"Enter an assembly name (1–48 characters)" end
+    local selected,reason=self:Requested(player,payload)
+    if not selected then return false,reason end
+    local id
+    local existing={}
+    if updating then
+        id=payload.assemblyId
+        if type(id)~="string" or #id==0 or #id>64 then
+            return false,"Choose an existing assembly first"
         end
+        existing=self:Members(player,id)
+        if #existing==0 then return false,"Assembly no longer exists" end
+    else
+        id=HttpService:GenerateGUID(false)
     end
-    if not target then return false,"The selected assembly no longer exists" end
-    local connected=self:Connected(player,seed)
-    local members={}
-    for _,member in ipairs(d.folder:GetChildren()) do
-        if member:IsA("Model")
-            and member:GetAttribute("OwnerUserId")==player.UserId
-            and member:GetAttribute("AssemblyId")==payload.assemblyId then
-            table.insert(members,member)
+
+    local selectedSet={}
+    for _,model in ipairs(selected) do
+        local other=model:GetAttribute("AssemblyId")
+        if type(other)=="string" and other~="" and other~=id then
+            return false,"A selected primitive belongs to another assembly. Edit that assembly first"
         end
+        selectedSet[model]=true
     end
-    local count=#members
+
+    -- No hidden physics or geometric grouping. Only the explicitly
+    -- selected primitive models receive the named membership attributes.
     local before,after={},{}
-    for _,member in ipairs(connected) do
-        if member:GetAttribute("AssemblyId")~=payload.assemblyId then
-            count+=1
-            if count>128 then return false,"Assembly limit is 128 parts" end
-            table.insert(before,d.snapshot(member))
+    local changed={}
+    for _,model in ipairs(existing) do changed[model]=true end
+    for _,model in ipairs(selected) do changed[model]=true end
+    for model in pairs(changed) do
+        local currentId=model:GetAttribute("AssemblyId")
+        local currentName=model:GetAttribute("AssemblyName")
+        local nextId=if selectedSet[model] then id else nil
+        local nextName=if selectedSet[model] then name else nil
+        if currentId~=nextId or currentName~=nextName then
+            table.insert(before,self.D.snapshot(model))
+            model:SetAttribute("AssemblyId",nextId)
+            model:SetAttribute("AssemblyName",nextName)
+            table.insert(after,self.D.snapshot(model))
         end
     end
-    for _,state in ipairs(before) do
-        local member=d.findOwned(player,state.instanceId)
-        member:SetAttribute("AssemblyId",payload.assemblyId)
-        member:SetAttribute("AssemblyName",assemblyName)
-        table.insert(after,d.snapshot(member))
-    end
-    if #after==0 then return false,"That component is already in this assembly" end
-    d.commitBatch(player,before,after)
-    return true,tostring(#after).." part(s) added to "..tostring(assemblyName),
-        payload.assemblyId
+    if #after>0 then self.D.commitBatch(player,before,after) end
+    return true,
+        (if updating then "Updated " else "Created ")..name
+            .." / "..tostring(#selected).." primitives",
+        id
 end
 
-function Service:ClearPlayer(player)
-    self.NextNumber[player]=nil
+function Service:Create(player,payload)
+    return self:Write(player,payload,false)
+end
+
+function Service:Update(player,payload)
+    return self:Write(player,payload,true)
+end
+
+function Service:ClearPlayer(_player)
+    -- No transient assembly state; names and membership are saved directly
+    -- on the owned primitives and persist only on explicit F6 saves.
 end
 
 return Service
