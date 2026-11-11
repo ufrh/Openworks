@@ -26,6 +26,7 @@ local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local BoreClearance = require(construction:WaitForChild("BoreClearance"))
 local NumericSizePanel = require(script.Parent:WaitForChild("NumericSizePanel"))
 local MateChoicePanel = require(script.Parent:WaitForChild("MateChoicePanel"))
+local ComponentOutline = require(script.Parent:WaitForChild("ComponentOutline"))
 local Theme = require(script.Parent:WaitForChild("StudioTheme"))
 
 local BLUE = Theme.Accent
@@ -136,6 +137,7 @@ function Controller.new(tools)
         DirectDragCandidate = nil,
         DirectDragActive = false,
         ComponentOutline = nil,
+        MoveShadowStates=nil,
         Layered = nil,
         Busy = false,
         Connections = {},
@@ -898,31 +900,46 @@ function Controller:RebuildPreview()
 
     local ghost = if source.Name == "OPENWORKS_ComponentGhost" then source else source:Clone()
     ghost.Name = "OPENWORKS_Ghost"
-    for _, part in ipairs(ghost:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Anchored = true
-            part.CanQuery = false
-            part.CanCollide = false
-            part.CanTouch = false
-            part.CastShadow = false
-            part.Transparency = if part:GetAttribute("GearPivotOnly")==true
-                then 1 else 0.58
-            part.LocalTransparencyModifier = 0 -- cloned move previews must remain visible
-            part.Color = BLUE
-            if self.CurrentSize and part == ghost.PrimaryPart then
-                part.Size = self.CurrentSize
+    local combined=source.Name=="OPENWORKS_ComponentGhost"
+    -- A component ghost is ONE presentation. Per-member transparent parts
+    -- multiply shadow/shading through overlaps, so make their color solid
+    -- and use one top-level Highlight for the complete assembled shape.
+    -- This is only visual; preflight collision uses the actual cloned CSG.
+    for _,item in ipairs(ghost:GetDescendants()) do
+        if item:IsA("Highlight") or item:IsA("SelectionBox")
+            or item:IsA("BillboardGui") or item:IsA("Decal")
+            or item:IsA("Texture") then
+            item:Destroy()
+        elseif item:IsA("BasePart") then
+            item.Anchored=true
+            item.CanQuery=false
+            item.CanCollide=false
+            item.CanTouch=false
+            item.CastShadow=false
+            item.Reflectance=0
+            item.Material=Enum.Material.SmoothPlastic
+            item.Transparency=if item:GetAttribute("GearPivotOnly")==true
+                then 1 else (if combined then 0 else 0.48)
+            item.LocalTransparencyModifier=0
+            item.Color=BLUE
+            if item:IsA("PartOperation") then item.UsePartColor=true end
+            if not combined and self.CurrentSize and item==ghost.PrimaryPart then
+                item.Size=self.CurrentSize
             end
         end
     end
 
-    create("Highlight", {
-        Adornee = ghost,
-        FillColor = Color3.fromRGB(98, 219, 168),
-        FillTransparency = 0.72,
-        OutlineColor = Color3.fromRGB(181, 249, 213),
-        OutlineTransparency = 1,
-        DepthMode = Enum.HighlightDepthMode.Occluded,
-    }, ghost)
+    -- Exactly ONE external Highlight on the complete preview container,
+    -- not a separate highlight around each of its primitive children.
+    create("Highlight",{
+        Name="OPENWORKS_UnifiedGhost",
+        Adornee=ghost,
+        FillColor=BLUE,
+        FillTransparency=if combined then 0.94 else 0.8,
+        OutlineColor=BLUE,
+        OutlineTransparency=if combined then 0.06 else 0.45,
+        DepthMode=Enum.HighlightDepthMode.Occluded,
+    },ghost)
 
     if self.Mode=="Build" and self.CurrentId then
         ghost:SetAttribute("TemplateId",self.CurrentId)
@@ -937,16 +954,11 @@ function Controller:RebuildPreview()
 end
 
 function Controller:RefreshSelectionHighlights()
-    -- All selection adornments are parented to the editor GUI and always
-    -- destroyed before rebuilding. Never manufacture invisible boundary
-    -- Parts; they were responsible for leftover selection geometry.
     if self.SelectionHighlight then
         self.SelectionHighlight:Destroy()
         self.SelectionHighlight=nil
     end
-    for _,h in ipairs(self.SelectionHighlights) do
-        h:Destroy()
-    end
+    for _,h in ipairs(self.SelectionHighlights) do h:Destroy() end
     table.clear(self.SelectionHighlights)
     if self.ComponentOutline then
         self.ComponentOutline:Destroy()
@@ -954,17 +966,22 @@ function Controller:RefreshSelectionHighlights()
     end
     if self.Mode~="Edit" and self.Mode~="Inspect" then return end
 
-    for _,model in ipairs(self.SelectedParts) do
+    if #self.SelectedParts>1 then
+        -- The WHOLE selected component receives one outer boundary, with
+        -- no internal primitive outlines or invisible bounding Parts.
+        self.ComponentOutline=ComponentOutline.new(
+            self.Gui,self.SelectedParts,Color3.fromRGB(0,170,255))
+    else
+        local model=self.SelectedParts[1]
         if model and model.Parent and model.PrimaryPart then
-            local h=create("Highlight",{
+            local highlight=create("Highlight",{
                 Name="OPENWORKS_SelectionOutline",
-                Adornee=model,
-                FillTransparency=1,
+                Adornee=model,FillTransparency=1,
                 OutlineTransparency=0,
                 OutlineColor=Color3.fromRGB(0,170,255),
                 DepthMode=Enum.HighlightDepthMode.Occluded,
             },self.Gui)
-            table.insert(self.SelectionHighlights,h)
+            table.insert(self.SelectionHighlights,highlight)
         end
     end
 end
@@ -1049,6 +1066,12 @@ function Controller:ToggleMultiSelection(model)
 end
 
 function Controller:CancelPending()
+    if self.MoveShadowStates then
+        for part,original in pairs(self.MoveShadowStates) do
+            if part and part.Parent then part.CastShadow=original end
+        end
+        self.MoveShadowStates=nil
+    end
     if self.Pending then
         if self.Selected and self.Selected.PrimaryPart then
             self.Selected.PrimaryPart.LocalTransparencyModifier = 0
@@ -1558,6 +1581,22 @@ function Controller:StartMove(copy)
         end
     else
         return
+    end
+    if not copy then
+        -- Make the actual selected component fully shadowless while its
+        -- cohesive ghost is displayed, restoring exact source settings on
+        -- commit/cancel/mode switch. Preview clones also cast no shadows.
+        self.MoveShadowStates={}
+        for _,model in ipairs(self.SelectedParts) do
+            if model and model.Parent then
+                for _,part in ipairs(model:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        self.MoveShadowStates[part]=part.CastShadow
+                        part.CastShadow=false
+                    end
+                end
+            end
+        end
     end
     self:RebuildPreview()
     if self.Layered then self.Layered:RefreshVisuals() end
@@ -2116,6 +2155,9 @@ function Controller:Start()
         end)
 
     table.insert(self.Connections, RunService.RenderStepped:Connect(function()
+        if self.ComponentOutline then
+            self.ComponentOutline:Update(self.SelectedParts)
+        end
         -- Replicated deletion, undo/redo or plot reload may destroy selected
         -- models without calling SetSelection. Never leave orphan outlines.
         local stale=false
