@@ -1,82 +1,180 @@
 --!strict
--- A one-keystroke decision AFTER a shaft is snapped to a hole.
--- Does not require selecting a housing or shaft in separate tool modes.
+-- Mouse-first relationship choice, shown over the build world after a valid
+-- shaft/hole or gear/shaft alignment. Number keys NEVER select relationships:
+-- they belong to the native Tool hotbar and previously caused collisions.
 local ContextActionService=game:GetService("ContextActionService")
 local StarterGui=game:GetService("StarterGui")
+local UserInputService=game:GetService("UserInputService")
+local Players=game:GetService("Players")
+
 local Mate={}
 Mate.__index=Mate
--- Kinematic joints are the default. Rigid bonds require the Weld tool.
--- A FreeFit places geometry only; it adds no invisible solver constraint.
+
+-- Do not silently create a rigid weld for a hole/shaft fit.
 local TYPES={"Cylindrical","Slider","Bearing","FreeFit"}
 local HUB_TYPES={"Rotation","Rigid"}
-local HUB_LABELS={
-    "Rotation only   •   gear spins freely on shaft",
-    "Rigid   •   gear and shaft rotate together",
+local BORE_LABELS={
+    "ROTATE + SLIDE   •   Free axial and rotary motion",
+    "SLIDE ONLY   •   Guided linear movement",
+    "ROTATE ONLY   •   Bearing, no axial movement",
+    "FIT ONLY   •   Placement without a physical joint",
 }
-local KEYS={Enum.KeyCode.One,Enum.KeyCode.Two,Enum.KeyCode.Three,
-    Enum.KeyCode.Four,Enum.KeyCode.KeypadOne,Enum.KeyCode.KeypadTwo,
-    Enum.KeyCode.KeypadThree,Enum.KeyCode.KeypadFour}
+local HUB_LABELS={
+    "ROTATION   •   Gear spins freely around shaft",
+    "RIGID   •   Gear is welded to shaft",
+}
+-- Keys are swallowed while the modal is open, NOT interpreted as options.
+-- Disabling the CoreGui alone does not reliably block the numeric Tool bar.
+local BLOCKED_KEYS={
+    Enum.KeyCode.Zero,Enum.KeyCode.One,Enum.KeyCode.Two,
+    Enum.KeyCode.Three,Enum.KeyCode.Four,Enum.KeyCode.Five,
+    Enum.KeyCode.Six,Enum.KeyCode.Seven,Enum.KeyCode.Eight,
+    Enum.KeyCode.Nine,Enum.KeyCode.KeypadZero,Enum.KeyCode.KeypadOne,
+    Enum.KeyCode.KeypadTwo,Enum.KeyCode.KeypadThree,
+    Enum.KeyCode.KeypadFour,Enum.KeyCode.KeypadFive,
+    Enum.KeyCode.KeypadSix,Enum.KeyCode.KeypadSeven,
+    Enum.KeyCode.KeypadEight,Enum.KeyCode.KeypadNine,
+    Enum.KeyCode.Return,Enum.KeyCode.KeypadEnter,
+    Enum.KeyCode.Escape,
+}
 
-local function instance(class,parent,properties)
-    local object=Instance.new(class)
+local function create(className,parent,properties)
+    local object=Instance.new(className)
     for key,value in pairs(properties) do object[key]=value end
     object.Parent=parent
     return object
 end
 
-function Mate.new(gui)
-    local self=setmetatable({Active=false,Callback=nil,Types=TYPES,Buttons={}},Mate)
-    local frame=instance("Frame",gui,{
-        Name="OPENWORKS_ShaftConnectionChoice",
-        Size=UDim2.fromOffset(314,268),
-        Position=UDim2.fromScale(0.5,0.56),AnchorPoint=Vector2.new(0.5,0.5),
-        BackgroundColor3=Color3.fromRGB(24,32,41),
-        BorderSizePixel=0,Visible=false,ZIndex=120,
+local function corner(parent,radius)
+    create("UICorner",parent,{CornerRadius=UDim.new(0,radius)})
+end
+
+local function text(parent,value,position,size,fontSize,muted)
+    return create("TextLabel",parent,{
+        BackgroundTransparency=1,
+        Text=value,
+        Position=position,
+        Size=size,
+        TextColor3=if muted then Color3.fromRGB(170,192,205)
+            else Color3.fromRGB(232,240,245),
+        Font=Enum.Font.GothamMedium,
+        TextSize=fontSize,
+        TextXAlignment=Enum.TextXAlignment.Left,
+        TextYAlignment=Enum.TextYAlignment.Center,
+        TextWrapped=true,
+        ZIndex=31,
     })
-    instance("UICorner",frame,{CornerRadius=UDim.new(0,10)})
-    instance("UIStroke",frame,{Color=Color3.fromRGB(105,160,186),
-        Transparency=0.42,Thickness=1})
-    local function label(value,y,h,size,color)
-        return instance("TextLabel",frame,{
-            Text=value,BackgroundTransparency=1,BorderSizePixel=0,
-            Position=UDim2.fromOffset(16,y),Size=UDim2.fromOffset(282,h),
-            Font=Enum.Font.GothamMedium,TextSize=size or 12,
-            TextColor3=color or Color3.fromRGB(230,239,245),
-            TextXAlignment=Enum.TextXAlignment.Left,ZIndex=121,
-        })
-    end
-    local heading=label("SHAFT / HOUSING",12,28,16)
-    local detail=label("Choose the allowed motion (no automatic welds)",42,19,12,
-        Color3.fromRGB(167,194,208))
-    local subtitles={
-        "Rotate + slide   •   DEFAULT",
-        "Slide only   •   guided carriage",
-        "Rotate only   •   bearing",
-        "Fit only   •   physical contact, no joint",
-    }
-    for i,k in ipairs(TYPES) do
-        local button=instance("TextButton",frame,{
-            Name="Joint_"..k,
-            Position=UDim2.fromOffset(14,69+(i-1)*40),
-            Size=UDim2.fromOffset(286,35),
-            BackgroundColor3=if i==1 then Color3.fromRGB(67,110,130)
+end
+
+function Mate.new(_ownerGui)
+    local self=setmetatable({
+        Active=false,Callback=nil,Types=TYPES,Buttons={},
+        BackpackWasVisible=nil,
+    },Mate)
+
+    -- Separate, higher DisplayOrder ScreenGui: ordinary HUD surfaces or
+    -- crosshairs cannot steal clicks from this dialog.
+    local gui=create("ScreenGui",Players.LocalPlayer:WaitForChild("PlayerGui"),{
+        Name="OPENWORKS_RelationshipPicker",
+        Enabled=false,
+        ResetOnSpawn=false,
+        IgnoreGuiInset=true,
+        DisplayOrder=85,
+        ZIndexBehavior=Enum.ZIndexBehavior.Global,
+    })
+    -- Modal GuiButton releases Roblox's first-person cursor and consumes
+    -- outside-world clicks. It sits BEHIND the actual option buttons.
+    local backdrop=create("TextButton",gui,{
+        Name="ModalPointerSurface",
+        Size=UDim2.fromScale(1,1),
+        Position=UDim2.fromOffset(0,0),
+        BackgroundColor3=Color3.fromRGB(8,14,21),
+        BackgroundTransparency=0.46,
+        BorderSizePixel=0,
+        Text="",
+        AutoButtonColor=false,
+        Active=true,
+        Modal=true,
+        ZIndex=20,
+    })
+
+    local frame=create("Frame",gui,{
+        Name="RelationshipOptions",
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.fromScale(0.5,0.5),
+        Size=UDim2.fromOffset(372,368),
+        BackgroundColor3=Color3.fromRGB(24,32,41),
+        BorderSizePixel=0,
+        Active=true,
+        ZIndex=30,
+    })
+    corner(frame,10)
+    create("UIStroke",frame,{
+        Color=Color3.fromRGB(105,160,186),
+        Transparency=0.4,Thickness=1,
+    })
+
+    self.Heading=text(frame,"CHOOSE RELATIONSHIP",
+        UDim2.fromOffset(18,14),UDim2.fromOffset(338,26),17,false)
+    self.Detail=text(frame,"Choose a physical connection.",
+        UDim2.fromOffset(18,43),UDim2.fromOffset(338,28),12,true)
+
+    for i=1,4 do
+        local button=create("TextButton",frame,{
+            Name="RelationshipChoice_"..tostring(i),
+            Position=UDim2.fromOffset(16,78+(i-1)*51),
+            Size=UDim2.fromOffset(340,45),
+            BackgroundColor3=if i==1 then Color3.fromRGB(63,107,129)
                 else Color3.fromRGB(42,55,67),
             TextColor3=Color3.fromRGB(229,241,247),
-            BorderSizePixel=0,Font=Enum.Font.GothamMedium,TextSize=12,
+            TextWrapped=true,
+            TextSize=12,
             TextXAlignment=Enum.TextXAlignment.Left,
-            Text="   "..i.."   "..subtitles[i],ZIndex=121,
+            Font=Enum.Font.GothamMedium,
+            Text="  "..BORE_LABELS[i],
+            AutoButtonColor=true,
+            Active=true,
+            Selectable=true,
+            BorderSizePixel=0,
+            ZIndex=32,
         })
-        instance("UICorner",button,{CornerRadius=UDim.new(0,5)})
-        table.insert(self.Buttons,button)
+        corner(button,6)
         button.Activated:Connect(function()
             self:Choose(i)
         end)
+        table.insert(self.Buttons,button)
     end
-    self.Footnote=label("1–4 / Enter (default)   •   Esc cancels",238,18,11,
-        Color3.fromRGB(158,184,196))
+
+    self.Adjust=create("TextButton",frame,{
+        Name="AdjustBeforeChoosing",
+        Position=UDim2.fromOffset(16,284),
+        Size=UDim2.fromOffset(340,32),
+        BackgroundColor3=Color3.fromRGB(45,68,81),
+        TextColor3=Color3.fromRGB(221,237,246),
+        Font=Enum.Font.GothamMedium,TextSize=12,
+        Text="ADJUST DEPTH / ROLL FIRST",
+        AutoButtonColor=true,Active=true,BorderSizePixel=0,ZIndex=32,
+    })
+    corner(self.Adjust,6)
+    self.Adjust.Activated:Connect(function()
+        self:ChooseAdjust()
+    end)
+
+    self.CancelButton=create("TextButton",frame,{
+        Name="CancelRelationshipChoice",
+        Position=UDim2.fromOffset(16,326),
+        Size=UDim2.fromOffset(340,28),
+        BackgroundTransparency=1,
+        TextColor3=Color3.fromRGB(183,203,214),
+        Font=Enum.Font.GothamMedium,TextSize=12,
+        Text="CANCEL  •  ESC",
+        AutoButtonColor=true,Active=true,BorderSizePixel=0,ZIndex=32,
+    })
+    self.CancelButton.Activated:Connect(function() self:Cancel() end)
+    backdrop.Activated:Connect(function() self:Cancel() end)
+
+    self.Gui=gui
     self.Frame=frame
-    self.Heading=heading
-    self.Detail=detail
     return self
 end
 
@@ -84,31 +182,32 @@ function Mate:Show(callback,fitCount,gearMount)
     if self.Active then return end
     fitCount=math.max(1,math.floor(tonumber(fitCount) or 1))
     self.Types=if gearMount then HUB_TYPES else TYPES
-    self.Heading.Text=if gearMount then "GEAR / SHAFT"
-        elseif fitCount>1
-        then "MULTI-POINT FIT  /  "..tostring(fitCount).." GUIDES"
-        else "SHAFT / HOUSING"
-    self.Detail.Text=if gearMount
-        then "Choose how the gear attaches to the shaft"
-        elseif fitCount>1
-        then "Slide only recommended for parallel guide rods"
-        else "Choose motion; no automatic welding"
-    self.Frame.Size=UDim2.fromOffset(314,if gearMount then 182 else 268)
-    self.Footnote.Position=UDim2.fromOffset(16,if gearMount then 150 else 238)
-    self.Footnote.Text=if gearMount
-        then "1–2 / Enter (Rotation)   •   Esc cancels"
-        else "1–4 / Enter (default)   •   Esc cancels"
+    self.Heading.Text=if gearMount then "GEAR / SHAFT RELATIONSHIP"
+        elseif fitCount>1 then
+            "SHAFT / "..tostring(fitCount).." ALIGNED HOLES"
+        else "SHAFT / HOLE RELATIONSHIP"
+    self.Detail.Text=if gearMount then
+        "Choose one physical gear mount."
+        elseif fitCount>1 then
+            "Choose motion for the aligned guide pattern."
+        else "Choose motion after the hole and shaft align."
+
+    local optionCount=if gearMount then 2 else 4
     for i,button in ipairs(self.Buttons) do
-        button.Visible=not gearMount or i<=2
-        button.Text=if gearMount and HUB_LABELS[i]
-            then "   "..i.."   "..HUB_LABELS[i]
-            else "   "..i.."   "..subtitles[i]
+        button.Visible=i<=optionCount
+        button.Text="  "..(if gearMount then HUB_LABELS[i] or ""
+            else BORE_LABELS[i])
     end
+    self.Adjust.Visible=not gearMount
+    self.Adjust.Position=UDim2.fromOffset(16,if gearMount then 180 else 284)
+    self.CancelButton.Position=UDim2.fromOffset(16,
+        if gearMount then 194 else 326)
+    self.Frame.Size=UDim2.fromOffset(372,if gearMount then 236 else 368)
+
     self.Active=true
     self.Callback=callback
-    self.Frame.Visible=true
-    -- Native Roblox hotbar binds these same keys; suspend the bar for
-    -- one modal choice, then restore exactly its previous visibility.
+    -- Suppress the native hotbar while choosing. Even when it is restored,
+    -- the relationship buttons never use number-key selection.
     local ok,previous=pcall(function()
         return StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Backpack)
     end)
@@ -117,42 +216,34 @@ function Mate:Show(callback,fitCount,gearMount)
         StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack,false)
     end)
     ContextActionService:BindActionAtPriority(
-        "OPENWORKS_ShaftChoice",function(_,state,key)
-            if state~=Enum.UserInputState.Begin then
-                return Enum.ContextActionResult.Sink
-            end
-            if key.KeyCode==Enum.KeyCode.Return
-                or key.KeyCode==Enum.KeyCode.KeypadEnter then
-                self:Choose(1)
-                return Enum.ContextActionResult.Sink
-            end
-            if key.KeyCode==Enum.KeyCode.Escape then
+        "OPENWORKS_ShaftChoice",function(_,state,input)
+            if state==Enum.UserInputState.Begin
+                and input.KeyCode==Enum.KeyCode.Escape then
                 self:Cancel()
-                return Enum.ContextActionResult.Sink
-            end
-            for index,code in ipairs(KEYS) do
-                if key.KeyCode==code then
-                    self:Choose((index-1)%4+1)
-                    return Enum.ContextActionResult.Sink
-                end
             end
             return Enum.ContextActionResult.Sink
         end,false,Enum.ContextActionPriority.High.Value+1000,
-        Enum.KeyCode.One,Enum.KeyCode.Two,Enum.KeyCode.Three,
-        Enum.KeyCode.Four,Enum.KeyCode.KeypadOne,
-        Enum.KeyCode.KeypadTwo,Enum.KeyCode.KeypadThree,
-        Enum.KeyCode.KeypadFour,Enum.KeyCode.Escape,
-        Enum.KeyCode.Return,Enum.KeyCode.KeypadEnter
+        table.unpack(BLOCKED_KEYS)
     )
+    self.Gui.Enabled=true
+    UserInputService.MouseBehavior=Enum.MouseBehavior.Default
+    UserInputService.MouseIconEnabled=true
 end
 
 function Mate:Choose(index)
-    if not self.Active or not self.Types[index] then return end
+    if not self.Active then return end
+    local value=self.Types[index]
+    if not value then return end
     local callback=self.Callback
-    -- Release the keyboard lock before issuing the request; the parent
-    -- can show a validation error without leaving the hotbar disabled.
     self:Hide()
-    if callback then callback(self.Types[index]) end
+    if callback then callback(value) end
+end
+
+function Mate:ChooseAdjust()
+    if not self.Active or self.Types==HUB_TYPES then return end
+    local callback=self.Callback
+    self:Hide()
+    if callback then callback("__Adjust") end
 end
 
 function Mate:Cancel()
@@ -166,12 +257,12 @@ function Mate:Hide()
     if not self.Active then return end
     self.Active=false
     self.Callback=nil
-    self.Frame.Visible=false
+    self.Gui.Enabled=false
     ContextActionService:UnbindAction("OPENWORKS_ShaftChoice")
     if self.BackpackWasVisible~=nil then
-        local original=self.BackpackWasVisible
+        local visible=self.BackpackWasVisible
         pcall(function()
-            StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack,original)
+            StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack,visible)
         end)
     end
     self.BackpackWasVisible=nil
@@ -179,7 +270,7 @@ end
 
 function Mate:Destroy()
     self:Hide()
-    self.Frame:Destroy()
+    self.Gui:Destroy()
 end
 
 return Mate
