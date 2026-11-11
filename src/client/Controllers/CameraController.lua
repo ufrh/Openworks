@@ -237,7 +237,8 @@ function Camera:Start()
             UIS.MouseBehavior=Enum.MouseBehavior.LockCenter
             UIS.MouseIconEnabled=false
         elseif player:GetAttribute("OPENWORKS_CrankActive")~=true
-            and player:GetAttribute("OPENWORKS_PropertiesLooking")~=true then
+            and player:GetAttribute("OPENWORKS_PropertiesLooking")~=true
+            and player:GetAttribute("OPENWORKS_ScaleActive")~=true then
             -- Ordinary freecam movement never captures the cursor.
             UIS.MouseBehavior=Enum.MouseBehavior.Default
             UIS.MouseIconEnabled=true
