@@ -338,6 +338,11 @@ function Smart.HubPose(source: Model, target: Model, near: Vector3)
 end
 
 local function socketPlan(members, shaft, target, forcedByAim)
+    -- A Cylinder can be used as a wheel, roller, or solid construction
+    -- piece. It is a shaft candidate ONLY when its real diameter is
+    -- smaller than the target's verifiable opening, with sufficient
+    -- insertion length. Never magnetize oversized wheel geometry.
+    if not Bore.CanInsert(shaft,target) then return nil end
     local axis=Alignment.TargetAxis(target)
     if not axis then return nil end
     local targetCF=target:GetPivot()
@@ -369,6 +374,7 @@ local function socketPlan(members, shaft, target, forcedByAim)
 end
 
 local function reverseSocketPlan(members, opening, shaft, forcedByAim)
+    if not Bore.CanInsert(shaft,opening) then return nil end
     local shaftCF=shaft:GetPivot()
     local holeCF=opening:GetPivot()
     local shaftAxis=shaftCF.RightVector
