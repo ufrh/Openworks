@@ -86,6 +86,9 @@ function Mechanical:Snapshot(relation)
         fitPointsJSON = relation:GetAttribute("FitPointsJSON"),
         fitPointCount = relation:GetAttribute("FitPointCount"),
         fitTravelU = relation:GetAttribute("FitTravelU"),
+        fitSetId = relation:GetAttribute("FitSetId"),
+        fitSetIndex = relation:GetAttribute("FitSetIndex"),
+        fitSetCount = relation:GetAttribute("FitSetCount"),
     }
 end
 
@@ -143,6 +146,9 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("FitPointsJSON",spec.fitPointsJSON)
     folder:SetAttribute("FitPointCount",spec.fitPointCount)
     folder:SetAttribute("FitTravelU",spec.fitTravelU)
+    folder:SetAttribute("FitSetId",spec.fitSetId)
+    folder:SetAttribute("FitSetIndex",spec.fitSetIndex)
+    folder:SetAttribute("FitSetCount",spec.fitSetCount)
 
     local targetPart, sourcePart = target.PrimaryPart, source.PrimaryPart
     if not targetPart or not sourcePart then
@@ -620,17 +626,9 @@ function Mechanical:SmartMate(player, request, newSource)
             break
         end
     end
-    -- An established moving joint is never silently converted into a rigid
-    -- group. Keep the existing relationship and let shaft pose edit it.
-    if existing and mode=="Bore" then
-        if not reverse and not newSource then
-            return self:PoseShaft(player,{
-                sourceId=request.sourceId,targetId=request.targetId,
-                offsetUnits=offset,rollDegrees=roll,
-            })
-        end
-        return false,"Already connected: adjust the shaft through its existing joint"
-    end
+    -- Existing fits are reconciled after ALL guide points are matched.
+    -- In particular an old 1-joint/4-hole construction may gain its
+    -- three missing physical joints without duplicating the first.
 
     local function restoreMoving()
         if not newSource then
@@ -697,11 +695,13 @@ function Mechanical:SmartMate(player, request, newSource)
         end
         local reason
         local stationary=MultiFit.Scope(target,all)
-        fitPairs,reason=MultiFit.Find(members,stationary,nil,excluded)
-        if not fitPairs then
+        local candidates
+        candidates,reason=MultiFit.Find(members,stationary,nil,excluded)
+        if not candidates then
             restoreMoving()
             return false,reason or "Multi-point fitting failed"
         end
+        fitPairs=MultiFit.Unique(candidates,request.sourceId,request.targetId)
         local complete,why=MultiFit.Completeness(
             members,stationary,fitPairs,reverse)
         if not complete then
@@ -825,42 +825,106 @@ function Mechanical:SmartMate(player, request, newSource)
         return true,string.format("%d aligned hole/shaft fits • no joint or weld",
             #fitted)
     end
-    local spec={
-        relationId=HttpService:GenerateGUID(false),
-        ownerUserId=player.UserId,
-        kind=typeName,
-        sourceId=if reverse then request.targetId else request.sourceId,
-        targetId=if reverse then request.sourceId else request.targetId,
-        componentId=if reverse then targetComponent else movingComponent,
-        offsetUnits=offset,
-        rollDegrees=roll,
-        fitPointsJSON=if mode=="Bore" then HttpService:JSONEncode(fitted) else nil,
-        fitPointCount=if mode=="Bore" then #fitted else nil,
-        fitTravelU=if mode=="Bore" then fittedTravel else nil,
-        gearRatio=if mode=="Gear"
-            then -(source:GetAttribute("GearTeeth")
-                /target:GetAttribute("GearTeeth")) else nil,
-    }
+    local createdSpecs={}
+    local desiredSpecs={}
+    local fitSetId=if mode=="Bore" and #fitPairs>1
+        then HttpService:GenerateGUID(false) else nil
+    if mode=="Bore" then
+        -- Every independently fitted hole/shaft pair gets its OWN real
+        -- native relationship. One master slider with cosmetic dots made
+        -- the other three guide rods ineffective in simulation.
+        for index,pair in ipairs(fitPairs) do
+            local candidateSpec={
+                relationId=HttpService:GenerateGUID(false),
+                ownerUserId=player.UserId,
+                kind=typeName,
+                sourceId=pair.shaft:GetAttribute("InstanceId"),
+                targetId=pair.hole:GetAttribute("InstanceId"),
+                componentId=pair.shaft:GetAttribute("ComponentId"),
+                offsetUnits=pair.depthU,
+                rollDegrees=roll,
+                fitPointsJSON=HttpService:JSONEncode({{
+                    movingId=pair.movingId,
+                    stationaryId=pair.stationaryId,
+                }}),
+                fitPointCount=1,
+                fitTravelU=fittedTravel,
+                fitSetId=fitSetId,
+                fitSetIndex=index,
+                fitSetCount=#fitPairs,
+            }
+            table.insert(desiredSpecs,candidateSpec)
+        end
+    else
+        table.insert(desiredSpecs,{
+            relationId=HttpService:GenerateGUID(false),
+            ownerUserId=player.UserId,
+            kind=typeName,
+            sourceId=request.sourceId,
+            targetId=request.targetId,
+            componentId=movingComponent,
+            offsetUnits=offset,
+            rollDegrees=roll,
+            gearRatio=if mode=="Gear"
+                then -(source:GetAttribute("GearTeeth")
+                    /target:GetAttribute("GearTeeth")) else nil,
+        })
+    end
 
-    if not existing then
-        local made,why=self:Restore(player,spec)
+    local existingByPair={}
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId")==player.UserId then
+            local a=relation:GetAttribute("SourceId")
+            local b=relation:GetAttribute("TargetId")
+            existingByPair[tostring(a)..":"..tostring(b)]=relation
+            existingByPair[tostring(b)..":"..tostring(a)]=relation
+        end
+    end
+    local need={}
+    for _,candidate in ipairs(desiredSpecs) do
+        local key=candidate.sourceId..":"..candidate.targetId
+        local prior=existingByPair[key]
+        if prior then
+            if prior:GetAttribute("Kind")~=typeName then
+                if reverse then d.applyState(shaft,fixedShaftBefore) end
+                restoreMoving()
+                return false,"An existing relationship has a different motion type"
+            end
+        else
+            table.insert(need,candidate)
+        end
+    end
+    if self:Count(player)+#need>MAX_RELATIONSHIPS_PER_PLAYER then
+        if reverse then d.applyState(shaft,fixedShaftBefore) end
+        restoreMoving()
+        return false,"Not enough relationship slots for all fitted rods"
+    end
+    for _,candidate in ipairs(need) do
+        local made,why=self:Restore(player,candidate)
         if not made then
+            for _,created in ipairs(createdSpecs) do
+                local relation=self:OwnedRelation(player,created.relationId)
+                if relation then self:DestroyRelation(relation) end
+            end
             if reverse then d.applyState(shaft,fixedShaftBefore) end
             restoreMoving()
             return false,why
         end
+        table.insert(createdSpecs,candidate)
     end
     local after={}
     for _,member in ipairs(members) do table.insert(after,d.snapshot(member)) end
     if reverse then table.insert(after,d.snapshot(shaft)) end
-    if existing then
+    if #createdSpecs==0 then
         d.commitBatch(player,before,after)
-        return true,"Existing attachment repositioned"
+        return true,string.format("%d existing %s connections repositioned",
+            #desiredSpecs,typeName)
     end
-    d.commitAssembly(player,before,after,spec)
+    -- One authored operation, one undo/redo entry, all joints or none.
+    d.commitAssembly(player,before,after,createdSpecs)
     return true,if mode=="Bore" then
-        string.format("%d fitted points • %s motion • no automatic weld",
-            #fitted,typeName)
+        string.format("%d individual %s relationships connected (one per rod/hole)",
+            #desiredSpecs,typeName)
         else typeName.." connected"
 end
 
