@@ -1158,7 +1158,10 @@ function Controller:UpdatePreview()
             end
             local moving=SmartPlacement.Members(self.Preview)
             local stationary=MultiFit.Scope(match.target,allTargets)
-            local matches,why=MultiFit.Find(moving,stationary)
+            local candidates,why=MultiFit.Find(moving,stationary)
+            local matches=candidates and MultiFit.Unique(candidates,
+                match.source:GetAttribute("InstanceId"),
+                match.target:GetAttribute("InstanceId"))
             match.fitDetails=matches or {}
             if matches then
                 approved=MultiFit.AllowMap(matches)
@@ -1170,12 +1173,8 @@ function Controller:UpdatePreview()
                     self.PreviewReason=reason
                 end
                 local names={}
-                local seen={}
                 for _,pair in ipairs(matches) do
-                    if not seen[pair.stationaryId] then
-                        table.insert(names,pair.stationaryId)
-                        seen[pair.stationaryId]=true
-                    end
+                    table.insert(names,pair.stationaryId)
                 end
                 table.sort(names)
                 match.fitTargets=names

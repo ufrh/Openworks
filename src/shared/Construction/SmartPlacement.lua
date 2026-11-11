@@ -265,7 +265,10 @@ local function bestBoreRoll(ghost,members,source,target,reverse,
             local contacts=MultiFit.Find(members,allTargets,
                 nextCF*pivot:Inverse(),ignored)
             if contacts then
-                local count=#contacts
+                local unique=MultiFit.Unique(contacts,
+                    source:GetAttribute("InstanceId"),
+                    target:GetAttribute("InstanceId"))
+                local count=#unique
                 local change=math.abs(candidate-roll)
                 if count>bestCount
                     or (count==bestCount and change<bestChange) then
@@ -363,9 +366,20 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 local chosenTargets=MultiFit.Scope(target,allTargets or targets)
                 local initial=MultiFit.Find(members,chosenTargets,
                     cf*ghost:GetPivot():Inverse(),ignored)
-                -- Don't run the multi-angle search every frame if the
-                -- authored hole pattern already registers two or more fits.
-                if not initial or #initial<2 then
+                -- Solve the full pattern even if a partial 2/4 snap
+                -- looks valid around the first guide. A two-point result
+                -- is not sufficient when there are four expected holes.
+                local eligible=0
+                for _,member in ipairs(members) do
+                    if (isOpening and Alignment.TargetAxis(member))
+                        or (not isOpening and Alignment.IsShaft(member)) then
+                        eligible+=1
+                    end
+                end
+                local current=if initial then #MultiFit.Unique(initial,
+                    source:GetAttribute("InstanceId"),
+                    target:GetAttribute("InstanceId")) else 0
+                if current<eligible then
                     cf,roll=bestBoreRoll(ghost,members,source,target,
                         isOpening,offset,roll,cf,chosenTargets,ignored)
                 end
@@ -376,9 +390,12 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 local fitted=nil
                 if kind=="Bore" then
                     local delta=cf*ghost:GetPivot():Inverse()
-                    fitted=MultiFit.Find(members,
+                    local raw=MultiFit.Find(members,
                         MultiFit.Scope(target,allTargets or targets),
                         delta,ignored)
+                    fitted=raw and MultiFit.Unique(raw,
+                        source:GetAttribute("InstanceId"),
+                        target:GetAttribute("InstanceId"))
                     if fitted and #fitted>1 then
                         score-=math.min(12,(#fitted-1)*2.5)
                     end
