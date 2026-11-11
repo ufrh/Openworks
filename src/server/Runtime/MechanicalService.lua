@@ -1869,8 +1869,25 @@ function Mechanical:Fit(player, request)
         return false, fitReason or "Shaft interferes with another solid"
     end
 
+    local crankBefore,crankAfter,crankReason=
+        self:ResizeCoupledCranks(player,source)
+    if not crankBefore then
+        d.applyState(source,before)
+        return false,crankReason or "Coupled hand crank could not be resized"
+    end
+
     local after = d.snapshot(source)
-    d.commitRecord(player, before, after)
+    if #crankBefore>0 then
+        local previous={before}
+        local nextStates={after}
+        for index,old in ipairs(crankBefore) do
+            table.insert(previous,old)
+            table.insert(nextStates,crankAfter[index])
+        end
+        d.commitBatch(player,previous,nextStates)
+    else
+        d.commitRecord(player, before, after)
+    end
     return true, string.format(
         "Shaft %.2f U diameter • %.2f U clearance",
         nextDiameter / d.Grid.Unit,
