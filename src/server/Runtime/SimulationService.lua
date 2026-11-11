@@ -829,13 +829,14 @@ function Simulation:Start(player, payload)
         -- 5. Ground every explicitly grounded rigid body, if any.
         -- Otherwise retain the established aim-at-housing grounding fallback.
         local explicitGround = {}
-        if session.Grounded then
-            for key, originals in pairs(graph.bodies) do
-                if graph.included[key] then
-                    for _, member in ipairs(originals) do
-                        if member:GetAttribute("Grounded") == true then
-                            explicitGround[key] = true
-                        end
+        -- Ungrounded-by-default means no IMPLICIT grounding of the
+        -- aimed body. Player-authored Grounded supports always remain
+        -- grounded, so a deliberate bearing housing / rack guide works.
+        for key, originals in pairs(graph.bodies) do
+            if graph.included[key] then
+                for _, member in ipairs(originals) do
+                    if member:GetAttribute("Grounded") == true then
+                        explicitGround[key] = true
                     end
                 end
             end
