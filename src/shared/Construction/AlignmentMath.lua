@@ -32,6 +32,7 @@ function Alignment.IsShaft(model)
     local name = family(model)
     if string.find(name, "halfcylinder", 1, true) then return false end
     return string.find(name, "cylinder", 1, true) ~= nil
+        or string.lower(tostring(model:GetAttribute("TemplateId") or model.Name))=="shaft"
 end
 
 function Alignment.TargetAxis(model)

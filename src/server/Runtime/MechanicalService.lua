@@ -1239,7 +1239,7 @@ function Mechanical:SmartMate(player, request, newSource)
     for _,member in ipairs(members) do table.insert(after,d.snapshot(member)) end
     if reverse then table.insert(after,d.snapshot(shaft)) end
     if #createdSpecs==0 and #relationEdits==0 then
-        d.commitBatch(player,before,after)
+        d.commitBatch(player,before,after,true)
         return true,string.format("%d existing %s connections repositioned",
             #desiredSpecs,typeName)
     end
@@ -2020,7 +2020,7 @@ function Mechanical:PoseShaft(player, request)
         relation:SetAttribute("OffsetUnits", offset)
         relation:SetAttribute("RollDegrees", roll)
     end
-    d.commitBatch(player,before,planned)
+    d.commitBatch(player,before,planned,true)
     return true, string.format("Insertion %.1f U • shaft angle %.1f°",offset,roll)
 end
 
@@ -2224,9 +2224,9 @@ function Mechanical:Fit(player, request)
             table.insert(previous,old)
             table.insert(nextStates,crankAfter[index])
         end
-        d.commitBatch(player,previous,nextStates)
+        d.commitBatch(player,previous,nextStates,true)
     else
-        d.commitRecord(player, before, after)
+        d.commitRecord(player, before, after,true)
     end
     return true, string.format(
         "Shaft %.2f U diameter • %.2f U clearance",
@@ -2251,6 +2251,112 @@ function Mechanical:Remove(player, request)
     self.D.commitAssembly(player,before,{},spec,true)
     return true,if spec.kind=="Bolt"
         then "Bolt and its connection removed" else "Relationship removed"
+end
+
+
+-- A normal construction transform must not keep invisible joints spanning
+-- independently moved geometry. Springs are intentionally exempt: stretching
+-- a spring is an ordinary operation, not an authoring error.
+-- Both endpoints may move together ONLY under the same rigid world delta.
+-- Collect snapshots before removing constraints so undo restores every joint.
+function Mechanical:DisconnectMoved(player,beforeStates,afterStates)
+    local beforeById,afterById={},{}
+    for _,state in ipairs(beforeStates) do
+        if state then beforeById[state.instanceId]=state end
+    end
+    for _,state in ipairs(afterStates) do
+        if state then afterById[state.instanceId]=state end
+    end
+    local function pose(state)
+        local rotation=if typeof(state.orientation)=="CFrame"
+            then state.orientation.Rotation else self.D.Grid.Rotation(state.steps)
+        return CFrame.new(state.position)*rotation
+    end
+    local function matching(a,b)
+        return (a.Position-b.Position).Magnitude<0.001
+            and a.RightVector:Dot(b.RightVector)>0.99999
+            and a.UpVector:Dot(b.UpVector)>0.99999
+    end
+    local moved={}
+    for id,old in pairs(beforeById) do
+        local nextState=afterById[id]
+        if nextState then
+            local a,b=pose(old),pose(nextState)
+            local resized=(old.size-nextState.size).Magnitude>0.0001
+            if resized or not matching(a,b) then
+                moved[id]={
+                    delta=b*a:Inverse(),
+                    resized=resized,
+                }
+            end
+        end
+    end
+    if next(moved)==nil then return {} end
+
+    local disconnected={}
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if not relation:IsA("Folder")
+            or relation:GetAttribute("OwnerUserId")~=player.UserId
+            or relation:GetAttribute("Kind")=="Spring" then continue end
+        local ids={}
+        local used={}
+        for _,key in ipairs({"SourceId","TargetId","BoltId","SecondTargetId"}) do
+            local id=relation:GetAttribute(key)
+            if type(id)=="string" and id~="" and not used[id] then
+                used[id]=true
+                table.insert(ids,id)
+            end
+        end
+        local changed=false
+        local common=nil
+        local keep=true
+        for _,id in ipairs(ids) do
+            local motion=moved[id]
+            if motion then
+                changed=true
+                if motion.resized then keep=false end
+                if common and not matching(common,motion.delta) then
+                    keep=false
+                end
+                common=common or motion.delta
+            else
+                keep=false
+            end
+        end
+        if changed and not keep then
+            local spec=self:Snapshot(relation)
+            table.insert(disconnected,spec)
+            self:DestroyRelation(relation)
+            -- Dropping a bearing/slider also removes its old insertion
+            -- metadata. Otherwise the next ordinary shaft move can remain
+            -- trapped by an opening it is no longer mechanically joined to.
+            if spec.kind=="Bearing" or spec.kind=="Slider"
+                or spec.kind=="Cylindrical" then
+                local source=self.D.findOwned(player,spec.sourceId)
+                if source and source:GetAttribute("AlignedOpeningId")==spec.targetId then
+                    if not beforeById[spec.sourceId] then
+                        local old=self.D.snapshot(source)
+                        table.insert(beforeStates,old)
+                        beforeById[spec.sourceId]=old
+                    end
+                    source:SetAttribute("AlignedOpeningId",nil)
+                    source:SetAttribute("AlignedOffsetU",0)
+                    source:SetAttribute("ShaftRollDegrees",0)
+                    local state=afterById[spec.sourceId]
+                    if state then
+                        state.alignedOpeningId=nil
+                        state.alignedOffsetU=0
+                        state.shaftRollDegrees=0
+                    else
+                        local updated=self.D.snapshot(source)
+                        table.insert(afterStates,updated)
+                        afterById[spec.sourceId]=updated
+                    end
+                end
+            end
+        end
+    end
+    return disconnected
 end
 
 function Mechanical:ApplyHistory(player, record, undo, restoreBatch)

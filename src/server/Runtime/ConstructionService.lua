@@ -21,6 +21,7 @@ local SimulationService = require(script.Parent:WaitForChild("SimulationService"
 local GearLibrary = require(script.Parent:WaitForChild("GearLibrary"))
 local FastenerLibrary = require(script.Parent:WaitForChild("FastenerLibrary"))
 local HandCrankLibrary = require(script.Parent:WaitForChild("HandCrankLibrary"))
+local ShaftLibrary = require(script.Parent:WaitForChild("ShaftLibrary"))
 local AssemblyService = require(script.Parent:WaitForChild("AssemblyService"))
 local PlotService = require(script.Parent:WaitForChild("PlotService"))
 local PlotPersistence = require(script.Parent:WaitForChild("PlotPersistence"))
@@ -259,8 +260,8 @@ local function validState(player, entry, proposed)
     local original = entry.Model.PrimaryPart
     if not original then return false, "Missing primitive geometry" end
     local id = string.lower(tostring(entry.Id))
-    local isCylinder = string.find(id, "cylinder", 1, true)
-        and not string.find(id, "halfcylinder", 1, true)
+    local isCylinder = (id=="shaft" or string.find(id,"cylinder",1,true))
+        and not string.find(id,"halfcylinder",1,true)
     if proposed.fitPrecision == true and not isCylinder then
         return false, "Fine-fit precision is reserved for full Cylinder shafts"
     end
@@ -310,20 +311,38 @@ local function applyState(model, data)
         then data.materialId else "Steel")
 end
 
-local function commitRecord(player, before, after)
-    local state = historyFor(player)
-    table.insert(state.undo, { before = before, after = after })
-    if #state.undo > Config.UndoLimit then
-        table.remove(state.undo, 1)
+
+local function commitRecord(player, before, after, preserveRelations)
+    local state=historyFor(player)
+    local prior=if before then {before} else {}
+    local nextStates=if after then {after} else {}
+    local disconnected=if mechanical and not preserveRelations
+        then mechanical:DisconnectMoved(player,prior,nextStates) else {}
+    if #disconnected>0 then
+        table.insert(state.undo,{
+            kind="Assembly",before=prior,after=nextStates,
+            relations=disconnected,removed=true,
+        })
+    else
+        table.insert(state.undo,{before=before,after=after})
     end
+    if #state.undo>Config.UndoLimit then table.remove(state.undo,1) end
     table.clear(state.redo)
 end
 
-local function commitBatch(player, before, after)
-    -- Geometry transformations, additions and deletions only.
-    local state = historyFor(player)
-    table.insert(state.undo, { kind = "Batch", before = before, after = after })
-    if #state.undo > Config.UndoLimit then table.remove(state.undo, 1) end
+local function commitBatch(player,before,after,preserveRelations)
+    local state=historyFor(player)
+    local disconnected=if mechanical and not preserveRelations
+        then mechanical:DisconnectMoved(player,before,after) else {}
+    if #disconnected>0 then
+        table.insert(state.undo,{
+            kind="Assembly",before=before,after=after,
+            relations=disconnected,removed=true,
+        })
+    else
+        table.insert(state.undo,{kind="Batch",before=before,after=after})
+    end
+    if #state.undo>Config.UndoLimit then table.remove(state.undo,1) end
     table.clear(state.redo)
 end
 
@@ -492,6 +511,7 @@ local function place(player, payload)
                 or payload.autoMate.kind=="Hub"),
     }
     proposed.resizePrecision = Grid.HasFractionalSize(proposed.size)
+    proposed.fitPrecision = payload.templateId=="Shaft"
     proposed.numericPrecision = payload.numericPrecision == true
 
     local valid, reason = validState(player, entry, proposed)
@@ -604,20 +624,19 @@ local function update(player, payload)
     local before=snapshot(model)
     local crankCouplings=if Alignment.IsShaft(model)
         then mechanical:CoupledCranks(player,model) else {}
+    -- Moving a coupled shaft independently now DISCONNECTS its rigid weld.
+    -- Diameter-only fitting can still resize an attached crank in place.
+    local crankDetaching=false
     if #crankCouplings>0 and typeof(proposed.size)=="Vector3"
         and typeof(proposed.position)=="Vector3"
         and Grid.ValidSteps(proposed.steps) then
-        -- Resize the crank with the shaft, but never silently pull a
-        -- physically welded crank away from the shaft's output end.
         local desiredRotation=if typeof(proposed.orientation)=="CFrame"
             then proposed.orientation.Rotation else Grid.Rotation(proposed.steps)
         local existing=model:GetPivot()
-        if math.abs(proposed.size.X-before.size.X)>0.001
+        crankDetaching=math.abs(proposed.size.X-before.size.X)>0.001
             or (proposed.position-before.position).Magnitude>0.001
             or (desiredRotation.RightVector-existing.RightVector).Magnitude>0.001
-            or (desiredRotation.UpVector-existing.UpVector).Magnitude>0.001 then
-            return false,"Disconnect hand crank before moving or changing shaft length"
-        end
+            or (desiredRotation.UpVector-existing.UpVector).Magnitude>0.001
     end
     if HandCrankMath.IsCrank(model)
         and typeof(proposed.size)=="Vector3"
@@ -652,11 +671,15 @@ local function update(player, payload)
                 -opening:GetPivot().Position):Dot(axis)/Grid.Unit
             model:SetAttribute("AlignedOffsetU",proposed.alignedOffsetU)
         else
-            -- Never silently detach a guided or rigidly joined shaft.
-            -- Disconnect the relationship/ungroup first, then reposition.
-            applyState(model,before)
-            return false,
-                "Shaft must stay engaged; disconnect or ungroup before removing it"
+            -- Normal Edit movement may pull a shaft out of a bearing.
+            -- The construction history disconnects the non-spring joint
+            -- and clears stale authored alignment in the same transaction.
+            proposed.alignedOpeningId=nil
+            proposed.alignedOffsetU=0
+            proposed.shaftRollDegrees=0
+            model:SetAttribute("AlignedOpeningId",nil)
+            model:SetAttribute("AlignedOffsetU",0)
+            model:SetAttribute("ShaftRollDegrees",0)
         end
     end
 
@@ -675,7 +698,7 @@ local function update(player, payload)
     end
 
     local crankBefore,crankAfter={},{}
-    if #crankCouplings>0 then
+    if #crankCouplings>0 and not crankDetaching then
         local reason
         crankBefore,crankAfter,reason=mechanical:ResizeCoupledCranks(player,model)
         if not crankBefore then
@@ -1217,6 +1240,7 @@ function Service.Start()
     GearLibrary.Ensure()
     FastenerLibrary.Ensure()
     HandCrankLibrary.Ensure()
+    ShaftLibrary.Ensure()
     folder = workspace:FindFirstChild(Config.FolderName)
     if not folder then
         folder = Instance.new("Folder")

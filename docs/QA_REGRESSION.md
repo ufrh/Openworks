@@ -134,3 +134,12 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 - Grounding and visual guides: grounded bodies remain green and movable orange; moving/ghost originals do not show duplicate shadows. For plots exceeding the grounding-highlight budget, guides still render for visible selected mechanisms.
 - Simulated gearbox: verify resting loose gears, falling unsupported gears, follower shafts, meshed spur and bevel trains, and a rack/crank mechanism. Engagement updates quickly when driven, and new idle contacts are found within approximately a quarter-second.
 - Roblox Studio: profile Client + Server in MicroProfiler both idle and when rotating a 30–40 gear assembly. Confirm render work and heartbeat time improve without introducing incorrect gear motion or additional remotes.
+
+
+## Detachable relationships and default shaft (November 2026)
+- [ ] Select Build > Shaft. Its first placement is a genuine X-axis Cylinder of **2 U length and 0.95 U diameter**, with precise fit/diameter editing already enabled. Original Cylinder remains selectable, independently configurable, and unchanged. F-copy, save/load, simulation and shaft-hole fitting all recognize Shaft as a cylinder shaft.
+- [ ] Independently move either endpoint of a Weld, Fixed, Bearing/Rotation, Slider, Cylindrical/Rotate+Slide, AxisHinge, PoweredHinge, AxisBall, AxisUniversal or Bolt using G/move, R/T/Y rotation, Alt+arrow nudge or component transform. The relation must disappear (not secretly bridge a gap in the simulation). Repeat with a fitted shaft being pulled out of its opening; the old AlignedOpeningId must clear.
+- [ ] Move **both** ends in the same component/assembly transaction using an identical world rigid transform. Internal non-spring relationships must survive. Move only one of two connected components or move both with different transforms: external non-spring relationships must disconnect.
+- [ ] Springs are the exception: moving either or both endpoints keeps Spring authored, allowing stretch/reposition independently.
+- [ ] Single Ctrl+Z restores both the exact prior geometry and every disconnected relationship, including original anchor frames and motor settings; Ctrl+Y detaches them again. F6 save/load persists the disconnected state. No failed overlapping/invalid movement should remove a relation.
+- [ ] Explicit joint editing (insertion-depth pose, fine-fit diameter and existing connection repositioning) must not accidentally detach the joint being deliberately adjusted.
