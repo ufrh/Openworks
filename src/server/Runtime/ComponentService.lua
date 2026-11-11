@@ -84,7 +84,7 @@ function ComponentService:Group(player, payload)
         table.insert(after, self.D.snapshot(model))
     end
 
-    self.D.commitBatch(player, before, after)
+    self.D.commitMetadata(player, before, after)
     return true, componentId
 end
 
@@ -103,7 +103,7 @@ function ComponentService:Ungroup(player, payload)
         model:SetAttribute("ComponentAnchorId", nil)
         table.insert(after, self.D.snapshot(model))
     end
-    self.D.commitBatch(player, before, after)
+    self.D.commitMetadata(player, before, after)
     return true, "Ungrouped"
 end
 
@@ -239,7 +239,7 @@ function ComponentService:SetGrounded(player, payload)
         member:SetAttribute("Grounded", newGrounded)
         table.insert(after, self.D.snapshot(member))
     end
-    self.D.commitBatch(player, before, after)
+    self.D.commitMetadata(player, before, after)
     return true, if newGrounded then "Body grounded" else "Body ungrounded"
 end
 

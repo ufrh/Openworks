@@ -107,7 +107,7 @@ function Service:Write(player,payload,updating)
             table.insert(after,self.D.snapshot(model))
         end
     end
-    if #after>0 then self.D.commitBatch(player,before,after) end
+    if #after>0 then self.D.commitMetadata(player,before,after) end
     return true,
         (if updating then "Updated " else "Created ")..name
             .." / "..tostring(#selected).." primitives",

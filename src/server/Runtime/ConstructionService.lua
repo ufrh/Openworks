@@ -293,11 +293,20 @@ local function commitRecord(player, before, after)
 end
 
 local function commitBatch(player, before, after)
+    -- Geometry transformations, additions and deletions only.
     local state = historyFor(player)
     table.insert(state.undo, { kind = "Batch", before = before, after = after })
-    if #state.undo > Config.UndoLimit then
-        table.remove(state.undo, 1)
-    end
+    if #state.undo > Config.UndoLimit then table.remove(state.undo, 1) end
+    table.clear(state.redo)
+end
+
+local function commitMetadata(player, before, after)
+    -- Named assemblies, editor groups and grounding are PROPERTY-ONLY
+    -- transactions. Undo/redo must never destroy or recreate geometry,
+    -- since doing so invalidates live selection and authored joint links.
+    local state = historyFor(player)
+    table.insert(state.undo, {kind="Metadata",before=before,after=after})
+    if #state.undo > Config.UndoLimit then table.remove(state.undo,1) end
     table.clear(state.redo)
 end
 
@@ -729,7 +738,33 @@ local function restore(player, data)
     return true
 end
 
+local function restoreMetadata(player,record,undo)
+    local states=if undo then record.before else record.after
+    if type(states)~="table" then return false,"Invalid metadata history" end
+    local targets={}
+    -- Validate the complete batch before changing ANY model.
+    for _,state in ipairs(states) do
+        local model=findOwned(player,state.instanceId)
+        if not model or model:GetAttribute("TemplateId")~=state.templateId then
+            return false,"A metadata member was deleted or replaced"
+        end
+        table.insert(targets,{model=model,state=state})
+    end
+    for _,entry in ipairs(targets) do
+        local model,state=entry.model,entry.state
+        model:SetAttribute("ComponentId",state.componentId)
+        model:SetAttribute("ComponentAnchorId",state.componentAnchorId)
+        model:SetAttribute("AssemblyId",state.assemblyId)
+        model:SetAttribute("AssemblyName",state.assemblyName)
+        model:SetAttribute("Grounded",state.grounded==true)
+    end
+    return true
+end
+
 local function applyRecord(player, record, undo)
+    if record.kind == "Metadata" then
+        return restoreMetadata(player,record,undo)
+    end
     if record.kind == "JointConfig" then
         return mechanical:ApplyJointEdit(player,record,undo)
     end
@@ -940,8 +975,11 @@ local function handle(player, payload)
         local relation=mechanical:OwnedRelation(player,payload.relationId)
         if relation then simulation:SyncRelationship(player,relation) end
     end
+    local metadataOnly=action=="CreateAssembly" or action=="UpdateAssembly"
+        or action=="Group" or action=="Ungroup"
+        or action=="SetGrounded"
     if result and mechanical and not simulationAction
-        and action ~= "GetMechanismInfo" then
+        and action~="GetMechanismInfo" and not metadataOnly then
         mechanical:RebuildRelations()
     end
     local message = tostring(extra or "")
@@ -998,6 +1036,7 @@ function Service.Start()
         intersectsConstructed = intersectsConstructed,
         commitRecord = commitRecord,
         commitBatch = commitBatch,
+        commitMetadata=commitMetadata,
         components = components,
     })
 
@@ -1015,6 +1054,7 @@ function Service.Start()
         commitAssembly = commitAssembly,
         commitRecord = commitRecord,
         commitBatch = commitBatch,
+        commitMetadata=commitMetadata,
         commitJointEdit = commitJointEdit,
         createFromTemplate = createFromTemplate,
     })
@@ -1026,6 +1066,7 @@ function Service.Start()
         snapshot=snapshot,
         applyState=applyState,
         commitBatch=commitBatch,
+        commitMetadata=commitMetadata,
         mechanical=mechanical,
     })
 
