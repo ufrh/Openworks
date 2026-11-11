@@ -229,8 +229,8 @@ function Tool:Refresh()
     local count=0
     for _ in pairs(self.Selected) do count+=1 end
     self.Shortcuts.Text=if self.Stage=="Selecting"
-        then "Alt+Arrows  MOVE    Shift+Alt+Up/Down  HEIGHT"
-        else "Alt+Arrows  MOVE    Shift+Alt+Up/Down  HEIGHT"
+        then "Alt+Up/Down  HEIGHT    Alt+Left/Right  SIDE"
+        else "Alt+Up/Down  HEIGHT    Alt+Left/Right  SIDE"
     if self.Stage=="Selecting" then
         self.Title.Text="ASSEMBLY / "..self.Name
         self.Status.Text=tostring(count).." primitives selected"
@@ -417,24 +417,19 @@ function Tool:VerticalNudge(key)
     local alt=UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
     if not alt then return end
-    local shift=UIS:IsKeyDown(Enum.KeyCode.LeftShift)
-        or UIS:IsKeyDown(Enum.KeyCode.RightShift)
     local axis,direction
-    if shift and (key==Enum.KeyCode.Up or key==Enum.KeyCode.Down) then
+    if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then
         axis,direction="Y",(if key==Enum.KeyCode.Up then 1 else -1)
     else
         local camera=workspace.CurrentCamera
         if not camera then return end
-        local v=if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down
-            then camera.CFrame.LookVector else camera.CFrame.RightVector
+        local v=camera.CFrame.RightVector
         if math.abs(v.X)>=math.abs(v.Z) then
             axis,direction="X",(if v.X>=0 then 1 else -1)
         else
             axis,direction="Z",(if v.Z>=0 then 1 else -1)
         end
-        if key==Enum.KeyCode.Left or key==Enum.KeyCode.Down then
-            direction=-direction
-        end
+        if key==Enum.KeyCode.Left then direction=-direction end
     end
     if self.Tools.ActiveId~="Assembly" or self.Busy
         or self.Stage=="Naming" then return end
@@ -444,7 +439,7 @@ function Tool:VerticalNudge(key)
         id=aimed and aimed:GetAttribute("AssemblyId")
     end
     if type(id)~="string" or id=="" then
-        self:Tell("Select a saved assembly to raise or lower")
+        self:Tell("Select a saved assembly to nudge")
         return
     end
     local fine=UIS:IsKeyDown(Enum.KeyCode.LeftShift)

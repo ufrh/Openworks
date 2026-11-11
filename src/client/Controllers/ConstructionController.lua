@@ -2056,31 +2056,27 @@ function Controller:FinishDirectDrag()
     end
 end
 
--- First-person vertical nudge. Always changes world Y only; the
--- server expands a component into ALL its primitives atomically and
--- validates every moved position before committing a single undo step.
+-- Alt+Up/Down always moves on world Y. Alt+Left/Right follows the
+-- camera's dominant horizontal right direction. Shift makes either
+-- direction fine-grained. Server validates and commits atomically.
 function Controller:VerticalNudge(key)
     local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
     if not alt then return end
-    local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
     local axis,direction
-    if shift and (key==Enum.KeyCode.Up or key==Enum.KeyCode.Down) then
+    if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then
+        -- Height never depends on camera orientation, even without Shift.
         axis,direction="Y",(if key==Enum.KeyCode.Up then 1 else -1)
     else
         local camera=workspace.CurrentCamera
         if not camera then return end
-        local v=if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down
-            then camera.CFrame.LookVector else camera.CFrame.RightVector
+        local v=camera.CFrame.RightVector
         if math.abs(v.X)>=math.abs(v.Z) then
             axis,direction="X",(if v.X>=0 then 1 else -1)
         else
             axis,direction="Z",(if v.Z>=0 then 1 else -1)
         end
-        if key==Enum.KeyCode.Left or key==Enum.KeyCode.Down then
-            direction=-direction
-        end
+        if key==Enum.KeyCode.Left then direction=-direction end
     end
     if self.Mode~="Edit" or self.Busy or self.Pending or self.ScaleMode
         or self.CatalogOpen or self.PendingMateChoice
@@ -2092,7 +2088,7 @@ function Controller:VerticalNudge(key)
         scope,id="Primitive",self.Selected:GetAttribute("InstanceId")
     end
     if not id then
-        self:Message("Select a primitive or component to move vertically")
+        self:Message("Select a primitive or component to nudge")
         return
     end
     local fine=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)

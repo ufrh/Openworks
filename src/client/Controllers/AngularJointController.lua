@@ -285,18 +285,14 @@ function Angular:HandleKey(input,processed)
         or UIS:IsKeyDown(Enum.KeyCode.RightAlt) then
         local cam=workspace.CurrentCamera
         if not cam then return end
-        local shift=UIS:IsKeyDown(Enum.KeyCode.LeftShift)
-            or UIS:IsKeyDown(Enum.KeyCode.RightShift)
-        if shift and (key==Enum.KeyCode.Up or key==Enum.KeyCode.Down) then
+        if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then
+            -- Joint anchors use the same world-up convention as parts.
             self.Anchor+=Vector3.yAxis*(if key==Enum.KeyCode.Up then 0.05 else -0.05)
-        elseif key==Enum.KeyCode.Up or key==Enum.KeyCode.Down
-            or key==Enum.KeyCode.Left or key==Enum.KeyCode.Right then
-            local v=if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down
-                then cam.CFrame.LookVector else cam.CFrame.RightVector
+        elseif key==Enum.KeyCode.Left or key==Enum.KeyCode.Right then
+            local v=cam.CFrame.RightVector
             v=Vector3.new(v.X,0,v.Z)
             if v.Magnitude>0.01 then
-                self.Anchor+=v.Unit*0.05*(if key==Enum.KeyCode.Up
-                    or key==Enum.KeyCode.Right then 1 else -1)
+                self.Anchor+=v.Unit*0.05*(if key==Enum.KeyCode.Right then 1 else -1)
             end
         end
     end

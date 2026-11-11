@@ -169,15 +169,19 @@ def main() -> int:
           and 'applyState(model,before[i])' in service
           and 'commitBatch(player,before,after)' in service
           and 'if (payload.scope=="Assembly" and not hasEquippedTool(player,"Assembly"))' in service)
-    check("Alt+arrow editor nudge uses camera-relative X/Z; Shift enables height",
+    check("Alt+Up/Down always moves world Y and Left/Right uses camera right",
           'function Controller:VerticalNudge(key)' in selection
-          and 'Enum.KeyCode.LeftAlt' in selection
-          and 'Enum.KeyCode.Up' in selection
-          and 'axis,direction="Y"' in selection
+          and 'if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then' in selection
+          and 'axis,direction="Y",(if key==Enum.KeyCode.Up then 1 else -1)' in selection
+          and 'local v=camera.CFrame.RightVector' in selection
+          and 'if key==Enum.KeyCode.Left then direction=-direction end' in selection
           and 'self:VerticalNudge(key)' in selection
           and 'if fine then 0.05 else 0.25' in service)
-    check("Alt+arrow assembly nudge retains grouped move transaction",
+    check("Assembly arrows share world Y and camera-relative horizontal motion",
           'function Tool:VerticalNudge(key)' in assembly_tool
+          and 'if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then' in assembly_tool
+          and 'axis,direction="Y",(if key==Enum.KeyCode.Up then 1 else -1)' in assembly_tool
+          and 'local v=camera.CFrame.RightVector' in assembly_tool
           and 'self:VerticalNudge(key)' in assembly_tool
           and 'axis=axis,direction=direction,fine=fine' in assembly_tool
           and 'action="VerticalMove",scope="Assembly"' in assembly_tool
@@ -185,6 +189,11 @@ def main() -> int:
     materials=read("src/shared/Construction/MaterialCatalog.lua")
     material_ui=read("src/client/Controllers/MaterialPickerController.lua")
     angular=read("src/client/Controllers/AngularJointController.lua")
+    check("Angular joint anchor Up/Down uses world vertical regardless of Shift",
+          'if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then' in angular
+          and 'self.Anchor+=Vector3.yAxis*' in angular
+          and 'elseif key==Enum.KeyCode.Left or key==Enum.KeyCode.Right then' in angular
+          and 'local v=cam.CFrame.RightVector' in angular)
     joint_frames=read("src/shared/Construction/JointFrameMath.lua")
     motor_client=read("src/client/Controllers/MotorControlController.lua")
     assembly_client=read("src/client/Controllers/AssemblyController.lua")
