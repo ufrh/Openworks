@@ -1,5 +1,5 @@
 --!strict
--- Hold Z/X while aiming at a grounded rack guide or its rack to push
+-- Hold Q/E while aiming at a grounded rack guide or its rack to push
 -- linearly. Authenticated server input is only direction/liveness.
 -- The kinematic graph converts rack translation back into pinion RPM.
 local Players=game:GetService("Players")
@@ -78,8 +78,8 @@ function Controller:TryPush(key)
         or player:GetAttribute("OPENWORKS_SimulationPaused")==true
         or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
         or UserInputService:GetFocusedTextBox() then return false end
-    local dir=if key==Enum.KeyCode.Z then 1
-        elseif key==Enum.KeyCode.X then -1 else 0
+    local dir=if key==Enum.KeyCode.Q then -1
+        elseif key==Enum.KeyCode.E then 1 else 0
     if dir==0 or not UserInputService:IsKeyDown(key) then return false end
     if self.Holding then
         if self.KeyCode==key then return true end
@@ -117,8 +117,8 @@ function Controller:Start()
     table.insert(self.Connections,UserInputService.InputBegan:Connect(
         function(input,processed)
             if processed then return end
-            if input.KeyCode==Enum.KeyCode.Z
-                or input.KeyCode==Enum.KeyCode.X then
+            if input.KeyCode==Enum.KeyCode.Q
+                or input.KeyCode==Enum.KeyCode.E then
                 self:TryPush(input.KeyCode)
             end
         end))
