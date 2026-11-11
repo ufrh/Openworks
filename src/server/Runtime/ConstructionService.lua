@@ -219,7 +219,7 @@ local function intersectsConstructed(candidate, except, opening: Model?, shaftId
             local intendedBore=target and target==opening and shaftId
                 and candidate:GetAttribute("InstanceId")==shaftId
                 and Bore.ShaftFits(candidate,target)
-            local intendedGear=target and GearMath.Meshable(candidate,target)
+            local intendedGear=target and GearMath.AutoMeshable(candidate,target)
             -- A gear's pivot has no metal in its center. A valid coaxial
             -- hub fit may have harmless faceted rim broad-phase contacts.
             -- Only exempt the explicitly chosen gear/shaft pair, after
