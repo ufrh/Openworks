@@ -1179,6 +1179,7 @@ function Service.Start()
         intersectsConstructed = intersectsConstructed,
         commitBatch = commitBatch,
         commitMetadata = commitMetadata,
+        commitAssembly = commitAssembly,
     })
 
     alignmentService = AlignmentService.new({
@@ -1215,6 +1216,11 @@ function Service.Start()
         commitJointEdit = commitJointEdit,
         createFromTemplate = createFromTemplate,
     })
+
+    -- ComponentService is initialized before MechanicalService to avoid
+    -- a require cycle. Inject the constructed service afterward so F
+    -- duplicates can snapshot/restore authored INTERNAL relationships.
+    components.D.mechanical=mechanical
 
     assemblies=AssemblyService.new({
         folder=folder,
