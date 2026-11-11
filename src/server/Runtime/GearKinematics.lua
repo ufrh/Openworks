@@ -149,7 +149,15 @@ end
 function Kinematics:ConfigureSupport(graph,copies,groundKeys,sessionFolder,
     playerCharacter,constructedFolder)
     self:MarkGrounding(groundKeys)
-    local exclude={sessionFolder}
+    -- Exclude ONLY scripted gear groups, not the entire simulated
+    -- assembly. Loose gears can settle on an authored, grounded table
+    -- or other static housing, while meshing teeth exert no collision.
+    local exclude={}
+    for group in pairs(self.Kinematic) do
+        for _,model in ipairs(group.Models) do
+            table.insert(exclude,model)
+        end
+    end
     if playerCharacter then table.insert(exclude,playerCharacter) end
     if constructedFolder then table.insert(exclude,constructedFolder) end
     local params=RaycastParams.new()
@@ -243,7 +251,8 @@ function Kinematics:Translate(dt)
                     group.Center.Z)
                 local hit=workspace:Raycast(origin,
                     Vector3.new(0,-(falling+0.15),0),self.RayParams)
-                if hit and hit.Normal.Y>0.55 and hit.Instance.CanCollide then
+                if hit and hit.Normal.Y>0.55 and hit.Instance.CanCollide
+                    and hit.Instance.Anchored then
                     offset=math.min(0,hit.Position.Y+0.015-bottom)
                     v=0
                 end
