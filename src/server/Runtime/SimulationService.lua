@@ -59,48 +59,42 @@ function Simulation:IsRunning(player)
     return self.Sessions[player] ~= nil
 end
 
--- The ONLY powered source is a distinct physical HandCrank prefab.
--- Mechanical relationships never receive an ActuatorType/Motor setting.
--- Server-authorized held-LMB drive. Pulse packets are liveness only:
--- mouse motion and untrusted client speed can never change physical torque.
+-- Only coupled hand-crank shafts receive a speed-controlled native drive.
+-- No per-frame proportional torque controller, angular velocity rewriting,
+-- CFrame rotation or invisible motor on unrelated mechanical relationships.
+-- Held LMB authorizes the drive; input packets are liveness only.
 function Simulation:StopCrank(session,id)
     local crank=session.Cranks and session.Cranks[id]
     if not crank then return end
     crank.Running=false
     crank.LastInput=0
-    crank.Torque.Torque=Vector3.zero
-    crank.SmoothedDesired=0
+    -- Native AngularVelocity handles continuous velocity regulation.
+    -- Stop supplying motor force on release without forcibly resetting
+    -- the body's physical angular velocity (free inertia remains).
+    crank.Drive.Enabled=false
     if crank.Model and crank.Model.Parent then
         crank.Model:SetAttribute("OPENWORKS_CrankRunning",false)
     end
     if session.ActiveCrankId==id then session.ActiveCrankId=nil end
 end
 
-function Simulation:StepCranks(dt)
-    local blend=1-math.exp(-18*math.clamp(dt,0,0.1))
+function Simulation:StepCranks(_dt)
     for owner,session in pairs(self.Sessions) do
         local character=owner.Character
         local playerRoot=character and character:FindFirstChild("HumanoidRootPart")
         for id,crank in pairs(session.Cranks or {}) do
-            local torque=crank.Torque
             local root=crank.Root
-            if not torque.Parent or not root.Parent then continue end
+            local drive=crank.Drive
+            if not root.Parent or not drive.Parent then
+                if crank.Running then self:StopCrank(session,id) end
+                continue
+            end
             if session.Paused or session.ActiveCrankId~=id
                 or not crank.Running or not playerRoot
                 or (playerRoot.Position-root.Position).Magnitude>22
                 or os.clock()-(crank.LastInput or 0)>CRANK_HOLD_TIMEOUT then
-                torque.Torque=Vector3.zero
                 if crank.Running then self:StopCrank(session,id) end
-                continue
             end
-            local axis=root.CFrame.RightVector.Unit
-            local actual=root.AssemblyAngularVelocity:Dot(axis)
-            crank.SmoothedDesired+=(HandCrankMath.FixedAngularSpeed
-                -crank.SmoothedDesired)*blend
-            local effort=math.clamp(
-                (crank.SmoothedDesired-actual)*HandCrankMath.VelocityGain,
-                -HandCrankMath.MaxTorque,HandCrankMath.MaxTorque)
-            torque.Torque=axis*effort
         end
     end
 end
@@ -136,7 +130,10 @@ function Simulation:BeginCrank(player,request)
     session.ActiveCrankId=id
     crank.Running=true
     crank.LastInput=os.clock()
-    crank.SmoothedDesired=0
+    -- Axis is resolved from the physically coupled output SHAFT at
+    -- simulation compile time, not the rotating handle each frame.
+    crank.Drive.AngularVelocity=crank.Axis*HandCrankMath.FixedAngularSpeed
+    crank.Drive.Enabled=true
     crank.Model:SetAttribute("OPENWORKS_CrankRunning",true)
     return true,"Hand crank running • release LMB to stop"
 end
@@ -576,8 +573,11 @@ function Simulation:Start(player, payload)
             end
         end
 
-        -- Install input-torque devices on physical crank bodies only.
-        -- Explicit Weld/Fixed/Bolt transmission to a shaft is required.
+        -- Install an actual velocity-regulating motor on the SHAFT.
+        -- Driving the large, offset crank handle through a hand-written
+        -- velocity-to-torque feedback loop used to overcorrect and wobble.
+        -- Roblox's AngularVelocity constraint solves the target speed
+        -- internally. The authored Weld makes the crank handle follow it.
         for _,original in ipairs(graph.models) do
             if not HandCrankMath.IsCrank(original) then continue end
             local id=original:GetAttribute("InstanceId")
@@ -585,38 +585,47 @@ function Simulation:Start(player, payload)
             if not model or not model.PrimaryPart then
                 error("HandCrank has no simulation primary shaft")
             end
-            local coupled=false
+            local coupledShaft=nil
             for _,edge in ipairs(graph.edges) do
                 if edge.kind=="Weld" or edge.kind=="Fixed" then
                     local other=if edge.source==original then edge.target
                         elseif edge.target==original then edge.source else nil
                     if other and HandCrankMath.IsOutputShaft(other) then
-                        -- Legacy floating/incorrectly sized welds must never
-                        -- power a shaft. Authoring validates and sizes first.
                         local fitted=HandCrankMath.Fits(original,other)
                         local sized=math.abs(original.PrimaryPart.Size.Y
                             -other.PrimaryPart.Size.Y)<0.001
                         if fitted and sized then
-                            coupled=true
+                            coupledShaft=other
                             break
                         end
                     end
                 end
             end
-            local root=model.PrimaryPart
+            local shaftCopy=if coupledShaft then
+                copies[coupledShaft:GetAttribute("InstanceId")] else nil
+            local root=if shaftCopy then shaftCopy.PrimaryPart
+                else model.PrimaryPart
             local attachment=Instance.new("Attachment")
-            attachment.Name="ManualCrankTorqueAxis"
+            attachment.Name="ControlledCrankShaftAxis"
             attachment.Parent=root
-            local torque=Instance.new("Torque")
-            torque.Name="HandCrank_PlayerTorque"
-            torque.Attachment0=attachment
-            torque.RelativeTo=Enum.ActuatorRelativeTo.World
-            torque.Torque=Vector3.zero
-            torque.Parent=runtime
+            local drive=Instance.new("AngularVelocity")
+            drive.Name="HandCrank_ControlledRotation"
+            drive.Attachment0=attachment
+            drive.RelativeTo=Enum.ActuatorRelativeTo.World
+            -- Bounded motor effort prevents overriding a jammed mechanism.
+            -- Unlike the old proportional loop, drive speed and torque
+            -- never oscillate in response to client input or body speed.
+            drive.MaxTorque=HandCrankMath.MaxTorque
+            drive.AngularVelocity=Vector3.zero
+            drive.Enabled=false
+            drive.Parent=runtime
+
+            local axis=root.CFrame.RightVector.Unit
             model:SetAttribute("OPENWORKS_CrankRunning",false)
             session.Cranks[id]={
-                Root=root,Model=model,Torque=torque,Coupled=coupled,
-                BodyKey=bodyKey(original),SmoothedDesired=0,Running=false,
+                Root=root,Model=model,Drive=drive,Axis=axis,
+                Coupled=coupledShaft~=nil,
+                BodyKey=bodyKey(original),Running=false,
                 LastInput=0,LastPacket=0,
             }
         end
