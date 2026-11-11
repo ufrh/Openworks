@@ -269,10 +269,9 @@ function Controller:RefreshCatalog()
 end
 
 function Controller:RefreshPointer()
-    -- Freecam cursor is ALWAYS unlocked outside active camera movement,
-    -- dedicated relative-motion Scale mode, and manual crank look.
-    local unlocked = not self.ScaleMode or self.CatalogOpen
-        or self.PendingMateChoice~=nil
+    -- Locked-mouse freecam uses center aiming unless a GUI explicitly
+    -- needs cursor interaction. Scale and construction share center aim.
+    local unlocked=self.CatalogOpen or self.PendingMateChoice~=nil
     -- The click-only relationship picker owns its own full-screen modal
     -- surface; never show the catalog's invisible hitbox over the dialog.
     self.Unlock.Visible = self.CatalogOpen
@@ -2263,11 +2262,8 @@ function Controller:Start()
                 UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
                 UserInputService.MouseIconEnabled = false
             else
-                -- The previous first-person fallback left the cursor
-                -- locked when no overlay was active. Freecam uses a
-                -- visible, freely movable mouse by default.
-                UserInputService.MouseBehavior=Enum.MouseBehavior.Default
-                UserInputService.MouseIconEnabled=true
+                UserInputService.MouseBehavior=Enum.MouseBehavior.LockCenter
+                UserInputService.MouseIconEnabled=false
             end
         end)
 
