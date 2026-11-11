@@ -263,7 +263,12 @@ function Visuals:Update()
         cue.FillColor=if grounded then GROUNDED else MOVABLE
         -- Hidden authored originals must not project a colored "shadow"
         -- through the live ghost of a moving component.
+        local hoverId=player:GetAttribute("OPENWORKS_HoverAssemblyId")
+        local assemblyTool=player:GetAttribute("OPENWORKS_ActiveTool")=="Assembly"
         cue.Enabled=model.PrimaryPart.LocalTransparencyModifier<0.99
+            and not assemblyTool
+            and not (type(hoverId)=="string" and hoverId~=""
+                and model:GetAttribute("AssemblyId")==hoverId)
         cue.OutlineTransparency=1
         cue.FillTransparency=0.84
     end

@@ -14,6 +14,7 @@ local CameraController = require(controllers:WaitForChild("CameraController"))
 local ToolController = require(controllers:WaitForChild("ToolController"))
 local ConstructionController = require(controllers:WaitForChild("ConstructionController"))
 local AssemblyController = require(controllers:WaitForChild("AssemblyController"))
+local AssemblyToolController=require(controllers:WaitForChild("AssemblyToolController"))
 local ContextKeybinds = require(controllers:WaitForChild("ContextKeybinds"))
 local WorldVisuals = require(controllers:WaitForChild("WorldVisuals"))
 local PlotSaveController = require(controllers:WaitForChild("PlotSaveController"))
@@ -28,12 +29,14 @@ tools:Start()
 
 local constructionController = ConstructionController.new(tools)
 local assemblyController = AssemblyController.new(tools)
--- A single Edit tool owns both primitive operations and joint authoring;
--- the companion controller exclusively owns Simulate actions on tool 3.
+local assemblyToolController=AssemblyToolController.new(tools)
+-- Edit authors geometry/joints, Assembly names and chooses member sets,
+-- and Simulate exclusively runs registered assemblies.
 constructionController.Assembly = assemblyController
 assemblyController.Construction = constructionController
 constructionController:Start()
 assemblyController:Start()
+assemblyToolController:Start()
 
 local contextKeybinds = ContextKeybinds.new(
     tools, constructionController, assemblyController

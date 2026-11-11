@@ -149,7 +149,7 @@ function Controller:ToggleSimulation()
 
     local assemblyId=seed:GetAttribute("AssemblyId")
     if type(assemblyId)~="string" or assemblyId=="" then
-        self:Message("Register the complete assembly first: Edit, aim at it, Ctrl+G")
+        self:Message("Create an assembly in the Assembly tool: N, name, select, Enter")
         return
     end
 
@@ -513,26 +513,6 @@ function Controller:StartPair(kind)
     self.PairKind=kind
     self.Stage="PairFirst"
     self:RefreshHUD()
-end
-
-function Controller:RegisterAssembly(add)
-    local part=self:Pick()
-    if not part then
-        self:Message("Aim at a component to register or add")
-        return
-    end
-    if add and not self.SelectedAssemblyId then
-        self:Message("Register assembly first with Ctrl+G")
-        return
-    end
-    local ok,response=self:Request({
-        action=if add then "AddAssemblyMember" else "RegisterAssembly",
-        seedId=part:GetAttribute("InstanceId"),
-        assemblyId=if add then self.SelectedAssemblyId else nil,
-    })
-    if ok and response and response.assemblyId then
-        self.SelectedAssemblyId=response.assemblyId
-    end
 end
 
 function Controller:WeldClick()
@@ -917,10 +897,6 @@ function Controller:Start()
             or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
         local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-        if control and key==Enum.KeyCode.G then
-            self:RegisterAssembly(shift)
-            return
-        end
         if key==Enum.KeyCode.J and shift then
             self:StartPair("Spring")
             return

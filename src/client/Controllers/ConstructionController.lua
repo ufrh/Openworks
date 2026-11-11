@@ -2138,6 +2138,7 @@ function Controller:Start()
                 UserInputService.MouseBehavior=Enum.MouseBehavior.LockCenter
                 UserInputService.MouseIconEnabled=false
             elseif player:GetAttribute("OPENWORKS_PlotMenuOpen")==true
+                or player:GetAttribute("OPENWORKS_AssemblyNaming")==true
                 or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
                 or (self.Numeric and self.Numeric.Active)
                 or self.PendingMateChoice then

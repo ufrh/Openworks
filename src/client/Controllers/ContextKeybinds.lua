@@ -66,8 +66,7 @@ function Context:Lines()
             append(lines,"Shift+P","Run assembly ungrounded")
             append(lines,"G","Toggle aimed body grounding")
             append(lines,"Click","Inspect body / relationships")
-            append(lines,"Ctrl+G in Edit","Register connected assembly")
-            append(lines,"Ctrl+Shift+G","Add connected mechanism in Edit")
+            append(lines,"Assembly tool","Create and choose assembly members")
         end
         append(lines,"Green / Orange","Grounded / movable body fills")
         append(lines,"Z / Shift+Z","Camera zoom in / out")
@@ -203,13 +202,20 @@ function Context:Lines()
             append(lines,"Shift+C","Couple crank output to shaft end")
             append(lines,"Weld tool","Manually join touching solids")
             append(lines,"Build > Fasteners","Drag prefab bolts into real holes")
-            append(lines,"Ctrl+G","Register whole connected assembly")
-            append(lines,"Ctrl+Shift+G","Add to registered assembly")
+            append(lines,"Assembly tool","Name and select assembly members")
             append(lines, "C / U", "Combine / Ungroup")
             append(lines, "E", "Edit group interior")
             append(lines, "F / Del", "Duplicate / Delete")
             append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
         end
+    elseif tool=="Assembly" then
+        append(lines,"N","Create new named assembly")
+        append(lines,"Enter","Confirm the member selection")
+        append(lines,"LMB","Toggle entire component / primitive")
+        append(lines,"Alt+LMB","Toggle only the aimed primitive")
+        append(lines,"Click existing","Edit existing assembly")
+        append(lines,"R","Rename selected assembly")
+        append(lines,"Esc","Cancel the draft")
     elseif tool=="Simulate" then
         append(lines,"LMB hold","Turn hand crank after starting simulation")
         append(lines,"Green","Grounded / stationary")
@@ -296,13 +302,17 @@ function Context:Start()
         self.Panel.Visible=mode~=nil
         if not mode then return end
         local sim=mode=="Simulate"
-        self.Panel.AnchorPoint=if sim then Vector2.new(0,0)
+        local assembly=mode=="Assembly"
+        self.Panel.AnchorPoint=if sim or assembly then Vector2.new(0,0)
             else Vector2.new(1,0)
         self.Panel.Position=if sim then UDim2.fromOffset(16,190)
+            elseif assembly then UDim2.fromOffset(16,231)
             else UDim2.new(1,-16,0,145)
         self.Panel.Size=if sim then UDim2.fromOffset(312,318)
+            elseif assembly then UDim2.fromOffset(328,281)
             else UDim2.fromOffset(244,247)
         self.Title.Text=if sim then "SIMULATION / CONTROLS"
+            elseif assembly then "ASSEMBLY / CONTROLS"
             else "CONTROLS  /  "..string.upper(mode)
         local value = table.concat(self:Lines(), "\n")
         if self.LastText ~= value then
