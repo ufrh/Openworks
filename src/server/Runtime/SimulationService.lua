@@ -669,14 +669,14 @@ function Simulation:Start(player, payload)
                     edge.relation:GetAttribute("RelationId"))
                 if constraint:IsA("PrismaticConstraint")
                     or constraint:IsA("CylindricalConstraint") then
-                    local low,high=Alignment.OffsetBounds(edge.source,edge.target)
-                    local normal=edge.target:GetPivot():VectorToWorldSpace(
-                        Alignment.TargetAxis(edge.target)
-                    ).Unit
-                    local authored=(edge.source:GetPivot().Position
-                        -edge.target:GetPivot().Position):Dot(normal)/Grid.Unit
-                    local lower=(low-authored)
-                    local upper=(high-authored)
+                    local lower,upper,reason=Alignment.RelativeTravelBounds(
+                        edge.source,edge.target)
+                    if not lower then
+                        error(reason or "Invalid tube travel geometry")
+                    end
+                    if lower>0 or upper<0 then
+                        error("Shaft starts outside tube end stops; align it inside the tube")
+                    end
                     local fittedTravel=edge.relation:GetAttribute("FitTravelU")
                     if type(fittedTravel)=="number" then
                         -- All guide posts must stay engaged. Never exceed
