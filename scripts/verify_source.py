@@ -120,13 +120,22 @@ def main() -> int:
     check("No mechanical relationship powered by hidden motor",
           "Enum.ActuatorType.None" in simulation
           and "HandCrank_PlayerTorque" in simulation)
-    check("Click-toggle crank is fixed-speed, range-limited, torque-capped",
+    check("Held-LMB crank is fixed-speed, range-limited, torque-capped",
           "HandCrankMath.FixedAngularSpeed" in simulation
           and "self:StopCrank(session,id)" in simulation
           and "playerRoot.Position-root.Position" in simulation
           and "HandCrankMath.MaxTorque" in simulation
           and 'action="BeginCrank"' in crank
-          and "GetMouseDelta" not in crank)
+          and "GetMouseDelta" not in crank
+          and "UserInputService.InputEnded" in crank
+          and "self.Remote:FireServer(id,0,false,true)" in crank)
+    check("Crank requires live held-input pulse and fails closed",
+          "CRANK_HOLD_TIMEOUT = 0.5" in simulation
+          and 'crank.LastInput=os.clock()' in simulation
+          and "function Simulation:InputCrank(player,id,_desired,holding,release)" in simulation
+          and "if release==true or holding~=true then" in simulation
+          and "self.Remote:FireServer(self.ActiveId,0,true,false)" in crank
+          and "UserInputService:IsMouseButtonPressed(" in crank)
     crank_math=read("src/shared/Construction/HandCrankMath.lua")
     mechanical=read("src/server/Runtime/MechanicalService.lua")
     mates=read("src/client/Controllers/MateChoicePanel.lua")
