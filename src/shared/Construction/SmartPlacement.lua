@@ -26,6 +26,9 @@ end
 local function rack(model)
     return GearMath.Kind(model)=="Rack"
 end
+local function guide(model)
+    return GearMath.Kind(model)=="RackGuide"
+end
 
 function Smart.Members(ghost: Model)
     local members = {}
@@ -166,6 +169,39 @@ function Smart.RackPose(source:Model,target:Model,near:Vector3)
         math.max(Smart.RackCapture,radius*0.65+Smart.RackCapture) then
         return nil
     end
+    return pose,(pose.Position-near).Magnitude
+end
+
+-- The guide is an independent grounded part. Snapping to the
+-- rack aligns its construction geometry without creating an implicit
+-- weld or fake PrismaticConstraint.
+function Smart.GuidePose(source:Model,target:Model,near:Vector3)
+    local sourceKind=GearMath.Kind(source)
+    local targetKind=GearMath.Kind(target)
+    if not ((sourceKind=="Rack" and targetKind=="RackGuide")
+        or (sourceKind=="RackGuide" and targetKind=="Rack")) then
+        return nil
+    end
+    local rackBody=if sourceKind=="Rack" then source else target
+    local guideBody=if sourceKind=="RackGuide" then source else target
+    local rackLength=rackBody:GetAttribute("RackLengthStuds")
+    local guideLength=guideBody:GetAttribute("RackGuideLengthStuds")
+    if type(rackLength)~="number" or type(guideLength)~="number"
+        or rackLength>guideLength-0.25 then return nil end
+    local cf=target:GetPivot()
+    local pose
+    if sourceKind=="Rack" then
+        local maxTravel=(guideLength-rackLength)*0.5
+        local travel=(near-cf.Position):Dot(cf.LookVector)
+        pose=CFrame.new(cf.Position
+            +cf.LookVector*math.clamp(travel,-maxTravel,maxTravel))
+            *cf.Rotation
+    else
+        -- Guide origin centers on the exact rack lane; it is bigger
+        -- than the rack and permits future translation in either way.
+        pose=cf
+    end
+    if (pose.Position-near).Magnitude>1.4 then return nil end
     return pose,(pose.Position-near).Magnitude
 end
 
@@ -510,8 +546,10 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
         local isShaft=Alignment.IsShaft(source)
         local isGear=gear(source)
         local isRack=rack(source)
+        local isGuide=guide(source)
         local isOpening=Alignment.TargetAxis(source)~=nil
-        if not isShaft and not isGear and not isRack and not isOpening then continue end
+        if not isShaft and not isGear and not isRack
+            and not isGuide and not isOpening then continue end
         for _,target in ipairs(targets) do
             if not target or not target.Parent or not target.PrimaryPart
                 or (ignored and ignored[target]) then continue end
@@ -588,6 +626,16 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     offset=u
                     roll=r
                     score=if aimed then math.min(dist,rayError+0.12) else dist
+                end
+            elseif (isRack and guide(target))
+                or (isGuide and rack(target)) then
+                approach=source:GetPivot().Position
+                local pose,dist=Smart.GuidePose(source,target,approach)
+                if pose then
+                    kind="Guide"
+                    cf=(pose*source:GetPivot():Inverse())*ghost:GetPivot()
+                    approach=pose.Position
+                    score=if aimedModel==target then -0.2 else dist+0.1
                 end
             elseif (isRack and GearMath.Kind(target)=="Spur")
                 or (isGear and GearMath.Kind(source)=="Spur"
@@ -706,13 +754,14 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     relationKind=if kind=="Bore" then "Cylindrical"
                         elseif kind=="CrankCoupling" then "Weld"
                         elseif kind=="Hub" then "Rotation"
-                        elseif kind=="Rack" then "Rack" else "Gear",
+                        elseif kind=="Rack" then "Rack"
+                        elseif kind=="Guide" then "Guide" else "Gear",
                     reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score,
                     fittedCount=fitted and #fitted or 0}
                 if target==preferred then
                     score-=if kind=="Gear" or kind=="Rack"
-                        then 0.08 else 1.5
+                        or kind=="Guide" then 0.08 else 1.5
                 end
                 candidate.score=score
                 table.insert(matches,candidate)
