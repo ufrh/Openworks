@@ -586,7 +586,9 @@ local function update(player, payload)
     local before=snapshot(model)
     local crankCouplings=if Alignment.IsShaft(model)
         then mechanical:CoupledCranks(player,model) else {}
-    if #crankCouplings>0 and typeof(proposed.size)=="Vector3" then
+    if #crankCouplings>0 and typeof(proposed.size)=="Vector3"
+        and typeof(proposed.position)=="Vector3"
+        and Grid.ValidSteps(proposed.steps) then
         -- Resize the crank with the shaft, but never silently pull a
         -- physically welded crank away from the shaft's output end.
         local desiredRotation=if typeof(proposed.orientation)=="CFrame"
