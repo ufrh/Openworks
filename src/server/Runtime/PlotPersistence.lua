@@ -3,6 +3,9 @@
 -- NEVER call Save from PlayerRemoving, BindToClose or a timer.
 local DataStoreService=game:GetService("DataStoreService")
 local HttpService=game:GetService("HttpService")
+local HandCrankMath=require(game:GetService("ReplicatedStorage")
+    :WaitForChild("Openworks"):WaitForChild("Construction")
+    :WaitForChild("HandCrankMath"))
 
 local Persistence={}
 Persistence.__index=Persistence
@@ -176,9 +179,11 @@ function Persistence:Decode(player,document)
         end
         pos+=plot.origin
         if not d.grid.ValidPosition(pos)
-            or not d.grid.ValidSize(entry.Model.PrimaryPart.Size,size,
-                entry.ResizeMode,record.fitPrecision==true,
-                record.numericPrecision==true)
+            or not (if HandCrankMath.IsCrank(entry.Model)
+                then HandCrankMath.ValidSize(entry.Model.PrimaryPart.Size,size)
+                else d.grid.ValidSize(entry.Model.PrimaryPart.Size,size,
+                    entry.ResizeMode,record.fitPrecision==true,
+                    record.numericPrecision==true))
             or not d.plots:Contains(player,pos,size) then
             return nil,"Saved construction is outside plot or has invalid geometry"
         end
