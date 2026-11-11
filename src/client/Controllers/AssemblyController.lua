@@ -187,7 +187,8 @@ function Controller:RefreshHUD()
 
     if self.Mode=="Weld" then
         self.Header.Text="OPENWORKS / WELD"
-        self.Detail.Text=if self.WeldFirst then "Choose the second touching solid"
+        self.Detail.Text=if self.WeldFirst
+            then "Choose touching surfaces or an inserted shaft in a drilled block"
             else "Choose the first solid to weld"
         self.Help.Text="Click both solids • Esc cancels selection"
         if self.LastMessage and os.clock()<self.MessageUntil then
@@ -209,8 +210,8 @@ function Controller:RefreshHUD()
             local grounded=player:GetAttribute("OPENWORKS_Grounded")~=false
             self.Detail.Text=tostring(self.SimAssemblyName or "Assembly")
                 ..(if paused then "  /  PAUSED" else "  /  RUNNING")
-            self.Help.Text=if grounded then "GREEN grounded  /  ORANGE moving"
-                else "FREE ASSEMBLY  /  ORANGE moving"
+            self.Help.Text="Click crank to toggle • P stop • O pause"
+                ..(if grounded then " • green grounded" else " • free")
         end
         if self.LastMessage and os.clock()<self.MessageUntil then
             self.Detail.Text=self.LastMessage
