@@ -908,6 +908,7 @@ local function handle(player, payload)
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
     local simulationAction = action == "StartSimulation"
         or action == "BeginCrank"
+        or action == "BeginRack"
         or action == "StopSimulation"
         or action == "PauseSimulation" or action == "ResetSimulation"
     local componentAction = action == "Group" or action == "Ungroup"
@@ -981,6 +982,7 @@ local function handle(player, payload)
     local ok,result,extra,detail=pcall(function()
         if action == "StartSimulation" then return simulation:Start(player, payload) end
         if action == "BeginCrank" then return simulation:BeginCrank(player,payload) end
+        if action == "BeginRack" then return simulation:BeginRack(player,payload) end
         if action == "StopSimulation" then return simulation:Stop(player) end
         if action == "PauseSimulation" then return simulation:Pause(player) end
         if action == "ResetSimulation" then return simulation:Reset(player) end
@@ -1211,6 +1213,18 @@ function Service.Start()
         if not hasEquippedTool(player,"Simulate") then return end
         if type(crankId)~="string" or #crankId>64 then return end
         simulation:InputCrank(player,crankId,speed,dragging,release)
+    end)
+
+    local oldRackEvent=ReplicatedStorage:FindFirstChild("OPENWORKS_RackControl")
+    if oldRackEvent then oldRackEvent:Destroy() end
+    local rackEvent=Instance.new("RemoteEvent")
+    rackEvent.Name="OPENWORKS_RackControl"
+    rackEvent.Parent=ReplicatedStorage
+    rackEvent.OnServerEvent:Connect(function(player,rackId,direction,holding,release)
+        if not hasEquippedTool(player,"Simulate") then return end
+        if type(rackId)~="string" or #rackId>64 then return end
+        if direction~=-1 and direction~=1 then return end
+        simulation:InputRack(player,rackId,direction,holding,release)
     end)
 
     Players.PlayerRemoving:Connect(function(player)
