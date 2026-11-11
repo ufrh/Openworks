@@ -1,6 +1,6 @@
 --!strict
 -- Preserve Roblox's native first-person camera and mouse look.
--- Mouse wheel affects only FieldOfView, never camera position.
+-- Camera FieldOfView uses Z / Shift+Z; wheel belongs to construction tools.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -12,7 +12,7 @@ local player = Players.LocalPlayer
 local DEFAULT_FOV = 70
 local MIN_FOV = 40
 local MAX_FOV = 85
-local WHEEL_STEP = 5
+local ZOOM_KEY_STEP = 5
 local SMOOTHING = 15
 local RENDER_BINDING = "OPENWORKS_FOV_Zoom"
 
@@ -39,27 +39,22 @@ function CameraController:Start()
         player.CameraMode = Enum.CameraMode.LockFirstPerson
     end))
 
-    table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input, processed)
-        if input.UserInputType ~= Enum.UserInputType.MouseWheel then
-            return
-        end
-        if UserInputService:GetFocusedTextBox() or GuiService.MenuIsOpen
-            or player:GetAttribute("OPENWORKS_Inserting") == true then
-            -- While placing a shaft in an opening, mouse wheel controls
-            -- axial insertion instead of the camera FieldOfView.
-            return
-        end
-        -- Do not zoom behind a UI that has captured the cursor.
-        -- In first person, Roblox's camera scripts may mark scroll as processed.
-        if UserInputService.MouseBehavior == Enum.MouseBehavior.Default then
-            return
-        end
-
-        self.TargetFov = math.clamp(
-            self.TargetFov - input.Position.Z * WHEEL_STEP,
-            MIN_FOV,
-            MAX_FOV
-        )
+    -- Z = zoom IN, Shift+Z = zoom OUT. Ctrl+Z remains Undo.
+    -- Never capture the scroll wheel; editor mechanics own its adjustments.
+    table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
+        if processed or input.KeyCode~=Enum.KeyCode.Z
+            or UserInputService:GetFocusedTextBox() or GuiService.MenuIsOpen
+            or player:GetAttribute("OPENWORKS_PlotMenuOpen")==true
+            or player:GetAttribute("OPENWORKS_PropertiesOpen")==true then return end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+            or UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
+        local outward=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        self.TargetFov=math.clamp(self.TargetFov
+            + (if outward then ZOOM_KEY_STEP else -ZOOM_KEY_STEP),
+            MIN_FOV,MAX_FOV)
     end))
 
     RunService:BindToRenderStep(
