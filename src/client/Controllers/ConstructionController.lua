@@ -1128,6 +1128,9 @@ function Controller:CancelPending()
 end
 
 function Controller:OnModeChanged(mode)
+    if mode~="Edit" and self.MaterialPicker then
+        self.MaterialPicker:Close()
+    end
     self.DirectDragCandidate = nil
     self.DirectDragActive = false
     self:EndScale()
