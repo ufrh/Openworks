@@ -181,7 +181,8 @@ function Angular:EditAimed()
     self.TorqueBox.Text=tostring(relation:GetAttribute("MotorTorque") or 3000)
     self.AccelBox.Text=tostring(relation:GetAttribute("MotorAcceleration") or 40)
     self:DrawAnchor()
-    self.Parent:Message("Editing joint • axes X/Y/Z reset • Q/E/U/O rotate • click to save")
+    self:ShowPicker(true)
+    self.Parent:Message("Edit fields, click ADJUST ANCHOR, then click world to save")
 end
 
 function Angular:Begin()
@@ -308,7 +309,7 @@ function Angular:Start()
     })
     self.Gui=gui
     local panel=box(gui,"Frame",{
-        Size=UDim2.fromOffset(318,360),
+        Size=UDim2.fromOffset(318,425),
         Position=UDim2.new(1,-332,0,72),
         BackgroundColor3=UI_COLOR,BorderSizePixel=0,
     })
@@ -352,6 +353,43 @@ function Angular:Start()
     self.TorqueBox=input(250,"Motor torque","3000")
     self.AccelBox=input(279,"Motor acceleration","40")
     self.KeyBox=input(308,"Hold-to-run key","F")
+    local editButton=box(panel,"TextButton",{
+        Position=UDim2.fromOffset(12,344),
+        Size=UDim2.fromOffset(294,32),Text="ADJUST ANCHOR / CONTINUE",
+        TextColor3=Color3.fromRGB(242,246,251),
+        BackgroundColor3=Color3.fromRGB(60,106,126),
+        Font=Enum.Font.GothamBold,TextSize=12,
+    })
+    box(editButton,"UICorner",{CornerRadius=UDim.new(0,5)})
+    table.insert(self.Connections,editButton.Activated:Connect(function()
+        if self.EditId then
+            self:ShowPicker(false)
+            self.Parent:Message("Change joint axis/position • click to save")
+        else
+            self.Parent:Message("Choose a joint type above first")
+        end
+    end))
+    local saveMotor=box(panel,"TextButton",{
+        Position=UDim2.fromOffset(12,383),
+        Size=UDim2.fromOffset(294,32),Text="SAVE MOTOR SETTINGS",
+        TextColor3=Color3.fromRGB(242,246,251),
+        BackgroundColor3=Color3.fromRGB(78,93,107),
+        Font=Enum.Font.GothamBold,TextSize=12,
+    })
+    box(saveMotor,"UICorner",{CornerRadius=UDim.new(0,5)})
+    table.insert(self.Connections,saveMotor.Activated:Connect(function()
+        if not self.EditId or self.Kind~="PoweredHinge" then
+            self.Parent:Message("This setting applies to an existing powered hinge")
+            return
+        end
+        if self.Parent:Request({
+            action="TuneAxisMotor",relationId=self.EditId,
+            motorKey=self.KeyBox.Text,
+            motorSpeed=tonumber(self.SpeedBox.Text),
+            motorTorque=tonumber(self.TorqueBox.Text),
+            motorAcceleration=tonumber(self.AccelBox.Text),
+        }) then self:Cancel() end
+    end))
     table.insert(self.Connections,UIS.InputBegan:Connect(function(i,p)
         self:HandleKey(i,p)
     end))
