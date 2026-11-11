@@ -71,10 +71,14 @@ local function hasEquippedTool(player, id)
 end
 
 local function accessFor(player, action)
-    if action == "Place" then
-        return hasEquippedTool(player, "Build") or hasEquippedTool(player, "Edit")
+    if action=="Undo" or action=="Redo" then
+        -- Assembly edits commit the same safe metadata history as Edit.
+        -- Allow undo/redo without equipping an unrelated construction tool.
+        return hasEquippedTool(player,"Assembly")
+            or hasEquippedTool(player,"Edit")
+            or hasEquippedTool(player,"Build")
     end
-    return hasEquippedTool(player, "Edit") or hasEquippedTool(player, "Build")
+    return hasEquippedTool(player,"Edit") or hasEquippedTool(player,"Build")
 end
 
 local function nearPlayer(player, position)

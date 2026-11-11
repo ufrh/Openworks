@@ -410,6 +410,34 @@ function Tool:Confirm()
     self:Tell(answer.message or "Assembly saved")
 end
 
+function Tool:History(redo)
+    if self.Tools.ActiveId~="Assembly" or self.Busy
+        or self.Stage=="Naming" then return end
+    self.Busy=true
+    local remote=RS:WaitForChild(Config.RequestName)
+    local ok,result=pcall(function()
+        return remote:InvokeServer({action=if redo then "Redo" else "Undo"})
+    end)
+    self.Busy=false
+    if ok and type(result)=="table" and result.ok then
+        -- Metadata history changes replica attributes in place; UI previews
+        -- refresh by AssemblyId as soon as replication reaches the client.
+        self.PreviewCache=""
+        if self.EditingId and self.Stage=="Selecting" then
+            local members=self:OwnedAssembly(self.EditingId)
+            self.Selected={}
+            for _,member in ipairs(members) do
+                local id=instanceId(member)
+                if id then self.Selected[id]=true end
+            end
+        end
+        self:Tell(if redo then "Redone" else "Undone")
+    else
+        self:Tell(if ok and type(result)=="table"
+            then tostring(result.message) else "History request failed")
+    end
+end
+
 function Tool:Cancel()
     self:CloseName(false)
     self.Stage="Idle"
@@ -577,6 +605,15 @@ function Tool:Start()
         end
         if processed or UIS:GetFocusedTextBox() then return end
         local key=input.KeyCode
+        local control=UIS:IsKeyDown(Enum.KeyCode.LeftControl)
+            or UIS:IsKeyDown(Enum.KeyCode.RightControl)
+        if control and key==Enum.KeyCode.Z then
+            self:History(false)
+            return
+        elseif control and key==Enum.KeyCode.Y then
+            self:History(true)
+            return
+        end
         if key==Enum.KeyCode.N then
             self:BeginNew()
         elseif key==Enum.KeyCode.R and self.Stage=="Selecting"

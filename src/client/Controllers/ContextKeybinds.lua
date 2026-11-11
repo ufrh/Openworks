@@ -216,6 +216,7 @@ function Context:Lines()
         append(lines,"Alt+LMB","Toggle only the aimed primitive")
         append(lines,"Click existing","Edit existing assembly")
         append(lines,"R","Rename selected assembly")
+        append(lines,"Ctrl+Z / Ctrl+Y","Undo / redo membership")
         append(lines,"Esc","Cancel the draft")
     elseif tool == "Inspect" then
         append(lines, "LMB", "Inspect")
