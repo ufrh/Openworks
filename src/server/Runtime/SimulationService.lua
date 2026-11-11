@@ -252,7 +252,15 @@ function Simulation:Graph(player, seed)
             local nextKey = if edge.a == key then edge.b else edge.a
             if type(assemblyId)=="string" and assemblyId~=""
                 and not assemblyKeys[nextKey] then
-                continue
+                -- Adding a real crank coupling after assembly registration
+                -- still makes the crank part of the physical mechanism.
+                -- This exception is ONLY for an explicit rigid link to
+                -- a HandCrank, never for editor ComponentId grouping.
+                local crankEdge=HandCrankMath.IsCrank(edge.source)
+                    or HandCrankMath.IsCrank(edge.target)
+                local rigid=edge.kind=="Weld" or edge.kind=="Fixed"
+                    or edge.kind=="Bolt"
+                if not (crankEdge and rigid) then continue end
             end
             if not visited[nextKey] then
                 visited[nextKey] = true
