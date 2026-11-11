@@ -246,9 +246,9 @@ function Simulation:Graph(player, seed)
         return nil,"Selected component is not registered to that assembly"
     end
 
-    -- Do not compile HALF of an assembled mechanism. If a player attached
-    -- a new shaft, crank or gear later, it must be explicitly added to
-    -- the assembly (Ctrl+Shift+G in Edit) before running physics.
+    -- Do not compile HALF of an assembled mechanism. If the player adds
+    -- a shaft, crank or gear later, it must explicitly be selected into
+    -- the registered assembly using the dedicated Assembly tool.
     for _,edge in ipairs(edges) do
         local left=visited[edge.a]==true
         local right=visited[edge.b]==true

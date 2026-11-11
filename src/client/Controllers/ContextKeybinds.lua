@@ -68,6 +68,7 @@ function Context:Lines()
             append(lines,"Click","Inspect body / relationships")
             append(lines,"Assembly tool","Create and choose assembly members")
         end
+        append(lines,"Purple","Assembly P will simulate")
         append(lines,"Green / Orange","Grounded / movable body fills")
         append(lines,"Z / Shift+Z","Camera zoom in / out")
         return lines
@@ -209,8 +210,8 @@ function Context:Lines()
             append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
         end
     elseif tool=="Assembly" then
-        append(lines,"N","Create new named assembly")
-        append(lines,"Enter","Confirm the member selection")
+        append(lines,"N","Create and name new assembly")
+        append(lines,"Enter","Confirm selected members")
         append(lines,"LMB","Toggle entire component / primitive")
         append(lines,"Alt+LMB","Toggle only the aimed primitive")
         append(lines,"Click existing","Edit existing assembly")

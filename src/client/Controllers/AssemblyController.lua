@@ -108,7 +108,6 @@ function Controller.new(tools)
         GearFirst = nil,
         PairFirst = nil,
         PairKind = nil,
-        SelectedAssemblyId = nil,
         Joint = nil,
         LastRollSend = 0,
         PreviewModel = nil,

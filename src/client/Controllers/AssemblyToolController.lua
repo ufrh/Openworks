@@ -8,8 +8,9 @@ local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
 local UIS=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
-local Config=require(RS:WaitForChild("Openworks"):WaitForChild("Construction")
-    :WaitForChild("BuildConfig"))
+local Construction=RS:WaitForChild("Openworks"):WaitForChild("Construction")
+local Config=require(Construction:WaitForChild("BuildConfig"))
+local Grid=require(Construction:WaitForChild("GridMath"))
 local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 local ComponentOutline=require(script.Parent:WaitForChild("ComponentOutline"))
 
@@ -70,8 +71,10 @@ function Tool:Pick()
     params.FilterType=Enum.RaycastFilterType.Include
     params.FilterDescendantsInstances={folder}
     params.IgnoreWater=true
+    -- Use the SAME center ray reach as Simulate/P: purple should never
+    -- advertise an assembly outside the actual simulating interaction range.
     local hit=workspace:Raycast(ray.Origin,
-        ray.Direction*Config.PlotSize,params)
+        ray.Direction*Grid.MaxDistance,params)
     if not hit then return nil end
     local model=hit.Instance:FindFirstAncestorOfClass("Model")
     if model and model.Parent==folder and model.PrimaryPart
@@ -446,6 +449,10 @@ function Tool:ShowVisuals(members,color)
         end
     end
     local signature=table.concat(signatureParts,";")
+    if #ids==0 then
+        if self.PreviewRoot then self:ClearVisuals() end
+        return
+    end
     if signature==self.PreviewCache and self.PreviewRoot
         and sameModels then return end
     self:ClearVisuals()
