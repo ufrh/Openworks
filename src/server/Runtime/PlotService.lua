@@ -130,6 +130,9 @@ function Plots:Spawn(player,character)
             hide(descendant)
         end
         character.DescendantAdded:Connect(hide)
+        -- Client freecam waits for this signal to spawn at the true
+        -- character head AFTER the plot teleport, not an arbitrary offset.
+        character:SetAttribute("OPENWORKS_CameraSpawnReady",true)
     end)
 end
 
