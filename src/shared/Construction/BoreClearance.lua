@@ -12,6 +12,19 @@ local function boreProfile(target)
     if not axis or not target.PrimaryPart then return nil end
 
     local outer = target.PrimaryPart.Size
+    -- Transmission gears have an actual faceted annular opening rather than
+    -- a colliding root cylinder. Their bore radius is authored in STUDS.
+    -- Treat this as a circular X-axis cavity for the SAME engagement,
+    -- diameter and eccentricity checks used by the hole block and tubes.
+    if type(target:GetAttribute("GearTeeth"))=="number" then
+        local radius=target:GetAttribute("BoreRadiusStuds")
+        if type(radius)~="number" or radius<=0
+            or axis~=Vector3.xAxis then return nil end
+        return {
+            axis=axis,radiusY=radius,radiusZ=radius,circular=true,
+            localY=Vector3.yAxis,localZ=Vector3.zAxis,
+        }
+    end
     if axis == Vector3.yAxis then
         -- Generated DrilledBlock_D... modules explicitly store hole diameter
         -- in player-facing Units (v4 primitive generator).
