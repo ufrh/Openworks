@@ -84,10 +84,11 @@ local function accessFor(player, action)
 end
 
 local function nearPlayer(player, position)
-    if not plots or not plots:Contains(player,position) then return false end
-    local character = player.Character
-    local head = character and character:FindFirstChild("Head")
-    return head and (head.Position - position).Magnitude <= Grid.MaxDistance
+    -- OPENWORKS is a permanent plot-bound free camera. The invisible
+    -- immobile avatar is not a meaningful proximity reference.
+    -- Ownership, equipped tool and full owned-plot bounds are checked
+    -- independently; client camera position is NOT trusted by the server.
+    return plots~=nil and plots:Contains(player,position)
 end
 
 local function findOwned(player, id)
