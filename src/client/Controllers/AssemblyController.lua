@@ -8,6 +8,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local CameraAimRay=require(script.Parent:WaitForChild("CameraAimRay"))
 
 local player = Players.LocalPlayer
 local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("Construction")
@@ -346,8 +347,9 @@ function Controller:Pick(exclude)
     params.FilterType = Enum.RaycastFilterType.Include
     params.FilterDescendantsInstances = candidates
     params.IgnoreWater = true
-    local result = workspace:Raycast(camera.CFrame.Position,
-        camera.CFrame.LookVector * Grid.MaxDistance, params)
+    local ray=CameraAimRay.Ray(camera)
+    local result = workspace:Raycast(ray.Origin,
+        ray.Direction * Grid.MaxDistance, params)
     if not result then return nil end
 
     local current = result.Instance
