@@ -18,6 +18,8 @@ local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
 local GearKinematics = require(script.Parent:WaitForChild("GearKinematics"))
+local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("GearMath"))
 
 local Simulation = {}
 Simulation.__index = Simulation
@@ -42,6 +44,48 @@ local function allParts(model)
         if part:IsA("BasePart") then table.insert(parts, part) end
     end
     return parts
+end
+
+-- Named Assembly membership remains explicit. Do NOT pull unrelated
+-- constructions into simulation just because their gears are nearby.
+-- Instead tell the builder when a newly added gear was never registered.
+local function countNearbyUnregisteredGears(player,graph,folder)
+    local selected={}
+    local included={}
+    for _,model in ipairs(graph.models) do
+        included[model]=true
+        if type(model:GetAttribute("GearTeeth"))=="number" then
+            table.insert(selected,model)
+        end
+    end
+    if #selected==0 then return 0 end
+    local count=0
+    for _,candidate in ipairs(folder:GetChildren()) do
+        if not candidate:IsA("Model") or included[candidate]
+            or candidate:GetAttribute("OwnerUserId")~=player.UserId
+            or type(candidate:GetAttribute("GearTeeth"))~="number"
+            or not candidate.PrimaryPart then continue end
+        local cf=candidate:GetPivot()
+        for _,registered in ipairs(selected) do
+            local module=candidate:GetAttribute("GearModuleStuds")
+            if type(module)~="number"
+                or math.abs(module-(registered:GetAttribute(
+                    "GearModuleStuds") or 0))>0.0001 then continue end
+            local fixed=registered:GetPivot()
+            local axis=fixed.RightVector
+            if math.abs(axis:Dot(cf.RightVector))<0.995 then continue end
+            local distance=cf.Position-fixed.Position
+            local axial=math.abs(distance:Dot(axis))
+            local radial=(distance-axis*distance:Dot(axis)).Magnitude
+            local pitch=(registered:GetAttribute("GearTeeth")
+                +candidate:GetAttribute("GearTeeth"))*module/(2*math.pi)
+            if math.abs(radial-pitch)<0.45 and axial<0.75 then
+                count+=1
+                break
+            end
+        end
+    end
+    return count
 end
 
 function Simulation.new(deps)
@@ -228,7 +272,7 @@ function Simulation:Graph(player, seed)
             local kind = relation:GetAttribute("Kind")
             if source and target
                 and (kind == "Bearing" or kind == "Slider"
-                    or kind == "Cylindrical" or kind == "Fixed" or kind == "Gear"
+                    or kind == "Cylindrical" or kind == "Fixed"
                     or kind == "Spring" or kind == "Weld" or kind == "Bolt") then
                 local a, b = bodyKey(source), bodyKey(target)
                 if a ~= b then
@@ -356,6 +400,8 @@ function Simulation:Start(player, payload)
 
     local graph, reason = self:Graph(player, seed)
     if not graph then return false, reason end
+    local unregisteredGears=countNearbyUnregisteredGears(
+        player,graph,d.folder)
 
     local session = {
         Originals = {},
@@ -370,6 +416,7 @@ function Simulation:Start(player, payload)
         Cranks={},
         ActiveCrankId=nil,
         Gears=nil,
+        UnregisteredGears=unregisteredGears,
     }
     for _,edge in ipairs(graph.edges) do
         session.ActiveRelations[edge.relation:GetAttribute("RelationId")]=true
@@ -780,8 +827,14 @@ function Simulation:Start(player, payload)
             then "green grounded / orange movable • P stop"
             else "free assembly • orange bodies • P stop")
         .. (if session.Gears and #session.Gears.Gears>0 then
-            string.format(" • %d automatically meshed gear pair(s)",
-                session.Gears.Contacts) else "")
+            string.format(" • %d gears / %d automatic mesh(es)",
+                #session.Gears.Gears,session.Gears.Contacts) else "")
+        .. (if unregisteredGears>0 then
+            string.format(" • WARNING: %d nearby gear(s) NOT in assembly",
+                unregisteredGears) else if session.Gears
+                and #session.Gears.Unmeshed>0 then
+                    " • "..session.Gears.Unmeshed[1].Gear..": "
+                        ..session.Gears.Unmeshed[1].Reason else "")
 end
 
 -- Keep runtime native constraints synchronized with authored property edits.
@@ -906,6 +959,14 @@ function Simulation:Info(player,payload)
         if session.Gears and #session.Gears.Gears>0 then
             table.insert(lines,string.format("%d automatic gear meshes",
                 session.Gears.Contacts))
+        end
+        if session.Gears and session.Gears:IsKinematic(id) then
+            table.insert(lines,session.Gears:Explain(id))
+        end
+        if session.UnregisteredGears and session.UnregisteredGears>0 then
+            table.insert(lines,string.format(
+                "%d nearby gear(s) excluded from assembly",
+                session.UnregisteredGears))
         end
         for _, constraint in ipairs(session.Constraints) do
             if constraint:IsA("HingeConstraint") then
