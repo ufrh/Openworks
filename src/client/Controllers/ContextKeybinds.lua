@@ -67,7 +67,7 @@ function Context:Lines()
             append(lines,"Hold Q / E","Push guided rack backward / forward; backdrive pinion")
         else
             append(lines,"P","Run registered assembly")
-            append(lines,"Shift+P","Run assembly ungrounded")
+            append(lines,"P default","Ungrounded simulation • no Shift+P")
             append(lines,"G","Toggle aimed body grounding")
             append(lines,"Click","Inspect body / relationships")
             append(lines,"Assembly tool","Create and choose assembly members")
@@ -232,7 +232,9 @@ function Context:Lines()
         append(lines, "Tab", "Cycle depth")
         append(lines, "X / I", "X-ray / Isolate")
     end
-    append(lines,"Z / Shift+Z","Camera zoom in / out")
+    append(lines,"RMB / MMB","Freecam look / pan")
+    append(lines,"WASD / Space / Ctrl","Fly camera / up / down")
+    append(lines,"Z / Shift+Z","Camera FOV in / out")
     return lines
 end
 
