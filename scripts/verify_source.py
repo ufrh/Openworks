@@ -156,6 +156,31 @@ def main() -> int:
           'local HUB_TYPES={"Rotation","Rigid"}' in mates
           and 'request.relationKind=="Rotation" then "Bearing" else "Weld"' in mechanical
           and 'kind=="Hub" then "Rotation"' in read("src/shared/Construction/SmartPlacement.lua"))
+    gear_clearance=read("src/shared/Construction/BoreClearance.lua")
+    smart_placement=read("src/shared/Construction/SmartPlacement.lua")
+    preview=read("src/shared/Construction/PreviewFeedback.lua")
+    layered=read("src/client/Controllers/LayeredEditingController.lua")
+    check("Gear bore clearance uses circular physical opening metadata",
+          'target:GetAttribute("BoreRadiusStuds")' in gear_clearance
+          and 'type(target:GetAttribute("GearTeeth"))=="number"' in gear_clearance
+          and 'localY=Vector3.yAxis,localZ=Vector3.zAxis' in gear_clearance)
+    check("Gear hub mount concentric and genuinely engaged",
+          'eccentricity>0.012' in smart_placement
+          and 'return Bore.ShaftFits(shaft,gearBody)' in smart_placement
+          and 'function Smart.HubPose(' in smart_placement)
+    check("Build/Edit gear shaft fits validated by preview and server",
+          'Smart.HubFits(movingModel,target)' in preview
+          and 'Smart.HubFits(candidate,target)' in service
+          and 'if mode=="Hub" then target' in mechanical)
+    check("Manual L gear alignment chooses real Rotation or Rigid",
+          'local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"' in layered
+          and 'mateKind="Hub"' in layered
+          and 'relationKind=choice' in layered
+          and 'end,1,isGear)' in layered)
+    check("Simulation uses gear center axis for physical hinge",
+          'JointFrames.ForOpening(edge.target)' in simulation
+          and 'local explicit = axisOverride(model)' in read("src/shared/Construction/AlignmentMath.lua")
+          and 'model:SetAttribute("AxialAxis", "X")' in read("src/server/Runtime/GearLibrary.lua"))
     check("Clearance weld requires real drilled bore fit",
           'Bore.ShaftFits(shaft,hole)' in mechanical
           and 'string.find(name,"drilledblock",1,true)' in mechanical)
