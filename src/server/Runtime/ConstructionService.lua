@@ -28,6 +28,7 @@ local RotationMath = require(construction:WaitForChild("RotationMath"))
 local HandCrankMath = require(construction:WaitForChild("HandCrankMath"))
 
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
+local MaterialCatalog=require(construction:WaitForChild("MaterialCatalog"))
 
 local Service = {}
 local folder
@@ -129,6 +130,7 @@ local function snapshot(model)
         orientation = model:GetAttribute("AuthoredRotation"),
         shaftRollDegrees = model:GetAttribute("ShaftRollDegrees") or 0,
         alignedOffsetU = model:GetAttribute("AlignedOffsetU") or 0,
+        materialId = model:GetAttribute("ConstructionMaterial") or "Steel",
     }
 end
 
@@ -174,6 +176,7 @@ local function createFromTemplate(player, templateId, instanceId, bypassLimit)
         end
     end
 
+    MaterialCatalog.Apply(model,"Steel")
     return model
 end
 
@@ -303,6 +306,8 @@ local function applyState(model, data)
     model:SetAttribute("AuthoredRotation", data.orientation)
     model:SetAttribute("ShaftRollDegrees", data.shaftRollDegrees or 0)
     model:SetAttribute("AlignedOffsetU", data.alignedOffsetU or 0)
+    MaterialCatalog.Apply(model,if MaterialCatalog.IsValid(data.materialId)
+        then data.materialId else "Steel")
 end
 
 local function commitRecord(player, before, after)
@@ -592,6 +597,7 @@ local function update(player, payload)
             ) else nil,
         shaftRollDegrees = model:GetAttribute("ShaftRollDegrees") or 0,
         alignedOffsetU = model:GetAttribute("AlignedOffsetU") or 0,
+        materialId=model:GetAttribute("ConstructionMaterial") or "Steel",
     }
     local before=snapshot(model)
     local crankCouplings=if Alignment.IsShaft(model)
@@ -889,6 +895,36 @@ local function verticalMove(player,payload)
         ..tostring(step).." studs on "..axis
 end
 
+local function setMaterial(player,payload)
+    if type(payload)~="table"
+        or not MaterialCatalog.IsValid(payload.materialId) then
+        return false,"Choose a supported construction material"
+    end
+    local id=payload.id
+    if type(id)~="string" or #id>64 then return false,"Select a part" end
+    local members
+    if payload.scope=="Component" then
+        members=components:Members(player,id)
+    elseif payload.scope=="Primitive" then
+        local model=findOwned(player,id)
+        members=if model then {model} else {}
+    else
+        return false,"Material applies to a primitive or component"
+    end
+    if #members==0 then return false,"No owned material targets" end
+    local before,after={},{}
+    for _,model in ipairs(members) do
+        local old=snapshot(model)
+        local nextState=table.clone(old)
+        nextState.materialId=payload.materialId
+        table.insert(before,old)
+        table.insert(after,nextState)
+    end
+    for i,model in ipairs(members) do applyState(model,after[i]) end
+    commitBatch(player,before,after)
+    return true,"Applied "..payload.materialId.." to "..#members.." primitives"
+end
+
 local function restoreMetadata(player,record,undo)
     local states=if undo then record.before else record.after
     if type(states)~="table" then return false,"Invalid metadata history" end
@@ -993,6 +1029,7 @@ local function handle(player, payload)
         or action == "BeginRack"
         or action == "StopSimulation"
         or action == "PauseSimulation" or action == "ResetSimulation"
+    local materialAction=action=="SetMaterial"
     local verticalAction=action=="VerticalMove"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
@@ -1004,7 +1041,7 @@ local function handle(player, payload)
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
         and not componentAction and not smartAction and not assemblyAction
-        and not verticalAction
+        and not verticalAction and not materialAction
         and not alignmentAction and not mechanicalAction
         and not simulationAction then
         return { ok = false, message = "Unknown action" }
@@ -1039,6 +1076,10 @@ local function handle(player, payload)
         elseif action~="GetMechanismInfo"
             and not hasEquippedTool(player,"Edit") then
             return {ok=false,message="Equip Edit to modify relationships"}
+        end
+    elseif materialAction then
+        if not hasEquippedTool(player,"Edit") then
+            return {ok=false,message="Equip Edit to apply materials"}
         end
     elseif verticalAction then
         if (payload.scope=="Assembly" and not hasEquippedTool(player,"Assembly"))
@@ -1077,6 +1118,7 @@ local function handle(player, payload)
         if action == "ResetSimulation" then return simulation:Reset(player) end
         if action == "Place" then return place(player, payload) end
         if action == "VerticalMove" then return verticalMove(player,payload) end
+        if action == "SetMaterial" then return setMaterial(player,payload) end
         if action == "Update" then return update(player, payload) end
         if action == "Delete" then return delete(player, payload) end
         if componentAction then return components:Handle(player, action, payload) end
