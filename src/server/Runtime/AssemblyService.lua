@@ -76,6 +76,14 @@ function Service:Register(player,payload)
     if not seed or not d.nearPlayer(player,seed:GetPivot().Position) then
         return false,"Aim at one of your components to register an assembly"
     end
+    -- Reloaded assemblies already have persisted IDs. Ctrl+G on an
+    -- existing member should SELECT that assembly, not silently replace
+    -- its identifier and orphan other manually added members.
+    local existing=seed:GetAttribute("AssemblyId")
+    if type(existing)=="string" and existing~="" then
+        local name=seed:GetAttribute("AssemblyName") or "Assembly"
+        return true,"Selected "..tostring(name),existing
+    end
     local connected=self:Connected(player,seed)
     if #connected==0 or #connected>128 then
         return false,"Assembly must contain 1–128 parts"
