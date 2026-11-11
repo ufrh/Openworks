@@ -456,6 +456,10 @@ function Mechanical:SmartMate(player, request, newSource)
     end
 
     local mode=request.mateKind
+    if mode=="Hub" and request.relationKind~="Rotation"
+        and request.relationKind~="Rigid" then
+        return false,"Choose Rotation or Rigid for a gear/shaft mount"
+    end
     if mode=="Surface" then
         return false,"Touching parts are never welded automatically. Use Weld."
     end
@@ -464,19 +468,25 @@ function Mechanical:SmartMate(player, request, newSource)
         return false,"Unsupported attachment"
     end
     local reverse=mode=="Bore" and request.reverse==true
-    local shaft=if reverse then target else source
-    local opening=if reverse then source else target
+    local shaft=if mode=="Hub" then
+        (if Alignment.IsShaft(source) then source else target)
+        else (if reverse then target else source)
+    local opening=if mode=="Hub" then
+        (if source:GetAttribute("GearTeeth") then source else target)
+        else (if reverse then source else target)
     local typeName=if mode=="Bore" then (request.relationKind or "Cylindrical")
-        elseif mode=="Gear" then "Gear" else "Fixed"
-    -- A bore fit never silently welds. Hub grouping is EDITOR-ONLY,
-    -- preserving the intentional keyed-gear placement workflow.
-    local rigid=mode=="Hub"
+        elseif mode=="Gear" then "Gear"
+        elseif mode=="Hub" then
+            (if request.relationKind=="Rotation" then "Bearing" else "Weld")
+        else "Fixed"
+    -- Gear/shaft mounts become explicit Hinge or Weld physics links,
+    -- never a component grouping or an implicit fixed connection.
     if mode=="Bore" and typeName~="Bearing"
         and typeName~="Slider" and typeName~="Cylindrical"
         and typeName~="FreeFit" then
         return false,"Choose Rotate + Slide, Slide, Rotate or Fit Only"
     end
-    if not rigid and typeName~="FreeFit"
+    if typeName~="FreeFit"
         and self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
         return false,"Relationship limit reached"
     end
@@ -488,9 +498,7 @@ function Mechanical:SmartMate(player, request, newSource)
     end
     local members=if movingComponent
         then d.components:Members(player,movingComponent) else {source}
-    local targetMembers=if targetComponent
-        then d.components:Members(player,targetComponent) else {target}
-    if #members==0 or #members>128 or #targetMembers==0 then
+    if #members==0 or #members>128 then
         return false,"Moving construction is unavailable"
     end
     local excluded={}
@@ -498,10 +506,6 @@ function Mechanical:SmartMate(player, request, newSource)
         if member==target then return false,"Cannot mate a component to itself" end
         excluded[member]=true
     end
-    if rigid and #members+#targetMembers>128 then
-        return false,"Combined rigid component exceeds 128 primitives"
-    end
-
     local before, planned = {}, {}
     for _,member in ipairs(members) do
         if not newSource then table.insert(before,d.snapshot(member)) end
@@ -782,41 +786,6 @@ function Mechanical:SmartMate(player, request, newSource)
         shaft:SetAttribute("ShaftRollDegrees",roll)
     end
 
-    if rigid then
-        local combined={}
-        for _,member in ipairs(targetMembers) do
-            table.insert(combined,member)
-            table.insert(before,if reverse and member==shaft
-                then fixedShaftBefore else d.snapshot(member))
-        end
-        for _,member in ipairs(members) do table.insert(combined,member) end
-        local groupId=targetComponent or movingComponent
-            or HttpService:GenerateGUID(false)
-        local anchor=ComponentGeometry.CentralPrimitive(combined)
-        local anchorId=anchor:GetAttribute("InstanceId")
-        -- Target group identity wins, so existing component selections and
-        -- inherited rigid-body grounding remain stable after the merge.
-        local grounded=false
-        for _,member in ipairs(combined) do
-            if member:GetAttribute("Grounded")==true then grounded=true end
-        end
-        local assemblyId=target:GetAttribute("AssemblyId")
-            or source:GetAttribute("AssemblyId")
-        local assemblyName=target:GetAttribute("AssemblyName")
-            or source:GetAttribute("AssemblyName")
-        local after={}
-        for _,member in ipairs(combined) do
-            member:SetAttribute("ComponentId",groupId)
-            member:SetAttribute("ComponentAnchorId",anchorId)
-            member:SetAttribute("Grounded",grounded)
-            member:SetAttribute("AssemblyId",assemblyId)
-            member:SetAttribute("AssemblyName",assemblyName)
-            table.insert(after,d.snapshot(member))
-        end
-        d.commitBatch(player,before,after)
-        return true,"Aligned into one editor group (no physical weld)"
-    end
-
     if reverse then table.insert(before,fixedShaftBefore) end
     local fitted={}
     for _,pair in ipairs(fitPairs or {}) do
@@ -878,9 +847,12 @@ function Mechanical:SmartMate(player, request, newSource)
             relationId=HttpService:GenerateGUID(false),
             ownerUserId=player.UserId,
             kind=typeName,
-            sourceId=request.sourceId,
-            targetId=request.targetId,
-            componentId=movingComponent,
+            sourceId=if mode=="Hub"
+                then shaft:GetAttribute("InstanceId") else request.sourceId,
+            targetId=if mode=="Hub"
+                then opening:GetAttribute("InstanceId") else request.targetId,
+            componentId=if mode=="Hub" then shaft:GetAttribute("ComponentId")
+                else movingComponent,
             offsetUnits=offset,
             rollDegrees=roll,
             gearRatio=if mode=="Gear"
@@ -962,6 +934,9 @@ function Mechanical:SmartMate(player, request, newSource)
     return true,if mode=="Bore" then
         string.format("%d individual %s relationships connected (one per rod/hole)",
             #desiredSpecs,typeName)
+        elseif mode=="Hub" then
+            (if typeName=="Bearing" then "Gear mounted • rotation only"
+                else "Gear mounted • rigidly welded to shaft")
         else typeName.." connected"
 end
 
