@@ -276,7 +276,7 @@ function Simulation:BeginRack(player,request)
     session.ActiveRackId=id
     session.RackDirection=direction
     session.RackLastInput=os.clock()
-    return true,"Rack push active • release Z/X to stop"
+    return true,"Rack push active • release Q/E to stop"
 end
 
 function Simulation:InputRack(player,id,direction,holding,release)
