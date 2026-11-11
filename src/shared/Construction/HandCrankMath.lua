@@ -5,7 +5,7 @@ local Alignment=require(script.Parent:WaitForChild("AlignmentMath"))
 
 local Crank={}
 Crank.EndTolerance=0.045 -- studs; reject floating shaft-to-shaft welds
-Crank.AlignmentTolerance=0.994
+Crank.AlignmentTolerance=0.9995
 Crank.MaxTorque=1400
 Crank.MaxAngularSpeed=4.0
 Crank.VelocityGain=420

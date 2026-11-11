@@ -105,7 +105,9 @@ function Context:Lines()
                 append(lines,"LMB",if a.Stage=="PairFirst"
                     then "Select first part" else "Select second part")
                 append(lines,"Mode",tostring(a.PairKind))
-                if a.PairKind=="Spring" then
+                if a.PairKind=="CrankCoupling" then
+                    append(lines,"Valid","Coaxial crank output touching a shaft end")
+                elseif a.PairKind=="Spring" then
                     append(lines,"Valid","Any two components; no size or shape requirement")
                 elseif a.PairKind=="Bolt" then
                     append(lines,"Valid","Two matching coaxial holes")
