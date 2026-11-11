@@ -4,17 +4,18 @@
 local Players=game:GetService("Players")
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local UserInputService=game:GetService("UserInputService")
+local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 
 local player=Players.LocalPlayer
 local remote=ReplicatedStorage:WaitForChild("OPENWORKS_ConstructionRequest")
 local UI={}
 UI.__index=UI
 
-local BG=Color3.fromRGB(20,28,36)
-local PANEL=Color3.fromRGB(30,43,52)
-local TEXT=Color3.fromRGB(228,240,246)
-local MUTED=Color3.fromRGB(151,176,188)
-local ACCENT=Color3.fromRGB(64,173,172)
+local BG=Theme.Window
+local PANEL=Theme.Raised
+local TEXT=Theme.Text
+local MUTED=Theme.Muted
+local ACCENT=Theme.Accent
 
 local function make(class,parent,props)
     local object=Instance.new(class)
@@ -24,7 +25,7 @@ local function make(class,parent,props)
 end
 
 local function round(object,n)
-    make("UICorner",object,{CornerRadius=UDim.new(0,n)})
+    make("UICorner",object,{CornerRadius=UDim.new(0,Theme.Radius)})
     return object
 end
 
@@ -61,6 +62,8 @@ function UI:Refresh()
     local state=player:GetAttribute("OPENWORKS_SaveState") or "Loading"
     local saved=player:GetAttribute("OPENWORKS_LastSavedAt") or 0
     self.Toggle.Text="PLOT "..tostring(slot or "—").."  /  F6"
+    self.Toggle.Visible=player:GetAttribute("OPENWORKS_ActiveTool")~="Simulate"
+        or self.Open
     local message=player:GetAttribute("OPENWORKS_SaveMessage") or ""
     local stamp=if type(saved)=="number" and saved>0
         then os.date("%b %d  •  %I:%M %p",saved)
@@ -173,8 +176,10 @@ function UI:Start()
             self:Request("LoadPlot")
         end
     end)
+    table.insert(self.Connections,Theme.Attach(gui))
     for _,name in ipairs({"OPENWORKS_PlotIndex","OPENWORKS_SaveState",
-        "OPENWORKS_SaveMessage","OPENWORKS_LastSavedAt"}) do
+        "OPENWORKS_SaveMessage","OPENWORKS_LastSavedAt",
+        "OPENWORKS_ActiveTool"}) do
         table.insert(self.Connections,
             player:GetAttributeChangedSignal(name):Connect(function()
                 self:Refresh()

@@ -3,6 +3,7 @@
 -- No buttons here: this only documents the controls that actually exist.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 
 local player = Players.LocalPlayer
 local Context = {}
@@ -222,12 +223,12 @@ function Context:Start()
     panel.AnchorPoint = Vector2.new(1, 0)
     panel.Position = UDim2.new(1, -16, 0, 145)
     panel.Size = UDim2.fromOffset(244, 247)
-    panel.BackgroundColor3 = Color3.fromRGB(22, 29, 38)
+    panel.BackgroundColor3 = Theme.Window
     panel.BackgroundTransparency = 0.12
     panel.BorderSizePixel = 0
     panel.Parent = gui
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 9)
+    corner.CornerRadius = UDim.new(0, Theme.Radius)
     corner.Parent = panel
 
     local title = Instance.new("TextLabel")
@@ -268,6 +269,7 @@ function Context:Start()
     body.Parent = list
 
     self.Gui = gui
+    self.ChromeConnection=Theme.Attach(gui)
     self.Panel = panel
     self.Body = body
     self.Title = title
@@ -289,6 +291,7 @@ end
 
 function Context:Destroy()
     if self.Connection then self.Connection:Disconnect() end
+    if self.ChromeConnection then self.ChromeConnection:Disconnect() end
     if self.Gui then self.Gui:Destroy() end
 end
 

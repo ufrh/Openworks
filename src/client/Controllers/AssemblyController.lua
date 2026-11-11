@@ -19,6 +19,7 @@ local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local RelationshipProperties=require(script.Parent:WaitForChild("RelationshipProperties"))
 local HandCrankController=require(script.Parent:WaitForChild("HandCrankController"))
 local HandCrankMath=require(construction:WaitForChild("HandCrankMath"))
+local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 local INSERTION_STEP_U = 0.5
 
 -- No implicit Fixed joint. Rigid fabrication requires explicit Weld.
@@ -59,14 +60,15 @@ local function createGui()
     crosshair.Parent = gui
 
     local panel = Instance.new("Frame")
+    panel.Name="AssemblyPanel"
     panel.Size = UDim2.fromOffset(380, 116)
     panel.Position = UDim2.new(1, -396, 0, 20)
-    panel.BackgroundColor3 = Color3.fromRGB(22, 29, 38)
+    panel.BackgroundColor3 = Theme.Window
     panel.BackgroundTransparency = 0.06
     panel.BorderSizePixel = 0
     panel.Parent = gui
     local round = Instance.new("UICorner")
-    round.CornerRadius = UDim.new(0, 9)
+    round.CornerRadius = UDim.new(0, Theme.Radius)
     round.Parent = panel
 
     local function label(y, height, fontSize, color)
@@ -842,6 +844,7 @@ end
 
 function Controller:Start()
     self.Gui, self.HUDPanel, self.Header, self.Detail, self.Help = createGui()
+    table.insert(self.Connections,Theme.Attach(self.Gui))
     self.Properties=RelationshipProperties.new(self)
     self.Properties:Start()
     self.Remote = ReplicatedStorage:WaitForChild(Config.RequestName)

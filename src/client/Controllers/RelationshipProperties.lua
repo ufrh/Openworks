@@ -7,12 +7,13 @@ local player=Players.LocalPlayer
 local construction=RS:WaitForChild("Openworks"):WaitForChild("Construction")
 local Grid=require(construction:WaitForChild("GridMath"))
 local Config=require(construction:WaitForChild("BuildConfig"))
+local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 local Properties={}
 Properties.__index=Properties
-local BG=Color3.fromRGB(21,28,37)
-local SURFACE=Color3.fromRGB(37,47,59)
-local WHITE=Color3.fromRGB(235,242,248)
-local MUTED=Color3.fromRGB(158,179,195)
+local BG=Theme.Window
+local SURFACE=Theme.Raised
+local WHITE=Theme.Text
+local MUTED=Theme.Muted
 local function create(class,parent,props)
     local item=Instance.new(class)
     for k,v in pairs(props) do item[k]=v end
@@ -25,7 +26,7 @@ local function create(class,parent,props)
     return item
 end
 local function rounded(item)
-    create("UICorner",item,{CornerRadius=UDim.new(0,8)})
+    create("UICorner",item,{CornerRadius=UDim.new(0,Theme.Radius)})
     return item
 end
 local function label(parent,text,h)
@@ -192,7 +193,9 @@ function Properties:Apply()
 end
 function Properties:Refresh()
     if not self.Gui then return end
-    if self.SelectedOutline and not self.SelectedOutline.Adornee.Parent then
+    if self.SelectedOutline
+        and (not self.SelectedOutline.Adornee
+            or not self.SelectedOutline.Adornee.Parent) then
         self.SelectedOutline:Destroy()
         self.SelectedOutline=nil
         self.SelectedRelation=nil
@@ -374,6 +377,7 @@ function Properties:Start()
                 instanceId=self.SelectedId})
         else self.Status.Text="Select a stopped body to change grounding" end
     end)
+    table.insert(self.Connections,Theme.Attach(gui))
 end
 function Properties:Destroy()
     self:Show(false)

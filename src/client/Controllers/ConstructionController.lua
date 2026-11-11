@@ -26,12 +26,13 @@ local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local BoreClearance = require(construction:WaitForChild("BoreClearance"))
 local NumericSizePanel = require(script.Parent:WaitForChild("NumericSizePanel"))
 local MateChoicePanel = require(script.Parent:WaitForChild("MateChoicePanel"))
+local Theme = require(script.Parent:WaitForChild("StudioTheme"))
 
-local BLUE = Color3.fromRGB(96, 174, 207)
-local DARK = Color3.fromRGB(22, 29, 38)
-local PANEL = Color3.fromRGB(32, 42, 55)
-local TEXT = Color3.fromRGB(230, 239, 246)
-local MUTED = Color3.fromRGB(167, 186, 199)
+local BLUE = Theme.Accent
+local DARK = Theme.Window
+local PANEL = Theme.Raised
+local TEXT = Theme.Text
+local MUTED = Theme.Muted
 
 local Controller = {}
 Controller.__index = Controller
@@ -46,7 +47,7 @@ local function create(className, fields, parent)
 end
 
 local function rounded(gui, radius)
-    create("UICorner", { CornerRadius = UDim.new(0, radius or 7) }, gui)
+    create("UICorner", { CornerRadius = UDim.new(0, Theme.Radius) }, gui)
     return gui
 end
 
@@ -154,8 +155,9 @@ function Controller:MakeUI()
     }, player:WaitForChild("PlayerGui"))
 
     local status = rounded(create("Frame", {
+        Name="ConstructionStatus",
         BackgroundColor3 = DARK,
-        BackgroundTransparency = 0.07,
+        BackgroundTransparency = 0.03,
         BorderSizePixel = 0,
         AnchorPoint = Vector2.new(1, 0),
         Position = UDim2.new(1, -16, 0, 20),
@@ -253,7 +255,7 @@ function Controller:RefreshCatalog()
     for index, entry in ipairs(entries) do
         local b = button(self.List, entry.Id, UDim2.new(1, -7, 0, 32))
         b.LayoutOrder = index
-        b.BackgroundColor3 = if entry.Id == self.CurrentId then Color3.fromRGB(44, 89, 99) else PANEL
+        b.BackgroundColor3 = if entry.Id == self.CurrentId then Theme.Active else PANEL
         b.Activated:Connect(function()
             self:SelectPrimitive(entry.Id)
             self:ShowCatalog(false)
@@ -2046,6 +2048,7 @@ function Controller:Start()
     if self.Started then return end
     self.Started = true
     self:MakeUI()
+    table.insert(self.Connections,Theme.Attach(self.Gui))
     self.Layered = LayeredEditingController.new(self)
     self.Layered:Start()
 
