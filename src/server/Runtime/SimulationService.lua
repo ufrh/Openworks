@@ -34,22 +34,6 @@ local function allParts(model)
     return parts
 end
 
-local function setMotor(constraint, on, speedMultiplier, direction)
-    local signed = (speedMultiplier or 1) * (direction or 1)
-    if constraint:IsA("HingeConstraint") then
-        constraint.ActuatorType = if on then Enum.ActuatorType.Motor
-            else Enum.ActuatorType.None
-        constraint.AngularVelocity = 1.5 * signed
-        constraint.MotorMaxTorque = 50000
-    elseif constraint:IsA("PrismaticConstraint")
-                    or constraint:IsA("CylindricalConstraint") then
-        constraint.ActuatorType = if on then Enum.ActuatorType.Motor
-            else Enum.ActuatorType.None
-        constraint.Velocity = 0.75 * signed
-        constraint.MotorMaxForce = 50000
-    end
-end
-
 function Simulation.new(deps)
     local world = workspace:FindFirstChild("OPENWORKS_Simulated")
     if not world then
@@ -64,12 +48,10 @@ function Simulation:IsRunning(player)
     return self.Sessions[player] ~= nil
 end
 
-function Simulation:SetStatus(player, running, motorsOn, speed, direction, grounded)
-    player:SetAttribute("OPENWORKS_Simulating", running)
-    player:SetAttribute("OPENWORKS_MotorOn", motorsOn)
-    player:SetAttribute("OPENWORKS_MotorSpeed", speed or 1)
-    player:SetAttribute("OPENWORKS_MotorDirection", direction or 1)
-    player:SetAttribute("OPENWORKS_Grounded", grounded ~= false)
+function Simulation:SetStatus(player,running,grounded)
+    player:SetAttribute("OPENWORKS_Simulating",running)
+    player:SetAttribute("OPENWORKS_Grounded",grounded~=false)
+    -- Motion relationships are passive; no actuators exist yet.
 end
 
 function Simulation:Graph(player, seed)
@@ -209,7 +191,7 @@ end
 function Simulation:Stop(player)
     local session = self.Sessions[player]
     if not session then
-        self:SetStatus(player, false, false)
+        self:SetStatus(player,false)
         return false, "No simulation running"
     end
 
@@ -225,7 +207,7 @@ function Simulation:Stop(player)
             saved.Part.Anchored = saved.Anchored
         end
     end
-    self:SetStatus(player, false, false)
+    self:SetStatus(player,false)
     player:SetAttribute("OPENWORKS_SimulationPaused",false)
     return true, "Simulation stopped — editable construction restored"
 end
@@ -248,17 +230,11 @@ function Simulation:Start(player, payload)
 
     local session = {
         Originals = {},
-        Motors = {},
-        MotorOn = false,
-        SpeedMultiplier = 1,
-        Direction = 1,
-        Grounded = payload.grounded ~= false,
+         Grounded = payload.grounded ~= false,
         World = nil,
         Paused = false,
         PausedParts = nil,
-        GearFactors = {},
-        MotorFactors = {},
-        Constraints = {},
+         Constraints = {},
         SeedId = payload.seedId,
         AssemblyName = graph.assemblyName,
         ActiveRelations={},
@@ -324,37 +300,8 @@ function Simulation:Start(player, payload)
             end
         end
 
-        -- Ratio propagation is deterministic across the graph. A gear pair
-        -- uses an EXTERNAL mesh ratio, so connected shafts spin opposite
-        -- directions with magnitude inversely proportional to teeth.
-        session.GearFactors[graph.rootKey] = 1
-        local changed = true
-        local passes = 0
-        while changed and passes < #graph.edges + 1 do
-            changed = false
-            passes += 1
-            for _, edge in ipairs(graph.edges) do
-                if edge.kind ~= "Gear" then continue end
-                local ratio = edge.relation:GetAttribute("GearRatio")
-                if type(ratio) ~= "number" or ratio == 0 then
-                    error("Invalid gear ratio")
-                end
-                if session.GearFactors[edge.a]==nil
-                    and session.GearFactors[edge.b]==nil then
-                    session.GearFactors[edge.a]=1
-                    changed=true
-                end
-                local fa = session.GearFactors[edge.a]
-                local fb = session.GearFactors[edge.b]
-                if fa and not fb then
-                    session.GearFactors[edge.b] = fa * ratio
-                    changed = true
-                elseif fb and not fa then
-                    session.GearFactors[edge.a] = fb / ratio
-                    changed = true
-                end
-            end
-        end
+        -- Gear ratios remain authored metadata, not powered motion.
+        -- Future actuator components will explicitly provide energy.
 
         -- 3. Rebuild authored relationships against the CLONED bodies.
         local collisionExclusions = 0
@@ -364,9 +311,7 @@ function Simulation:Start(player, payload)
             if not target or not source then error("Missing joint endpoint") end
             local p0, p1 = target.PrimaryPart, source.PrimaryPart
             if edge.kind == "Gear" then
-                -- Actual tooth parts remain collidable and no fake
-                -- mechanical constraint is fabricated. Gear ratios are
-                -- applied to the bearing motors of these rotating bodies.
+                -- Passive contact only; no invented gear motor drive.
                 continue
             elseif edge.kind == "Fixed" or edge.kind=="Weld"
                 or edge.kind=="Bolt" then
@@ -484,17 +429,14 @@ function Simulation:Start(player, payload)
                     constraint.UpperAngle =
                         edge.relation:GetAttribute("UpperLimit") or 180
                 end
-                session.MotorFactors[constraint] = {
-                    bodyKey = edge.a,
-                    driveScale = edge.relation:GetAttribute("DriveScale") or 1,
-                }
-                setMotor(constraint, false, session.SpeedMultiplier, session.Direction)
-                constraint.Parent = runtime
+                -- Native relationships permit the selected degrees of
+                -- freedom but never actuate them.
                 if constraint:IsA("HingeConstraint")
                     or constraint:IsA("PrismaticConstraint")
                     or constraint:IsA("CylindricalConstraint") then
-                    table.insert(session.Motors, constraint)
+                    constraint.ActuatorType=Enum.ActuatorType.None
                 end
+                constraint.Parent = runtime
                 table.insert(session.Constraints, constraint)
             end
 
@@ -610,8 +552,7 @@ function Simulation:Start(player, payload)
         return false, "Could not compile simulation (see Studio Output)"
     end
 
-    self:SetStatus(player, true, false, session.SpeedMultiplier,
-        session.Direction, next(session.GroundKeys) ~= nil)
+    self:SetStatus(player,true,next(session.GroundKeys)~=nil)
     player:SetAttribute("OPENWORKS_SimulationPaused",false)
     return true,(session.AssemblyName
         and (tostring(session.AssemblyName).." • ") or "")
@@ -664,61 +605,6 @@ function Simulation:SyncRelationship(player,relation)
     return true
 end
 
-function Simulation:Motor(player)
-    local session = self.Sessions[player]
-    if not session then return false, "Start simulation first (P)" end
-    if #session.Motors == 0 then
-        return false, "No Bearing or Slider motors in this mechanism"
-    end
-    session.MotorOn = not session.MotorOn
-    for _, constraint in ipairs(session.Motors) do
-        if constraint.Parent then
-            local settings = session.MotorFactors[constraint] or {}
-            local ratio = session.GearFactors[settings.bodyKey] or 1
-            setMotor(constraint, session.MotorOn,
-                session.SpeedMultiplier * ratio * (settings.driveScale or 1),
-                session.Direction)
-        end
-    end
-    self:SetStatus(player, true, session.MotorOn,
-        session.SpeedMultiplier, session.Direction, session.Grounded)
-    return true, if session.MotorOn then "Motor drive enabled"
-        else "Motor drive disabled"
-end
-
-function Simulation:TuneMotor(player, payload)
-    local session = self.Sessions[player]
-    if not session then return false, "Start a mechanism simulation first" end
-    if #session.Motors == 0 then
-        return false, "This mechanism has no powered Bearing or Slider"
-    end
-    if payload.flip == true and payload.speedDelta == nil then
-        session.Direction *= -1
-    elseif payload.flip == nil
-        and (payload.speedDelta == 1 or payload.speedDelta == -1) then
-        session.SpeedMultiplier = math.clamp(
-            session.SpeedMultiplier + payload.speedDelta * 0.5, 0.5, 4
-        )
-    else
-        return false, "Invalid drive adjustment"
-    end
-
-    for _, constraint in ipairs(session.Motors) do
-        if constraint.Parent then
-            local settings = session.MotorFactors[constraint] or {}
-            local ratio = session.GearFactors[settings.bodyKey] or 1
-            setMotor(constraint, session.MotorOn,
-                session.SpeedMultiplier * ratio * (settings.driveScale or 1),
-                session.Direction)
-        end
-    end
-    self:SetStatus(player, true, session.MotorOn,
-        session.SpeedMultiplier, session.Direction, session.Grounded)
-    return true, string.format("Drive %.1fx / %s",
-        session.SpeedMultiplier,
-        if session.Direction == 1 then "forward" else "reverse")
-end
-
 function Simulation:Pause(player)
     local session = self.Sessions[player]
     if not session then return false, "Start simulation first" end
@@ -735,15 +621,6 @@ function Simulation:Pause(player)
         session.PausedParts = nil
         session.Paused = false
         player:SetAttribute("OPENWORKS_SimulationPaused",false)
-        for _,motor in ipairs(session.Motors) do
-            if motor.Parent then
-                local settings = session.MotorFactors[motor] or {}
-                local ratio = session.GearFactors[settings.bodyKey] or 1
-                setMotor(motor,session.MotorOn,
-                    session.SpeedMultiplier * ratio * (settings.driveScale or 1),
-                    session.Direction)
-            end
-        end
         return true,"Simulation resumed"
     end
 
@@ -812,7 +689,7 @@ end
 
 function Simulation:ClearPlayer(player)
     if self:IsRunning(player) then self:Stop(player) end
-    self:SetStatus(player, false, false)
+    self:SetStatus(player,false)
 end
 
 return Simulation
