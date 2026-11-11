@@ -118,6 +118,11 @@ function Kinematics:IsKinematic(id)
     return group~=nil and self.Kinematic[group]==true
 end
 
+function Kinematics:IsGrounded(id)
+    local group=self.ById[id]
+    return group~=nil and group.Grounded==true
+end
+
 function Kinematics:MarkGrounding(groundKeys)
     for _,group in pairs(self.Groups) do
         group.Grounded=false
