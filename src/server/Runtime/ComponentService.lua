@@ -309,9 +309,22 @@ function ComponentService:Duplicate(player, payload)
         end
 
         local newState = copied(desired)
+        -- Duplicates are NEW construction objects. Preserve the visual
+        -- primitive geometry and grouping inside the new copy ONLY; never
+        -- inherit an authored assembly, grounding, external bore fit,
+        -- named relationship, or attachment from its source.
+        -- All mechanical relationships live in OPENWORKS_Relationships
+        -- and are deliberately NOT cloned or reattached to the new IDs.
         newState.instanceId = idMap[desired.instanceId]
         newState.componentId = componentId
         newState.componentAnchorId = idMap[anchorOldId]
+        newState.assemblyId = nil
+        newState.assemblyName = nil
+        newState.grounded = false
+        newState.alignedOpeningId = nil
+        newState.alignedOffsetU = 0
+        newState.shaftRollDegrees = 0
+        newState.freePosition = true
 
         d.applyState(clone, newState)
         table.insert(candidates, clone)
