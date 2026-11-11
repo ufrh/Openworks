@@ -98,9 +98,16 @@ function Properties:SelectWorld(centered)
     if not camera then return end
     local roots={}
     local authored=workspace:FindFirstChild(Config.FolderName)
-    local simulated=workspace:FindFirstChild("OPENWORKS_Simulated")
-    if authored then table.insert(roots,authored) end
-    if simulated then table.insert(roots,simulated) end
+    local simulations=workspace:FindFirstChild("OPENWORKS_Simulated")
+    local simulated=simulations and simulations:FindFirstChild(
+        "Simulation_"..tostring(player.UserId))
+    if player:GetAttribute("OPENWORKS_Simulating")==true and simulated then
+        -- Never raycast hidden authored originals during active simulation.
+        table.insert(roots,simulated)
+    elseif authored then
+        table.insert(roots,authored)
+    end
+    if #roots==0 then return end
     local params=RaycastParams.new()
     params.FilterType=Enum.RaycastFilterType.Include
     params.FilterDescendantsInstances=roots
@@ -129,6 +136,10 @@ function Properties:SelectWorld(centered)
 end
 
 function Properties:OutlineSelection(model)
+    if self.SelectionDestroyConnection then
+        self.SelectionDestroyConnection:Disconnect()
+        self.SelectionDestroyConnection=nil
+    end
     if self.SelectedOutline then self.SelectedOutline:Destroy() end
     self.SelectedOutline=nil
     if not model or not model.Parent then return end
@@ -141,6 +152,15 @@ function Properties:OutlineSelection(model)
     h.DepthMode=Enum.HighlightDepthMode.Occluded
     h.Parent=self.Gui
     self.SelectedOutline=h
+    self.SelectionDestroyConnection=model.Destroying:Connect(function()
+        if self.SelectedOutline then
+            self.SelectedOutline:Destroy()
+            self.SelectedOutline=nil
+        end
+        self.SelectedId=nil
+        self.SelectedRelation=nil
+        if self.Open and self.Gui then self:Refresh() end
+    end)
 end
 
 function Properties:InspectAtCenter()
@@ -277,6 +297,10 @@ function Properties:Show(open)
         player:SetAttribute("OPENWORKS_PropertiesLooking",false)
         if self.SelectedOutline then self.SelectedOutline:Destroy() end
         self.SelectedOutline=nil
+        if self.SelectionDestroyConnection then
+            self.SelectionDestroyConnection:Disconnect()
+            self.SelectionDestroyConnection=nil
+        end
         UIS.MouseBehavior=Enum.MouseBehavior.LockCenter
         UIS.MouseIconEnabled=false
     end
@@ -378,6 +402,11 @@ function Properties:Start()
         else self.Status.Text="Select a stopped body to change grounding" end
     end)
     table.insert(self.Connections,Theme.Attach(gui))
+    table.insert(self.Connections,
+        player:GetAttributeChangedSignal("OPENWORKS_Simulating"):Connect(
+            function()
+                if self.Open then self:Refresh() end
+            end))
 end
 function Properties:Destroy()
     self:Show(false)
