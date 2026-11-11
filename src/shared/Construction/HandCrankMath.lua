@@ -6,10 +6,8 @@ local Alignment=require(script.Parent:WaitForChild("AlignmentMath"))
 local Crank={}
 Crank.EndTolerance=0.045 -- studs; reject floating shaft-to-shaft welds
 Crank.AlignmentTolerance=0.9995
-Crank.MaxTorque=1400
-Crank.MaxAngularSpeed=4.0
-Crank.FixedAngularSpeed=2.0 -- rad/s while LMB is held; torque remains bounded
-Crank.VelocityGain=420
+Crank.MaxTorque=1400 -- maximum native AngularVelocity motor effort
+Crank.FixedAngularSpeed=2.0 -- rad/s, fixed target while LMB is held
 Crank.MinOutputDiameter=0.06
 Crank.MaxOutputDiameter=4.0
 
