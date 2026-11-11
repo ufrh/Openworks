@@ -323,6 +323,31 @@ function ComponentService:Duplicate(player, payload)
             spec.secondTargetId=if original.secondTargetId then
                 idMap[original.secondTargetId] else nil
             spec.componentId=componentId
+            if type(original.fitPointsJSON)=="string"
+                and original.fitPointsJSON~="" then
+                local decodedOK,points=pcall(function()
+                    return HttpService:JSONDecode(original.fitPointsJSON)
+                end)
+                if not decodedOK or type(points)~="table" then
+                    return false,"Cannot duplicate invalid fit metadata"
+                end
+                local remapped={}
+                local fullyInternal=true
+                for _,point in ipairs(points) do
+                    if type(point)~="table"
+                        or not idMap[point.movingId]
+                        or not idMap[point.stationaryId] then
+                        fullyInternal=false
+                        break
+                    end
+                    local mapped=table.clone(point)
+                    mapped.movingId=idMap[point.movingId]
+                    mapped.stationaryId=idMap[point.stationaryId]
+                    table.insert(remapped,mapped)
+                end
+                if not fullyInternal then continue end
+                spec.fitPointsJSON=HttpService:JSONEncode(remapped)
+            end
             if type(original.fitSetId)=="string" then
                 if not fitSetMap[original.fitSetId] then
                     fitSetMap[original.fitSetId]=HttpService:GenerateGUID(false)
