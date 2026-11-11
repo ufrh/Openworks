@@ -814,7 +814,11 @@ end
 local function verticalMove(player,payload)
     if type(payload)~="table"
         or (payload.direction~=1 and payload.direction~=-1) then
-        return false,"Choose Page Up or Page Down"
+        return false,"Choose an arrow direction"
+    end
+    local axis=payload.axis or "Y"
+    if axis~="X" and axis~="Y" and axis~="Z" then
+        return false,"Nudge only along world X, Y or Z"
     end
     local selected={}
     local scope=payload.scope
@@ -841,7 +845,9 @@ local function verticalMove(player,payload)
     -- The server chooses the actual increment, not the client.
     local fine=payload.fine==true
     local step=if fine then 0.05 else 0.25
-    local delta=Vector3.new(0,payload.direction*step,0)
+    local delta=(if axis=="X" then Vector3.xAxis
+        elseif axis=="Y" then Vector3.yAxis else Vector3.zAxis)
+        *payload.direction*step
     local before,after,ignored={}, {}, {}
     for _,model in ipairs(selected) do
         if not model.PrimaryPart or model.Parent~=folder then
@@ -876,12 +882,11 @@ local function verticalMove(player,payload)
         for i,model in ipairs(selected) do
             applyState(model,before[i])
         end
-        return false,"Vertical movement intersects another construction"
+        return false,"Nudge intersects another construction"
     end
     commitBatch(player,before,after)
-    return true,(if payload.direction>0 then "Raised " else "Lowered ")
-        ..tostring(#selected).." primitives by "
-        ..tostring(step).." studs"
+    return true,"Moved "..tostring(#selected).." primitives "
+        ..tostring(step).." studs on "..axis
 end
 
 local function restoreMetadata(player,record,undo)
