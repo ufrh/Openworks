@@ -811,8 +811,8 @@ local function handle(player, payload)
         or action == "DeleteComponent" or action == "RotateComponent"
         or action == "RotatePrimitiveWorld"
     local smartAction = action == "SmartMate"
-    local assemblyAction=action=="RegisterAssembly"
-        or action=="AddAssemblyMember"
+    local assemblyAction=action=="CreateAssembly"
+        or action=="UpdateAssembly"
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
         and not componentAction and not smartAction and not assemblyAction
@@ -851,8 +851,11 @@ local function handle(player, payload)
             and not hasEquippedTool(player,"Edit") then
             return {ok=false,message="Equip Edit to modify relationships"}
         end
-    elseif componentAction or alignmentAction or smartAction
-        or assemblyAction then
+    elseif assemblyAction then
+        if not hasEquippedTool(player,"Assembly") then
+            return {ok=false,message="Equip Assembly to create or edit assemblies"}
+        end
+    elseif componentAction or alignmentAction or smartAction then
         if not hasEquippedTool(player, "Edit") then
             return { ok = false, message = "Equip Edit to modify components" }
         end
@@ -912,11 +915,11 @@ local function handle(player, payload)
         if action=="CreateBolt" then
             return false,"Use Build > Fasteners to drag a real bolt through the holes"
         end
-        if action=="RegisterAssembly" then
-            return assemblies:Register(player,payload)
+        if action=="CreateAssembly" then
+            return assemblies:Create(player,payload)
         end
-        if action=="AddAssemblyMember" then
-            return assemblies:Add(player,payload)
+        if action=="UpdateAssembly" then
+            return assemblies:Update(player,payload)
         end
         if action == "AdjustJoint" then return mechanical:AdjustJoint(player, payload) end
         if action == "PoseShaft" then return mechanical:PoseShaft(player, payload) end

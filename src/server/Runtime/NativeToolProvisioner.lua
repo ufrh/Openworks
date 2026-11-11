@@ -103,7 +103,7 @@ function Provisioner.Start()
         end)
     end
 
-    print("[OPENWORKS] StarterPack native tools provisioned: Build, Edit, Simulate, Inspect, Weld")
+    print("[OPENWORKS] StarterPack native tools provisioned: Build, Edit, Assembly, Simulate, Inspect, Weld")
 end
 
 return Provisioner

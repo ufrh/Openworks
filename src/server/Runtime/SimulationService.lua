@@ -161,7 +161,7 @@ function Simulation:Graph(player, seed)
     -- participant must first belong to a deliberately registered Assembly.
     local assemblyId=seed:GetAttribute("AssemblyId")
     if type(assemblyId)~="string" or assemblyId=="" then
-        return nil,"Register the complete assembly in Edit (Ctrl+G) before simulating"
+        return nil,"Equip Assembly, press N, name it, select parts and press Enter before simulating"
     end
     local owned = {}
     local bodies = {}
@@ -253,18 +253,13 @@ function Simulation:Graph(player, seed)
         local left=visited[edge.a]==true
         local right=visited[edge.b]==true
         if left~=right then
-            return nil,"A connected part is outside this assembly. In Edit, aim at it and use Ctrl+Shift+G to add it"
+            return nil,"A physically connected part is outside this assembly. Equip Assembly, select it and add the missing part"
         end
     end
-    for _,members in pairs(editorGroups) do
-        local inside,outside=false,false
-        for _,key in ipairs(members) do
-            if visited[key] then inside=true else outside=true end
-        end
-        if inside and outside then
-            return nil,"An editor component has members outside this assembly. Add the entire component in Edit"
-        end
-    end
+    -- A single primitive may be deliberately included from an editor
+    -- component. ComponentId is a selection group, NEVER a mechanical weld,
+    -- so partial editor grouping alone is not a physics error. Crossing
+    -- an actual mechanical relationship still requires both sides above.
 
     local models = {}
     for _, key in ipairs(queue) do
@@ -322,7 +317,7 @@ function Simulation:Start(player, payload)
     if not seed then return false, "Aim at a constructed part you own" end
     local assemblyId=seed:GetAttribute("AssemblyId")
     if type(assemblyId)~="string" or assemblyId=="" then
-        return false,"Simulation requires a registered assembly. In Edit, aim at the mechanism and press Ctrl+G"
+        return false,"Simulation requires an assembly. Equip Assembly, press N, select members and press Enter"
     end
     if not d.nearPlayer(player, seed:GetPivot().Position) then
         return false, "Mechanism is out of construction range"
