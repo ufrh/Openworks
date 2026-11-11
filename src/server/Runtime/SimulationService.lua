@@ -24,6 +24,9 @@ Simulation.__index = Simulation
 local MAX_PARTS = 128
 local MAX_JOINTS = 64
 local MAX_COLLISION_PAIRS = 1200
+-- If the client disappears or drops its held-input stream, never leave a
+-- running motor behind. The client pulses every 0.1s during LMB hold.
+local CRANK_HOLD_TIMEOUT = 0.5
 
 local function bodyKey(model)
     -- ComponentId is only an editor grouping; NEVER a physical joint.
@@ -58,12 +61,13 @@ end
 
 -- The ONLY powered source is a distinct physical HandCrank prefab.
 -- Mechanical relationships never receive an ActuatorType/Motor setting.
--- Server-owned on/off state. No per-frame remote input and no mouse
--- velocity mapping: a click simply requests a fixed angular speed.
+-- Server-authorized held-LMB drive. Pulse packets are liveness only:
+-- mouse motion and untrusted client speed can never change physical torque.
 function Simulation:StopCrank(session,id)
     local crank=session.Cranks and session.Cranks[id]
     if not crank then return end
     crank.Running=false
+    crank.LastInput=0
     crank.Torque.Torque=Vector3.zero
     crank.SmoothedDesired=0
     if crank.Model and crank.Model.Parent then
@@ -83,7 +87,8 @@ function Simulation:StepCranks(dt)
             if not torque.Parent or not root.Parent then continue end
             if session.Paused or session.ActiveCrankId~=id
                 or not crank.Running or not playerRoot
-                or (playerRoot.Position-root.Position).Magnitude>22 then
+                or (playerRoot.Position-root.Position).Magnitude>22
+                or os.clock()-(crank.LastInput or 0)>CRANK_HOLD_TIMEOUT then
                 torque.Torque=Vector3.zero
                 if crank.Running then self:StopCrank(session,id) end
                 continue
@@ -100,8 +105,8 @@ function Simulation:StepCranks(dt)
     end
 end
 
--- Keep the established request action for compatibility, but change its
--- behavior to a toggle. The same click starts or stops the drive.
+-- Begin is ONE press. Release and watchdog always stop the drive, never
+-- toggle it. All motion remains torque-limited and native physics driven.
 function Simulation:BeginCrank(player,request)
     local session=self.Sessions[player]
     if not session then return false,"Start simulation (P) before turning a crank" end
@@ -110,8 +115,9 @@ function Simulation:BeginCrank(player,request)
     local crank=type(id)=="string" and session.Cranks[id] or nil
     if not crank then return false,"Choose a HandCrank in this running assembly" end
     if session.ActiveCrankId==id and crank.Running then
-        self:StopCrank(session,id)
-        return true,"Hand crank stopped"
+        -- Duplicate Tool.Activated/InputBegan presses are idempotent.
+        crank.LastInput=os.clock()
+        return true,"Hand crank held"
     end
     if not crank.Coupled then
         return false,"Couple the crank output to a cylindrical shaft in Edit"
@@ -129,18 +135,30 @@ function Simulation:BeginCrank(player,request)
     end
     session.ActiveCrankId=id
     crank.Running=true
+    crank.LastInput=os.clock()
     crank.SmoothedDesired=0
     crank.Model:SetAttribute("OPENWORKS_CrankRunning",true)
-    return true,"Hand crank running • click again to stop"
+    return true,"Hand crank running • release LMB to stop"
 end
 
--- Legacy CrankControl remote is release-only. It can no longer inject
--- arbitrary speed or torque; all drive speed comes from shared constants.
-function Simulation:InputCrank(player,id,_desired,_dragging,release)
-    if release~=true then return end
+-- The remote is a held-input watchdog, never a speed command. Client
+-- values other than release or held state have no effect on crank power.
+function Simulation:InputCrank(player,id,_desired,holding,release)
     local session=self.Sessions[player]
     if not session or session.ActiveCrankId~=id then return end
-    self:StopCrank(session,id)
+    local crank=session.Cranks and session.Cranks[id]
+    if not crank then return end
+    if release==true or holding~=true then
+        self:StopCrank(session,id)
+        return
+    end
+    if session.Paused or not crank.Running then return end
+    local now=os.clock()
+    -- The authenticated session and proximity are also rechecked on
+    -- StepCranks, so a remote cannot keep an abandoned motor turning.
+    if now-(crank.LastPacket or 0)<0.04 then return end
+    crank.LastPacket=now
+    crank.LastInput=now
 end
 
 function Simulation:SetStatus(player,running,grounded)
@@ -599,6 +617,7 @@ function Simulation:Start(player, payload)
             session.Cranks[id]={
                 Root=root,Model=model,Torque=torque,Coupled=coupled,
                 BodyKey=bodyKey(original),SmoothedDesired=0,Running=false,
+                LastInput=0,LastPacket=0,
             }
         end
 
