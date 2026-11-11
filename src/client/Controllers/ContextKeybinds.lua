@@ -50,6 +50,8 @@ function Context:Lines()
     if tool=="Simulate" and player:GetAttribute("OPENWORKS_PropertiesOpen") then
         append(lines,"Mouse","Select a part, then its mechanical relationship")
         append(lines,"Properties","Adjust settings in the GUI")
+        append(lines,"H","Grip selected hand crank during simulation")
+        append(lines,"LMB","Trace circle to transmit manual torque")
         return lines
     end
     if player:GetAttribute("OPENWORKS_Simulating") == true then
