@@ -896,6 +896,7 @@ function Mechanical:SmartMate(player, request, newSource)
         end
     end
     local need={}
+    local reused={}
     for _,candidate in ipairs(desiredSpecs) do
         local key=candidate.sourceId..":"..candidate.targetId
         local prior=existingByPair[key]
@@ -905,6 +906,7 @@ function Mechanical:SmartMate(player, request, newSource)
                 restoreMoving()
                 return false,"An existing relationship has a different motion type"
             end
+            table.insert(reused,{relation=prior,spec=candidate})
         else
             table.insert(need,candidate)
         end
@@ -927,16 +929,33 @@ function Mechanical:SmartMate(player, request, newSource)
         end
         table.insert(createdSpecs,candidate)
     end
+    -- Upgrade old single-joint multi-fits in place, but record their old
+    -- metadata so undo restores the original authored single-joint state.
+    local relationEdits={}
+    for _,item in ipairs(reused) do
+        local old=self:Snapshot(item.relation)
+        local candidate=item.spec
+        item.relation:SetAttribute("OffsetUnits",candidate.offsetUnits)
+        item.relation:SetAttribute("FitPointsJSON",candidate.fitPointsJSON)
+        item.relation:SetAttribute("FitPointCount",candidate.fitPointCount)
+        item.relation:SetAttribute("FitTravelU",candidate.fitTravelU)
+        item.relation:SetAttribute("FitSetId",candidate.fitSetId)
+        item.relation:SetAttribute("FitSetIndex",candidate.fitSetIndex)
+        item.relation:SetAttribute("FitSetCount",candidate.fitSetCount)
+        table.insert(relationEdits,{
+            before=old,after=self:Snapshot(item.relation),
+        })
+    end
     local after={}
     for _,member in ipairs(members) do table.insert(after,d.snapshot(member)) end
     if reverse then table.insert(after,d.snapshot(shaft)) end
-    if #createdSpecs==0 then
+    if #createdSpecs==0 and #relationEdits==0 then
         d.commitBatch(player,before,after)
         return true,string.format("%d existing %s connections repositioned",
             #desiredSpecs,typeName)
     end
     -- One authored operation, one undo/redo entry, all joints or none.
-    d.commitAssembly(player,before,after,createdSpecs)
+    d.commitAssembly(player,before,after,createdSpecs,false,relationEdits)
     return true,if mode=="Bore" then
         string.format("%d individual %s relationships connected (one per rod/hole)",
             #desiredSpecs,typeName)
@@ -1649,6 +1668,21 @@ function Mechanical:Remove(player, request)
 end
 
 function Mechanical:ApplyHistory(player, record, undo, restoreBatch)
+    local function applyEdits(undoEdit)
+        for _,edit in ipairs(record.relationEdits or {}) do
+            local snapshot=if undoEdit then edit.before else edit.after
+            local relation=self:OwnedRelation(player,snapshot.relationId)
+            if relation then
+                relation:SetAttribute("OffsetUnits",snapshot.offsetUnits)
+                relation:SetAttribute("FitPointsJSON",snapshot.fitPointsJSON)
+                relation:SetAttribute("FitPointCount",snapshot.fitPointCount)
+                relation:SetAttribute("FitTravelU",snapshot.fitTravelU)
+                relation:SetAttribute("FitSetId",snapshot.fitSetId)
+                relation:SetAttribute("FitSetIndex",snapshot.fitSetIndex)
+                relation:SetAttribute("FitSetCount",snapshot.fitSetCount)
+            end
+        end
+    end
     local specs=record.relations or
         (record.relation and {record.relation} or {})
     local removing=if record.removed then not undo else undo
@@ -1666,6 +1700,7 @@ function Mechanical:ApplyHistory(player, record, undo, restoreBatch)
             for _,spec in ipairs(specs) do self:Restore(player,spec) end
             return false,why
         end
+        applyEdits(undo)
         return true
     end
 
@@ -1684,6 +1719,7 @@ function Mechanical:ApplyHistory(player, record, undo, restoreBatch)
         end
         table.insert(restored,spec.relationId)
     end
+    applyEdits(undo)
     return true
 end
 
@@ -1697,7 +1733,8 @@ function Mechanical:RebuildRelations()
             local spec = self:Snapshot(relation)
             local source = self.D.findOwned(player, spec.sourceId)
             local target = self.D.findOwned(player, spec.targetId)
-            if source and (spec.kind == "Bearing" or spec.kind == "Slider"
+            if source and not spec.fitSetId
+                and (spec.kind == "Bearing" or spec.kind == "Slider"
                 or spec.kind == "Cylindrical") then
                 relation:SetAttribute("OffsetUnits",
                     source:GetAttribute("AlignedOffsetU") or spec.offsetUnits)
