@@ -12,6 +12,7 @@ local Grid = require(construction:WaitForChild("GridMath"))
 local Bore = require(construction:WaitForChild("BoreClearance"))
 local Alignment = require(construction:WaitForChild("AlignmentMath"))
 local MultiFit = require(construction:WaitForChild("MultiFitMath"))
+local Smart = require(construction:WaitForChild("SmartPlacement"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
 local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
@@ -219,9 +220,17 @@ local function intersectsConstructed(candidate, except, opening: Model?, shaftId
                 and candidate:GetAttribute("InstanceId")==shaftId
                 and Bore.ShaftFits(candidate,target)
             local intendedGear=target and GearMath.Meshable(candidate,target)
+            -- A gear's pivot has no metal in its center. A valid coaxial
+            -- hub fit may have harmless faceted rim broad-phase contacts.
+            -- Only exempt the explicitly chosen gear/shaft pair, after
+            -- server-verifying actual circular bore clearance.
+            local intendedHub=target and target==opening and shaftId
+                and candidate:GetAttribute("InstanceId")==shaftId
+                and Smart.HubFits(candidate,target)
             local approvedFit=target and fitMap and fitMap[candidate]
                 and fitMap[candidate][target] == true
-            if not intendedBore and not intendedGear and not approvedFit then
+            if not intendedBore and not intendedGear
+                and not intendedHub and not approvedFit then
                 return true
             end
         end
