@@ -1388,8 +1388,17 @@ function Controller:Place(chosenKind)
             fitTargets=self.SmartMatch.fitTargets,
         } else nil,
     })
-    if success and self.Pending == "Copy" then
-        self:CancelPending()
+    if success then
+        if self.Pending=="Copy" then
+            self:CancelPending()
+        else
+            -- Successful Build placement ends the alignment transaction.
+            -- Do NOT leave the following new build ghost locked to the
+            -- previously chosen rod/hole.
+            self:ClearSmartMatch()
+            self.PreviewVisualPose=nil
+            self.LastPreviewCheck=0
+        end
         self:RefreshHUD()
     end
 end
