@@ -584,6 +584,21 @@ local function update(player, payload)
         alignedOffsetU = model:GetAttribute("AlignedOffsetU") or 0,
     }
     local before=snapshot(model)
+    local crankCouplings=if Alignment.IsShaft(model)
+        then mechanical:CoupledCranks(player,model) else {}
+    if #crankCouplings>0 and typeof(proposed.size)=="Vector3" then
+        -- Resize the crank with the shaft, but never silently pull a
+        -- physically welded crank away from the shaft's output end.
+        local desiredRotation=if typeof(proposed.orientation)=="CFrame"
+            then proposed.orientation.Rotation else Grid.Rotation(proposed.steps)
+        local existing=model:GetPivot()
+        if math.abs(proposed.size.X-before.size.X)>0.001
+            or (proposed.position-before.position).Magnitude>0.001
+            or (desiredRotation.RightVector-existing.RightVector).Magnitude>0.001
+            or (desiredRotation.UpVector-existing.UpVector).Magnitude>0.001 then
+            return false,"Disconnect hand crank before moving or changing shaft length"
+        end
+    end
     if HandCrankMath.IsCrank(model)
         and typeof(proposed.size)=="Vector3"
         and (proposed.size-before.size).Magnitude>0.001 then
@@ -639,8 +654,28 @@ local function update(player, payload)
         return false,"Edit intersects another piece"
     end
 
+    local crankBefore,crankAfter={},{}
+    if #crankCouplings>0 then
+        local reason
+        crankBefore,crankAfter,reason=mechanical:ResizeCoupledCranks(player,model)
+        if not crankBefore then
+            applyState(model,before)
+            return false,reason or "Attached crank could not be resized"
+        end
+    end
+
     local after=snapshot(model)
-    commitRecord(player,before,after)
+    if #crankBefore>0 then
+        local prev={before}
+        local nextStates={after}
+        for i,old in ipairs(crankBefore) do
+            table.insert(prev,old)
+            table.insert(nextStates,crankAfter[i])
+        end
+        commitBatch(player,prev,nextStates)
+    else
+        commitRecord(player,before,after)
+    end
     return true,after.instanceId
 end
 
