@@ -79,6 +79,70 @@ function Smart.GearPose(source: Model, target: Model, near: Vector3)
         math.abs(radial.Magnitude-pitch)+math.abs(depth)
 end
 
+-- Solve the intersection of TWO pitch circles when the moving gear
+-- can simultaneously engage two stationary gears. This is an ordinary
+-- geometry problem, not a hardcoded 3-gear relationship. Repeated gear
+-- placements can build arbitrary branched graphs and reversible chains.
+function Smart.MultiGearPose(source:Model,target:Model,near:Vector3,
+    options:{Model}?):(CFrame?,number?,number)
+    local base,baseError=Smart.GearPose(source,target,near)
+    if not base then return nil,nil,0 end
+    if not options or not source.PrimaryPart then return base,baseError,1 end
+    local first=target:GetPivot()
+    local axis=first.RightVector.Unit
+    local sourceTeeth=source:GetAttribute("GearTeeth")
+    local module=source:GetAttribute("GearModuleStuds")
+    local r1=(sourceTeeth+target:GetAttribute("GearTeeth"))
+        *module/(2*math.pi)
+    local bestPose,bestError,bestCount=base,baseError,1
+    local bestDistance=math.huge
+    for _,other in ipairs(options) do
+        if other==target or other==source or not gear(other)
+            or not other.PrimaryPart or not other.Parent then continue end
+        if math.abs((other:GetAttribute("GearModuleStuds") or -1)
+            -module)>0.0001 then continue end
+        local cf=other:GetPivot()
+        if math.abs(axis:Dot(cf.RightVector))<0.999 then continue end
+        local axial=math.abs((cf.Position-first.Position):Dot(axis))
+        local thickness=(source.PrimaryPart.Size.X+other.PrimaryPart.Size.X)*0.5
+            -math.max(0.012,math.min(source.PrimaryPart.Size.X,
+                other.PrimaryPart.Size.X)*0.07)
+        if axial>=thickness then continue end
+        local r2=(sourceTeeth+other:GetAttribute("GearTeeth"))
+            *module/(2*math.pi)
+        local vector=cf.Position-first.Position
+        local planar=vector-axis*vector:Dot(axis)
+        local distance=planar.Magnitude
+        if distance<0.0001 or distance>r1+r2+0.0001
+            or distance<math.abs(r1-r2)-0.0001 then continue end
+        local direction=planar/distance
+        local along=(r1*r1-r2*r2+distance*distance)/(2*distance)
+        local height2=r1*r1-along*along
+        if height2< -0.0001 then continue end
+        local perp=axis:Cross(direction).Unit
+        local height=math.sqrt(math.max(0,height2))
+        for _,sign in ipairs({-1,1}) do
+            local candidate=first.Position+direction*along
+                +perp*(height*sign)
+            local capture=(candidate-near).Magnitude
+            if capture>Smart.GearPitchCapture*1.65 then continue end
+            local posed,err=Smart.GearPose(source,target,candidate)
+            if posed then
+                local delta=posed.Position-cf.Position
+                local side=(delta-axis*delta:Dot(axis)).Magnitude
+                if math.abs(side-r2)<=0.04
+                    and capture<bestDistance then
+                    bestDistance=capture
+                    bestPose=posed
+                    bestError=err
+                    bestCount=2
+                end
+            end
+        end
+    end
+    return bestPose,bestError,bestCount
+end
+
 -- Gear bores are real open centers. Dragging a gear onto a shaft (or
 -- vice versa) aligns the hub; the user must explicitly choose a free
 -- rotational hinge or a rigid weld before the mount is committed.
@@ -450,14 +514,17 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                         *source:GetAttribute("GearModuleStuds")/(2*math.pi)
                     approach=fixed.Position+radial.Unit*pitch
                 end
-                local pose,dist=Smart.GearPose(source,target,approach)
+                local pose,dist,meshes=Smart.MultiGearPose(
+                    source,target,approach,allTargets or targets)
                 if pose then
                     kind="Gear"
                     cf=(pose*source:GetPivot():Inverse())*ghost:GetPivot()
                     approach=pose.Position
-                    -- Direct tooth aim wins over unrelated nearby sockets.
-                    -- Proximity-only matches still require pitch-ring fit.
-                    score=if directAim then -0.15 else dist+0.2
+                    -- An exact two-mesh pitch-circle intersection gets
+                    -- preference without requiring the player to create
+                    -- two separate permanent gear connections.
+                    score=(if directAim then -0.15 else dist+0.2)
+                        -math.max(0,meshes-1)*0.5
                 end
             end
             if cf and kind=="Bore" and #members>1 then
