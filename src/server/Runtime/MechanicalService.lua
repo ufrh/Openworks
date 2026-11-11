@@ -1143,7 +1143,7 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
     else
         local fits,why=HandCrankMath.Fits(source,target)
         if not fits then return false,why end
-        if newSource and d.intersectsConstructed(source) then
+        if newSource and d.intersectsConstructed(source,{[source]=true}) then
             return false,"Hand crank intersects another built part"
         end
     end
