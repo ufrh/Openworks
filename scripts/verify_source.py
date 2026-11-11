@@ -120,8 +120,27 @@ def main() -> int:
     check("No mechanical relationship powered by hidden motor",
           "Enum.ActuatorType.None" in simulation
           and "HandCrank_PlayerTorque" in simulation)
-    check("Manual input has distance and stale-packet limits",
-          "INPUT_EXPIRES" in simulation and "playerRoot.Position-root.Position" in simulation)
+    check("Click-toggle crank is fixed-speed, range-limited, torque-capped",
+          "HandCrankMath.FixedAngularSpeed" in simulation
+          and "self:StopCrank(session,id)" in simulation
+          and "playerRoot.Position-root.Position" in simulation
+          and "HandCrankMath.MaxTorque" in simulation
+          and 'action="BeginCrank"' in crank
+          and "GetMouseDelta" not in crank)
+    crank_math=read("src/shared/Construction/HandCrankMath.lua")
+    mechanical=read("src/server/Runtime/MechanicalService.lua")
+    mates=read("src/client/Controllers/MateChoicePanel.lua")
+    check("Hand crank fitted size survives undo/load",
+          "HandCrankMath.ApplySize(model,data.size)" in service
+          and "HandCrankMath.ValidSize" in persistence
+          and "HandCrankMath.ShaftSize(source,target)" in mechanical)
+    check("Gear hub choice creates only physical hinge or weld",
+          'local HUB_TYPES={"Rotation","Rigid"}' in mates
+          and 'request.relationKind=="Rotation" then "Bearing" else "Weld"' in mechanical
+          and 'kind=="Hub" then "Rotation"' in read("src/shared/Construction/SmartPlacement.lua"))
+    check("Clearance weld requires real drilled bore fit",
+          'Bore.ShaftFits(shaft,hole)' in mechanical
+          and 'string.find(name,"drilledblock",1,true)' in mechanical)
 
     check("Metadata undo is in place",
           'kind="Metadata"' in service
