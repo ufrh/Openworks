@@ -476,7 +476,7 @@ function Mechanical:SmartMate(player, request, newSource)
     if mode=="Surface" then
         return false,"Touching parts are never welded automatically. Use Weld."
     end
-    if mode~="Bore" and mode~="Gear"
+    if mode~="Bore" and mode~="Gear" and mode~="Rack"
         and mode~="Hub" and mode~="Surface" then
         return false,"Unsupported attachment"
     end
@@ -488,7 +488,7 @@ function Mechanical:SmartMate(player, request, newSource)
         (if source:GetAttribute("GearTeeth") then source else target)
         else (if reverse then source else target)
     local typeName=if mode=="Bore" then (request.relationKind or "Cylindrical")
-        elseif mode=="Gear" then "Gear"
+        elseif mode=="Gear" or mode=="Rack" then mode
         elseif mode=="Hub" then
             (if request.relationKind=="Rotation" then "Bearing" else "Weld")
         else "Fixed"
@@ -501,7 +501,7 @@ function Mechanical:SmartMate(player, request, newSource)
     end
     -- Auto-meshing gears are a PLACEMENT operation, not a permanent
     -- authored relationship or a consumer of joint slots.
-    if mode~="Gear" and typeName~="FreeFit"
+    if mode~="Gear" and mode~="Rack" and typeName~="FreeFit"
         and self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
         return false,"Relationship limit reached"
     end
@@ -605,7 +605,7 @@ function Mechanical:SmartMate(player, request, newSource)
             end
             table.insert(planned,state)
         end
-    elseif mode=="Gear" or mode=="Hub" then
+    elseif mode=="Gear" or mode=="Rack" or mode=="Hub" then
         if typeof(request.approach)~="Vector3"
             or not d.Grid.ValidPosition(request.approach) then
             return false,"Move closer to the compatible gear/shaft"
@@ -613,6 +613,8 @@ function Mechanical:SmartMate(player, request, newSource)
         local pose,why
         if mode=="Gear" then
             pose,why=Smart.GearPose(source,target,request.approach)
+        elseif mode=="Rack" then
+            pose,why=Smart.RackPose(source,target,request.approach)
         else
             pose,why=Smart.HubPose(source,target,request.approach)
         end
@@ -681,7 +683,7 @@ function Mechanical:SmartMate(player, request, newSource)
     if mode=="Bore" then
         local fits,why=Bore.ShaftFits(shaft,opening)
         if not fits then restoreMoving() return false,why end
-    elseif mode=="Gear" then
+    elseif mode=="Gear" or mode=="Rack" then
         local fits,why=GearMath.AutoMeshStatus(source,target)
         if not fits then restoreMoving() return false,why end
     elseif mode=="Hub" then
@@ -793,8 +795,8 @@ function Mechanical:SmartMate(player, request, newSource)
         end
     end
 
-    if mode=="Gear" then
-        -- The simulation discovers gear engagement from PHYSICAL tooth
+    if mode=="Gear" or mode=="Rack" then
+        -- The simulation discovers gear and rack contact from PHYSICAL tooth
         -- spacing. Placing a gear must never silently create a legacy K
         -- relationship (which could later interfere with assemblies).
         -- Commit only the relocated construction; undo/redo stays atomic.
@@ -803,7 +805,9 @@ function Mechanical:SmartMate(player, request, newSource)
             table.insert(after,d.snapshot(member))
         end
         d.commitAssembly(player,before,after,nil,false)
-        return true,"Gear positioned at pitch circle • automatic mesh in simulation"
+        return true,if mode=="Rack"
+            then "Rack and pinion engaged • automatic transmission in simulation"
+            else "Gear positioned at pitch geometry • automatic mesh in simulation"
     end
 
     -- The fixed shaft in reverse alignment stays at its exact authored pose,
