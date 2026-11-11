@@ -334,9 +334,21 @@ function Kinematics:Detect()
                 continue
             end
             local a,b=left.Group,right.Group
-            local orientation=a.Axis:Dot(b.Axis)
-            if math.abs(orientation)<0.999 then continue end
-            local ratio=-left.Teeth/right.Teeth*orientation
+            local kind=GearMath.Kind(left.Model)
+            local ratio
+            if kind=="Bevel45" then
+                -- Each group measures speed about its OWN local axle,
+                -- which need not be parallel for an angled bevel mesh.
+                local signA=if a.Axis:Dot(left.Model:GetPivot().RightVector)>=0
+                    then 1 else -1
+                local signB=if b.Axis:Dot(right.Model:GetPivot().RightVector)>=0
+                    then 1 else -1
+                ratio=-left.Teeth/right.Teeth*signA*signB
+            else
+                local orientation=a.Axis:Dot(b.Axis)
+                if math.abs(orientation)<0.999 then continue end
+                ratio=-left.Teeth/right.Teeth*orientation
+            end
             table.insert(a.Links,{Group=b,Ratio=ratio})
             table.insert(b.Links,{Group=a,Ratio=1/ratio})
             contacted[left]=true
@@ -344,14 +356,45 @@ function Kinematics:Detect()
             count+=1
         end
     end
+
+    -- Pinion angular speed (rad/s) converts to rack linear speed
+    -- (studs/s) at the PITCH radius. Every edge has its inverse;
+    -- the exact same graph supports multiple racks and backdriving.
+    for _,pinion in ipairs(self.Gears) do
+        if GearMath.Kind(pinion.Model)~="Spur" then continue end
+        for _,rack in ipairs(self.Racks) do
+            if pinion.Group==rack.Group
+                or not GearMath.AutoMeshable(pinion.Model,rack.Model) then
+                continue
+            end
+            local a,b=pinion.Group,rack.Group
+            local rackUp=rack.Model:GetPivot().UpVector
+            local signed=a.Axis:Cross(-rackUp):Dot(b.TravelAxis)
+            if math.abs(signed)<0.999 then continue end
+            local ratio=GearMath.PitchRadius(pinion.Model)*signed
+            if math.abs(ratio)<0.0001 then continue end
+            table.insert(a.Links,{Group=b,Ratio=ratio})
+            table.insert(b.Links,{Group=a,Ratio=1/ratio})
+            contacted[pinion]=true
+            contacted[rack]=true
+            count+=1
+        end
+    end
     self.Contacts=count
     self.Unmeshed={}
     -- Expose WHY a gear is stationary. A visually nearby gear may have
     -- correct tooth spacing but sit slightly outside the face plane.
+    local allEntries={}
     for _,entry in ipairs(self.Gears) do
+        table.insert(allEntries,entry)
+    end
+    for _,entry in ipairs(self.Racks) do
+        table.insert(allEntries,entry)
+    end
+    for _,entry in ipairs(allEntries) do
         if contacted[entry] then continue end
         local nearest,reason,best=nil,nil,math.huge
-        for _,other in ipairs(self.Gears) do
+        for _,other in ipairs(allEntries) do
             if other~=entry and other.Group~=entry.Group then
                 local _,why,proximity=GearMath.AutoMeshStatus(
                     entry.Model,other.Model)
@@ -463,15 +506,21 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
     -- One-to-many branching is automatic: EVERY reachable group is
     -- rotated once around its own axle. Rotating any output-side crank
     -- traverses the same edges backward without injecting extra motors.
-    for group,omega in pairs(speed) do
-        if math.abs(omega)>0.00001 then
-            local center=group.Center
-            local delta=CFrame.new(center)
-                *CFrame.fromAxisAngle(group.Axis,omega*step)
-                *CFrame.new(-center)
-            for _,model in ipairs(group.Models) do
-                if model.Parent then
-                    model:PivotTo(delta*model:GetPivot())
+    for group,velocity in pairs(speed) do
+        if math.abs(velocity)>0.00001 then
+            if group.TravelAxis then
+                -- Rack DOF is translation only. No native prismatic
+                -- motor or collision force may push the pinion.
+                shiftGroup(group,group.TravelAxis*velocity*step)
+            else
+                local center=group.Center
+                local delta=CFrame.new(center)
+                    *CFrame.fromAxisAngle(group.Axis,velocity*step)
+                    *CFrame.new(-center)
+                for _,model in ipairs(group.Models) do
+                    if model.Parent then
+                        model:PivotTo(delta*model:GetPivot())
+                    end
                 end
             end
         end
