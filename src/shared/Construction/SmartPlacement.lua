@@ -751,9 +751,11 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
                 else math.clamp(size*0.38,0.48,1.5)
             local gearPlacement=false
             local movingGear=false
-            if isGear and moving then
+            local movingRack=false
+            if moving then
                 for _,member in ipairs(Smart.Members(moving)) do
-                    if gear(member) then
+                    if rack(member) then movingRack=true end
+                    if isGear and gear(member) then
                         movingGear=true
                         local moduleA=member:GetAttribute("GearModuleStuds")
                         local moduleB=model:GetAttribute("GearModuleStuds")
@@ -778,9 +780,11 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
             end
             -- Directly hitting a solid gear tooth is a valid explicit
             -- target, even when the center pivot is non-queryable.
-            local hitGear=isGear and movingGear and aimedPart
-                and aimedPart:IsDescendantOf(model)
-            if gearPlacement or hitGear
+            local hitGear=isGear and (movingGear or movingRack)
+                and aimedPart and aimedPart:IsDescendantOf(model)
+            local hitRack=rack(model) and movingGear
+                and aimedPart and aimedPart:IsDescendantOf(model)
+            if gearPlacement or hitGear or hitRack
                 or (model:GetPivot().Position-reference).Magnitude<=range
                 or hubRay<=aimThreshold then
                 table.insert(targets,model)
