@@ -1023,7 +1023,8 @@ local function handle(player, payload)
         or action == "CreateSpring" or action == "TuneSpring"
         or action == "CreateWeld" or action == "CreateBolt"
         or action == "CoupleHandCrank"
-        or action=="CreateAxisJoint"
+        or action=="CreateAxisJoint" or action=="EditAxisJoint"
+        or action=="TuneAxisMotor"
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
     local simulationAction = action == "StartSimulation"
         or action == "BeginCrank"
@@ -1130,6 +1131,12 @@ local function handle(player, payload)
         if action == "CreateRelation" then return mechanical:Create(player, payload) end
         if action=="CreateAxisJoint" then
             return mechanical:CreateAxisJoint(player,payload)
+        end
+        if action=="EditAxisJoint" then
+            return mechanical:EditAxisJoint(player,payload)
+        end
+        if action=="TuneAxisMotor" then
+            return mechanical:TuneAxisMotor(player,payload)
         end
         if action == "RemoveRelation" then return mechanical:Remove(player, payload) end
         if action == "FitShaft" then return mechanical:Fit(player, payload) end
