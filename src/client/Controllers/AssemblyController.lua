@@ -20,6 +20,8 @@ local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local RelationshipProperties=require(script.Parent:WaitForChild("RelationshipProperties"))
 local HandCrankController=require(script.Parent:WaitForChild("HandCrankController"))
 local RackControlController=require(script.Parent:WaitForChild("RackControlController"))
+local AngularJointController=require(script.Parent:WaitForChild("AngularJointController"))
+local MotorControlController=require(script.Parent:WaitForChild("MotorControlController"))
 local HandCrankMath=require(construction:WaitForChild("HandCrankMath"))
 local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 local INSERTION_STEP_U = 0.5
@@ -549,6 +551,9 @@ function Controller:StartManualJoint()
 end
 
 function Controller:HandleEditClick()
+    if self.Angular and self.Angular.Active then
+        return self.Angular:Click()
+    end
     if self.Mode ~= "Edit" or not self.ManualActive then
         return false
     end
@@ -557,7 +562,8 @@ function Controller:HandleEditClick()
 end
 
 function Controller:IsEditingJoint()
-    return self.Mode=="Edit" and self.ManualActive
+    return self.Mode=="Edit" and
+        (self.ManualActive or (self.Angular and self.Angular.Active))
 end
 
 function Controller:ToggleGround()
@@ -834,6 +840,9 @@ end
 function Controller:OnModeChanged(mode)
     if self.Mode~=mode then self:Reset() end
     self.Mode=mode
+    if mode~="Edit" and self.Angular and self.Angular.Active then
+        self.Angular:Cancel()
+    end
     self.Active=mode=="Edit" or mode=="Simulate" or mode=="Weld"
     if self.Properties then self.Properties:Show(false) end
     self:RefreshHUD()
@@ -849,6 +858,10 @@ function Controller:Start()
     self.HandCrank:Start()
     self.RackControl=RackControlController.new(self)
     self.RackControl:Start()
+    self.Angular=AngularJointController.new(self)
+    self.Angular:Start()
+    self.MotorControl=MotorControlController.new(self)
+    self.MotorControl:Start()
     table.insert(self.Connections,self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
     end))
@@ -1021,6 +1034,8 @@ end
 function Controller:Destroy()
     if self.HandCrank then self.HandCrank:Destroy() end
     if self.RackControl then self.RackControl:Destroy() end
+    if self.MotorControl then self.MotorControl:Destroy() end
+    if self.Angular then self.Angular:Destroy() end
     self:Reset()
     for _, conn in ipairs(self.Connections) do conn:Disconnect() end
     table.clear(self.Connections)
