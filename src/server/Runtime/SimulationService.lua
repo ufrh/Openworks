@@ -30,6 +30,8 @@ local MAX_COLLISION_PAIRS = 1200
 -- If the client disappears or drops its held-input stream, never leave a
 -- running motor behind. The client pulses every 0.1s during LMB hold.
 local CRANK_HOLD_TIMEOUT = 0.5
+local RACK_HOLD_TIMEOUT = 0.5
+local RACK_MANUAL_SPEED = 1.5 -- studs/s; server chooses direction and power
 
 -- Gears and all rigidly welded members rotate kinematically.
 -- Native physics is reserved for mechanisms OUTSIDE gear rigid bodies.
@@ -124,6 +126,12 @@ function Simulation:StopCrank(session,id)
     if session.ActiveCrankId==id then session.ActiveCrankId=nil end
 end
 
+function Simulation:StopRack(session)
+    session.ActiveRackId=nil
+    session.RackLastInput=0
+    session.RackDirection=0
+end
+
 function Simulation:StepCranks(dt)
     for owner,session in pairs(self.Sessions) do
         local character=owner.Character
@@ -148,17 +156,33 @@ function Simulation:StepCranks(dt)
                 drive.AngularVelocity=crank.Axis*crank.NativeSpeed
             end
         end
-        -- The kinematic solver, not a bearing or a motor, owns EVERY
-        -- gear and welded shaft CFrame. It recomputes mesh engagement
-        -- geometrically; no explicit Gear relationship is required.
+        -- Kinematic solver owns rotational gear/bevel groups AND
+        -- translating rack groups. Either a crank can drive a pinion
+        -- or a manually pushed rack can BACKDRIVE the same graph.
         if session.Gears and not session.Paused then
             local active=session.ActiveCrankId
             local crank=active and session.Cranks[active] or nil
             local powered=crank and crank.Running
+            local rackId=session.ActiveRackId
+            local rackModel=rackId and session.Gears:RackModel(rackId) or nil
+            if rackId and (not session.Gears:CanDriveRack(rackId)
+                or not rackModel or not rackModel.Parent
+                or not playerRoot
+                or (playerRoot.Position-rackModel:GetPivot().Position).Magnitude>22
+                or os.clock()-(session.RackLastInput or 0)>RACK_HOLD_TIMEOUT) then
+                self:StopRack(session)
+                rackId=nil
+            end
+            local rackDriven=not powered and rackId~=nil
             session.Gears:Step(dt,
-                if powered then crank.DrivenId else nil,
-                if powered then crank.Axis else nil,
-                if powered then HandCrankMath.FixedAngularSpeed else 0)
+                if powered then crank.DrivenId
+                    elseif rackDriven then rackId else nil,
+                if powered then crank.Axis
+                    elseif rackDriven then session.Gears:RackAxis(rackId)
+                    else nil,
+                if powered then HandCrankMath.FixedAngularSpeed
+                    elseif rackDriven then session.RackDirection*RACK_MANUAL_SPEED
+                    else 0)
         end
     end
 end
@@ -198,6 +222,7 @@ function Simulation:BeginCrank(player,request)
         and session.Gears.LastDrivenId~=crank.DrivenId then
         session.Gears:StopMotion()
     end
+    self:StopRack(session)
     for previousId in pairs(session.Cranks) do
         self:StopCrank(session,previousId)
     end
@@ -215,6 +240,59 @@ function Simulation:BeginCrank(player,request)
     end
     crank.Model:SetAttribute("OPENWORKS_CrankRunning",true)
     return true,"Hand crank running • release LMB to stop"
+end
+
+-- Backdrive rack-and-pinion trains by holding an explicit linear
+-- control on a physically guided rack. No arbitrary client force, speed
+-- or WorldCFrame may reach the kinematic mechanism.
+function Simulation:BeginRack(player,request)
+    local session=self.Sessions[player]
+    if not session then return false,"Start an assembly simulation first" end
+    if session.Paused or not session.Gears then
+        return false,"Resume simulation before moving a rack"
+    end
+    local id=type(request)=="table" and request.rackId or nil
+    local direction=type(request)=="table" and request.direction or nil
+    if type(id)~="string" or #id>64
+        or (direction~=-1 and direction~=1) then
+        return false,"Select a rack and choose a push direction"
+    end
+    if not session.Gears:CanDriveRack(id) then
+        return false,"Rack must be inside a grounded guide to slide"
+    end
+    local rack=session.Gears:RackModel(id)
+    local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not rack or not rack.Parent or not root
+        or (root.Position-rack:GetPivot().Position).Magnitude>22 then
+        return false,"Move closer to the guided rack"
+    end
+    if session.ActiveRackId~=id
+        or session.RackDirection~=direction then
+        session.Gears:StopMotion()
+    end
+    for crankId in pairs(session.Cranks) do
+        self:StopCrank(session,crankId)
+    end
+    session.ActiveRackId=id
+    session.RackDirection=direction
+    session.RackLastInput=os.clock()
+    return true,"Rack push active • release Z/X to stop"
+end
+
+function Simulation:InputRack(player,id,direction,holding,release)
+    local session=self.Sessions[player]
+    if not session or session.ActiveRackId~=id then return end
+    if release==true or holding~=true then
+        self:StopRack(session)
+        return
+    end
+    if direction~=session.RackDirection
+        or not session.Gears or not session.Gears:CanDriveRack(id)
+        or session.Paused then
+        self:StopRack(session)
+        return
+    end
+    session.RackLastInput=os.clock()
 end
 
 -- The remote is a held-input watchdog, never a speed command. Client
@@ -429,6 +507,8 @@ function Simulation:Start(player, payload)
         ActiveRelations={},
         Cranks={},
         ActiveCrankId=nil,
+        ActiveRackId=nil,
+        RackDirection=0,RackLastInput=0,
         Gears=nil,
         UnregisteredGears=unregisteredGears,
     }
@@ -922,6 +1002,7 @@ function Simulation:Pause(player)
     for crankId in pairs(session.Cranks) do
         self:StopCrank(session,crankId)
     end
+    self:StopRack(session)
     if session.Gears then session.Gears:StopMotion() end
     local state = {}
     for _, item in ipairs(session.World:GetDescendants()) do
