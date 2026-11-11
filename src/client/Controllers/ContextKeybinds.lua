@@ -197,6 +197,8 @@ function Context:Lines()
             append(lines, "Hold selected", "Drag to auto-align")
             append(lines, "Alt+LMB", "Cycle deeper layers")
             append(lines, "V / N / G", "Scale / exact size / Move")
+            append(lines, "Alt+Wheel", "Raise / lower selected component (world Y)")
+            append(lines, "Shift+Alt+Wheel", "Fine vertical steps (0.05 studs)")
             if c.Selected and type(c.Selected:GetAttribute("AlignedOpeningId"))=="string" then
                 append(lines,"V","Resize aligned shaft length only")
             end
@@ -222,6 +224,8 @@ function Context:Lines()
         append(lines,"Click existing","Edit existing assembly")
         append(lines,"R","Rename selected assembly")
         append(lines,"Ctrl+Z / Ctrl+Y","Undo / redo membership")
+        append(lines,"Alt+Wheel","Raise / lower saved assembly (world Y)")
+        append(lines,"Shift+Alt+Wheel","Fine height steps • PgUp/PgDn backup")
         append(lines,"Esc","Cancel the draft")
     elseif tool == "Inspect" then
         append(lines, "LMB", "Inspect")
