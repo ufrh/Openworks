@@ -102,6 +102,34 @@ function Plots:Spawn(player,character)
         local root=character:WaitForChild("HumanoidRootPart",12)
         if not root or not character.Parent or not player.Parent then return end
         character:PivotTo(CFrame.new(info.origin+Vector3.new(0,5,0)))
+        -- The player's avatar is an invisible, stationary tool host.
+        -- Camera movement belongs exclusively to the client freecam;
+        -- physics and default humanoid walking may never move the body.
+        root.Anchored=true
+        root.AssemblyLinearVelocity=Vector3.zero
+        root.AssemblyAngularVelocity=Vector3.zero
+        local humanoid=character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed=0
+            humanoid.JumpPower=0
+            humanoid.JumpHeight=0
+            humanoid.AutoRotate=false
+        end
+        local function hide(descendant)
+            if descendant:IsA("BasePart")
+                and not descendant:FindFirstAncestorOfClass("Tool") then
+                descendant.Transparency=1
+                descendant.CanCollide=false
+                descendant.CanTouch=false
+                descendant.CastShadow=false
+            elseif descendant:IsA("Decal") then
+                descendant.Transparency=1
+            end
+        end
+        for _,descendant in ipairs(character:GetDescendants()) do
+            hide(descendant)
+        end
+        character.DescendantAdded:Connect(hide)
     end)
 end
 
