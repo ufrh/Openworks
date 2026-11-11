@@ -667,25 +667,6 @@ function Simulation:Start(player, payload)
         -- Highlights or outlines here; authored physics stays authoritative.
         for key, originals in pairs(graph.bodies) do
             if graph.included[key] then
-                for _,original in ipairs(originals) do
-                    local clone=copies[original:GetAttribute("InstanceId")]
-                    if clone then
-                        local cue=Instance.new("Highlight")
-                        cue.Name="PhysicalBodyState"
-                        cue.FillColor=if session.GroundKeys[key]
-                            then Color3.fromRGB(66,220,135)
-                            else Color3.fromRGB(255,156,60)
-                        cue.OutlineColor=cue.FillColor
-                        cue.FillTransparency=0.93
-                        cue.OutlineTransparency=0.42
-                        cue.Adornee=clone
-                        cue.Parent=clone
-                    end
-                end
-            end
-        end
-        for key, originals in pairs(graph.bodies) do
-            if graph.included[key] then
                 local rootAnchor = bodyAnchors[key]
                 for _, original in ipairs(originals) do
                     for _, part in ipairs(copyParts[original:GetAttribute("InstanceId")] or {}) do
