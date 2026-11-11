@@ -104,9 +104,10 @@ function Handles.new(mode)
                     grip.Tip = makePart(model, "Arrowhead", color, Enum.PartType.Block)
                 end
             else
-                -- SmoothPlastic keeps the vivid neon-like axis colors without
-                -- producing the Bloom post-processing halos of Neon material.
+                -- Scale handles should actually be NEON, not matte proxies.
                 grip.Sphere = makePart(model, "ScaleSphere", color, Enum.PartType.Ball)
+                grip.Sphere.Material=Enum.Material.Neon
+                grip.Sphere.Transparency=0
             end
             grip.Highlight = newHighlight(model, color)
             table.insert(self.Grips, grip)
@@ -198,11 +199,16 @@ function Handles:Update(cf, size, allowedAxis)
     self.SelectedDistance = bestDistance
     for _, grip in ipairs(self.Grips) do
         local hovered = grip == best
-        grip.Highlight.Enabled = grip.Visible
+        grip.Highlight.Enabled = self.Mode~="Scale" and grip.Visible
         grip.Highlight.FillTransparency = if hovered then 0 else 0.25
         for _, item in ipairs(grip.Model:GetDescendants()) do
             if item:IsA("BasePart") then
-                item.Transparency = if grip.Visible then 0.06 else 1
+                item.Transparency = if grip.Visible
+                    then (if self.Mode=="Scale" then 0 else 0.06) else 1
+                if self.Mode=="Scale" then
+                    item.Color=if hovered then grip.Color:Lerp(Color3.new(1,1,1),0.22)
+                        else grip.Color
+                end
             end
         end
     end

@@ -554,21 +554,23 @@ function Controller:UpdateFitIndicators(match)
     for i,item in ipairs(desired) do
         local dot=self.FitIndicatorDots[i]
         if not dot then
-            dot=Instance.new("Part")
+            dot=Instance.new("SphereHandleAdornment")
             dot.Name="FitPoint_"..i
-            dot.Shape=Enum.PartType.Ball
-            dot.Material=Enum.Material.Neon
-            dot.Size=Vector3.new(0.135,0.135,0.135)
-            dot.Anchored=true
-            dot.CanCollide=false
-            dot.CanTouch=false
-            dot.CanQuery=false
-            dot.CastShadow=false
+            dot.Radius=0.068
+            dot.AlwaysOnTop=false
             dot.Parent=self.FitIndicatorRoot
             self.FitIndicatorDots[i]=dot
         end
-        dot.CFrame=item.cf
-        dot.Color=item.color
+        local subject=if match and match.target and match.target.PrimaryPart
+            then match.target.PrimaryPart else self.Preview.PrimaryPart
+        if subject then
+            dot.Adornee=subject
+            dot.CFrame=subject.CFrame:ToObjectSpace(item.cf)
+            dot.Visible=true
+        else
+            dot.Visible=false
+        end
+        dot.Color3=item.color
         dot.Transparency=0.08
     end
     for i=#self.FitIndicatorDots,#desired+1,-1 do
@@ -933,53 +935,34 @@ function Controller:RebuildPreview()
 end
 
 function Controller:RefreshSelectionHighlights()
+    -- All selection adornments are parented to the editor GUI and always
+    -- destroyed before rebuilding. Never manufacture invisible boundary
+    -- Parts; they were responsible for leftover selection geometry.
     if self.SelectionHighlight then
         self.SelectionHighlight:Destroy()
-        self.SelectionHighlight = nil
+        self.SelectionHighlight=nil
     end
-    for _, h in ipairs(self.SelectionHighlights) do h:Destroy() end
+    for _,h in ipairs(self.SelectionHighlights) do
+        h:Destroy()
+    end
     table.clear(self.SelectionHighlights)
-    if self.ComponentOutline then self.ComponentOutline:Destroy() end
-    self.ComponentOutline = nil
+    if self.ComponentOutline then
+        self.ComponentOutline:Destroy()
+        self.ComponentOutline=nil
+    end
+    if self.Mode~="Edit" and self.Mode~="Inspect" then return end
 
-    if self.SelectedComponentId and #self.SelectedParts > 0 then
-        -- One continuous component boundary instead of outlining every
-        -- primitive, including internal seams.
-        local center, bounds = ComponentGeometry.Bounds(self.SelectedParts)
-        if center and bounds then
-            local bound = Instance.new("Part")
-            bound.Name = "OPENWORKS_ComponentSelectionBounds"
-            bound.Size = bounds + Vector3.one * 0.025
-            bound.CFrame = CFrame.new(center)
-            bound.Anchored = true
-            bound.CanCollide = false
-            bound.CanTouch = false
-            bound.CanQuery = false
-            bound.Transparency = 1
-            bound.Parent = workspace
-
-            local box = Instance.new("SelectionBox")
-            box.Name = "UnifiedComponentBoundary"
-            box.Adornee = bound
-            box.LineThickness = 0.018
-            box.Color3 = Color3.fromRGB(137, 207, 251)
-            box.SurfaceTransparency = 1
-            box.Transparency = 0.1
-            box.Parent = bound
-            self.ComponentOutline = bound
-        end
-    else
-        for _, model in ipairs(self.SelectedParts) do
-            if model and model.Parent then
-                local h = create("Highlight", {
-                    Adornee = model,
-                    FillColor = BLUE,
-                    FillTransparency = 0.78,
-                    OutlineTransparency = 1,
-                    DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-                }, self.Gui)
-                table.insert(self.SelectionHighlights, h)
-            end
+    for _,model in ipairs(self.SelectedParts) do
+        if model and model.Parent and model.PrimaryPart then
+            local h=create("Highlight",{
+                Name="OPENWORKS_SelectionOutline",
+                Adornee=model,
+                FillTransparency=1,
+                OutlineTransparency=0,
+                OutlineColor=Color3.fromRGB(0,170,255),
+                DepthMode=Enum.HighlightDepthMode.Occluded,
+            },self.Gui)
+            table.insert(self.SelectionHighlights,h)
         end
     end
 end
@@ -2130,15 +2113,13 @@ function Controller:Start()
         end)
 
     table.insert(self.Connections, RunService.RenderStepped:Connect(function()
-        if self.ComponentOutline and self.ComponentOutline.Parent then
-            local source = if self.Preview and self.SelectedComponentId
-                then { self.Preview } else self.SelectedParts
-            local center, bounds = ComponentGeometry.Bounds(source)
-            if center and bounds then
-                self.ComponentOutline.CFrame = CFrame.new(center)
-                self.ComponentOutline.Size = bounds + Vector3.one * 0.025
-            end
+        -- Replicated deletion, undo/redo or plot reload may destroy selected
+        -- models without calling SetSelection. Never leave orphan outlines.
+        local stale=false
+        for _,part in ipairs(self.SelectedParts) do
+            if not part or not part.Parent then stale=true break end
         end
+        if stale then self:SetSelection(nil) end
         self:UpdateDirectDrag()
         if not self.PendingMateChoice
             and (self.Mode == "Build" or
