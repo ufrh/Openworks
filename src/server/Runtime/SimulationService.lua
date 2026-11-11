@@ -831,7 +831,7 @@ function Simulation:Start(player, payload)
                 #session.Gears.Gears,session.Gears.Contacts) else "")
         .. (if unregisteredGears>0 then
             string.format(" • WARNING: %d nearby gear(s) NOT in assembly",
-                unregisteredGears) else if session.Gears
+                unregisteredGears) elseif session.Gears
                 and #session.Gears.Unmeshed>0 then
                     " • "..session.Gears.Unmeshed[1].Gear..": "
                         ..session.Gears.Unmeshed[1].Reason else "")
