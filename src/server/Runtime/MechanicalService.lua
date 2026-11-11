@@ -1066,6 +1066,9 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
         end
     end
 
+    local desiredSize,sizeReason=HandCrankMath.ShaftSize(source,target)
+    if not desiredSize then return false,sizeReason end
+
     local before,after={},{}
     local members={source}
     local changed=false
@@ -1123,6 +1126,37 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
         end
     end
 
+    -- Change the complete crank's radial geometry to match the output
+    -- shaft, preserving its fixed axial output length and coaxial snap.
+    local beforeSize=d.snapshot(source)
+    if not newSource and not changed then
+        table.insert(before,beforeSize)
+    end
+    local fittedState=table.clone(beforeSize)
+    fittedState.size=desiredSize
+    local entry=d.Registry.Get(fittedState.templateId)
+    local sizingValid,sizingWhy=if entry then
+        d.validState(player,entry,fittedState) else false,"Missing crank template"
+    if not sizingValid then
+        if changed then
+            for index,member in ipairs(members) do
+                d.applyState(member,before[index])
+            end
+        end
+        return false,sizingWhy or "Hand crank cannot fit the target shaft"
+    end
+    d.applyState(source,fittedState)
+    if d.intersectsConstructed(source,{[source]=true}) then
+        if changed then
+            for index,member in ipairs(members) do
+                d.applyState(member,before[index])
+            end
+        elseif not newSource then
+            d.applyState(source,beforeSize)
+        end
+        return false,"Resized hand crank intersects another construction"
+    end
+
     local spec={
         relationId=HttpService:GenerateGUID(false),
         ownerUserId=player.UserId,kind="Weld",
@@ -1132,23 +1166,23 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
     local ok,reason=self:Restore(player,spec)
     if not ok then
         if changed then
-            for i,member in ipairs(members) do
-                d.applyState(member,before[i])
+            for index,member in ipairs(members) do
+                d.applyState(member,before[index])
             end
+        elseif not newSource then
+            d.applyState(source,beforeSize)
         end
         return false,reason
     end
     if newSource then
         d.commitAssembly(player,{}, {d.snapshot(source)},spec)
     else
-        if changed then
-            for _,member in ipairs(members) do
-                table.insert(after,d.snapshot(member))
-            end
+        for _,member in ipairs(members) do
+            table.insert(after,d.snapshot(member))
         end
         d.commitAssembly(player,before,after,spec)
     end
-    return true,"Hand crank physically coupled to shaft end • manual torque enabled"
+    return true,"Hand crank sized to shaft and rigidly coupled"
 end
 
 function Mechanical:CreateWeld(player,request)
