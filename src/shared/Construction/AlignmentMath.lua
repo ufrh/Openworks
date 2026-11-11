@@ -102,6 +102,20 @@ function Alignment.OffsetBounds(shaft, opening)
     return -bound,bound
 end
 
+-- Native Prismatic/Cylindrical constraints measure translation from
+-- their initial common attachment frame (0 studs), not from the
+-- construction plot's housing center. Compute that offset ONCE and
+-- reuse the same bound conversion in authoring, simulation and tuning.
+function Alignment.RelativeTravelBounds(shaft,opening)
+    local low,high,reason=Alignment.OffsetBounds(shaft,opening)
+    if not low then return nil,nil,reason end
+    local axis=opening:GetPivot():VectorToWorldSpace(
+        Alignment.TargetAxis(opening)).Unit
+    local authored=(shaft:GetPivot().Position-opening:GetPivot().Position)
+        :Dot(axis)/Grid.Unit
+    return low-authored,high-authored
+end
+
 function Alignment.Engaged(shaft,opening)
     local lo,hi=Alignment.OffsetBounds(shaft,opening)
     if not lo then return false,hi end
