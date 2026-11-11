@@ -211,7 +211,7 @@ function Controller:RefreshHUD()
             local grounded=player:GetAttribute("OPENWORKS_Grounded")~=false
             self.Detail.Text=tostring(self.SimAssemblyName or "Assembly")
                 ..(if paused then "  /  PAUSED" else "  /  RUNNING")
-            self.Help.Text="Hold LMB crank • Z/X guided rack • P stop"
+            self.Help.Text="Hold LMB crank • Q/E guided rack • P stop"
                 ..(if grounded then " • green grounded" else " • free")
         end
         if self.LastMessage and os.clock()<self.MessageUntil then
