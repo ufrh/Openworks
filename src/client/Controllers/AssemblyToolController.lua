@@ -8,6 +8,7 @@ local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
 local UIS=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
+local CameraAimRay=require(script.Parent:WaitForChild("CameraAimRay"))
 local Construction=RS:WaitForChild("Openworks"):WaitForChild("Construction")
 local Config=require(Construction:WaitForChild("BuildConfig"))
 local Grid=require(Construction:WaitForChild("GridMath"))
@@ -65,8 +66,7 @@ function Tool:Pick()
     local folder=constructed()
     local camera=workspace.CurrentCamera
     if not folder or not camera then return nil end
-    local ray=camera:ViewportPointToRay(
-        camera.ViewportSize.X*0.5,camera.ViewportSize.Y*0.5)
+    local ray=CameraAimRay.Ray(camera)
     local params=RaycastParams.new()
     params.FilterType=Enum.RaycastFilterType.Include
     params.FilterDescendantsInstances={folder}
