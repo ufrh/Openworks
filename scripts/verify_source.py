@@ -117,11 +117,29 @@ def main() -> int:
           and "if left~=right then" in simulation)
     check("No per-component completeness requirement",
           "An editor component has members outside this assembly" not in simulation)
-    check("Passive relationships remain unpowered; only crank gets a drive",
+    check("Native joints are passive; gear transmission is powered only by active crank",
           "Enum.ActuatorType.None" in simulation
           and 'Instance.new("AngularVelocity")' in simulation
           and 'drive.Name="HandCrank_ControlledRotation"' in simulation
+          and 'motor.Name="AuthoredGearRatioDrive"' in simulation
+          and 'motor.Enabled=false' in simulation
           and "HandCrank_PlayerTorque" not in simulation)
+    check("Crank selectable through obstructing shaft / gear in single-crank assembly",
+          'if Crank.IsCrank(node) then return node end' in crank
+          and 'if only then return nil end' in crank
+          and 'node:GetAttribute("OwnerUserId")~=player.UserId' in crank)
+    check("Explicit gear mesh drives ratios without tooth-to-tooth collision",
+          'local function transmissionNetwork(graph)' in simulation
+          and 'if edge.kind~="Gear" then continue end' in simulation
+          and 'local ratio=-nA/nB*axisA:Dot(axisB)' in simulation
+          and 'GEAR_COLLISION_GROUP,GEAR_COLLISION_GROUP,false' in simulation
+          and 'driver.Drive.AngularVelocity=driver.Axis' in simulation
+          and 'driver.Drive.Enabled=true' in simulation
+          and 'if output.Driver.Drive.Parent then output.Driver.Drive.Enabled=false end' in simulation)
+    check("Gear drives exclude grounded welded shafts",
+          'table.insert(gearDrivers[key].Models,bodyKey(original))' in simulation
+          and 'session.GroundKeys[key]' in simulation
+          and 'if not grounded then' in simulation)
     check("Controlled rotation targets the coupled physical shaft",
           'copies[coupledShaft:GetAttribute("InstanceId")]' in simulation
           and 'crank.Drive.AngularVelocity=crank.Axis*HandCrankMath.FixedAngularSpeed' in simulation
