@@ -88,9 +88,9 @@ def main() -> int:
           'player.CameraMode=Enum.CameraMode.Classic' in camera
           and 'cam.CameraType=Enum.CameraType.Scriptable' in camera
           and 'Enum.RenderPriority.Camera.Value+1' in camera
-          and 'player.CharacterAdded:Connect(function()' in camera
+          and 'player.CharacterAdded:Connect(function(character)' in camera
           and 'Enum.CameraMode.LockFirstPerson' not in camera)
-    check("Freecam has immediate RMB look, MMB pan and plot-clamped flight",
+    check("Freecam has responsive RMB look, MMB pan and plot-clamped flight",
           'self.Rotating=true' in camera
           and 'self.Panning=true' in camera
           and 'UIS:GetMouseDelta()' in camera
@@ -98,6 +98,36 @@ def main() -> int:
           and 'Enum.KeyCode.Space' in camera
           and 'clampToPlot(self.Position)' in camera
           and 'Enum.RenderPriority.Camera.Value+3' in camera)
+    aiming=read("src/client/Controllers/CameraAimRay.lua")
+    construction_ui=read("src/client/Controllers/ConstructionController.lua")
+    assembly_ui=read("src/client/Controllers/AssemblyController.lua")
+    assembly_tool=read("src/client/Controllers/AssemblyToolController.lua")
+    crank_ui=read("src/client/Controllers/HandCrankController.lua")
+    rack_ui=read("src/client/Controllers/RackControlController.lua")
+    check("Freecam cursor is unlocked except when actively looking or panning",
+          'UIS.MouseBehavior=Enum.MouseBehavior.Default' in camera
+          and 'UIS.MouseIconEnabled=true' in camera
+          and 'self.Rotating or self.Panning' in camera
+          and 'OPENWORKS_ScaleActive' in camera
+          and 'UserInputService.MouseBehavior=Enum.MouseBehavior.Default'
+              in construction_ui)
+    check("Freecam camera smoothing is subtle and camera position is responsive",
+          'LOOK_RESPONSE=22' in camera
+          and 'POSITION_RESPONSE=18' in camera
+          and 'self.ViewPosition:Lerp(self.Position,moveAlpha)' in camera
+          and 'self.ViewPitch+=(self.Pitch-self.ViewPitch)*lookAlpha' in camera)
+    check("Freecam starts at character head after plot teleport on spawn",
+          'character:SetAttribute("OPENWORKS_CameraSpawnReady",true)'
+              in plots_service
+          and 'character:GetAttribute("OPENWORKS_CameraSpawnReady")'
+              in camera
+          and 'self.Position=clampToPlot(spawn)' in camera
+          and 'head.Position' in camera)
+    check("Free mouse cursor picks real geometry, held camera uses center ray",
+          'camera:ScreenPointToRay(mouse.X,mouse.Y)' in aiming
+          and 'camera:ViewportPointToRay(center.X,center.Y)' in aiming
+          and all('CameraAimRay.Ray(camera)' in doc for doc in (
+              construction_ui,assembly_ui,assembly_tool,crank_ui,rack_ui)))
     check("Character remains invisible, anchored and immobile with native tools",
           'root.Anchored=true' in plots_service
           and 'humanoid.WalkSpeed=0' in plots_service
