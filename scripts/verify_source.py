@@ -162,7 +162,7 @@ def main() -> int:
           and 'local model=findOwned(player,id)' in service
           and 'if axis~="X" and axis~="Y" and axis~="Z" then' in service
           and 'local delta=(if axis=="X" then Vector3.xAxis' in service
-          and 'd.Valid' not in service)
+          and 'if model and not model:GetAttribute("ComponentId") then' in service)
     check("Vertical move is one validated atomic undoable transaction",
           'local ok,reason=validState(player,entry,nextState)' in service
           and 'intersectsConstructed(model,ignored)' in service
@@ -250,8 +250,9 @@ def main() -> int:
           'for _,model in ipairs(self.SelectedParts) do' in selection
           and 'Name="OPENWORKS_SelectionOutline"' in selection
           and 'self.ComponentOutline=ComponentOutline.new(' not in selection)
-    check("Assembly multiselect outlines each member individually",
-          'for _,id in ipairs(ids) do\\n        local model=byId[id]\\n        make("Highlight"' in tool_ui
+    check("Assembly selection highlights each primitive without phantom bounds",
+          'for _,id in ipairs(ids) do' in tool_ui
+          and 'Name="AssemblyPrimitive",Adornee=model' in tool_ui
           and 'ComponentOutline.new(' not in tool_ui)
     check("Components are selection groups, not implicit welds",
           'return "p:" .. tostring(model:GetAttribute("InstanceId"))' in simulation
@@ -303,7 +304,8 @@ def main() -> int:
           and 'if edge.kind == "Gear" then' in simulation)
     check("Kinematic gear train respects tooth ratios and rigid grouping",
           'edge.kind=="Weld" or edge.kind=="Fixed" or edge.kind=="Bolt"' in gears
-          and 'local ratio=-left.Teeth/right.Teeth*orientation' in gears
+          and 'ratio=-left.Teeth/right.Teeth*orientation' in gears
+          and 'ratio=-left.Teeth/right.Teeth*signA*signB' in gears
           and 'model:PivotTo(delta*model:GetPivot())' in gears
           and 'local stalled=false' in gears
           and 'if group.Grounded then stalled=true end' in gears)
@@ -360,7 +362,8 @@ def main() -> int:
     check("Held-LMB crank is fixed-speed, range-limited, torque-capped",
           "HandCrankMath.FixedAngularSpeed" in simulation
           and "self:StopCrank(session,id)" in simulation
-          and "playerRoot.Position-root.Position" in simulation
+          and "self.D.nearPlayer(owner,root.Position)" in simulation
+          and "self.D.nearPlayer(player,crank.Root.Position)" in simulation
           and "HandCrankMath.MaxTorque" in simulation
           and 'action="BeginCrank"' in crank
           and "GetMouseDelta" not in crank
@@ -532,7 +535,8 @@ def main() -> int:
     check("Build/Edit gear shaft fits validated by preview and server",
           'Smart.HubFits(movingModel,target)' in preview
           and 'Smart.HubFits(candidate,target)' in service
-          and 'if mode=="Hub" then target' in mechanical)
+          and 'local opening=if mode=="Hub" then' in mechanical
+          and 'local fitted,why=Smart.HubFits(source,target)' in mechanical)
     check("Manual L gear alignment chooses real Rotation or Rigid",
           'local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"' in layered
           and 'mateKind="Hub"' in layered
@@ -636,8 +640,27 @@ def main() -> int:
           and "CylinderHandleAdornment" in world
           and "SphereHandleAdornment" in world)
     check("Highlight budget reserves purple preview",
-          "MAX_HIGHLIGHTS=96" in world
+          "MAX_HIGHLIGHTS=64" in world
           and "Color3.fromRGB(179,115,255)" in tool_ui)
+    handles=read("src/client/Controllers/PhysicalHandles.lua")
+    check("Frame-budgeted placement retains per-render ghost smoothing",
+          'visualNow-(self.PreviewComputeTime or 0)<1/30' in selection
+          and 'self.PreviewVisualPose=WorldMotion.Step(' in selection
+          and 'outlineNow-(self.OutlineLastUpdate or 0)>=0.1' in selection
+          and 'self.OutlinePreviewing~=previewing' in selection)
+    check("Snapping scans moving geometry once per nearby-target pass",
+          'local movingGearMembers={}' in smart_placement
+          and 'for _,member in ipairs(Smart.Members(moving)) do' in smart_placement
+          and 'for _,member in ipairs(movingGearMembers) do' in smart_placement
+          and 'local hasMovingGear=#movingGearMembers>0' in smart_placement)
+    check("Handles avoid per-frame descendant and unchanged visual writes",
+          'grip.Parts=if mode=="Move"' in handles
+          and 'grip.LastVisible~=grip.Visible' in handles
+          and 'grip.Model:GetDescendants()' not in handles)
+    check("Gear physics caches solids and slows only idle scans",
+          'group.BottomParts=parts' in gears
+          and 'IDLE_SCAN_PERIOD=0.25' in gears
+          and 'if moving then SCAN_PERIOD else IDLE_SCAN_PERIOD' in gears)
     check("Assembly preview available before P",
           'mode=="Simulate"' in tool_ui
           and "self:OwnedAssembly(chosen)" in tool_ui)
