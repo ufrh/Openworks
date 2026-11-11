@@ -13,6 +13,8 @@ Smart.SnapDistance = 2.0 -- unchanged for general hole/gear-to-gear snapping
 Smart.HubSnapRadius = 0.34 -- studs from the REAL bore/shaft axis, not gear bounds
 Smart.HubAimRadius = 0.24 -- small crosshair tolerance through an empty bore
 Smart.HubAxialReach = 0.65 -- axial approach tolerance, excluding shaft overlap
+Smart.GearPitchCapture = 0.7 -- radial proximity to the true mesh pitch circle
+Smart.GearFaceCapture = 0.55 -- transient cursor distance from axial gear plane
 Smart.MaxAxialOffsetUnits = 64
 Smart.PreviewInterval = 0.08
 
@@ -47,8 +49,14 @@ function Smart.GearPose(source: Model, target: Model, near: Vector3)
     local radial=diff-normal*depth
     local pitch=(source:GetAttribute("GearTeeth")
         +target:GetAttribute("GearTeeth"))*moduleA/(2*math.pi)
-    if radial.Magnitude > pitch + Smart.SnapDistance
-        or math.abs(depth)>Smart.SnapDistance then return nil end
+    -- Never attract a gear simply because the ghost is within a huge
+    -- radius of another gear. Capture around the TRUE mesh circumference,
+    -- NOT the gear's bore and NOT a 2-stud sphere around its center.
+    local overlap=(source.PrimaryPart.Size.X+target.PrimaryPart.Size.X)*0.5
+    if math.abs(radial.Magnitude-pitch)>Smart.GearPitchCapture
+        or math.abs(depth)>overlap+Smart.GearFaceCapture then
+        return nil
+    end
     local direction=if radial.Magnitude>0.001
         then radial.Unit else targetCF.UpVector
     local center=targetCF.Position+direction*pitch
@@ -65,7 +73,10 @@ function Smart.GearPose(source: Model, target: Model, near: Vector3)
     local desiredPhase=(angle+math.pi)-sourcePhase*sourcePitch
     local phase=((desiredPhase+sourcePitch*0.5)%sourcePitch)-sourcePitch*0.5
     local rotation=CFrame.fromAxisAngle(normal,phase)*targetCF.Rotation
-    return CFrame.new(center)*rotation,math.abs(radial.Magnitude-pitch)+math.abs(depth)
+    -- Match face planes by default. A valid pitch-circle placement is
+    -- always physically meshed when the player confirms it.
+    return CFrame.new(center)*rotation,
+        math.abs(radial.Magnitude-pitch)+math.abs(depth)
 end
 
 -- Gear bores are real open centers. Dragging a gear onto a shaft (or
@@ -321,7 +332,7 @@ end
 -- the caller's owned construction. Aim ray is optional and allows
 -- recognition THROUGH empty holes and behind other nested geometry.
 function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, aimRay,
-    allTargets: {Model}?)
+    allTargets: {Model}?, aimedModel: Model?)
 
     local members=Smart.Members(ghost)
     if #members==0 then return nil end
@@ -419,17 +430,34 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     score=if aimed then math.min(dist,rayError+0.12) else dist
                 end
             elseif isGear and gear(target) then
+                local directAim=aimedModel==target
                 approach=source:GetPivot().Position
-                if aimed and (approach-target:GetPivot().Position).Magnitude>3.5 then
-                    approach=target:GetPivot().Position
-                        + target:GetPivot().UpVector
+                if directAim then
+                    -- The ray often strikes a TOOTH, not the transparent
+                    -- center pivot. Surface-placement may therefore push
+                    -- the moving gear away from its ideal pitch ring.
+                    -- A deliberate tooth hit still chooses the direction;
+                    -- it never snaps through the hub/center hitbox.
+                    local fixed=target:GetPivot()
+                    local delta=approach-fixed.Position
+                    local axial=delta:Dot(fixed.RightVector)
+                    local radial=delta-fixed.RightVector*axial
+                    if radial.Magnitude<0.01 then
+                        radial=fixed.UpVector
+                    end
+                    local pitch=(source:GetAttribute("GearTeeth")
+                        +target:GetAttribute("GearTeeth"))
+                        *source:GetAttribute("GearModuleStuds")/(2*math.pi)
+                    approach=fixed.Position+radial.Unit*pitch
                 end
                 local pose,dist=Smart.GearPose(source,target,approach)
                 if pose then
                     kind="Gear"
                     cf=(pose*source:GetPivot():Inverse())*ghost:GetPivot()
                     approach=pose.Position
-                    score=if aimed then rayError+0.14 else dist+0.12
+                    -- Direct tooth aim wins over unrelated nearby sockets.
+                    -- Proximity-only matches still require pitch-ring fit.
+                    score=if directAim then -0.15 else dist+0.2
                 end
             end
             if cf and kind=="Bore" and #members>1 then
@@ -505,7 +533,9 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score,
                     fittedCount=fitted and #fitted or 0}
-                if target==preferred then score-=1.5 end
+                if target==preferred then
+                    score-=if kind=="Gear" then 0.08 else 1.5
+                end
                 candidate.score=score
                 table.insert(matches,candidate)
                 if score<bestScore then
@@ -522,7 +552,8 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
 end
 
 function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
-    reference: Vector3, ignored, aimRay, extraReach)
+    reference: Vector3, ignored, aimRay, extraReach,
+    moving: Model?, aimedPart: Instance?)
     local targets={}
     if not folder then return targets end
     for _,model in ipairs(folder:GetChildren()) do
@@ -540,7 +571,38 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
                     +math.clamp(extraReach or 0,0,24)
             local aimThreshold=if isGear then Smart.HubAimRadius
                 else math.clamp(size*0.38,0.48,1.5)
-            if (model:GetPivot().Position-reference).Magnitude<=range
+            local gearPlacement=false
+            if isGear and moving then
+                for _,member in ipairs(Smart.Members(moving)) do
+                    if gear(member) then
+                        local moduleA=member:GetAttribute("GearModuleStuds")
+                        local moduleB=model:GetAttribute("GearModuleStuds")
+                        if type(moduleA)=="number" and type(moduleB)=="number"
+                            and math.abs(moduleA-moduleB)<0.0001 then
+                            local axis=model:GetPivot().RightVector
+                            local delta=reference-model:GetPivot().Position
+                            local axial=math.abs(delta:Dot(axis))
+                            local radial=(delta-axis*delta:Dot(axis)).Magnitude
+                            local pitch=(member:GetAttribute("GearTeeth")
+                                +model:GetAttribute("GearTeeth"))
+                                *moduleA/(2*math.pi)
+                            local face=(member.PrimaryPart.Size.X
+                                +model.PrimaryPart.Size.X)*0.5
+                            gearPlacement=gearPlacement
+                                or (math.abs(radial-pitch)
+                                    <=Smart.GearPitchCapture
+                                    and axial<=face+Smart.GearFaceCapture)
+                        end
+                    end
+                end
+            end
+            -- Directly hitting a solid gear tooth is a valid explicit
+            -- target, even when the center pivot is non-queryable.
+            local hitGear=isGear and moving and aimedPart
+                and aimedPart:IsDescendantOf(model)
+                and gearPlacement~=nil
+            if gearPlacement or hitGear
+                or (model:GetPivot().Position-reference).Magnitude<=range
                 or hubRay<=aimThreshold then
                 table.insert(targets,model)
             end
