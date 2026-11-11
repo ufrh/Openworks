@@ -6,6 +6,7 @@ local Players=game:GetService("Players")
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local UserInputService=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
+local CameraAimRay=require(script.Parent:WaitForChild("CameraAimRay"))
 local player=Players.LocalPlayer
 local GearMath=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
@@ -29,8 +30,7 @@ function Controller:FindAim()
         and folder:FindFirstChild("Simulation_"..tostring(player.UserId))
     local camera=workspace.CurrentCamera
     if not simulation or not camera then return nil end
-    local ray=camera:ViewportPointToRay(
-        camera.ViewportSize.X*0.5,camera.ViewportSize.Y*0.5)
+    local ray=CameraAimRay.Ray(camera)
     local params=RaycastParams.new()
     params.FilterType=Enum.RaycastFilterType.Include
     params.FilterDescendantsInstances={simulation}
