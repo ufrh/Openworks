@@ -55,6 +55,7 @@ function Tool.new(tools)
         Tools=tools,Mode=nil,Stage="Idle",Name="",EditingId=nil,
         Selected={},Busy=false,LastMessage=nil,MessageUntil=0,
         PreviewRoot=nil,PreviewCache="",PreviewOutlines={},
+        PreviewModels=nil,IgnoreConfirmUntil=0,
         LastTick=0,Connections={},
     },Tool)
 end
@@ -103,6 +104,19 @@ function Tool:Draw()
         ZIndexBehavior=Enum.ZIndexBehavior.Sibling,
     })
     self.Gui=gui
+    -- Assembly is a native first-person tool; Build/Edit's crosshair isn't
+    -- available here, so supply the same aiming reference.
+    self.Crosshair=make("TextLabel",gui,{
+        Name="AssemblyToolCrosshair",Text="+",
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.fromScale(0.5,0.5),
+        Size=UDim2.fromOffset(20,20),BackgroundTransparency=1,
+        Font=Enum.Font.GothamMedium,TextSize=21,
+        TextColor3=Theme.Text,
+        TextXAlignment=Enum.TextXAlignment.Center,
+        TextYAlignment=Enum.TextYAlignment.Center,
+        Visible=false,ZIndex=5,
+    })
     local panel=Theme.Chrome(make("Frame",gui,{
         Name="AssemblyAuthoringPanel",
         Size=UDim2.fromOffset(328,151),
@@ -214,6 +228,7 @@ end
 function Tool:Refresh()
     if not self.Panel then return end
     self.Panel.Visible=self.Mode=="Assembly"
+    self.Crosshair.Visible=self.Mode=="Assembly" and self.Stage~="Naming"
     if self.Mode~="Assembly" then return end
     local count=0
     for _ in pairs(self.Selected) do count+=1 end
@@ -241,7 +256,8 @@ function Tool:Refresh()
 end
 
 function Tool:OpenName(rename)
-    if self.Mode~="Assembly" or self.Busy then return end
+    if self.Tools.ActiveId~="Assembly" or self.Busy then return end
+    self.Mode="Assembly"
     if rename and not self.EditingId then return end
     self.Stage="Naming"
     self.NameInput.Text=if rename then self.Name else ""
@@ -277,6 +293,7 @@ function Tool:AcceptName()
         return
     end
     self.Name=name
+    self.IgnoreConfirmUntil=os.clock()+0.25
     self.Stage="Selecting"
     self:CloseName(false)
     self:Refresh()
@@ -369,7 +386,7 @@ end
 
 function Tool:Confirm()
     if self.Mode~="Assembly" or self.Stage~="Selecting"
-        or self.Busy then return end
+        or self.Busy or os.clock()<(self.IgnoreConfirmUntil or 0) then return end
     local ids={}
     for id in pairs(self.Selected) do table.insert(ids,id) end
     table.sort(ids)
@@ -412,6 +429,7 @@ function Tool:ClearVisuals()
     self.PreviewRoot=nil
     self.PreviewCache=""
     self.PreviewOutlines={}
+    self.PreviewModels=nil
     player:SetAttribute("OPENWORKS_HoverAssemblyId","")
 end
 
@@ -424,8 +442,20 @@ function Tool:ShowVisuals(members,color)
     local ids={}
     for id in pairs(byId) do table.insert(ids,id) end
     table.sort(ids)
-    local signature=table.concat(ids,";")
-    if signature==self.PreviewCache and self.PreviewRoot then return end
+    local signatureParts={}
+    local sameModels=self.PreviewModels~=nil
+    for _,id in ipairs(ids) do
+        local model=byId[id]
+        table.insert(signatureParts,id..":"..
+            tostring(model:GetAttribute("ComponentId") or ""))
+        if not self.PreviewModels or self.PreviewModels[id]~=model
+            or not model.Parent then
+            sameModels=false
+        end
+    end
+    local signature=table.concat(signatureParts,";")
+    if signature==self.PreviewCache and self.PreviewRoot
+        and sameModels then return end
     self:ClearVisuals()
     if #ids==0 then return end
     self.PreviewCache=signature
@@ -433,6 +463,7 @@ function Tool:ShowVisuals(members,color)
         Name="OPENWORKS_AssemblySelectionPreview",
     })
     self.PreviewRoot=root
+    self.PreviewModels=byId
     local groups={}
     local singles={}
     for _,id in ipairs(ids) do
@@ -471,19 +502,26 @@ function Tool:ShowVisuals(members,color)
     end
 end
 
+function Tool:OnModeChanged(mode)
+    if mode==self.Mode then return end
+    self.Mode=mode
+    self:ClearVisuals()
+    if mode~="Assembly" then
+        if self.Modal and self.Modal.Visible then self:CloseName(true) end
+        self.Stage="Idle"
+        self.Selected={}
+        self.EditingId=nil
+    end
+    self:Refresh()
+end
+
 function Tool:Tick()
-    local mode=self.Tools.ActiveId
-    if mode~=self.Mode then
-        self.Mode=mode
-        self:ClearVisuals()
-        if mode~="Assembly" then
-            if self.Modal and self.Modal.Visible then self:CloseName(true) end
-            self.Stage="Idle"
-            self.Selected={}
-            self.EditingId=nil
-        end
+    self:OnModeChanged(self.Tools.ActiveId)
+    if self.LastMessage and os.clock()>self.MessageUntil then
+        self.LastMessage=nil
         self:Refresh()
     end
+    local mode=self.Mode
     local id=""
     local members={}
     if mode=="Assembly" and self.Stage=="Selecting" then
@@ -520,6 +558,9 @@ function Tool:Start()
     self:Draw()
     self.Mode=self.Tools.ActiveId
     self:Refresh()
+    table.insert(self.Connections,self.Tools.Changed.Event:Connect(function(mode)
+        self:OnModeChanged(mode)
+    end))
     table.insert(self.Connections,self.Tools.Activated.Event:Connect(
         function(mode)
             if mode=="Assembly" then self:Click() end
