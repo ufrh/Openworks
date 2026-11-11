@@ -87,7 +87,7 @@ function CompactHole.Ensure()
     geometry.CanTouch=false
     geometry.Material=Enum.Material.Metal
     geometry.Color=Color3.fromRGB(78,83,91)
-    geometry.UsePartColor=if geometry:IsA("PartOperation") then true else nil
+    if geometry:IsA("PartOperation") then geometry.UsePartColor=true end
     geometry.Parent=model
     model.PrimaryPart=geometry
     model.Parent=category
