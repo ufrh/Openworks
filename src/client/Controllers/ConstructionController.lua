@@ -1175,6 +1175,7 @@ function Controller:UpdatePreview()
 
     if os.clock() - self.LastPreviewCheck > 0.12 then
         self.LastPreviewCheck = os.clock()
+        local previousValid,previousReason=self.PreviewValid,self.PreviewReason
         self.PreviewValid = true
         self.PreviewReason = nil
         local ignore = {}
@@ -1252,6 +1253,10 @@ function Controller:UpdatePreview()
             self:RefreshHUD()
         end
         PreviewFeedback.Paint(self.Preview,self.PreviewValid)
+        if previousValid~=self.PreviewValid
+            or previousReason~=self.PreviewReason then
+            self:RefreshHUD()
+        end
     end
 
     -- Presentation is damped independently of the exact hit/validation CF.
