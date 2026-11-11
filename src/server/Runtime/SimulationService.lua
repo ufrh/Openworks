@@ -4,6 +4,7 @@
 -- clones with welded rigid components and live Hinge/Prismatic/Weld joints.
 -- Stop destroys every simulation object and restores original visibility.
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Alignment = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
@@ -13,6 +14,8 @@ local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SpringMath"))
 local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GridMath"))
+local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
 
 local Simulation = {}
 Simulation.__index = Simulation
@@ -20,6 +23,7 @@ Simulation.__index = Simulation
 local MAX_PARTS = 128
 local MAX_JOINTS = 64
 local MAX_COLLISION_PAIRS = 1200
+local INPUT_EXPIRES = 0.35
 
 local function bodyKey(model)
     -- ComponentId is only an editor grouping; NEVER a physical joint.
@@ -41,11 +45,100 @@ function Simulation.new(deps)
         world.Name = "OPENWORKS_Simulated"
         world.Parent = workspace
     end
-    return setmetatable({ D = deps, World = world, Sessions = {} }, Simulation)
+    local self=setmetatable({ D=deps,World=world,Sessions={} },Simulation)
+    self.ActuatorHeartbeat=RunService.Heartbeat:Connect(function(dt)
+        self:StepCranks(dt)
+    end)
+    return self
 end
 
 function Simulation:IsRunning(player)
     return self.Sessions[player] ~= nil
+end
+
+-- The ONLY powered source is a distinct physical HandCrank prefab.
+-- Mechanical relationships never receive an ActuatorType/Motor setting.
+function Simulation:StepCranks(_dt)
+    local now=os.clock()
+    for _,session in pairs(self.Sessions) do
+        for id,crank in pairs(session.Cranks or {}) do
+            local torque=crank.Torque
+            local root=crank.Root
+            if not torque.Parent or not root.Parent then continue end
+            if session.Paused or session.ActiveCrankId~=id
+                or not crank.Dragging
+                or now-(crank.LastInput or 0)>INPUT_EXPIRES then
+                torque.Torque=Vector3.zero
+                continue
+            end
+            local axis=root.CFrame.RightVector.Unit
+            local actual=root.AssemblyAngularVelocity:Dot(axis)
+            local demand=math.clamp(crank.Desired or 0,
+                -HandCrankMath.MaxAngularSpeed,HandCrankMath.MaxAngularSpeed)
+            local effort=math.clamp(
+                (demand-actual)*HandCrankMath.VelocityGain,
+                -HandCrankMath.MaxTorque,HandCrankMath.MaxTorque)
+            torque.Torque=axis*effort
+        end
+    end
+end
+
+function Simulation:BeginCrank(player,request)
+    local session=self.Sessions[player]
+    if not session then return false,"Start simulation (P) before turning a crank" end
+    if session.Paused then return false,"Resume simulation (O) first" end
+    local id=type(request)=="table" and request.crankId or nil
+    local crank=type(id)=="string" and session.Cranks[id] or nil
+    if not crank then return false,"Choose a HandCrank in this running assembly" end
+    if not crank.Coupled then
+        return false,"Couple the crank output to a cylinder shaft end in Edit"
+    end
+    if session.GroundKeys and session.GroundKeys[crank.BodyKey] then
+        return false,"The hand crank itself is grounded; ground its bearing housing instead"
+    end
+    local character=player.Character
+    local root=character and character:FindFirstChild("HumanoidRootPart")
+    if not root or (root.Position-crank.Root.Position).Magnitude>22 then
+        return false,"Move closer to the hand crank to turn it"
+    end
+    for _,previous in pairs(session.Cranks) do
+        previous.Torque.Torque=Vector3.zero
+        previous.Dragging=false
+        previous.Desired=0
+    end
+    session.ActiveCrankId=id
+    crank.LastInput=os.clock()
+    crank.Dragging=false
+    crank.Desired=0
+    return true,"Hand crank gripped • hold LMB and drag around the ring"
+end
+
+-- Unreliable-speed firehose runs through an Event, not the throttled build
+-- request. All incoming values are validated and expire unless refreshed.
+function Simulation:InputCrank(player,id,desired,dragging,release)
+    local session=self.Sessions[player]
+    if not session or session.ActiveCrankId~=id then return end
+    local crank=session.Cranks and session.Cranks[id]
+    if not crank or not crank.Torque.Parent then return end
+    if release==true then
+        crank.Torque.Torque=Vector3.zero
+        crank.Dragging=false
+        crank.Desired=0
+        session.ActiveCrankId=nil
+        return
+    end
+    if type(desired)~="number" or desired~=desired
+        or desired==math.huge or desired==-math.huge
+        or math.abs(desired)>HandCrankMath.MaxAngularSpeed*2
+        or type(dragging)~="boolean" then return end
+    local now=os.clock()
+    if now-(crank.LastPacket or 0)<0.035 then return end
+    crank.LastPacket=now
+    crank.LastInput=now
+    crank.Dragging=dragging
+    crank.Desired=if dragging
+        then math.clamp(desired,-HandCrankMath.MaxAngularSpeed,
+            HandCrankMath.MaxAngularSpeed) else 0
 end
 
 function Simulation:SetStatus(player,running,grounded)
@@ -238,6 +331,8 @@ function Simulation:Start(player, payload)
         SeedId = payload.seedId,
         AssemblyName = graph.assemblyName,
         ActiveRelations={},
+        Cranks={},
+        ActiveCrankId=nil,
     }
     for _,edge in ipairs(graph.edges) do
         session.ActiveRelations[edge.relation:GetAttribute("RelationId")]=true
@@ -461,6 +556,43 @@ function Simulation:Start(player, payload)
                     end
                 end
             end
+        end
+
+        -- Install input-torque devices on physical crank bodies only.
+        -- Explicit Weld/Fixed/Bolt transmission to a shaft is required.
+        for _,original in ipairs(graph.models) do
+            if not HandCrankMath.IsCrank(original) then continue end
+            local id=original:GetAttribute("InstanceId")
+            local model=copies[id]
+            if not model or not model.PrimaryPart then
+                error("HandCrank has no simulation primary shaft")
+            end
+            local coupled=false
+            for _,edge in ipairs(graph.edges) do
+                if edge.kind=="Weld" or edge.kind=="Fixed" then
+                    local other=if edge.source==original then edge.target
+                        elseif edge.target==original then edge.source else nil
+                    if other and HandCrankMath.IsOutputShaft(other) then
+                        coupled=true
+                        break
+                    end
+                end
+            end
+            local root=model.PrimaryPart
+            local attachment=Instance.new("Attachment")
+            attachment.Name="ManualCrankTorqueAxis"
+            attachment.Parent=root
+            local torque=Instance.new("Torque")
+            torque.Name="HandCrank_PlayerTorque"
+            torque.Attachment0=attachment
+            torque.RelativeTo=Enum.ActuatorRelativeTo.World
+            torque.Torque=Vector3.zero
+            torque.Parent=runtime
+            session.Cranks[id]={
+                Root=root,Torque=torque,Coupled=coupled,
+                BodyKey=bodyKey(original),LastInput=0,LastPacket=0,
+                Desired=0,Dragging=false,
+            }
         end
 
         -- 4. Hide originals but preserve every authored transform/material.
