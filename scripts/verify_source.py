@@ -133,6 +133,18 @@ def main() -> int:
     check("Removed old automatic registration API",
           'action=="RegisterAssembly"' not in service
           and 'action=="AddAssemblyMember"' not in service)
+    check("Component grouping and ungrouping receive metadata history callback",
+          'self.D.commitMetadata(player, before, after)' in component
+          and 'commitMetadata = commitMetadata,' in service[
+              service.index('components = ComponentService.new({'):
+              service.index('alignmentService = AlignmentService.new({')])
+    check("Edit multiselect outlines every actual primitive, not group bounding box",
+          'for _,model in ipairs(self.SelectedParts) do' in selection
+          and 'Name="OPENWORKS_SelectionOutline"' in selection
+          and 'self.ComponentOutline=ComponentOutline.new(' not in selection)
+    check("Assembly multiselect outlines each member individually",
+          'for _,id in ipairs(ids) do\\n        local model=byId[id]\\n        make("Highlight"' in tool_ui
+          and 'ComponentOutline.new(' not in tool_ui)
     check("Components are selection groups, not implicit welds",
           'return "p:" .. tostring(model:GetAttribute("InstanceId"))' in simulation
           and "PrefabInternalPart" in simulation)
