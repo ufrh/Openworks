@@ -158,10 +158,10 @@ end
 -- A loose hole can geometrically fit multiple nearby shafts; counting each
 -- candidate as a separate attachment causes duplicate joints and bad poses.
 -- The selected primary pair remains locked while augmenting the other matches.
-function Fit.Unique(pairs,primaryMovingId,primaryStationaryId)
+function Fit.Unique(matches,primaryMovingId,primaryStationaryId)
     local byMoving,ids={},{}
     local chosenPrimary=nil
-    for _,pair in ipairs(pairs or {}) do
+    for _,pair in ipairs(matches or {}) do
         if not byMoving[pair.movingId] then
             byMoving[pair.movingId]={}
             table.insert(ids,pair.movingId)
