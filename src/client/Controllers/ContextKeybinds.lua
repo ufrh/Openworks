@@ -63,7 +63,7 @@ function Context:Lines()
             append(lines,"U","Reset assembly to authored pose")
             append(lines,"I","Inspect joint telemetry")
             append(lines,"Click","Inspect body / relationships")
-            append(lines,"Click crank","Toggle fixed-speed rotation")
+            append(lines,"Hold LMB","Drive crank at fixed speed; release to stop")
         else
             append(lines,"P","Run registered assembly")
             append(lines,"Shift+P","Run assembly ungrounded")
