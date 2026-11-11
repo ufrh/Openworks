@@ -6,6 +6,7 @@ local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
 local UserInputService=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
+local CameraAimRay=require(script.Parent:WaitForChild("CameraAimRay"))
 local Construction=RS:WaitForChild("Openworks"):WaitForChild("Construction")
 local Grid=require(Construction:WaitForChild("GridMath"))
 local Crank=require(Construction:WaitForChild("HandCrankMath"))
@@ -42,8 +43,7 @@ function Controller:CrankAtCenter()
     params.FilterType=Enum.RaycastFilterType.Include
     params.FilterDescendantsInstances={folder}
     params.IgnoreWater=true
-    local ray=camera:ViewportPointToRay(
-        camera.ViewportSize.X*0.5,camera.ViewportSize.Y*0.5)
+    local ray=CameraAimRay.Ray(camera)
     local hit=workspace:Raycast(ray.Origin,ray.Direction*Grid.MaxDistance,params)
     local node=hit and hit.Instance
     while node and node.Parent~=folder do
