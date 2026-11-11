@@ -815,6 +815,18 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
     moving: Model?, aimedPart: Instance?)
     local targets={}
     if not folder then return targets end
+    -- Moving-component traits do not depend on the stationary candidate.
+    -- Resolve them once, rather than walking every moving member for every
+    -- object in the plot on every snap scan.
+    local movingGearMembers={}
+    local hasMovingRack=false
+    if moving then
+        for _,member in ipairs(Smart.Members(moving)) do
+            if rack(member) then hasMovingRack=true end
+            if gear(member) then table.insert(movingGearMembers,member) end
+        end
+    end
+    local hasMovingGear=#movingGearMembers>0
     for _,model in ipairs(folder:GetChildren()) do
         if model:IsA("Model") and model.PrimaryPart
             and model:GetAttribute("OwnerUserId")==playerUserId
@@ -831,31 +843,28 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
             local aimThreshold=if isGear then Smart.HubAimRadius
                 else math.clamp(size*0.38,0.48,1.5)
             local gearPlacement=false
-            local movingGear=false
-            local movingRack=false
-            if moving then
-                for _,member in ipairs(Smart.Members(moving)) do
-                    if rack(member) then movingRack=true end
-                    if isGear and gear(member) then
-                        movingGear=true
-                        local moduleA=member:GetAttribute("GearModuleStuds")
-                        local moduleB=model:GetAttribute("GearModuleStuds")
-                        if type(moduleA)=="number" and type(moduleB)=="number"
-                            and math.abs(moduleA-moduleB)<0.0001 then
-                            local axis=model:GetPivot().RightVector
-                            local delta=reference-model:GetPivot().Position
-                            local axial=math.abs(delta:Dot(axis))
-                            local radial=(delta-axis*delta:Dot(axis)).Magnitude
-                            local pitch=(member:GetAttribute("GearTeeth")
-                                +model:GetAttribute("GearTeeth"))
-                                *moduleA/(2*math.pi)
-                            local face=(member.PrimaryPart.Size.X
-                                +model.PrimaryPart.Size.X)*0.5
-                            gearPlacement=gearPlacement
-                                or (math.abs(radial-pitch)
-                                    <=Smart.GearPitchCapture
-                                    and axial<=face+Smart.GearFaceCapture)
-                        end
+            local movingGear=hasMovingGear
+            local movingRack=hasMovingRack
+            if isGear and movingGear then
+                local moduleB=model:GetAttribute("GearModuleStuds")
+                local targetCF=model:GetPivot()
+                local axis=targetCF.RightVector
+                local delta=reference-targetCF.Position
+                local axial=math.abs(delta:Dot(axis))
+                local radial=(delta-axis*delta:Dot(axis)).Magnitude
+                for _,member in ipairs(movingGearMembers) do
+                    local moduleA=member:GetAttribute("GearModuleStuds")
+                    if type(moduleA)=="number" and type(moduleB)=="number"
+                        and math.abs(moduleA-moduleB)<0.0001 then
+                        local pitch=(member:GetAttribute("GearTeeth")
+                            +model:GetAttribute("GearTeeth"))
+                            *moduleA/(2*math.pi)
+                        local face=(member.PrimaryPart.Size.X
+                            +model.PrimaryPart.Size.X)*0.5
+                        gearPlacement=gearPlacement
+                            or (math.abs(radial-pitch)
+                                <=Smart.GearPitchCapture
+                                and axial<=face+Smart.GearFaceCapture)
                     end
                 end
             end

@@ -110,6 +110,10 @@ function Handles.new(mode)
                 grip.Sphere.Transparency=0
             end
             grip.Highlight = newHighlight(model, color)
+            -- A grip has at most two actual parts; no descendant tree walk
+            -- is needed each RenderStepped just to toggle their appearance.
+            grip.Parts=if mode=="Move" then {grip.Stem,grip.Tip}
+                else {grip.Sphere}
             table.insert(self.Grips, grip)
         end
     end
@@ -199,18 +203,27 @@ function Handles:Update(cf, size, allowedAxis)
     self.SelectedDistance = bestDistance
     for _, grip in ipairs(self.Grips) do
         local hovered = grip == best
-        grip.Highlight.Enabled = self.Mode~="Scale" and grip.Visible
-        grip.Highlight.FillTransparency = if hovered then 0 else 0.25
-        for _, item in ipairs(grip.Model:GetDescendants()) do
-            if item:IsA("BasePart") then
-                item.Transparency = if grip.Visible
-                    then (if self.Mode=="Scale" then 0 else 0.06) else 1
-                if self.Mode=="Scale" then
-                    item.Color=if hovered then grip.Color:Lerp(Color3.new(1,1,1),0.22)
-                        else grip.Color
-                end
+        local enabled=self.Mode~="Scale" and grip.Visible
+        if grip.Highlight.Enabled~=enabled then
+            grip.Highlight.Enabled=enabled
+        end
+        local fill=if hovered then 0 else 0.25
+        if grip.Highlight.FillTransparency~=fill then
+            grip.Highlight.FillTransparency=fill
+        end
+        if grip.LastVisible~=grip.Visible
+            or (self.Mode=="Scale" and grip.LastHovered~=hovered) then
+            local transparency=if grip.Visible
+                then (if self.Mode=="Scale" then 0 else 0.06) else 1
+            local scaleColor=if hovered then
+                grip.Color:Lerp(Color3.new(1,1,1),0.22) else grip.Color
+            for _,item in ipairs(grip.Parts) do
+                item.Transparency=transparency
+                if self.Mode=="Scale" then item.Color=scaleColor end
             end
         end
+        grip.LastVisible=grip.Visible
+        grip.LastHovered=hovered
     end
 end
 

@@ -455,6 +455,10 @@ function Controller:ClearPreview()
     self.FitIndicatorDots=nil
     self.Preview = nil
     self.PreviewCF = nil
+    -- A rebuilt ghost must be solved immediately, not inherit the previous
+    -- preview's 30 Hz calculation window.
+    self.PreviewComputeTime = 0
+    self.PreviewTime = 0
 end
 
 function Controller:ClearSmartMatch()
@@ -1215,6 +1219,24 @@ function Controller:UpdatePreview()
         if self.Preview then self.Preview.Parent = nil end
         return
     end
+
+    -- Geometry scans and multi-fit solving are expensive with large plots.
+    -- Solve at up to 30 Hz; keep the ghost interpolating on every render
+    -- frame so movement stays visually smooth on high-refresh displays.
+    -- Explicit placement/fit changes set LastPreviewCheck=0 to bypass the
+    -- budget and calculate on the next rendered frame.
+    local visualNow=os.clock()
+    if self.PreviewCF and self.Preview.Parent
+        and self.LastPreviewCheck~=0
+        and visualNow-(self.PreviewComputeTime or 0)<1/30 then
+        local dt=if self.PreviewTime>0 then visualNow-self.PreviewTime else 0
+        self.PreviewTime=visualNow
+        self.PreviewVisualPose=WorldMotion.Step(
+            self.PreviewVisualPose,self.PreviewCF,dt,15)
+        self.Preview:PivotTo(self.PreviewVisualPose)
+        return
+    end
+    self.PreviewComputeTime=visualNow
 
     local locked=self.LockedAlignment
     local cf,match
@@ -2341,9 +2363,17 @@ function Controller:Start()
         local previewing=self.Pending~=nil or (self.Layered
             and self.Layered.Alignment
             and self.Layered.Alignment.Stage=="Preview")
-        if self.ComponentOutline then
+        -- Bounds() walks every descendant of each selected primitive.
+        -- Selection geometry is stationary outside an explicit transform;
+        -- recalculate at 10 Hz, but hide instantly when a ghost begins.
+        local outlineNow=os.clock()
+        if self.ComponentOutline
+            and (self.OutlinePreviewing~=previewing
+                or outlineNow-(self.OutlineLastUpdate or 0)>=0.1) then
             self.ComponentOutline:Update(
                 if previewing then {} else self.SelectedParts)
+            self.OutlineLastUpdate=outlineNow
+            self.OutlinePreviewing=previewing
         end
         for _,highlight in ipairs(self.SelectionHighlights) do
             if highlight and highlight.Parent then

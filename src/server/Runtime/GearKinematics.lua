@@ -14,6 +14,7 @@ Kinematics.__index=Kinematics
 local MAX_GEARS=40
 local MAX_RACKS=24
 local SCAN_PERIOD=0.08
+local IDLE_SCAN_PERIOD=0.25 -- retain automatic meshing without 12 idle rescans/s
 local ROTATION_PERIOD=1/60 -- smoother scripted motion, bounded server Heartbeat
 local GRAVITY_SPEED_CAP=160
 local CRANK_ACCEL_RESPONSE=9
@@ -279,18 +280,30 @@ local function shiftGroup(group,delta)
 end
 
 local function bottomOfGroup(group)
-    local lowest=math.huge
-    for _,model in ipairs(group.Models) do
-        for _,part in ipairs(model:GetDescendants()) do
-            if part:IsA("BasePart")
-                and part:GetAttribute("GearPivotOnly")~=true then
-                local cf=part.CFrame
-                local size=part.Size*0.5
-                local radius=math.abs(cf.RightVector.Y)*size.X
-                    +math.abs(cf.UpVector.Y)*size.Y
-                    +math.abs(cf.LookVector.Y)*size.Z
-                lowest=math.min(lowest,part.Position.Y-radius)
+    -- Simulation clone geometry is immutable; cache references to the actual
+    -- solids once and read their live transforms during subsequent falls.
+    -- Avoid GetDescendants() on every Heartbeat for every unsupported gear.
+    if not group.BottomParts then
+        local parts={}
+        for _,model in ipairs(group.Models) do
+            for _,part in ipairs(model:GetDescendants()) do
+                if part:IsA("BasePart")
+                    and part:GetAttribute("GearPivotOnly")~=true then
+                    table.insert(parts,part)
+                end
             end
+        end
+        group.BottomParts=parts
+    end
+    local lowest=math.huge
+    for _,part in ipairs(group.BottomParts) do
+        if part.Parent then
+            local cf=part.CFrame
+            local size=part.Size*0.5
+            local radius=math.abs(cf.RightVector.Y)*size.X
+                +math.abs(cf.UpVector.Y)*size.Y
+                +math.abs(cf.LookVector.Y)*size.Z
+            lowest=math.min(lowest,part.Position.Y-radius)
         end
     end
     return lowest
@@ -485,7 +498,12 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
     dt=math.clamp(dt,0,0.07)
     self:Translate(dt)
     self.ScanElapsed+=dt
-    if self.ScanElapsed>=SCAN_PERIOD then
+    -- During an active crank/rack stroke, keep the original engagement
+    -- responsiveness. When settled, nearby native parts can still create
+    -- new meshes, but a 0.25 s scan avoids repeated quadratic idle work.
+    local moving=drivenId~=nil and inputSpeed~=0
+        or math.abs(self.CurrentSpeed)>0.015
+    if self.ScanElapsed>=(if moving then SCAN_PERIOD else IDLE_SCAN_PERIOD) then
         self.ScanElapsed=0
         self:Detect()
     end

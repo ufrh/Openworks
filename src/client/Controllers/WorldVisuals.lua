@@ -29,9 +29,10 @@ local COLORS={
     Slider=Color3.fromRGB(96,185,238),
     Cylindrical=Color3.fromRGB(96,185,238),
 }
--- Purple Assembly preview can use up to 128 extra Highlights. Reserve
--- sufficient slots under Roblox's 255 simultaneous-highlight limit.
-local MAX_HIGHLIGHTS=96
+-- Keep grounding feedback for typical machines without spending nearly
+-- half the engine's highlight budget on large plots every render.
+-- Purple Assembly preview can independently reserve up to 128 slots.
+local MAX_HIGHLIGHTS=64
 
 local function newAdornment(parent,class,name)
     local item=Instance.new(class)
@@ -91,7 +92,7 @@ function Visuals:GroundCue(model)
     highlight.Name="OPENWORKS_GroundStatus"
     highlight.Adornee=model
     highlight.DepthMode=Enum.HighlightDepthMode.Occluded
-    highlight.FillTransparency=0.83
+    highlight.FillTransparency=0.84
     highlight.OutlineTransparency=1
     highlight.Parent=self.Folder
     return highlight
@@ -251,6 +252,8 @@ function Visuals:Update()
             self.Ground[model]=nil
         end
     end
+    local hoverId=player:GetAttribute("OPENWORKS_HoverAssemblyId")
+    local assemblyTool=player:GetAttribute("OPENWORKS_ActiveTool")=="Assembly"
     for model in pairs(allowed) do
         local cue=self.Ground[model]
         if not cue then
@@ -262,17 +265,15 @@ function Visuals:Update()
         -- editor-grouped member is grounded.
         local grounded=if simulating then model.PrimaryPart.Anchored
             else model:GetAttribute("Grounded")==true
-        cue.FillColor=if grounded then GROUNDED else MOVABLE
+        local color=if grounded then GROUNDED else MOVABLE
+        if cue.FillColor~=color then cue.FillColor=color end
         -- Hidden authored originals must not project a colored "shadow"
         -- through the live ghost of a moving component.
-        local hoverId=player:GetAttribute("OPENWORKS_HoverAssemblyId")
-        local assemblyTool=player:GetAttribute("OPENWORKS_ActiveTool")=="Assembly"
-        cue.Enabled=model.PrimaryPart.LocalTransparencyModifier<0.99
+        local enabled=model.PrimaryPart.LocalTransparencyModifier<0.99
             and not assemblyTool
             and not (type(hoverId)=="string" and hoverId~=""
                 and model:GetAttribute("AssemblyId")==hoverId)
-        cue.OutlineTransparency=1
-        cue.FillTransparency=0.84
+        if cue.Enabled~=enabled then cue.Enabled=enabled end
     end
 
     -- Relationship guides are construction adornments, not active phantom
