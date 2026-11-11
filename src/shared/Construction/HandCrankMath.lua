@@ -4,7 +4,7 @@
 local Alignment=require(script.Parent:WaitForChild("AlignmentMath"))
 
 local Crank={}
-Crank.EndTolerance=0.23 -- studs, for manually placed end faces
+Crank.EndTolerance=0.045 -- studs; reject floating shaft-to-shaft welds
 Crank.AlignmentTolerance=0.994
 Crank.MaxTorque=1400
 Crank.MaxAngularSpeed=4.0
@@ -55,7 +55,7 @@ function Crank.Fits(crank,shaft)
     local diff=target-output
     local axial=diff:Dot(axis)
     local radial=(diff-axis*axial).Magnitude
-    if radial>0.055 or math.abs(axial)>Crank.EndTolerance
+    if radial>0.045 or math.abs(axial)>Crank.EndTolerance
         or diff.Magnitude>Crank.EndTolerance then
         return false,"Place the crank's +X output face against a shaft end"
     end
