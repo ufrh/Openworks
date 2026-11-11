@@ -6,7 +6,6 @@
 -- Stop destroys clones and restores all original visibility/collision.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local PhysicsService = game:GetService("PhysicsService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Alignment = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
@@ -18,6 +17,7 @@ local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GridMath"))
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
+local GearKinematics = require(script.Parent:WaitForChild("GearKinematics"))
 
 local Simulation = {}
 Simulation.__index = Simulation
@@ -29,72 +29,8 @@ local MAX_COLLISION_PAIRS = 1200
 -- running motor behind. The client pulses every 0.1s during LMB hold.
 local CRANK_HOLD_TIMEOUT = 0.5
 
--- Explicit meshed gears are driven by a ratio solver, not thousands of
--- unstable tooth collisions. Keep teeth visible, but do not simulate
--- contacts BETWEEN authored gear teeth.
-local GEAR_COLLISION_GROUP="OPENWORKS_AuthoredGearTeeth"
-local function ensureGearCollisionGroup()
-    if not PhysicsService:IsCollisionGroupRegistered(GEAR_COLLISION_GROUP) then
-        PhysicsService:RegisterCollisionGroup(GEAR_COLLISION_GROUP)
-    end
-    PhysicsService:CollisionGroupSetCollidable(
-        GEAR_COLLISION_GROUP,GEAR_COLLISION_GROUP,false)
-end
-
--- Every welded/bolted pair shares one rotating rigid body. A gear mesh
--- propagates signed angular ratios between these bodies. Never propagate
--- across bearings (free rotation) or bare editor components.
-local function transmissionNetwork(graph)
-    local parent={}
-    for _,model in ipairs(graph.models) do
-        local id=model:GetAttribute("InstanceId")
-        parent[id]=id
-    end
-    local function root(id)
-        if not parent[id] then return nil end
-        while parent[id]~=id do
-            parent[id]=parent[parent[id]]
-            id=parent[id]
-        end
-        return id
-    end
-    for _,edge in ipairs(graph.edges) do
-        if edge.kind=="Weld" or edge.kind=="Fixed" or edge.kind=="Bolt" then
-            local a=root(edge.source:GetAttribute("InstanceId"))
-            local b=root(edge.target:GetAttribute("InstanceId"))
-            if a and b then parent[a]=b end
-        end
-    end
-    local links={}
-    local gearBodyKeys={}
-    local gearAxes={}
-    for _,edge in ipairs(graph.edges) do
-        if edge.kind~="Gear" then continue end
-        local a=root(edge.source:GetAttribute("InstanceId"))
-        local b=root(edge.target:GetAttribute("InstanceId"))
-        local nA=edge.source:GetAttribute("GearTeeth")
-        local nB=edge.target:GetAttribute("GearTeeth")
-        if not a or not b or a==b
-            or type(nA)~="number" or type(nB)~="number"
-            or nA<=0 or nB<=0 then continue end
-        local axisA=edge.source:GetPivot().RightVector
-        local axisB=edge.target:GetPivot().RightVector
-        gearAxes[a]=gearAxes[a] or axisA
-        gearAxes[b]=gearAxes[b] or axisB
-        -- Convert both gear angular speeds into a SHARED world-axis
-        -- convention. This also handles reverse-facing shaft pivots.
-        local ratio=-nA/nB*axisA:Dot(axisB)
-            *gearAxes[a]:Dot(axisA)*gearAxes[b]:Dot(axisB)
-        links[a]=links[a] or {}
-        links[b]=links[b] or {}
-        table.insert(links[a],{key=b,ratio=ratio})
-        table.insert(links[b],{key=a,ratio=1/ratio})
-        gearBodyKeys[a]=true
-        gearBodyKeys[b]=true
-    end
-    return root,links,gearBodyKeys,gearAxes
-end
-
+-- Gears and all rigidly welded members rotate kinematically.
+-- Native physics is reserved for mechanisms OUTSIDE gear rigid bodies.
 local function bodyKey(model)
     -- ComponentId is only an editor grouping; NEVER a physical joint.
     return "p:" .. tostring(model:GetAttribute("InstanceId"))
@@ -135,27 +71,23 @@ function Simulation:StopCrank(session,id)
     if not crank then return end
     crank.Running=false
     crank.LastInput=0
-    -- Native AngularVelocity handles continuous velocity regulation.
-    -- Stop supplying motor force on release without forcibly resetting
-    -- the body's physical angular velocity (free inertia remains).
-    crank.Drive.Enabled=false
-    for _,output in ipairs(session.GearDrives and session.GearDrives[id] or {}) do
-        if output.Driver.Drive.Parent then output.Driver.Drive.Enabled=false end
-    end
+    -- Ordinary non-geared shafts keep their bounded native drive.
+    -- Kinematic geared shafts have NO native motor to stop.
+    if crank.Drive then crank.Drive.Enabled=false end
     if crank.Model and crank.Model.Parent then
         crank.Model:SetAttribute("OPENWORKS_CrankRunning",false)
     end
     if session.ActiveCrankId==id then session.ActiveCrankId=nil end
 end
 
-function Simulation:StepCranks(_dt)
+function Simulation:StepCranks(dt)
     for owner,session in pairs(self.Sessions) do
         local character=owner.Character
         local playerRoot=character and character:FindFirstChild("HumanoidRootPart")
         for id,crank in pairs(session.Cranks or {}) do
             local root=crank.Root
             local drive=crank.Drive
-            if not root.Parent or not drive.Parent then
+            if not root.Parent or (drive and not drive.Parent) then
                 if crank.Running then self:StopCrank(session,id) end
                 continue
             end
@@ -165,6 +97,18 @@ function Simulation:StepCranks(_dt)
                 or os.clock()-(crank.LastInput or 0)>CRANK_HOLD_TIMEOUT then
                 if crank.Running then self:StopCrank(session,id) end
             end
+        end
+        -- The kinematic solver, not a bearing or a motor, owns EVERY
+        -- gear and welded shaft CFrame. It recomputes mesh engagement
+        -- geometrically; no explicit Gear relationship is required.
+        if session.Gears and not session.Paused then
+            local active=session.ActiveCrankId
+            local crank=active and session.Cranks[active] or nil
+            local powered=crank and crank.Running
+            session.Gears:Step(dt,
+                if powered then crank.DrivenId else nil,
+                if powered then crank.Axis else nil,
+                if powered then HandCrankMath.FixedAngularSpeed else 0)
         end
     end
 end
@@ -188,7 +132,9 @@ function Simulation:BeginCrank(player,request)
     end
     if session.GroundKeys and
         (session.GroundKeys[crank.BodyKey]
-            or session.GroundKeys[crank.DrivenBodyKey]) then
+            or session.GroundKeys[crank.DrivenBodyKey]
+            or (session.Gears
+                and session.Gears:IsGrounded(crank.DrivenId))) then
         return false,"Ground the bearing housing, not the crank or driven shaft"
     end
     local character=player.Character
@@ -202,28 +148,13 @@ function Simulation:BeginCrank(player,request)
     session.ActiveCrankId=id
     crank.Running=true
     crank.LastInput=os.clock()
-    -- Axis is resolved from the physically coupled output SHAFT at
-    -- simulation compile time, not the rotating handle each frame.
-    crank.Drive.AngularVelocity=crank.Axis*HandCrankMath.FixedAngularSpeed
-    crank.Drive.Enabled=true
-    for _,output in ipairs(session.GearDrives[id] or {}) do
-        local driver=output.Driver
-        if driver.Part.Parent then
-            -- Match axis to actual gear/shaft spindle. The ratio already
-            -- accounts for any opposite-facing gear axial directions.
-            local grounded=false
-            for _,key in ipairs(driver.Models) do
-                if session.GroundKeys and session.GroundKeys[key] then
-                    grounded=true
-                    break
-                end
-            end
-            if not grounded then
-                driver.Drive.AngularVelocity=driver.Axis
-                    *HandCrankMath.FixedAngularSpeed*output.Ratio
-                driver.Drive.Enabled=true
-            end
-        end
+    -- A geared output is intentionally MOTOR-FREE; the kinematic
+    -- gearbox advances this same shaft and its connected gears during
+    -- StepCranks. Ungeared shafts retain their native torque-limited
+    -- AngularVelocity drive.
+    if crank.Drive then
+        crank.Drive.AngularVelocity=crank.Axis*HandCrankMath.FixedAngularSpeed
+        crank.Drive.Enabled=true
     end
     crank.Model:SetAttribute("OPENWORKS_CrankRunning",true)
     return true,"Hand crank running • release LMB to stop"
@@ -252,8 +183,8 @@ end
 function Simulation:SetStatus(player,running,grounded)
     player:SetAttribute("OPENWORKS_Simulating",running)
     player:SetAttribute("OPENWORKS_Grounded",grounded~=false)
-    -- Motion relationships stay passive. Manual HandCrank torque is
-    -- installed only on the distinct physical actuator prefab.
+    -- Native motion joints remain passive. Geared rigid bodies are
+    -- scripted/anchored; ordinary free shafts may use native crank torque.
 end
 
 function Simulation:Graph(player, seed)
@@ -439,7 +370,7 @@ function Simulation:Start(player, payload)
         ActiveRelations={},
         Cranks={},
         ActiveCrankId=nil,
-        GearDrives={},
+        Gears=nil,
     }
     for _,edge in ipairs(graph.edges) do
         session.ActiveRelations[edge.relation:GetAttribute("RelationId")]=true
@@ -502,31 +433,10 @@ function Simulation:Start(player, payload)
             end
         end
 
-        -- Compile authored rigid groups and explicit Gear mesh edges.
-        -- The actual tooth meshes are kinematic speed ratios; shafts,
-        -- bearings and all unrelated mechanisms retain native physics.
-        local rigidKey,gearLinks,gearKeys,gearAxes=transmissionNetwork(graph)
-        local gearBodies={}
-        for _,original in ipairs(graph.models) do
-            local key=rigidKey(original:GetAttribute("InstanceId"))
-            if key and gearKeys[key] and not gearBodies[key] then
-                gearBodies[key]=copies[original:GetAttribute("InstanceId")].PrimaryPart
-            end
-        end
-        if next(gearKeys) then
-            ensureGearCollisionGroup()
-            for _,original in ipairs(graph.models) do
-                if type(original:GetAttribute("GearTeeth"))=="number"
-                    and gearKeys[rigidKey(original:GetAttribute("InstanceId"))] then
-                    local model=copies[original:GetAttribute("InstanceId")]
-                    for _,part in ipairs(allParts(model)) do
-                        if part:GetAttribute("GearPivotOnly")~=true then
-                            part.CollisionGroup=GEAR_COLLISION_GROUP
-                        end
-                    end
-                end
-            end
-        end
+        -- All gear-shaft rigid groups become kinematic, regardless of
+        -- whether a K relationship was authored. Runtime engagement is
+        -- discovered from actual gear tooth pitch and center spacing.
+        session.Gears=GearKinematics.new(graph,copies)
 
         -- 3. Rebuild authored relationships against the CLONED bodies.
         local collisionExclusions = 0
@@ -536,9 +446,14 @@ function Simulation:Start(player, payload)
             if not target or not source then error("Missing joint endpoint") end
             local p0, p1 = target.PrimaryPart, source.PrimaryPart
             if edge.kind == "Gear" then
-                -- Transmission is handled by speed-ratio drives below.
-                -- No native tooth collision torque; a Gear relationship
-                -- itself supplies NO energy without an active crank.
+                -- Legacy K relationships are OPTIONAL metadata.
+                -- Meshing and transmission use geometry every frame.
+                continue
+            elseif session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))
+                or session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")) then
+                -- No native hinge/bearing/spring/rigid constraint may
+                -- exert ANY physical influence on geared rigid bodies.
+                -- Rigid members move cohesively under GearKinematics.
                 continue
             elseif edge.kind == "Fixed" or edge.kind=="Weld"
                 or edge.kind=="Bolt" then
@@ -690,33 +605,6 @@ function Simulation:Start(player, payload)
             end
         end
 
-        -- Each explicit gear-ratio output gets a bounded native velocity
-        -- drive. Drives are DISABLED until a physically coupled crank
-        -- supplies power; no passive gear relationship is an engine.
-        local gearDrivers={}
-        for key,part in pairs(gearBodies) do
-            local att=Instance.new("Attachment")
-            att.Name="GearRatioDriveAxis"
-            att.Parent=part
-            local motor=Instance.new("AngularVelocity")
-            motor.Name="AuthoredGearRatioDrive"
-            motor.Attachment0=att
-            motor.RelativeTo=Enum.ActuatorRelativeTo.World
-            motor.MaxTorque=HandCrankMath.MaxTorque
-            motor.AngularVelocity=Vector3.zero
-            motor.Enabled=false
-            motor.Parent=runtime
-            gearDrivers[key]={Drive=motor,Part=part,
-                Axis=gearAxes[key],Models={}}
-        end
-
-        for _,original in ipairs(graph.models) do
-            local key=rigidKey(original:GetAttribute("InstanceId"))
-            if gearDrivers[key] then
-                table.insert(gearDrivers[key].Models,bodyKey(original))
-            end
-        end
-
         -- Install an actual velocity-regulating motor on the SHAFT.
         -- Driving the large, offset crank handle through a hand-written
         -- velocity-to-torque feedback loop used to overcorrect and wobble.
@@ -749,68 +637,34 @@ function Simulation:Start(player, payload)
                 copies[coupledShaft:GetAttribute("InstanceId")] else nil
             local root=if shaftCopy then shaftCopy.PrimaryPart
                 else model.PrimaryPart
-            local attachment=Instance.new("Attachment")
-            attachment.Name="ControlledCrankShaftAxis"
-            attachment.Parent=root
-            local drive=Instance.new("AngularVelocity")
-            drive.Name="HandCrank_ControlledRotation"
-            drive.Attachment0=attachment
-            drive.RelativeTo=Enum.ActuatorRelativeTo.World
-            -- Bounded motor effort prevents overriding a jammed mechanism.
-            -- Unlike the old proportional loop, drive speed and torque
-            -- never oscillate in response to client input or body speed.
-            drive.MaxTorque=HandCrankMath.MaxTorque
-            drive.AngularVelocity=Vector3.zero
-            drive.Enabled=false
-            drive.Parent=runtime
+            local drivenId=if coupledShaft then
+                coupledShaft:GetAttribute("InstanceId") else id
+            local kinematic=session.Gears:IsKinematic(drivenId)
+            local drive=nil
+            if not kinematic then
+                local attachment=Instance.new("Attachment")
+                attachment.Name="ControlledCrankShaftAxis"
+                attachment.Parent=root
+                drive=Instance.new("AngularVelocity")
+                drive.Name="HandCrank_ControlledRotation"
+                drive.Attachment0=attachment
+                drive.RelativeTo=Enum.ActuatorRelativeTo.World
+                drive.MaxTorque=HandCrankMath.MaxTorque
+                drive.AngularVelocity=Vector3.zero
+                drive.Enabled=false
+                drive.Parent=runtime
+            end
 
             local axis=root.CFrame.RightVector.Unit
             model:SetAttribute("OPENWORKS_CrankRunning",false)
             session.Cranks[id]={
                 Root=root,Model=model,Drive=drive,Axis=axis,
-                Coupled=coupledShaft~=nil,
+                Coupled=coupledShaft~=nil,DrivenId=drivenId,
                 BodyKey=bodyKey(original),
                 DrivenBodyKey=if coupledShaft then bodyKey(coupledShaft)
                     else bodyKey(original),
                 Running=false,LastInput=0,LastPacket=0,
             }
-            -- Build reachability from the crank's rigid output shaft,
-            -- traversing ONLY explicitly authored gear-mesh links.
-            local inputKey=rigidKey(if coupledShaft then
-                coupledShaft:GetAttribute("InstanceId") else id)
-            local inputRatio=1
-            if gearAxes[inputKey] then
-                inputRatio=root.CFrame.RightVector:Dot(gearAxes[inputKey])
-            end
-            local speeds={[inputKey]=inputRatio}
-            local queue={inputKey}
-            local index=1
-            while index<=#queue do
-                local parentKey=queue[index]
-                index+=1
-                for _,link in ipairs(gearLinks[parentKey] or {}) do
-                    local candidate=speeds[parentKey]*link.ratio
-                    if speeds[link.key]==nil then
-                        speeds[link.key]=candidate
-                        table.insert(queue,link.key)
-                    elseif math.abs(speeds[link.key]-candidate)>0.001 then
-                        -- Contradictory closed gear loops cannot be solved
-                        -- consistently. Leave that output unpowered.
-                        speeds[link.key]=math.huge
-                    end
-                end
-            end
-            local outputs={}
-            for key,ratio in pairs(speeds) do
-                if key~=inputKey and math.abs(ratio)<100
-                    and gearDrivers[key] then
-                    table.insert(outputs,{
-                        Driver=gearDrivers[key],
-                        Ratio=ratio,
-                    })
-                end
-            end
-            session.GearDrives[id]=outputs
         end
 
         -- 4. Hide originals but preserve every authored transform/material.
@@ -860,7 +714,8 @@ function Simulation:Start(player, payload)
                     if (edge.kind=="Bearing" or edge.kind=="Slider"
                             or edge.kind=="Cylindrical")
                         and Alignment.TargetAxis(edge.target)
-                        and not HandCrankMath.IsCrank(edge.target) then
+                        and not HandCrankMath.IsCrank(edge.target)
+                        and type(edge.target:GetAttribute("GearTeeth"))~="number" then
                         groundedKey=edge.b
                         break
                     end
@@ -871,6 +726,8 @@ function Simulation:Start(player, payload)
             if groundedKey then session.GroundKeys[groundedKey]=true end
         end
 
+        session.Gears:MarkGrounding(session.GroundKeys)
+
         -- Ground/movable colors are drawn by client WorldVisuals as
         -- fill-only Highlights. Do not create overlapping simulation
         -- Highlights or outlines here; authored physics stays authoritative.
@@ -879,8 +736,19 @@ function Simulation:Start(player, payload)
                 local rootAnchor = bodyAnchors[key]
                 for _, original in ipairs(originals) do
                     for _, part in ipairs(copyParts[original:GetAttribute("InstanceId")] or {}) do
-                        part.Anchored = session.GroundKeys[key] == true
-                            and part == rootAnchor
+                        if session.Gears:IsKinematic(
+                            original:GetAttribute("InstanceId")) then
+                            -- These parts have no Roblox physics influence:
+                            -- bearing constraints were skipped above and
+                            -- collisions cannot push or jam a gear train.
+                            part.Anchored=true
+                            part.CanCollide=false
+                            part.CanTouch=false
+                            part.CanQuery=part:GetAttribute("GearPivotOnly")~=true
+                        else
+                            part.Anchored=session.GroundKeys[key]==true
+                                and part==rootAnchor
+                        end
                     end
                 end
             end
@@ -1029,7 +897,9 @@ function Simulation:Info(player,payload)
     end
     table.insert(lines, tostring(current) .. " direct relationships")
     if session then
-        table.insert(lines,if session.Paused then "PAUSED" else "LIVE PHYSICS")
+        table.insert(lines,if session.Paused then "PAUSED"
+            elseif session.Gears and session.Gears:IsKinematic(id)
+                then "KINEMATIC GEARS" else "LIVE PHYSICS")
         for _, constraint in ipairs(session.Constraints) do
             if constraint:IsA("HingeConstraint") then
                 table.insert(lines,string.format("hinge %.1f°",constraint.CurrentAngle))
