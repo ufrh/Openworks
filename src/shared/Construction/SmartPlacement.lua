@@ -9,7 +9,10 @@ local HandCrankMath = require(script.Parent:WaitForChild("HandCrankMath"))
 local Grid = require(script.Parent:WaitForChild("GridMath"))
 local MultiFit = require(script.Parent:WaitForChild("MultiFitMath"))
 local Smart = {}
-Smart.SnapDistance = 2.0 -- studs; generous magnet near a component
+Smart.SnapDistance = 2.0 -- unchanged for general hole/gear-to-gear snapping
+Smart.HubSnapRadius = 0.34 -- studs from the REAL bore/shaft axis, not gear bounds
+Smart.HubAimRadius = 0.24 -- small crosshair tolerance through an empty bore
+Smart.HubAxialReach = 0.65 -- axial approach tolerance, excluding shaft overlap
 Smart.MaxAxialOffsetUnits = 64
 Smart.PreviewInterval = 0.08
 
@@ -97,24 +100,32 @@ function Smart.HubPose(source: Model, target: Model, near: Vector3)
     local shaft=if Alignment.IsShaft(source) then source else target
     local gearBody=if gear(source) then source else target
     local bore=gearBody:GetAttribute("BoreRadiusStuds")
-    if type(bore)~="number" then return nil end
-    if math.max(shaft.PrimaryPart.Size.Y,shaft.PrimaryPart.Size.Z)*0.5
-        +0.002>bore then return nil end
+    if type(bore)~="number" or bore<=0 then return nil end
+    local diameter=math.max(shaft.PrimaryPart.Size.Y,shaft.PrimaryPart.Size.Z)
+    if diameter+0.004>bore*2 then return nil end
+
+    -- Snap to the ACTUAL axial center of the stationary target. With
+    -- moving gear, the target is a shaft and can be long; with moving
+    -- shaft, the target is a gear's non-colliding bore pivot. Neither
+    -- case should use the outer gear radius as a magnetic hitbox.
     local fixed=target:GetPivot()
-    local axis=fixed.RightVector
+    local axis=fixed.RightVector.Unit
     local delta=near-fixed.Position
     local depth=delta:Dot(axis)
     local radial=(delta-axis*depth).Magnitude
-    local reach=math.max(0.9,gearBody.PrimaryPart.Size.Magnitude*0.8)
-    if radial>reach+Smart.SnapDistance
-        or math.abs(depth)>math.max(3,shaft.PrimaryPart.Size.X+1.5)
-        then return nil end
-    local maxTravel=math.max(0,
-        (shaft.PrimaryPart.Size.X+gearBody.PrimaryPart.Size.X)*0.5-0.035)
+    local thickness=gearBody.PrimaryPart.Size.X
+    local length=shaft.PrimaryPart.Size.X
+    local maxTravel=math.max(0,(length+thickness)*0.5-0.035)
+    if radial>Smart.HubSnapRadius or
+        math.abs(depth)>maxTravel+Smart.HubAxialReach then
+        return nil
+    end
     local maxUnits=math.min(Smart.MaxAxialOffsetUnits,
         math.floor(maxTravel/(Grid.Unit*0.5))*0.5)
     local offset=math.clamp(math.round(depth/(Grid.Unit*0.5))*0.5,
         -maxUnits,maxUnits)
+    -- Actual final center is always on the stationary axis. This is
+    -- valid in both directions and preserves the chosen insertion depth.
     local center=fixed.Position+axis*offset*Grid.Unit
     return CFrame.new(center)*fixed.Rotation,
         radial+math.abs(depth)*0.12,offset
@@ -191,6 +202,25 @@ local function aimDistance(ray, worldPosition)
     local along=delta:Dot(direction)
     if along<=0 or along>Grid.MaxDistance then return math.huge end
     return (delta-direction*along).Magnitude
+end
+
+-- Aim at the middle of the physical gear bore, not its tooth/rim bounds.
+-- For an already placed long shaft, aim anywhere along its actual axis.
+local function hubAimDistance(ray,target)
+    if not ray or not target.PrimaryPart then return math.huge end
+    if gear(target) then return aimDistance(ray,target:GetPivot().Position) end
+    if not Alignment.IsShaft(target) then return math.huge end
+    local cf=target:GetPivot()
+    local half=target.PrimaryPart.Size.X*0.5
+    local best=math.huge
+    -- Minimize distance from the camera ray to the FINITE shaft segment.
+    -- A tiny sample set is enough to find the visible insertion location;
+    -- this is selection assistance only, never the final fit predicate.
+    for i=0,8 do
+        local position=cf.Position+cf.RightVector*((i/8*2-1)*half)
+        best=math.min(best,aimDistance(ray,position))
+    end
+    return best
 end
 
 -- A single coaxial fit leaves free rotation about its axis. For a plate
@@ -338,9 +368,25 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 end
             elseif (isGear and Alignment.IsShaft(target))
                 or (isShaft and gear(target)) then
+                -- A broad aim on the rim or tooth must never magnetize
+                -- into the hub. Only a tight ray near the actual gear bore
+                -- (or a visibly aimed shaft segment) can override proximity.
+                local boreAim=hubAimDistance(aimRay,target)
+                local hubAimed=boreAim<=Smart.HubAimRadius
                 local near=source:GetPivot().Position
-                if aimed and (near-target:GetPivot().Position).Magnitude>3.5 then
-                    near=target:GetPivot().Position
+                if hubAimed then
+                    local stationary=target:GetPivot()
+                    local delta=near-stationary.Position
+                    local axial=delta:Dot(stationary.RightVector)
+                    local radial=(delta-stationary.RightVector*axial).Magnitude
+                    if radial>Smart.HubSnapRadius then
+                        -- An intentional center aim lets a shaft reach a
+                        -- NON-COLLIDING gear opening even if the world's
+                        -- surface hit snapped the ghost against its rim.
+                        near=stationary.Position
+                            +stationary.RightVector*math.clamp(axial,
+                                -Smart.HubAxialReach,Smart.HubAxialReach)
+                    end
                 end
                 local pose,dist,u=Smart.HubPose(source,target,near)
                 if pose then
@@ -348,7 +394,8 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     cf=(pose*source:GetPivot():Inverse())*ghost:GetPivot()
                     approach=pose.Position
                     offset=u
-                    score=if aimed then rayError+0.07 else dist
+                    score=if hubAimed then boreAim*0.25+0.015
+                        else dist+0.2
                 end
             elseif isOpening and Alignment.IsShaft(target) then
                 local plan,u,r,dist=reverseSocketPlan(
@@ -483,11 +530,18 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
             and model:GetAttribute("OwnerUserId")==playerUserId
             and not (ignored and ignored[model]) then
             local size=model.PrimaryPart.Size.Magnitude
-            local range=Smart.SnapDistance+math.min(3,size)
-                +math.clamp(extraReach or 0,0,24)
+            local isGear=gear(model)
+            local hubRay=hubAimDistance(aimRay,model)
+            -- Do not use the large tooth bounds to pick a gear. Gears
+            -- remain discoverable within a small central radius, even
+            -- though their actual empty bores have no raycast hitbox.
+            local range=if isGear then Smart.HubSnapRadius
+                else Smart.SnapDistance+math.min(3,size)
+                    +math.clamp(extraReach or 0,0,24)
+            local aimThreshold=if isGear then Smart.HubAimRadius
+                else math.clamp(size*0.38,0.48,1.5)
             if (model:GetPivot().Position-reference).Magnitude<=range
-                or aimDistance(aimRay,model:GetPivot().Position)
-                    <=math.clamp(size*0.38,0.48,1.5) then
+                or hubRay<=aimThreshold then
                 table.insert(targets,model)
             end
         end
