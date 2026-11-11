@@ -807,6 +807,82 @@ local function restore(player, data)
     return true
 end
 
+-- Move a COMPLETE authored component or named Assembly ONLY on world Y.
+-- One server-validated batch and one undo record; never trust client
+-- positions, arbitrary membership lists, or per-member offsets.
+local function verticalMove(player,payload)
+    if type(payload)~="table"
+        or (payload.direction~=1 and payload.direction~=-1) then
+        return false,"Choose Page Up or Page Down"
+    end
+    local selected={}
+    local scope=payload.scope
+    local id=payload.id
+    if type(id)~="string" or #id==0 or #id>64 then
+        return false,"Select an existing component or assembly"
+    end
+    if scope=="Component" then
+        selected=components:Members(player,id)
+    elseif scope=="Assembly" then
+        selected=assemblies:Members(player,id)
+    elseif scope=="Primitive" then
+        local model=findOwned(player,id)
+        if model and not model:GetAttribute("ComponentId") then
+            selected={model}
+        end
+    else
+        return false,"Invalid vertical movement scope"
+    end
+    if #selected==0 or #selected>128 then
+        return false,"Selection unavailable or too large"
+    end
+    -- All Y movement is quantized, with an optional Shift fine-step.
+    -- The server chooses the actual increment, not the client.
+    local fine=payload.fine==true
+    local step=if fine then 0.05 else 0.25
+    local delta=Vector3.new(0,payload.direction*step,0)
+    local before,after,ignored={}, {}, {}
+    for _,model in ipairs(selected) do
+        if not model.PrimaryPart or model.Parent~=folder then
+            return false,"A selected primitive no longer exists"
+        end
+        ignored[model]=true
+        local old=snapshot(model)
+        local nextState=table.clone(old)
+        nextState.position=old.position+delta
+        nextState.freePosition=true
+        local entry=Registry.Get(old.templateId)
+        if not entry then return false,"Missing construction template" end
+        local ok,reason=validState(player,entry,nextState)
+        if not ok then return false,reason end
+        table.insert(before,old)
+        table.insert(after,nextState)
+    end
+    -- Validate full target poses as a transaction. Temporarily move all
+    -- members so collision checks see the final positions; always roll
+    -- back the WHOLE selection on failure.
+    for i,model in ipairs(selected) do
+        applyState(model,after[i])
+    end
+    local intersects=false
+    for _,model in ipairs(selected) do
+        if intersectsConstructed(model,ignored) then
+            intersects=true
+            break
+        end
+    end
+    if intersects then
+        for i,model in ipairs(selected) do
+            applyState(model,before[i])
+        end
+        return false,"Vertical movement intersects another construction"
+    end
+    commitBatch(player,before,after)
+    return true,(if payload.direction>0 then "Raised " else "Lowered ")
+        ..tostring(#selected).." primitives by "
+        ..tostring(step).." studs"
+end
+
 local function restoreMetadata(player,record,undo)
     local states=if undo then record.before else record.after
     if type(states)~="table" then return false,"Invalid metadata history" end
@@ -911,6 +987,7 @@ local function handle(player, payload)
         or action == "BeginRack"
         or action == "StopSimulation"
         or action == "PauseSimulation" or action == "ResetSimulation"
+    local verticalAction=action=="VerticalMove"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
         or action == "DeleteComponent" or action == "RotateComponent"
@@ -921,6 +998,7 @@ local function handle(player, payload)
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
         and not componentAction and not smartAction and not assemblyAction
+        and not verticalAction
         and not alignmentAction and not mechanicalAction
         and not simulationAction then
         return { ok = false, message = "Unknown action" }
@@ -956,6 +1034,11 @@ local function handle(player, payload)
             and not hasEquippedTool(player,"Edit") then
             return {ok=false,message="Equip Edit to modify relationships"}
         end
+    elseif verticalAction then
+        if (payload.scope=="Assembly" and not hasEquippedTool(player,"Assembly"))
+            or (payload.scope~="Assembly" and not hasEquippedTool(player,"Edit")) then
+            return {ok=false,message="Equip Edit for components or Assembly for assemblies"}
+        end
     elseif assemblyAction then
         if not hasEquippedTool(player,"Assembly") then
             return {ok=false,message="Equip Assembly to create or edit assemblies"}
@@ -987,6 +1070,7 @@ local function handle(player, payload)
         if action == "PauseSimulation" then return simulation:Pause(player) end
         if action == "ResetSimulation" then return simulation:Reset(player) end
         if action == "Place" then return place(player, payload) end
+        if action == "VerticalMove" then return verticalMove(player,payload) end
         if action == "Update" then return update(player, payload) end
         if action == "Delete" then return delete(player, payload) end
         if componentAction then return components:Handle(player, action, payload) end
