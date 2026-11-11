@@ -396,7 +396,7 @@ def main() -> int:
           and 'function Simulation:InputRack(' in simulation
           and 'local RACK_MANUAL_SPEED = 1.5' in simulation
           and 'OPENWORKS_RackControl' in service)
-    check("Component duplication remaps all primitive ids and clears physical metadata",
+    check("Component duplication gives new IDs and preserves internal alignments",
           'idMap[part.instanceId] = HttpService:GenerateGUID(false)' in component
           and 'newState.instanceId = idMap[desired.instanceId]' in component
           and 'newState.componentId = componentId' in component
@@ -404,8 +404,30 @@ def main() -> int:
           and 'newState.assemblyId = nil' in component
           and 'newState.assemblyName = nil' in component
           and 'newState.grounded = false' in component
-          and 'newState.alignedOpeningId = nil' in component
-          and 'newState.alignedOffsetU = 0' in component)
+          and 'idMap[desired.alignedOpeningId]' in component)
+    check("Component duplication remaps ONLY wholly internal mechanical links",
+          'not idMap[original.sourceId] or not idMap[original.targetId]' in component
+          and 'original.boltId and not idMap[original.boltId]' in component
+          and 'original.secondTargetId' in component
+          and 'spec.relationId=HttpService:GenerateGUID(false)' in component
+          and 'spec.sourceId=idMap[original.sourceId]' in component
+          and 'spec.targetId=idMap[original.targetId]' in component
+          and 'spec.componentId=componentId' in component
+          and 'fitSetMap[original.fitSetId]' in component)
+    check("Copied relationships restore atomically with geometry/undo",
+          'local ok,detail=d.mechanical:Restore(player,spec)' in component
+          and 'd.mechanical:DestroyRelation(rel)' in component
+          and 'd.commitAssembly(player,{},after,relationships,false)' in component
+          and 'components.D.mechanical=mechanical' in service
+          and 'commitAssembly = commitAssembly,' in service)
+    surface=read("src/shared/Construction/SurfacePlacement.lua")
+    check("Neighbor face snap uses target local coordinates and exact contact",
+          'function SurfacePlacement.SnapToNearbyFace(' in surface
+          and 'targetCF:VectorToObjectSpace(n)' in surface
+          and 'SurfacePlacement.SnapToSurface(ghost,desired,' in surface
+          and 'local FACE_LATTICE=0.0625' in surface
+          and 'local bestEdge=EDGE_CAPTURE' in surface
+          and 'SurfacePlacement.SnapToNearbyFace(' in selection)
     check("Single primitive copies get new ids and author no physical links",
           'model:SetAttribute("InstanceId", instanceId or HttpService:GenerateGUID(false))' in service
           and 'self.Pending~="Copy"' in selection
