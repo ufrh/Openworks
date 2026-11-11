@@ -62,10 +62,9 @@ function Simulation:IsRunning(player)
     return self.Sessions[player] ~= nil
 end
 
--- Only coupled hand-crank shafts receive a speed-controlled native drive.
--- No per-frame proportional torque controller, angular velocity rewriting,
--- CFrame rotation or invisible motor on unrelated mechanical relationships.
--- Held LMB authorizes the drive; input packets are liveness only.
+-- Gear groups receive purely deterministic CFrame rotation; other
+-- crank-driven shafts can retain their bounded native AngularVelocity.
+-- Held LMB authorizes movement; packets are liveness only.
 function Simulation:StopCrank(session,id)
     local crank=session.Cranks and session.Cranks[id]
     if not crank then return end
@@ -113,8 +112,8 @@ function Simulation:StepCranks(dt)
     end
 end
 
--- Begin is ONE press. Release and watchdog always stop the drive, never
--- toggle it. All motion remains torque-limited and native physics driven.
+-- Begin is one hold-start request. For kinematic geared assemblies no
+-- Roblox force or torque is applied; a server-owned speed input is used.
 function Simulation:BeginCrank(player,request)
     local session=self.Sessions[player]
     if not session then return false,"Start simulation (P) before turning a crank" end
@@ -410,6 +409,11 @@ function Simulation:Start(player, payload)
             copyParts[id] = allParts(clone)
         end
 
+        -- Identify all fully kinematic gear/shaft/crank bodies BEFORE
+        -- constructing any native prefab joints. A kinematic gear has
+        -- ZERO Roblox physical constraints, including internal welds.
+        session.Gears=GearKinematics.new(graph,copies)
+
         -- A prefab is a physical primitive even if it has several geometry
         -- Parts (bolt heads / gear teeth). Only those INTERNAL parts are welded.
         -- Separately authored primitives remain independent without explicit
@@ -422,7 +426,7 @@ function Simulation:Start(player, payload)
                 if not anchor then error("Primitive has no physics root") end
                 bodyAnchors[key]=anchor
                 for _,part in ipairs(copyParts[id]) do
-                    if part~=anchor then
+                    if part~=anchor and not session.Gears:IsKinematic(id) then
                         local weld=Instance.new("WeldConstraint")
                         weld.Name="PrefabInternalPart"
                         weld.Part0=anchor
@@ -433,10 +437,8 @@ function Simulation:Start(player, payload)
             end
         end
 
-        -- All gear-shaft rigid groups become kinematic, regardless of
-        -- whether a K relationship was authored. Runtime engagement is
-        -- discovered from actual gear tooth pitch and center spacing.
-        session.Gears=GearKinematics.new(graph,copies)
+        -- Engagement is automatically determined by tooth geometry at
+        -- runtime; saved legacy K pairs are only construction metadata.
 
         -- 3. Rebuild authored relationships against the CLONED bodies.
         local collisionExclusions = 0
@@ -605,11 +607,9 @@ function Simulation:Start(player, payload)
             end
         end
 
-        -- Install an actual velocity-regulating motor on the SHAFT.
-        -- Driving the large, offset crank handle through a hand-written
-        -- velocity-to-torque feedback loop used to overcorrect and wobble.
-        -- Roblox's AngularVelocity constraint solves the target speed
-        -- internally. The authored Weld makes the crank handle follow it.
+        -- Only standalone, ungeared crank shafts receive a native
+        -- AngularVelocity drive. Geared shafts have no motor, bearing
+        -- forces, collisions or physical joints; GearKinematics owns them.
         for _,original in ipairs(graph.models) do
             if not HandCrankMath.IsCrank(original) then continue end
             local id=original:GetAttribute("InstanceId")
