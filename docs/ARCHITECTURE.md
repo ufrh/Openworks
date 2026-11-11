@@ -29,7 +29,7 @@ Roblox native Tool (Build / Edit / Assembly / Simulate / Inspect / Weld)
        ├─ AssemblyService   → exact named primitive membership
        ├─ MechanicalService → relation authoring, persistence specifications
        ├─ SimulationService → temporary physical clones, passive constraints,
-       │     grounding, manual-crank torque, pause/reset/cleanup
+       │     grounding, controlled crank rotation, pause/reset/cleanup
        ├─ PlotService       → isolated per-player plot bounds
        └─ PlotPersistence   → validated explicit F6 persistence
 ```
@@ -59,7 +59,7 @@ FORGE/Reforge remains in `src/forge-shared` and `src/forge-server`; domain-speci
 
 ## Constructed vs simulated world
 
-Authoritative constructed models live under `Workspace.OPENWORKS_Constructed`. They remain anchored while editing. Registered assemblies are simulated by making temporary clones under `Workspace.OPENWORKS_Simulated.Simulation_<UserId>`. The compiler installs native passive joints on the cloned primary parts, internal prefab welds, explicit authored rigid relationships, and actual spring constraints. Only the hand-crank prefab may install native Torque input, driven only while the player holds LMB at a fixed requested angular speed. No relationship itself receives motor energy. Hand cranks resize their physical output diameter and radial subparts when explicitly coupled to a cylindrical shaft; the primary-part size is persisted and reconstructed by undo/redo and plot load. A gear hub mount must be explicitly authored as Rotation (unpowered Hinge/Bearing) or Rigid (Weld), never an editor-only component merge. A drilled block may be rigidly welded to a truly inserted, clearance-fitted shaft without metal-to-metal surface contact; arbitrary remote or floating welds remain rejected.
+Authoritative constructed models live under `Workspace.OPENWORKS_Constructed`. They remain anchored while editing. Registered assemblies are simulated by making temporary clones under `Workspace.OPENWORKS_Simulated.Simulation_<UserId>`. The compiler installs native passive joints on the cloned primary parts, internal prefab welds, explicit authored rigid relationships, and actual spring constraints. Only a hand-crank explicitly welded to a verified output shaft may install a native AngularVelocity speed controller on that shaft during simulation. The controller is enabled only while the player holds LMB; it has bounded MaxTorque and is disabled immediately on release. No relationship itself receives motor energy. Hand cranks resize their physical output diameter and radial subparts when explicitly coupled to a cylindrical shaft; the primary-part size is persisted and reconstructed by undo/redo and plot load. A gear hub mount must be explicitly authored as Rotation (unpowered Hinge/Bearing) or Rigid (Weld), never an editor-only component merge. A drilled block may be rigidly welded to a truly inserted, clearance-fitted shaft without metal-to-metal surface contact; arbitrary remote or floating welds remain rejected.
 
 Simulating must never overwrite player-authored original CFrames or delete saved membership. Stop/Reset destroys session clones and restores original transparency/collision/anchoring. The server owns simulation physics; the client may only view/operate it through validated controls.
 
@@ -80,7 +80,7 @@ The shared Studio-style UI design lives in `StudioTheme.lua`. Normal Simulate re
 - Only `ConstructionService` should dispatch authoritative construction requests and own construction history.
 - Domain services should receive explicit dependencies through `.new(deps)`; do not write to arbitrary client state or DataStores.
 - Add physical geometry algorithms to `src/shared/Construction` when reusable by both client preview and server validation.
-- Avoid per-frame remote invocations. Hand-crank activation is a one-shot validated construction request; held-input liveness and release use the separate crank event, while bounded torque is integrated on server Heartbeat.
+- Avoid per-frame remote invocations. Hand-crank activation is a one-shot validated construction request; held-input liveness and release use the separate crank event, while native AngularVelocity regulates shaft speed without a frame-by-frame custom torque feedback loop. Server Heartbeat only checks release/range/timeout safety.
 - Every client controller should own and disconnect its signals, visual folders and render bindings on `:Destroy()`.
 - Do not change tool action names or IDs, template IDs, saved schema fields or relationship kinds without a deliberate migration.
 - Retire dead UI paths instead of leaving unreachable branches; keep current rules in this document and old experiments in the archive.
