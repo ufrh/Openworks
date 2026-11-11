@@ -1444,6 +1444,8 @@ function Controller:Place(chosenKind)
     local success = self:Request({
         action = "Place",
         templateId = self.CurrentId,
+        materialId=if self.Pending=="Copy" and self.Selected
+            then self.Selected:GetAttribute("ConstructionMaterial") else nil,
         position = self.PreviewCF.Position,
         steps = stepsCopy(self.Steps),
         size = self.CurrentSize,
