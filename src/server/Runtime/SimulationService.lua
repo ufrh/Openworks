@@ -114,6 +114,7 @@ function Simulation:StopCrank(session,id)
     if not crank then return end
     crank.Running=false
     crank.LastInput=0
+    crank.NativeSpeed=0
     -- Ordinary non-geared shafts keep their bounded native drive.
     -- Kinematic geared shafts have NO native motor to stop.
     if crank.Drive then crank.Drive.Enabled=false end
@@ -139,6 +140,12 @@ function Simulation:StepCranks(dt)
                 or (playerRoot.Position-root.Position).Magnitude>22
                 or os.clock()-(crank.LastInput or 0)>CRANK_HOLD_TIMEOUT then
                 if crank.Running then self:StopCrank(session,id) end
+            elseif drive then
+                -- The standalone native-motor crank also eases into
+                -- speed instead of snapping to 2 rad/s on first press.
+                crank.NativeSpeed+=(HandCrankMath.FixedAngularSpeed
+                    -crank.NativeSpeed)*(1-math.exp(-8*math.clamp(dt,0,0.07)))
+                drive.AngularVelocity=crank.Axis*crank.NativeSpeed
             end
         end
         -- The kinematic solver, not a bearing or a motor, owns EVERY
@@ -196,7 +203,8 @@ function Simulation:BeginCrank(player,request)
     -- StepCranks. Ungeared shafts retain their native torque-limited
     -- AngularVelocity drive.
     if crank.Drive then
-        crank.Drive.AngularVelocity=crank.Axis*HandCrankMath.FixedAngularSpeed
+        crank.NativeSpeed=0
+        crank.Drive.AngularVelocity=Vector3.zero
         crank.Drive.Enabled=true
     end
     crank.Model:SetAttribute("OPENWORKS_CrankRunning",true)
@@ -710,7 +718,7 @@ function Simulation:Start(player, payload)
                 BodyKey=bodyKey(original),
                 DrivenBodyKey=if coupledShaft then bodyKey(coupledShaft)
                     else bodyKey(original),
-                Running=false,LastInput=0,LastPacket=0,
+                Running=false,NativeSpeed=0,LastInput=0,LastPacket=0,
             }
         end
 
