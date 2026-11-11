@@ -11,6 +11,7 @@ local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Bore = require(construction:WaitForChild("BoreClearance"))
 local Alignment = require(construction:WaitForChild("AlignmentMath"))
+local MultiFit = require(construction:WaitForChild("MultiFitMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
 local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
@@ -300,11 +301,15 @@ end
 
 local function commitAssembly(player, before, after, relation, removed)
     local state = historyFor(player)
+    -- A multi-point fit is ONE history action containing N independently
+    -- authored joint specifications. Single-relation history remains intact.
+    local batch=type(relation)=="table" and type(relation[1])=="table"
     table.insert(state.undo, {
         kind = "Assembly",
         before = before,
         after = after,
-        relation = relation,
+        relation = if batch then nil else relation,
+        relations = if batch then relation else nil,
         removed = removed == true,
     })
     if #state.undo > Config.UndoLimit then table.remove(state.undo, 1) end
@@ -353,6 +358,33 @@ local function restoreBatch(player, record, undo)
     end
 
     local relation=record.relation
+    local relations=record.relations or (relation and {relation} or {})
+    local stagedById={}
+    for _,stagedModel in ipairs(staged) do
+        stagedById[stagedModel:GetAttribute("InstanceId")]=stagedModel
+    end
+    local fitMap={}
+    for _,spec in ipairs(relations) do
+        if spec.kind=="Bearing" or spec.kind=="Slider"
+            or spec.kind=="Cylindrical" then
+            local source=stagedById[spec.sourceId] or findOwned(player,spec.sourceId)
+            local target=stagedById[spec.targetId] or findOwned(player,spec.targetId)
+            if source and target then
+                -- Revalidate full geometry rather than trusting saved contact
+                -- metadata when undo/redo changes a piece's transform.
+                local moving=if stagedById[spec.sourceId] then source
+                    else if stagedById[spec.targetId] then target else nil
+                local stationary=if moving==source then target else source
+                if moving then
+                    local valid=MultiFit.Check(moving,stationary)
+                    if valid then
+                        fitMap[moving]=fitMap[moving] or {}
+                        fitMap[moving][stationary]=true
+                    end
+                end
+            end
+        end
+    end
     local opening=nil
     local boreSourceId=nil
     if relation and (relation.kind=="Bearing"
@@ -372,7 +404,7 @@ local function restoreBatch(player, record, undo)
             local extra=findOwned(player,relation.secondTargetId)
             if extra then ignore[extra]=true end
         end
-        if intersectsConstructed(model,ignore,opening,boreSourceId) then
+        if intersectsConstructed(model,ignore,opening,boreSourceId,fitMap) then
             discard()
             return false,"Undo/redo blocked by another construction"
         end
