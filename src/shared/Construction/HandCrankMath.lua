@@ -70,7 +70,8 @@ function Crank.ApplySize(model,size)
             local relative=frame:ToObjectSpace(part.CFrame)
             local p=relative.Position
             part.Size=Vector3.new(part.Size.X,
-                part.Size.Y*ratio,part.Size.Z*ratio)
+                math.max(0.05,part.Size.Y*ratio),
+                math.max(0.05,part.Size.Z*ratio))
             part.CFrame=frame*CFrame.new(p.X,p.Y*ratio,p.Z*ratio)
                 *relative.Rotation
         end
