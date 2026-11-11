@@ -149,6 +149,46 @@ local function rackTemplate(transmission,length)
     model.Parent=transmission
 end
 
+-- A separate grounded stationary carriage supports the rack with an
+-- explicit sliding lane. The rack is not secretly welded to this model.
+-- Guides are sized so a rack has four studs of actual travel.
+local function rackGuideTemplate(transmission,length)
+    local name="RackGuide_"..length.."Stud"
+    local old=transmission:FindFirstChild(name)
+    if old then
+        if old:GetAttribute("RackGuideLengthStuds")==length
+            and old:GetAttribute("GeometryVersion")==2 then return end
+        old:Destroy()
+    end
+    local model=Instance.new("Model")
+    model.Name=name
+    model:SetAttribute("PrimitiveFamily","RackGuide")
+    model:SetAttribute("ResizeMode","None")
+    model:SetAttribute("RackGuideLengthStuds",length)
+    model:SetAttribute("GearKind","RackGuide")
+    model:SetAttribute("GeometryVersion",2)
+    local steel=Color3.fromRGB(76,92,105)
+    -- The noncolliding primary represents the rack's centered travel
+    -- reference, allowing all guide geometry to stay below/alongside it.
+    local pivot=solid("Geometry",model,
+        Vector3.new(0.42,0.22,length),
+        CFrame.identity,steel)
+    pivot.Transparency=1
+    pivot.CanCollide=false
+    pivot.CanQuery=false
+    pivot.CastShadow=false
+    pivot:SetAttribute("GearPivotOnly",true)
+    model.PrimaryPart=pivot
+    solid("Base",model,Vector3.new(0.53,0.09,length),
+        CFrame.new(0,-0.235,0),steel)
+    for _,side in ipairs({-1,1}) do
+        solid("GuideSide_"..side,model,
+            Vector3.new(0.085,0.31,length),
+            CFrame.new(side*0.265,-0.045,0),steel)
+    end
+    model.Parent=transmission
+end
+
 function GearLibrary.Ensure()
     local library = ReplicatedStorage:FindFirstChild(LIBRARY)
     if not library then
@@ -246,6 +286,9 @@ function GearLibrary.Ensure()
     end
     for _,length in ipairs({4,8}) do
         rackTemplate(transmission,length)
+    end
+    for _,length in ipairs({8,12}) do
+        rackGuideTemplate(transmission,length)
     end
 end
 
