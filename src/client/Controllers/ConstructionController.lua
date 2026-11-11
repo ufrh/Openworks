@@ -139,6 +139,7 @@ function Controller.new(tools)
         DirectDragActive = false,
         ComponentOutline = nil,
         MoveShadowStates=nil,
+        VerticalHeld=nil,VerticalElapsed=0,
         Layered = nil,
         Busy = false,
         Connections = {},
@@ -2024,6 +2025,30 @@ function Controller:FinishDirectDrag()
     end
 end
 
+-- First-person vertical nudge. Always changes world Y only; the
+-- server expands a component into ALL its primitives atomically and
+-- validates every moved position before committing a single undo step.
+function Controller:VerticalNudge(direction)
+    if self.Mode~="Edit" or self.Busy or self.Pending or self.ScaleMode
+        or self.CatalogOpen or self.PendingMateChoice
+        or player:GetAttribute("OPENWORKS_Simulating")==true then return end
+    local scope,id
+    if self.SelectedComponentId then
+        scope,id="Component",self.SelectedComponentId
+    elseif self.Selected then
+        scope,id="Primitive",self.Selected:GetAttribute("InstanceId")
+    end
+    if not id then
+        self:Message("Select a primitive or component to move vertically")
+        return
+    end
+    local fine=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    self:Request({action="VerticalMove",scope=scope,id=id,
+        direction=direction,fine=fine})
+    self:RefreshHUD()
+end
+
 function Controller:OnInput(input, processed)
     if self.PendingMateChoice then return end
     if self.Numeric and self.Numeric.Active then
@@ -2105,6 +2130,12 @@ function Controller:OnInput(input, processed)
         return
     end
 
+    if self.Mode=="Edit" and not self.Pending
+        and (key==Enum.KeyCode.PageUp or key==Enum.KeyCode.PageDown) then
+        self:VerticalNudge(if key==Enum.KeyCode.PageUp then 1 else -1)
+        return
+    end
+
     if key == Enum.KeyCode.B and self.Mode == "Build" then
         self:ShowCatalog(not self.CatalogOpen)
         return
@@ -2164,10 +2195,19 @@ function Controller:Start()
             self:BeginDirectDrag()
         end
         self:OnInput(input, processed)
+        if not processed
+            and (input.KeyCode==Enum.KeyCode.PageUp
+                or input.KeyCode==Enum.KeyCode.PageDown)
+            and self.Mode=="Edit" then
+            self.VerticalHeld=input.KeyCode
+            self.VerticalElapsed=0
+        end
     end))
     table.insert(self.Connections, UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             self:FinishDirectDrag()
+        elseif input.KeyCode==self.VerticalHeld then
+            self.VerticalHeld=nil
         end
     end))
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
@@ -2212,6 +2252,25 @@ function Controller:Start()
                 UserInputService.MouseIconEnabled = false
             end
         end)
+
+    -- Repeat while held, but never issue a flood of RemoteFunction calls.
+    -- The initial key press nudges once; hold repeats after a small delay.
+    table.insert(self.Connections,RunService.Heartbeat:Connect(function(dt)
+        local key=self.VerticalHeld
+        if not key then return end
+        if self.Mode~="Edit" or self.Pending or self.ScaleMode
+            or UserInputService:GetFocusedTextBox()
+            or not UserInputService:IsKeyDown(key) then
+            self.VerticalHeld=nil
+            return
+        end
+        self.VerticalElapsed+=dt
+        if self.VerticalElapsed<0.24 then return end
+        self.VerticalElapsed=0.09
+        task.spawn(function()
+            self:VerticalNudge(if key==Enum.KeyCode.PageUp then 1 else -1)
+        end)
+    end))
 
     table.insert(self.Connections, RunService.RenderStepped:Connect(function()
         -- Only the LIVE ghost is outlined while moving/copying/alignment.
