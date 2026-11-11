@@ -1634,24 +1634,40 @@ function Mechanical:Remove(player, request)
 end
 
 function Mechanical:ApplyHistory(player, record, undo, restoreBatch)
-    local removing = if record.removed then not undo else undo
+    local specs=record.relations or
+        (record.relation and {record.relation} or {})
+    local removing=if record.removed then not undo else undo
+
     if removing then
-        local relation = self:OwnedRelation(player, record.relation.relationId)
-        if relation then self:DestroyRelation(relation) end
-        local ok, why = restoreBatch(player, record, undo)
+        -- Remove ALL joints belonging to the fit before moving geometry.
+        -- Otherwise the surviving three constraints would hold the plate
+        -- while undo attempted to remove only one corner relationship.
+        for _,spec in ipairs(specs) do
+            local relation=self:OwnedRelation(player,spec.relationId)
+            if relation then self:DestroyRelation(relation) end
+        end
+        local ok,why=restoreBatch(player,record,undo)
         if not ok then
-            self:Restore(player, record.relation)
-            return false, why
+            for _,spec in ipairs(specs) do self:Restore(player,spec) end
+            return false,why
         end
         return true
     end
 
-    local ok, why = restoreBatch(player, record, undo)
-    if not ok then return false, why end
-    local success, result = self:Restore(player, record.relation)
-    if not success then
-        restoreBatch(player, record, not undo)
-        return false, result
+    local ok,why=restoreBatch(player,record,undo)
+    if not ok then return false,why end
+    local restored={}
+    for _,spec in ipairs(specs) do
+        local success,result=self:Restore(player,spec)
+        if not success then
+            for _,id in ipairs(restored) do
+                local relation=self:OwnedRelation(player,id)
+                if relation then self:DestroyRelation(relation) end
+            end
+            restoreBatch(player,record,not undo)
+            return false,result
+        end
+        table.insert(restored,spec.relationId)
     end
     return true
 end
