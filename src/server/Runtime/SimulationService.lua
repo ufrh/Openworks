@@ -497,7 +497,7 @@ function Simulation:Start(player, payload)
 
     local session = {
         Originals = {},
-        Grounded = payload.grounded ~= false,
+        Grounded = payload.grounded == true, -- ungrounded unless explicitly requested
         World = nil,
         Paused = false,
         PausedParts = nil,
