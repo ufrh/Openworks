@@ -767,9 +767,11 @@ function Mechanical:SmartMate(player, request, newSource)
 
     for _,member in ipairs(members) do
         if d.intersectsConstructed(member,excluded,
-            if mode=="Bore" and not reverse then opening else nil,
-            if mode=="Bore" and not reverse then shaft:GetAttribute("InstanceId")
-                else nil,
+            if mode=="Hub" then target
+                elseif mode=="Bore" and not reverse then opening else nil,
+            if mode=="Hub" then source:GetAttribute("InstanceId")
+                elseif mode=="Bore" and not reverse
+                    then shaft:GetAttribute("InstanceId") else nil,
             fitMap) then
             restoreMoving()
             return false,"Attachment intersects another solid"
