@@ -146,6 +146,65 @@ function Fit.Find(movingMembers,stationaryModels,delta,ignore)
     return list
 end
 
+-- Assign one and only one stationary shaft/hole to each moving socket.
+-- A loose hole can geometrically fit multiple nearby shafts; counting each
+-- candidate as a separate attachment causes duplicate joints and bad poses.
+-- The selected primary pair remains locked while augmenting the other matches.
+function Fit.Unique(pairs,primaryMovingId,primaryStationaryId)
+    local byMoving,ids={},{}
+    local chosenPrimary=nil
+    for _,pair in ipairs(pairs or {}) do
+        if not byMoving[pair.movingId] then
+            byMoving[pair.movingId]={}
+            table.insert(ids,pair.movingId)
+        end
+        table.insert(byMoving[pair.movingId],pair)
+        if pair.movingId==primaryMovingId
+            and pair.stationaryId==primaryStationaryId then
+            chosenPrimary=pair
+        end
+    end
+    table.sort(ids)
+    for _,list in pairs(byMoving) do
+        table.sort(list,function(a,b)
+            if math.abs(a.radial-b.radial)>1e-6 then
+                return a.radial<b.radial
+            end
+            return a.stationaryId<b.stationaryId
+        end)
+    end
+    if primaryMovingId and not chosenPrimary then return {} end
+    local selected={}
+    local assigned={}
+    if chosenPrimary then
+        selected[primaryMovingId]=chosenPrimary
+        assigned[primaryStationaryId]=primaryMovingId
+    end
+    local function augment(id,visited)
+        for _,pair in ipairs(byMoving[id] or {}) do
+            local destination=pair.stationaryId
+            if visited[destination] then continue end
+            visited[destination]=true
+            local previous=assigned[destination]
+            if not previous or (previous~=primaryMovingId
+                and augment(previous,visited)) then
+                assigned[destination]=id
+                selected[id]=pair
+                return true
+            end
+        end
+        return false
+    end
+    for _,id in ipairs(ids) do
+        if not selected[id] then augment(id,{}) end
+    end
+    local result={}
+    for _,id in ipairs(ids) do
+        if selected[id] then table.insert(result,selected[id]) end
+    end
+    return result
+end
+
 function Fit.AllowMap(matches)
     local result={}
     for _,pair in ipairs(matches or {}) do
