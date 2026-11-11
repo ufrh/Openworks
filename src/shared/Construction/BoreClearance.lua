@@ -82,6 +82,40 @@ function Bore.OpeningDiameter(target)
     return 2*math.min(profile.radiusY,profile.radiusZ)
 end
 
+-- Preflight for AUTO-SNAPPING, before rotating/repositioning the
+-- cylinder. This deliberately ignores its current coaxial alignment:
+-- SmartPlacement will solve that later. A visually aimed wheel must not
+-- turn into a shaft fit merely because its template is "Cylinder".
+-- Both dimensions and engagement must be physically possible.
+function Bore.CanInsert(source,target):(boolean,string?)
+    if not Alignment.IsShaft(source) or not source.PrimaryPart then
+        return false,"A full Cylinder is required"
+    end
+    if not target or not target.PrimaryPart
+        or not Alignment.TargetAxis(target) then
+        return false,"Target has no supported opening"
+    end
+    local openingDiameter=Bore.OpeningDiameter(target)
+    if type(openingDiameter)~="number" or openingDiameter<=0 then
+        return false,"Opening has no verifiable inner clearance"
+    end
+    local shaftSize=source.PrimaryPart.Size
+    local shaftDiameter=math.max(shaftSize.Y,shaftSize.Z)
+    -- Require positive clearance. Mere equality is not a fit and the
+    -- collision validator must never be bypassed for it.
+    if shaftDiameter>=openingDiameter-2*TOL then
+        return false,"Cylinder is too wide for this opening"
+    end
+    local axis=Alignment.TargetAxis(target)
+    local size=target.PrimaryPart.Size
+    local housingLength=math.abs(axis.X)*size.X
+        +math.abs(axis.Y)*size.Y+math.abs(axis.Z)*size.Z
+    if shaftSize.X<=TOL or housingLength<=TOL then
+        return false,"No usable axial insertion"
+    end
+    return true
+end
+
 function Bore.MaxShaftDiameter(source, target): (number?, string?)
     if not Alignment.IsShaft(source) or not source.PrimaryPart then
         return nil, "Select a cylindrical shaft"
