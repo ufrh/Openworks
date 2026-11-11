@@ -7,10 +7,13 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService=game:GetService("HttpService")
 local Alignment = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
 local JointFrames = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("JointFrames"))
+local JointFrameMath=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("JointFrameMath"))
 local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SpringMath"))
 local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
@@ -132,8 +135,33 @@ function Simulation:StopRack(session)
     session.RackDirection=0
 end
 
+-- Only liveness/key state is accepted from the client. Speed and
+-- torque always come from saved, owner-verified relationship attributes.
+function Simulation:InputMotor(player,key,holding)
+    local session=self.Sessions[player]
+    if not session or session.Paused or type(key)~="string"
+        or #key>20 or type(holding)~="boolean" then return end
+    local now=os.clock()
+    for _,motor in ipairs(session.Motors or {}) do
+        if motor.Key==key then
+            motor.Held=holding
+            motor.LastInput=if holding then now else 0
+            if motor.Constraint and motor.Constraint.Parent then
+                motor.Constraint.AngularVelocity=if holding then motor.Speed else 0
+            end
+        end
+    end
+end
+
 function Simulation:StepCranks(dt)
     for owner,session in pairs(self.Sessions) do
+        for _,motor in ipairs(session.Motors or {}) do
+            if motor.Constraint.Parent and (session.Paused
+                or not motor.Held or os.clock()-motor.LastInput>0.45) then
+                motor.Held=false
+                motor.Constraint.AngularVelocity=0
+            end
+        end
         local character=owner.Character
         local playerRoot=character and character:FindFirstChild("HumanoidRootPart")
         for id,crank in pairs(session.Cranks or {}) do
@@ -365,7 +393,9 @@ function Simulation:Graph(player, seed)
             if source and target
                 and (kind == "Bearing" or kind == "Slider"
                     or kind == "Cylindrical" or kind == "Fixed"
-                    or kind == "Spring" or kind == "Weld" or kind == "Bolt") then
+                    or kind == "Spring" or kind == "Weld" or kind == "Bolt"
+                    or kind=="AxisHinge" or kind=="AxisBall"
+                    or kind=="AxisUniversal" or kind=="PoweredHinge") then
                 local a, b = bodyKey(source), bodyKey(target)
                 if a ~= b then
                     local edge = {source = source, target = target, kind = kind,
@@ -510,6 +540,7 @@ function Simulation:Start(player, payload)
         ActiveRackId=nil,
         RackDirection=0,RackLastInput=0,
         Gears=nil,
+        Motors={},
         UnregisteredGears=unregisteredGears,
     }
     for _,edge in ipairs(graph.edges) do
@@ -605,6 +636,69 @@ function Simulation:Start(player, payload)
                 weld.Part0 = p0
                 weld.Part1 = p1
                 weld.Parent = runtime
+            elseif edge.kind=="AxisHinge" or edge.kind=="AxisBall"
+                or edge.kind=="AxisUniversal" or edge.kind=="PoweredHinge" then
+                local relation=edge.relation
+                local encodedA=relation:GetAttribute("JointFrameA")
+                local encodedB=relation:GetAttribute("JointFrameB")
+                if type(encodedA)~="string" or type(encodedB)~="string" then
+                    error("Missing authored joint anchor frames")
+                end
+                local aFrame=JointFrameMath.Decode(HttpService:JSONDecode(encodedA))
+                local bFrame=JointFrameMath.Decode(HttpService:JSONDecode(encodedB))
+                if not aFrame or not bFrame then
+                    error("Invalid saved joint anchor orientation")
+                end
+                local a0=Instance.new("Attachment")
+                a0.Name="SimJointFrameA"
+                a0.CFrame=aFrame
+                a0.Parent=p0
+                local a1=Instance.new("Attachment")
+                a1.Name="SimJointFrameB"
+                a1.CFrame=bFrame
+                a1.Parent=p1
+                local joint=if edge.kind=="AxisBall"
+                    then Instance.new("BallSocketConstraint")
+                    elseif edge.kind=="AxisUniversal"
+                    then Instance.new("UniversalConstraint")
+                    else Instance.new("HingeConstraint")
+                joint.Name=edge.kind
+                joint.Attachment0=a0
+                joint.Attachment1=a1
+                joint.Enabled=true
+                joint:SetAttribute("AuthoredRelationId",
+                    relation:GetAttribute("RelationId"))
+                if joint:IsA("HingeConstraint") then
+                    if edge.kind=="PoweredHinge" then
+                        joint.ActuatorType=Enum.ActuatorType.Motor
+                        joint.AngularVelocity=0
+                        joint.MotorMaxTorque=math.clamp(
+                            relation:GetAttribute("MotorTorque") or 3000,1,100000)
+                        joint.MotorMaxAcceleration=math.clamp(
+                            relation:GetAttribute("MotorAcceleration") or 40,
+                            0.1,1000)
+                        table.insert(session.Motors,{
+                            Constraint=joint,
+                            Key=relation:GetAttribute("MotorKey") or "F",
+                            Speed=relation:GetAttribute("MotorSpeed") or 3,
+                            LastInput=0,
+                            Held=false,
+                        })
+                    else
+                        joint.ActuatorType=Enum.ActuatorType.None
+                        joint.LimitsEnabled=relation:GetAttribute("LimitsEnabled")==true
+                        if joint.LimitsEnabled then
+                            joint.LowerAngle=relation:GetAttribute("LowerLimit") or -90
+                            joint.UpperAngle=relation:GetAttribute("UpperLimit") or 90
+                        end
+                    end
+                elseif joint:IsA("BallSocketConstraint") then
+                    joint.LimitsEnabled=relation:GetAttribute("LimitsEnabled")==true
+                    joint.UpperAngle=relation:GetAttribute("UpperLimit") or 45
+                    joint.TwistLimitsEnabled=false
+                end
+                joint.Parent=runtime
+                table.insert(session.Constraints,joint)
             elseif edge.kind=="Spring" then
                 local mode=edge.relation:GetAttribute("SpringMode")
                 -- Old piston/plate labels are normalized to a free spring.
@@ -1016,6 +1110,10 @@ function Simulation:Pause(player)
         self:StopCrank(session,crankId)
     end
     self:StopRack(session)
+    for _,motor in ipairs(session.Motors or {}) do
+        motor.Held=false
+        if motor.Constraint.Parent then motor.Constraint.AngularVelocity=0 end
+    end
     if session.Gears then session.Gears:StopMotion() end
     local state = {}
     for _, item in ipairs(session.World:GetDescendants()) do
