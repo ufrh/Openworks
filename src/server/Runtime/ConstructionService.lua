@@ -1023,6 +1023,7 @@ local function handle(player, payload)
         or action == "CreateSpring" or action == "TuneSpring"
         or action == "CreateWeld" or action == "CreateBolt"
         or action == "CoupleHandCrank"
+        or action=="CreateAxisJoint"
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
     local simulationAction = action == "StartSimulation"
         or action == "BeginCrank"
@@ -1127,6 +1128,9 @@ local function handle(player, payload)
             return mechanical:SmartMate(player,payload,false)
         end
         if action == "CreateRelation" then return mechanical:Create(player, payload) end
+        if action=="CreateAxisJoint" then
+            return mechanical:CreateAxisJoint(player,payload)
+        end
         if action == "RemoveRelation" then return mechanical:Remove(player, payload) end
         if action == "FitShaft" then return mechanical:Fit(player, payload) end
         if action == "SetGrounded" then return components:SetGrounded(player, payload) end
@@ -1364,6 +1368,17 @@ function Service.Start()
         if type(rackId)~="string" or #rackId>64 then return end
         if direction~=-1 and direction~=1 then return end
         simulation:InputRack(player,rackId,direction,holding,release)
+    end)
+
+    local oldMotor=ReplicatedStorage:FindFirstChild("OPENWORKS_MotorControl")
+    if oldMotor then oldMotor:Destroy() end
+    local motorEvent=Instance.new("RemoteEvent")
+    motorEvent.Name="OPENWORKS_MotorControl"
+    motorEvent.Parent=ReplicatedStorage
+    motorEvent.OnServerEvent:Connect(function(player,key,holding)
+        if not hasEquippedTool(player,"Simulate") then return end
+        if type(key)~="string" or type(holding)~="boolean" then return end
+        simulation:InputMotor(player,key,holding)
     end)
 
     Players.PlayerRemoving:Connect(function(player)
