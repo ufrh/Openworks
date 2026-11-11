@@ -329,8 +329,8 @@ function Controller:RefreshHUD()
             elseif match.kind=="CrankCoupling"
             then "Click to couple hand crank to shaft end • physical weld, not motor"
             elseif match.kind=="Gear"
-            then (if self.Mode=="Build" then "Click to mesh gears" else "Release to mesh gears")
-                .. " • Tab target • Alt free"
+            then (if self.Mode=="Build" then "Click to place meshed gear" else "Release to position gear")
+                .. " • automatic engagement in Simulate • Tab target • Alt free"
             elseif match.kind=="Hub"
             then "Click to choose Rotation or Rigid mount"
                 .. " • wheel insertion depth"
@@ -782,7 +782,22 @@ function Controller:RecognizeAttachment(raw,hit)
     end
     local half=camera.ViewportSize*0.5
     local ray=camera:ViewportPointToRay(half.X,half.Y)
-    local fullScan=os.clock()-self.SmartLastScan>=0.065
+    local aimedModel=if hit and hit.Instance
+        then topBuiltModel(hit.Instance,folder) else nil
+    local movingGear=false
+    for _,member in ipairs(SmartPlacement.Members(preview)) do
+        if type(member:GetAttribute("GearTeeth"))=="number" then
+            movingGear=true
+            break
+        end
+    end
+    -- Do not keep the previous gear for another 65 ms when the crosshair
+    -- directly moves onto a different gear's solid teeth.
+    local switchedGear=movingGear and aimedModel
+        and type(aimedModel:GetAttribute("GearTeeth"))=="number"
+        and aimedModel~=(self.SmartMatch and self.SmartMatch.target)
+    local fullScan=switchedGear
+        or os.clock()-self.SmartLastScan>=0.065
     local targets
     if fullScan then
         self.SmartLastScan=os.clock()
@@ -794,7 +809,8 @@ function Controller:RecognizeAttachment(raw,hit)
             end
         end
         targets=SmartPlacement.NearbyTargets(
-            folder,player.UserId,raw.Position,ignore,ray,span
+            folder,player.UserId,raw.Position,ignore,ray,span,
+            preview,hit and hit.Instance
         )
     else
         targets=if self.SmartMatch and self.SmartMatch.target.Parent
@@ -810,7 +826,7 @@ function Controller:RecognizeAttachment(raw,hit)
     end
     local match,list=SmartPlacement.Find(preview,targets,ignore,
         self.SmartPreferred or (self.SmartMatch and self.SmartMatch.target),
-        ray,allTargets)
+        ray,allTargets,aimedModel)
     if match then
         if fullScan then self.SmartMatches=list end
         if match.kind=="Hub" and self.SmartOffsetDeltaU~=0 then
