@@ -1,0 +1,46 @@
+# OPENWORKS — Current Studio regression checklist
+
+Run after changing the shared geometry code, construction services, tool dispatch, input controllers, simulation or persistence. **This is a manual acceptance list**, not a claim the tests have already passed. File a specific bug with Studio Output, build marker and reproduction if any case fails.
+
+## Setup and startup
+- [ ] Sync `dev` in Rojo, restart Play, confirm current client/server marker and FORGE banner in Output.
+- [ ] Tool hotbar has Build, Edit, Assembly, Simulate, Inspect, Weld **once each** after first join and after respawn; no legacy Assemble tool or duplicate tool.
+- [ ] Studio empty plot reaches `Ready` when API access is enabled; if API unavailable, show `Error` (never permanent `Loading`). Building still works; saving stays disabled.
+- [ ] Player plots do not overlap; construction and remote actions cannot edit other players' models.
+
+## Build / Edit / components
+- [ ] Place block, cylinder, shaft, drilled block, gear, bolt and hand crank from the primitive bank. Preview fits and placement match final server geometry.
+- [ ] Resize a primitive with Neon scale grips; numeric sizing and snapping work; no leftover scale handle/ghost after cancel or tool switch.
+- [ ] Select several primitives and combine with C; component highlights as **one outer boundary** with no shadow doubles.
+- [ ] Drag/copy/rotate grouped and ungrouped primitives. Ghost is cohesive, no part shadows; cancel restores originals exactly; delete removes selection adornments.
+- [ ] Edit one primitive inside a component without implicitly welding it; ungroup/recombine; undo and redo metadata does not recreate physics Parts or break mechanical references.
+
+## Named assemblies
+- [ ] Equip Assembly, N, name dialog, Enter; selected components and individual primitives turn purple.
+- [ ] Click whole component to toggle **all** members; Alt+click one inside component to toggle just that primitive. Confirm with Enter; Esc leaves prior assembly unchanged.
+- [ ] Reopen a named assembly, rename using R, add/remove members, confirm. **Undo/redo** changes names and membership in-place; reloading a manual save preserves it.
+- [ ] Deny mixed ownership, nonexistent IDs and attempts to add a primitive belonging to a second assembly. Reject empty assembly and more than 128 primitives.
+- [ ] Aim at any saved member with Simulate: every **actual registered member** highlights purple, including disconnected primitives and partial editor components. Highlight clears immediately on tool switch or starting sim; no stray purple outline.
+- [ ] If a mechanical joint crosses to an unregistered member, P refuses. Add that member explicitly in Assembly, P simulates exactly the registered set.
+- [ ] Selection/ghost/inspector Highlights remain visible and clear after delete, undo, plot reload and respawn.
+
+## Mechanical relationships and physics
+- [ ] Shaft in a hole: alignment first, then depth/roll adjustment, correct geometric collision handling both forward and reverse.
+- [ ] Bearing permits rotation; Slider permits travel inside shaft length; Cylindrical permits both. None self-actuates. Fixed, Weld and Bolt do not invent motion.
+- [ ] Springs are passive, obey their configured stiffness/damping and show their physical coil in simulation. No duplicate static spring visuals while simulating.
+- [ ] Multiple bearings and multi-fit grouped shafts stay aligned and don't create floating relations.
+- [ ] Register a mixed named assembly with a crank, shaft, bearing and grounded housing. Simulate; hold LMB on crank and move mouse horizontally. Torque transfers only through an explicit rigid coupling, is capped, and stops on release or when moving too far away.
+- [ ] P start/stop, Shift+P free, O pause/resume, U reset. Original authored geometry/metadata return intact; repeated simulation doesn't leak physics clones.
+- [ ] Gear teeth physically mesh in either direction where intended; record observed slippage/jamming as current physics work, not proof of correct transmission.
+
+## UI and persistence
+- [ ] Left-side passive Simulate panel and controls list visible, right inspector opens on click, Esc closes it; ordinary mouse remains first-person locked.
+- [ ] Assembly naming, plot saving, properties, numeric editor and mate selection unlock cursor only while modal is open, then restore lock.
+- [ ] Manually save with F6; leave, rejoin, verify all parts/components/named assemblies/relations/grounding persisted. Undo history must not be persisted.
+- [ ] Manual Save failure displays an error, clears Busy, and never writes an empty fallback over a valid previous save.
+- [ ] Explicit Load restores last saved state without autosaving changes made since. A corrupt/unavailable document returns Error and does not strand the plot in Loading.
+- [ ] After all scenarios, Output has no Luau errors and no orphan `OPENWORKS_Local...` visual folders, old ghost Parts, or extra `OPENWORKS_Simulated` sessions.
+
+## Verify code without Studio
+
+Run `python scripts/verify_source.py` from the repository root. This is a static consistency check only; it cannot validate Luau syntax, input behavior or physics. Use the installed Rojo toolchain to perform `rojo build default.project.json --output builds/openworks.rbxlx` and then complete the actual Play tests above.
