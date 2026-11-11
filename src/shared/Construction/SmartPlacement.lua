@@ -365,8 +365,14 @@ local function socketPlan(members, shaft, target, forcedByAim)
     end
     local low,high=Alignment.OffsetBounds(shaft,target)
     if not low then return nil end
-    local units=math.clamp(math.round(depth/(Grid.Unit*0.5))*0.5,
-        low,high)
+    local snapped=math.round(depth/(Grid.Unit*0.5))*0.5
+    -- Authored offsets must stay on the half-U lattice. The physical
+    -- face-bound stops are continuous; clamping to them directly could
+    -- create illegal fractional offsets for the alignment planner.
+    local loSnap=math.ceil(low*2-1e-6)*0.5
+    local hiSnap=math.floor(high*2+1e-6)*0.5
+    if loSnap>hiSnap then return nil end
+    local units=math.clamp(snapped,loSnap,hiSnap)
     local roll=shaft:GetAttribute("ShaftRollDegrees") or 0
     local plan=Alignment.Plan(members,shaft,target,units,roll)
     if not plan then return nil end
@@ -399,8 +405,11 @@ local function reverseSocketPlan(members, opening, shaft, forcedByAim)
     end
     local low,high=Alignment.OffsetBounds(shaft,opening)
     if not low then return nil end
-    local units=math.clamp(math.round((-axial)/(Grid.Unit*0.5))*0.5,
-        low,high)
+    local snapped=math.round((-axial)/(Grid.Unit*0.5))*0.5
+    local loSnap=math.ceil(low*2-1e-6)*0.5
+    local hiSnap=math.floor(high*2+1e-6)*0.5
+    if loSnap>hiSnap then return nil end
+    local units=math.clamp(snapped,loSnap,hiSnap)
     local roll=shaft:GetAttribute("ShaftRollDegrees") or 0
     local plan=Alignment.ReversePlan(members,opening,shaft,units,roll)
     if not plan then return nil end
