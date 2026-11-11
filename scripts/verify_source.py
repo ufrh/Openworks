@@ -196,7 +196,7 @@ def main() -> int:
           'table.insert(a.Links,{Group=b,Ratio=ratio})' in gears
           and 'table.insert(b.Links,{Group=a,Ratio=1/ratio})' in gears
           and 'for _,edge in ipairs(group.Links) do' in gears
-          and 'for group,omega in pairs(speed) do' in gears)
+          and 'for group,velocity in pairs(speed) do' in gears)
     check("Scripted crank ramps up and coasts down while gears stay physics-free",
           'CRANK_ACCEL_RESPONSE=9' in gears
           and 'CRANK_RELEASE_RESPONSE=6' in gears
@@ -265,6 +265,65 @@ def main() -> int:
           and 'local height=math.sqrt(math.max(0,height2))' in smart_placement
           and 'local pose,dist,meshes=Smart.MultiGearPose(' in smart_placement
           and 'math.max(0,meshes-1)*0.5' in smart_placement)
+    transmission=read("src/server/Runtime/GearLibrary.lua")
+    rack_client=read("src/client/Controllers/RackControlController.lua")
+    check("45-degree bevel catalog contains actual tapered tooth-ring geometry",
+          'function bevelTemplate(' in transmission
+          and 'local halfCone=math.rad(22.5)' in transmission
+          and 'model:SetAttribute("BevelShaftAngleDeg",45)' in transmission
+          and 'bevelTemplate(transmission,count)' in transmission)
+    check("Bevel geometry requires equal-tooth intersecting pitch-cone apexes",
+          'function GearMath.AutoBevelStatus(' in gear_math
+          and 'na~=nb' in gear_math
+          and 'math.cos(BEVEL_SHAFT_ANGLE)' in gear_math
+          and 'GearMath.BevelApex(a)-GearMath.BevelApex(b)' in gear_math
+          and 'function Smart.BevelPose(' in smart_placement
+          and 'directAim and GearMath.Kind(source)=="Bevel45"' in smart_placement)
+    check("Rack and guide parts are available as generated templates",
+          'function rackTemplate(' in transmission
+          and 'function rackGuideTemplate(' in transmission
+          and 'model:SetAttribute("RackPitchStuds",MODULE)' in transmission
+          and 'model:SetAttribute("RackGuideLengthStuds",length)' in transmission)
+    check("Rack and guide placement uses physical contact, no implicit joint",
+          'function Smart.RackPose(' in smart_placement
+          and 'function Smart.GuidePose(' in smart_placement
+          and 'GearMath.AutoGuideStatus(' in gear_math
+          and 'mode=="Rack" or mode=="Guide"' in mechanical
+          and 'd.commitAssembly(player,before,after,nil,false)' in mechanical)
+    check("Rack pinion graph conserves reciprocal angular-linear ratio",
+          'for _,rack in ipairs(self.Racks) do' in gears
+          and 'GearMath.PitchRadius(pinion.Model)*signed' in gears
+          and 'table.insert(b.Links,{Group=a,Ratio=1/ratio})' in gears
+          and 'shiftGroup(group,group.TravelAxis*velocity*step)' in gears)
+    check("Rack translation requires physical grounded guide and end limits",
+          'groundKeys["p:"..tostring(id)]' in gears
+          and 'group.Guide={' in gears
+          and 'nextPosition=travel+velocity*step' in gears
+          and 'if math.abs(nextPosition)>maxTravel+0.001 then' in gears)
+    check("Held Q/E backdrives rack without arbitrary client speed or torque",
+          'action="BeginRack"' in rack_client
+          and 'Enum.KeyCode.Q' in rack_client
+          and 'Enum.KeyCode.E' in rack_client
+          and 'function Simulation:BeginRack(' in simulation
+          and 'function Simulation:InputRack(' in simulation
+          and 'local RACK_MANUAL_SPEED = 1.5' in simulation
+          and 'OPENWORKS_RackControl' in service)
+    check("Component duplication remaps all primitive ids and clears physical metadata",
+          'idMap[part.instanceId] = HttpService:GenerateGUID(false)' in component
+          and 'newState.instanceId = idMap[desired.instanceId]' in component
+          and 'newState.componentId = componentId' in component
+          and 'newState.componentAnchorId = idMap[anchorOldId]' in component
+          and 'newState.assemblyId = nil' in component
+          and 'newState.assemblyName = nil' in component
+          and 'newState.grounded = false' in component
+          and 'newState.alignedOpeningId = nil' in component
+          and 'newState.alignedOffsetU = 0' in component)
+    check("Single primitive copies get new ids and author no physical links",
+          'model:SetAttribute("InstanceId", instanceId or HttpService:GenerateGUID(false))' in service
+          and 'self.Pending~="Copy"' in selection
+          and 'self.SmartMatch.kind=="Gear"' in selection
+          and 'self.SmartMatch.kind=="Rack"' in selection
+          and 'self.SmartMatch.kind=="Guide"' in selection)
     check("Gear-to-gear snap retains tight separate shaft bore hitbox",
           'Smart.HubSnapRadius = 0.34' in smart_placement
           and 'Smart.HubAimRadius = 0.24' in smart_placement
@@ -274,11 +333,11 @@ def main() -> int:
           and 'local fullScan=switchedGear' in selection
           and 'preview,hit and hit.Instance' in selection
           and 'ray,allTargets,aimedModel' in selection
-          and 'if kind=="Gear" then 0.08 else 1.5' in smart_placement)
+          and 'if kind=="Gear" or kind=="Rack"' in smart_placement)
     check("Gear placement authors geometry, not legacy mechanical mesh joints",
-          'if mode=="Gear" then' in mechanical
+          'if mode=="Gear" or mode=="Rack" or mode=="Guide" then' in mechanical
           and 'd.commitAssembly(player,before,after,nil,false)' in mechanical
-          and 'mode~="Gear" and typeName~="FreeFit"' in mechanical
+          and 'mode~="Gear" and mode~="Rack" and mode~="Guide"' in mechanical
           and 'GearMath.AutoMeshStatus(source,target)' in mechanical)
     check("Preview, server and simulation agree on physical gear engagement",
           'GearMath.AutoMeshable(movingModel,target)' in preview
