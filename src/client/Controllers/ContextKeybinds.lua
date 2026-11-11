@@ -48,17 +48,34 @@ function Context:Lines()
         append(lines,"Esc","Cancel weld selection")
         return lines
     end
-    if tool=="Simulate" and player:GetAttribute("OPENWORKS_PropertiesOpen") then
-        append(lines,"Mouse","Select a part, then its mechanical relationship")
-        append(lines,"Properties","Adjust settings in the GUI")
-        append(lines,"LMB hold","Turn crank with horizontal locked-mouse drag")
+    if tool=="Simulate" then
+        local running=player:GetAttribute("OPENWORKS_Simulating")==true
+        if player:GetAttribute("OPENWORKS_PropertiesOpen")==true then
+            append(lines,"LMB","Pick relationship / edit settings")
+            append(lines,"Esc","Close inspector and lock pointer")
+            append(lines,"RMB hold","Look around while inspector open")
+        elseif running then
+            append(lines,"P","Stop registered assembly")
+            append(lines,"O","Pause / resume physics")
+            append(lines,"U","Reset assembly to authored pose")
+            append(lines,"I","Inspect joint telemetry")
+            append(lines,"Click","Inspect body / relationships")
+            append(lines,"LMB drag","Turn crank with locked mouse")
+        else
+            append(lines,"P","Run registered assembly")
+            append(lines,"Shift+P","Run assembly ungrounded")
+            append(lines,"G","Toggle aimed body grounding")
+            append(lines,"Click","Inspect body / relationships")
+            append(lines,"Ctrl+G in Edit","Register connected assembly")
+            append(lines,"Ctrl+Shift+G","Add connected mechanism in Edit")
+        end
+        append(lines,"Green / Orange","Grounded / movable body fills")
+        append(lines,"Z / Shift+Z","Camera zoom in / out")
         return lines
     end
-    if player:GetAttribute("OPENWORKS_Simulating") == true then
-        append(lines, "P", "Stop physics")
-        append(lines, "LMB drag", "Turn crank with locked horizontal mouse movement")
-        append(lines, "O / U", "Pause / Reset physics")
-        append(lines, "I", "Inspect joint telemetry")
+    if player:GetAttribute("OPENWORKS_Simulating")==true then
+        -- Other tools have no simulation editing authority.
+        append(lines,"Simulate tool","Stop or inspect running assembly")
         return lines
     end
 
@@ -276,9 +293,17 @@ function Context:Start()
         if now - self.LastUpdate < 0.15 then return end
         self.LastUpdate = now
         local mode = self.Tools.ActiveId
-        self.Panel.Visible = mode ~= nil and mode~="Simulate"
+        self.Panel.Visible=mode~=nil
         if not mode then return end
-        self.Title.Text = "CONTROLS  /  " .. string.upper(mode)
+        local sim=mode=="Simulate"
+        self.Panel.AnchorPoint=if sim then Vector2.new(0,0)
+            else Vector2.new(1,0)
+        self.Panel.Position=if sim then UDim2.fromOffset(16,190)
+            else UDim2.new(1,-16,0,145)
+        self.Panel.Size=if sim then UDim2.fromOffset(312,318)
+            else UDim2.fromOffset(244,247)
+        self.Title.Text=if sim then "SIMULATION / CONTROLS"
+            else "CONTROLS  /  "..string.upper(mode)
         local value = table.concat(self:Lines(), "\n")
         if self.LastText ~= value then
             self.Body.Text = value

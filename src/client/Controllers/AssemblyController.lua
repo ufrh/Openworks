@@ -138,7 +138,7 @@ function Controller:ToggleSimulation()
 
     local seed = self:Pick()
     if not seed then
-        self:Message("Aim at a connected mechanism, then press P")
+        self:Message("Aim at a registered assembly member, then press P")
         return
     end
     local id = seed:GetAttribute("InstanceId")
@@ -147,8 +147,16 @@ function Controller:ToggleSimulation()
         return
     end
 
-    -- Clear staged assembly ghosts before physics starts. This does not
-    -- modify the authored construction.
+    local assemblyId=seed:GetAttribute("AssemblyId")
+    if type(assemblyId)~="string" or assemblyId=="" then
+        self:Message("Register the complete assembly first: Edit, aim at it, Ctrl+G")
+        return
+    end
+
+    -- Simulate the entire registered assembly, never an arbitrary connected
+    -- mechanism selected via a seed. The server independently enforces
+    -- membership and rejects incomplete connected registrations.
+    self.SimAssemblyName=seed:GetAttribute("AssemblyName") or "Assembly"
     self:Reset()
     local free = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
@@ -167,10 +175,16 @@ function Controller:RefreshHUD()
     if not self.Gui then return end
     self.Gui.Enabled = self.Active
         and (self.Mode=="Simulate" or self.Mode=="Weld" or self.ManualActive)
-    self.HUDPanel.Visible=self.Mode~="Simulate"
-    -- Simulate keeps ONLY the minimal aiming crosshair, no persistent
-    -- relationship text or instructions. Click a part for its inspector.
-    if not self.Gui.Enabled or self.Mode=="Simulate" then return end
+    self.HUDPanel.Visible=self.Mode=="Simulate"
+        or self.Mode=="Weld" or self.ManualActive
+    self.HUDPanel.AnchorPoint=Vector2.new(0,0)
+    self.HUDPanel.Position=if self.Mode=="Simulate"
+        then UDim2.fromOffset(16,64)
+        else UDim2.new(1,-396,0,20)
+    self.HUDPanel.Size=if self.Mode=="Simulate"
+        then UDim2.fromOffset(312,116)
+        else UDim2.fromOffset(380,116)
+    if not self.Gui.Enabled then return end
 
     if self.Mode=="Weld" then
         self.Header.Text="OPENWORKS / WELD"
@@ -182,23 +196,25 @@ function Controller:RefreshHUD()
         end
         return
     end
-    if self.Mode=="Simulate" and not self:IsSimulating() then
-        self.Header.Text="OPENWORKS / SIMULATE"
-        self.Detail.Text="GREEN grounded / ORANGE moving"
-        self.Help.Text="Select bodies and relationships in the Properties panel"
+    if self.Mode=="Simulate" then
+        self.Header.Text="SIMULATE / PASSIVE PHYSICS"
+        if not self:IsSimulating() then
+            local aimed=self:Pick()
+            local name=aimed and aimed:GetAttribute("AssemblyName")
+            self.Detail.Text=if type(name)=="string" and name~=""
+                then name.."  /  REGISTERED"
+                else "No registered assembly selected"
+            self.Help.Text="P run assembly • G ground • Shift+P free"
+        else
+            local paused=player:GetAttribute("OPENWORKS_SimulationPaused")==true
+            local grounded=player:GetAttribute("OPENWORKS_Grounded")~=false
+            self.Detail.Text=tostring(self.SimAssemblyName or "Assembly")
+                ..(if paused then "  /  PAUSED" else "  /  RUNNING")
+            self.Help.Text=if grounded then "GREEN grounded  /  ORANGE moving"
+                else "FREE ASSEMBLY  /  ORANGE moving"
+        end
         if self.LastMessage and os.clock()<self.MessageUntil then
             self.Detail.Text=self.LastMessage
-        end
-        return
-    end
-    if self:IsSimulating() then
-        self.Header.Text = "OPENWORKS / PHYSICS SIMULATION"
-        local grounded=player:GetAttribute("OPENWORKS_Grounded")~=false
-        self.Detail.Text=if grounded then "PASSIVE PHYSICS / GROUNDED"
-            else "PASSIVE PHYSICS / FREE"
-        self.Help.Text="H grip hand crank • hold LMB to turn • O pause • U reset • P stop"
-        if self.LastMessage and os.clock() < self.MessageUntil then
-            self.Detail.Text = self.LastMessage
         end
         return
     end
@@ -1002,6 +1018,10 @@ function Controller:Start()
     end))
     table.insert(self.Connections, player:GetAttributeChangedSignal(
         "OPENWORKS_Simulating"):Connect(function()
+            self:RefreshHUD()
+        end))
+    table.insert(self.Connections,player:GetAttributeChangedSignal(
+        "OPENWORKS_SimulationPaused"):Connect(function()
             self:RefreshHUD()
         end))
     for _, name in ipairs({ "OPENWORKS_Grounded" }) do
