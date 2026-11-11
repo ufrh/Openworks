@@ -1009,13 +1009,10 @@ function Controller:RefreshSelectionHighlights()
     end
     if self.Mode~="Edit" and self.Mode~="Inspect" then return end
 
-    if #self.SelectedParts>1 then
-        -- The WHOLE selected component receives one outer boundary, with
-        -- no internal primitive outlines or invisible bounding Parts.
-        self.ComponentOutline=ComponentOutline.new(
-            self.SelectionWorldRoot,self.SelectedParts,Color3.fromRGB(0,170,255))
-    else
-        local model=self.SelectedParts[1]
+    -- Multi-selection is PER PRIMITIVE, never a single AABB around
+    -- several parts. This remains legible for sparse/nonrectangular
+    -- groups and marks each real model instead of empty space.
+    for _,model in ipairs(self.SelectedParts) do
         if model and model.Parent and model.PrimaryPart then
             local highlight=create("Highlight",{
                 Name="OPENWORKS_SelectionOutline",
