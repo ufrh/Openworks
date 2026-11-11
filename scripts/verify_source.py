@@ -487,6 +487,26 @@ def main() -> int:
           'JointFrames.ForOpening(edge.target)' in simulation
           and 'local explicit = axisOverride(model)' in read("src/shared/Construction/AlignmentMath.lua")
           and 'model:SetAttribute("AxialAxis", "X")' in read("src/server/Runtime/GearLibrary.lua"))
+    alignment_math=read("src/shared/Construction/AlignmentMath.lua")
+    check("Slider and cylindrical hard stops use only tube faces",
+          'housingLength*0.5-endInset' in alignment_math
+          and '(shaftLength+housingLength)*0.5-engagement'
+              not in alignment_math
+          and 'function Alignment.RelativeTravelBounds(' in alignment_math
+          and 'return low-authored,high-authored' in alignment_math)
+    check("Simulation shaft constraints cannot start beyond housing",
+          'Alignment.RelativeTravelBounds(' in simulation
+          and 'if lower>0 or upper<0 then' in simulation
+          and 'constraint.LimitsEnabled=true' in simulation
+          and 'constraint.LowerLimit=lower*Grid.Unit' in simulation
+          and 'constraint.UpperLimit=upper*Grid.Unit' in simulation)
+    check("Saved and tuned joints share physical tube-relative stops",
+          mechanical.count('Alignment.RelativeTravelBounds(source,target)')>=3
+          and 'min=math.max(min,-fittedTravel)' in mechanical
+          and 'max=math.min(max,fittedTravel)' in mechanical)
+    check("Placement shaft offsets quantize within tube faces",
+          smart_placement.count('local loSnap=math.ceil(low*2-1e-6)*0.5')>=2
+          and smart_placement.count('local hiSnap=math.floor(high*2+1e-6)*0.5')>=2)
     check("Clearance weld requires real drilled bore fit",
           'Bore.ShaftFits(shaft,hole)' in mechanical
           and 'string.find(name,"drilledblock",1,true)' in mechanical)
