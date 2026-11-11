@@ -123,6 +123,7 @@ function Controller.new(tools)
         Numeric = nil,
         MateChoice = nil,
         PendingMateChoice = nil,
+        LockedAlignment = nil,
         Assembly = nil,
         ScaleStepU = Grid.DefaultSizeStepU,
         PreviewValid = true,
@@ -315,8 +316,9 @@ function Controller:RefreshHUD()
             .. (if match.kind=="Bore" and (match.fittedCount or 0)>1
                 then "  •  "..tostring(match.fittedCount).." points" else "")
         self.HelpLabel.Text=if match.kind=="Bore"
-            then (if self.Mode=="Build" then "Click to align" else "Release to align")
-                .. " • wheel depth • Q/E roll • select motion (no weld)"
+            then (if self.LockedAlignment
+                then "POSITION  •  wheel depth • Q/E roll • click to finalize"
+                else "Align the shaft/hole pattern • click to adjust positioning")
             elseif match.kind=="Gear"
             then (if self.Mode=="Build" then "Click to mesh gears" else "Release to mesh gears")
                 .. " • Tab target • Alt free"
@@ -450,6 +452,7 @@ function Controller:ClearSmartMatch()
     self.SmartOffsetDeltaU=0
     self.SmartRollDelta=0
     self.SmartBoreKind="Cylindrical"
+    self.LockedAlignment=nil
     self.SmartLastScan=0
     if self.SmartHighlight then self.SmartHighlight:Destroy() end
     self.SmartHighlight=nil
@@ -586,10 +589,38 @@ function Controller:CycleSmartTarget(reverse)
     return true
 end
 
+function Controller:BeginAlignmentPositioning()
+    local match=self.SmartMatch
+    if not match or match.kind~="Bore" or not self.PreviewCF
+        or not self.PreviewValid then
+        self:Message(self.PreviewReason or "Align a valid shaft and opening first")
+        return false
+    end
+    if self.LockedAlignment then return true end
+    local localSource=self.Preview:GetPivot():ToObjectSpace(match.source:GetPivot())
+    self.LockedAlignment={
+        cf=self.PreviewCF,
+        localSource=localSource,
+        offset=match.offsetUnits,
+        roll=match.rollDegrees,
+        match=match,
+    }
+    self.SmartOffsetDeltaU=0
+    self.SmartRollDelta=0
+    self.LastPreviewCheck=0
+    self:RefreshHUD()
+    return true
+end
+
 function Controller:OpenMateChoice(mode)
     local match=self.SmartMatch
     if not match or match.kind~="Bore" or self.PendingMateChoice then
         return false
+    end
+    -- First click locks the GEOMETRIC fit; user adjusts the insertion
+    -- with scroll and rotation with Q/E. A second click opens motion choice.
+    if not self.LockedAlignment then
+        return self:BeginAlignmentPositioning()
     end
     self.PendingMateChoice=mode
     self.DirectDragCandidate=nil
@@ -1124,41 +1155,71 @@ function Controller:UpdatePreview()
         return
     end
 
-    local hit = self:CastCenter(self.Pending == "Move"
-        or self.Pending == "ComponentMove" or self.Pending == "ComponentCopy"
-        or self.Pending == "Copy")
-    if not hit or not self.CurrentSize then
-        self.PreviewCF = nil
-        if self.SmartMatch then self:ClearSmartMatch() self:RefreshHUD() end
-        self.Preview.Parent = nil
-        return
-    end
-
-    local rotation = Grid.Rotation(self.Steps)
-    if self.GroupAnchor and
-        (self.Pending=="ComponentMove" or self.Pending=="ComponentCopy") then
-        local base=Grid.Rotation(attributesSteps(self.GroupAnchor))
-        rotation = rotation * base:Inverse() * self.GroupAnchor:GetPivot().Rotation
-    end
-    local proposed = Grid.FromSurface(hit.Position, hit.Normal, self.CurrentSize, rotation)
-    if not self.Preview.Parent then self.Preview.Parent = workspace end
-
-    -- Exact surface support for BOTH individual primitives and groups.
-    -- The raycast hit is the supporting surface: all geometry must stay
-    -- on its outside instead of rounding back into it.
-    local cf = SurfacePlacement.SnapToSurface(
-        self.Preview, proposed, hit.Position, hit.Normal
-    )
-    local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
-        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-    -- Start each scan from the authored, unsnapped ghost pose. A damped
-    -- visual from the previous frame must never accumulate extra roll.
-    self.Preview:PivotTo(cf)
+    local locked=self.LockedAlignment
+    local cf,match
     local old=self.SmartMatch
-    local match=nil
-    if not alt and self.Pending~="Copy"
-        and self.Pending~="ComponentCopy" then
-        match=self:RecognizeAttachment(cf,hit)
+    if locked then
+        -- Positioning is frozen onto the already recognized fit. Camera
+        -- movement cannot retarget it to another shaft while adjusting.
+        if not self.Preview.Parent then self.Preview.Parent=workspace end
+        match=locked.match
+        if not match.target or not match.target.Parent then
+            self:ClearSmartMatch()
+            return
+        end
+        local shaft=if match.reverse then match.target else match.source
+        local hole=if match.reverse then match.source else match.target
+        local lower,upper=AlignmentMath.OffsetBounds(shaft,hole)
+        if not lower then self:ClearSmartMatch() return end
+        local offset=math.clamp(locked.offset+self.SmartOffsetDeltaU,lower,upper)
+        local roll=math.clamp(locked.roll+self.SmartRollDelta,-360,360)
+        local alignedSource=locked.cf*locked.localSource
+        local rollAxis=if match.reverse then
+            alignedSource:VectorToWorldSpace(
+                AlignmentMath.TargetAxis(match.source)).Unit
+            else alignedSource.RightVector.Unit
+        local travelAxis=if match.reverse then -rollAxis
+            else match.target:GetPivot():VectorToWorldSpace(
+                AlignmentMath.TargetAxis(match.target)).Unit
+        local translation=travelAxis*((offset-locked.offset)*Grid.Unit)
+        cf=CFrame.new(translation)*locked.cf
+        if math.abs(roll-locked.roll)>0.00001 then
+            local center=alignedSource.Position+translation
+            cf=CFrame.new(center)*CFrame.fromAxisAngle(rollAxis,
+                math.rad(roll-locked.roll))*CFrame.new(-center)*cf
+        end
+        match.offsetUnits=offset
+        match.rollDegrees=roll
+        match.cf=cf
+        self.Preview:PivotTo(cf)
+    else
+        local hit = self:CastCenter(self.Pending == "Move"
+            or self.Pending == "ComponentMove" or self.Pending == "ComponentCopy"
+            or self.Pending == "Copy")
+        if not hit or not self.CurrentSize then
+            self.PreviewCF = nil
+            if self.SmartMatch then self:ClearSmartMatch() self:RefreshHUD() end
+            self.Preview.Parent = nil
+            return
+        end
+        local rotation = Grid.Rotation(self.Steps)
+        if self.GroupAnchor and
+            (self.Pending=="ComponentMove" or self.Pending=="ComponentCopy") then
+            local base=Grid.Rotation(attributesSteps(self.GroupAnchor))
+            rotation=rotation*base:Inverse()*self.GroupAnchor:GetPivot().Rotation
+        end
+        local proposed=Grid.FromSurface(hit.Position,hit.Normal,
+            self.CurrentSize,rotation)
+        if not self.Preview.Parent then self.Preview.Parent=workspace end
+        cf=SurfacePlacement.SnapToSurface(self.Preview,proposed,
+            hit.Position,hit.Normal)
+        local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+        self.Preview:PivotTo(cf)
+        if not alt and self.Pending~="Copy"
+            and self.Pending~="ComponentCopy" then
+            match=self:RecognizeAttachment(cf,hit)
+        end
     end
     self.SmartMatch=match
     if match then
@@ -1880,7 +1941,23 @@ function Controller:OnInput(input, processed)
         -- the integrated mechanical editor, never primitive geometry.
         return
     end
-    if not processed and self.SmartMatch
+    if not processed and self.SmartMatch and not self.LockedAlignment
+        and (self.Mode=="Build" or self.Pending)
+        and key==Enum.KeyCode.Tab then
+        local reverse=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        if self:CycleSmartTarget(reverse) then return end
+    end
+    if not processed and self.LockedAlignment
+        and self.SmartMatch and self.SmartMatch.kind=="Bore"
+        and (key==Enum.KeyCode.Q or key==Enum.KeyCode.E) then
+        self.SmartRollDelta=math.clamp(
+            self.SmartRollDelta+(if key==Enum.KeyCode.E then 5 else -5),
+            -360,360)
+        self.LastPreviewCheck=0
+        return
+    end
+    if false and not processed and self.SmartMatch
         and (self.Mode=="Build" or self.Pending) then
         if key==Enum.KeyCode.Tab then
             local reverse=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
@@ -1904,6 +1981,12 @@ function Controller:OnInput(input, processed)
     if self.Layered and self.Layered:OnInput(input, processed) then return end
 
     if key == Enum.KeyCode.Escape then
+        if self.LockedAlignment then
+            self:ClearSmartMatch()
+            self.LastPreviewCheck=0
+            self:RefreshHUD()
+            return
+        end
         if self.ScaleMode then self:EndScale() end
         if self.CatalogOpen then self:ShowCatalog(false) end
         if self.Pending then self:CancelPending() self:RefreshHUD() end
@@ -1989,7 +2072,7 @@ function Controller:Start()
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
         if input.UserInputType==Enum.UserInputType.MouseWheel then
             if self.SmartMatch
-                and (self.SmartMatch.kind=="Bore"
+                and ((self.SmartMatch.kind=="Bore" and self.LockedAlignment)
                     or self.SmartMatch.kind=="Hub")
                 and (self.Mode=="Build" or self.Pending) then
                 self.SmartOffsetDeltaU=math.clamp(
