@@ -906,7 +906,10 @@ local function handle(player, payload)
         if action == "GetMechanismInfo" then
             return simulation:Info(player, payload)
         end
-        return historyAction(player, action == "Undo")
+        if action=="Undo" or action=="Redo" then
+            return historyAction(player,action=="Undo")
+        end
+        return false,"Unsupported construction action"
     end)
 
     if not ok then

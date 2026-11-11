@@ -1176,6 +1176,10 @@ function Controller:UpdatePreview()
         if not lower then self:ClearSmartMatch() return end
         local offset=math.clamp(locked.offset+self.SmartOffsetDeltaU,lower,upper)
         local roll=math.clamp(locked.roll+self.SmartRollDelta,-360,360)
+        -- Once a mechanical stop is reached, reverse wheel motion should
+        -- move immediately rather than unwinding an overflowing delta.
+        self.SmartOffsetDeltaU=offset-locked.offset
+        self.SmartRollDelta=roll-locked.roll
         local alignedSource=locked.cf*locked.localSource
         local rollAxis=if match.reverse then
             alignedSource:VectorToWorldSpace(
@@ -1967,6 +1971,11 @@ function Controller:OnInput(input, processed)
             self.SmartRollDelta+(if key==Enum.KeyCode.E then 5 else -5),
             -360,360)
         self.LastPreviewCheck=0
+        return
+    end
+    if self.LockedAlignment and key~=Enum.KeyCode.Escape then
+        -- During the positioning stage, only wheel/Q/E, zoom and click
+        -- can affect the fit. Don't mutate the component or open sizing.
         return
     end
     if self.Mode ~= "Build" and self.Mode ~= "Edit"

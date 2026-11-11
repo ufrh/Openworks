@@ -307,8 +307,7 @@ function Fit.Contains(matches,movingId,stationaryId)
     return false
 end
 
--- A kinematic slider on one master pair is sufficient; other physically
--- aligned holes are clearance checks, NOT redundant PrismaticConstraints.
+-- Each verified guide now receives its own passive joint.
 -- Calculate conservative symmetric physical travel from ALL guide pairs
 -- so the shortest engaged rod can't be exited by a long master rod.
 function Fit.SymmetricTravel(matches)

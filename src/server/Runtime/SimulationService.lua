@@ -230,11 +230,11 @@ function Simulation:Start(player, payload)
 
     local session = {
         Originals = {},
-         Grounded = payload.grounded ~= false,
+        Grounded = payload.grounded ~= false,
         World = nil,
         Paused = false,
         PausedParts = nil,
-         Constraints = {},
+        Constraints = {},
         SeedId = payload.seedId,
         AssemblyName = graph.assemblyName,
         ActiveRelations={},
