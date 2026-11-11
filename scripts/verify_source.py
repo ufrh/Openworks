@@ -494,12 +494,19 @@ def main() -> int:
               not in alignment_math
           and 'function Alignment.RelativeTravelBounds(' in alignment_math
           and 'return low-authored,high-authored' in alignment_math)
-    check("Simulation shaft constraints cannot start beyond housing",
+    check("Simulation constrains legacy out-of-bounds shafts without aborting",
           'Alignment.RelativeTravelBounds(' in simulation
-          and 'if lower>0 or upper<0 then' in simulation
+          and 'local legacyOutside=lower>0 or upper<0' in simulation
+          and 'constraint:SetAttribute("LegacyOutOfBounds",true)' in simulation
+          and 'lower,upper=0,0' in simulation
           and 'constraint.LimitsEnabled=true' in simulation
           and 'constraint.LowerLimit=lower*Grid.Unit' in simulation
           and 'constraint.UpperLimit=upper*Grid.Unit' in simulation)
+    check("Plot restores old joint positions rather than rejecting older saves",
+          'folder:SetAttribute("LegacyOutOfBounds",true)' in mechanical
+          and 'low,high=0,0' in mechanical
+          and 'Shaft center must start between the tube end faces' not in mechanical
+          and 'local ok,message=d.mechanical:Restore(player,spec)' in persistence)
     check("Saved and tuned joints share physical tube-relative stops",
           mechanical.count('Alignment.RelativeTravelBounds(source,target)')>=3
           and 'min=math.max(min,-fittedTravel)' in mechanical
