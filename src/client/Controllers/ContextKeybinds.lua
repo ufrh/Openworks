@@ -232,7 +232,7 @@ function Context:Lines()
         append(lines, "Tab", "Cycle depth")
         append(lines, "X / I", "X-ray / Isolate")
     end
-    append(lines,"RMB / MMB","Freecam look / pan")
+    append(lines,"Mouse","Look around • cursor locked")
     append(lines,"WASD / Space / Ctrl","Fly camera / up / down")
     append(lines,"Z / Shift+Z","Camera FOV in / out")
     return lines
