@@ -33,6 +33,7 @@ function Hand.new(assembly)
         AngleDelta=0,
         SendAccumulator=0,
         LastDesired=0,
+        LastBodyUp=nil,
         Connections={},
     },Hand)
 end
@@ -166,6 +167,7 @@ function Hand:StartGrip()
     self.AngleDelta=0
     self.SendAccumulator=0
     self.LastDesired=0
+    self.LastBodyUp=nil
     -- The Properties GUI owns a modal full-screen mouse surface. Hide it
     -- temporarily while manually drawing the crank path, restore on release.
     if self.Assembly.Properties then
@@ -187,6 +189,7 @@ function Hand:Release()
     self.AngleDelta=0
     self.SendAccumulator=0
     self.LastDesired=0
+    self.LastBodyUp=nil
     player:SetAttribute("OPENWORKS_CrankActive",false)
     self.Gui.Enabled=false
     if id and self.Remote then
@@ -237,23 +240,42 @@ function Hand:Tick(dt)
         then math.clamp(self.AngleDelta/delta,
             -CrankMath.MaxAngularSpeed,CrankMath.MaxAngularSpeed) else 0
     self.AngleDelta=0
+    -- Screen clockwise/counterclockwise should match the apparent
+    -- crank direction even when the player looks from the other side.
+    local model=self:FindCrank()
+    local root=model and model.PrimaryPart
+    local camera=workspace.CurrentCamera
+    if root and camera and root.CFrame.RightVector:Dot(
+        camera.CFrame.LookVector)<0 then
+        desired=-desired
+    end
     self.LastDesired=desired
     if self.Remote then
         self.Remote:FireServer(self.ActiveId,desired,self.Dragging,false)
     end
-    local model=self:FindCrank()
-    local root=model and model.PrimaryPart
-    if root and self.Dragging then
-        local actual=root.AssemblyAngularVelocity:Dot(root.CFrame.RightVector)
-        if math.abs(desired)>1.0 and math.abs(actual)<0.15 then
-            self.Status.Text="HIGH RESISTANCE / STALLED  •  capped hand torque"
-        else
-            self.Status.Text=string.format(
-                "MANUAL INPUT %.1f rad/s  •  SHAFT %.1f rad/s",
-                desired,actual)
+    if root then
+        -- AngularVelocity isn't guaranteed to replicate as a property.
+        -- Measure visible rotational movement between world poses instead
+        -- of reporting a misleading zero from client property reads.
+        local up=root.CFrame.UpVector
+        local actual=0
+        if self.LastBodyUp then
+            local axial=root.CFrame.RightVector.Unit
+            actual=math.atan2(self.LastBodyUp:Cross(up):Dot(axial),
+                self.LastBodyUp:Dot(up))/delta
         end
-    else
-        self.Status.Text="H / Esc release  •  hold LMB and trace circles"
+        self.LastBodyUp=up
+        if self.Dragging then
+            if math.abs(desired)>1.0 and math.abs(actual)<0.15 then
+                self.Status.Text="HIGH RESISTANCE / STALLED  •  capped hand torque"
+            else
+                self.Status.Text=string.format(
+                    "MANUAL INPUT %.1f rad/s  •  SHAFT %.1f rad/s",
+                    desired,actual)
+            end
+        else
+            self.Status.Text="H / Esc release  •  hold LMB and trace circles"
+        end
     end
 end
 

@@ -144,7 +144,8 @@ end
 function Simulation:SetStatus(player,running,grounded)
     player:SetAttribute("OPENWORKS_Simulating",running)
     player:SetAttribute("OPENWORKS_Grounded",grounded~=false)
-    -- Motion relationships are passive; no actuators exist yet.
+    -- Motion relationships stay passive. Manual HandCrank torque is
+    -- installed only on the distinct physical actuator prefab.
 end
 
 function Simulation:Graph(player, seed)
