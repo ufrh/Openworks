@@ -652,7 +652,24 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
             elseif isGear and gear(target) then
                 local directAim=aimedModel==target
                 approach=source:GetPivot().Position
-                if directAim and GearMath.Kind(source)=="Spur"
+                if directAim and GearMath.Kind(source)=="Bevel45"
+                    and GearMath.Kind(target)=="Bevel45" then
+                    -- Aim anywhere on the actual target bevel teeth.
+                    -- The cursor chooses the azimuth around its axle;
+                    -- the correct 45-degree shaft angle and pitch-cone
+                    -- apex are enforced automatically.
+                    local fixed=target:GetPivot()
+                    local axis=fixed.RightVector.Unit
+                    local apex=GearMath.BevelApex(target)
+                    local delta=approach-apex
+                    local lateral=delta-axis*delta:Dot(axis)
+                    local side=if lateral.Magnitude>0.001 then
+                        lateral.Unit else fixed.UpVector
+                    local outputAxis=axis*math.cos(math.rad(45))
+                        +side*math.sin(math.rad(45))
+                    approach=apex+outputAxis*GearMath.PitchRadius(source)
+                        /math.tan(math.rad(22.5))
+                elseif directAim and GearMath.Kind(source)=="Spur"
                     and GearMath.Kind(target)=="Spur" then
                     -- The ray often strikes a TOOTH, not the transparent
                     -- center pivot. Surface-placement may therefore push
