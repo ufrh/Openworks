@@ -140,6 +140,7 @@ function Kinematics:Detect()
         table.clear(group.Links)
     end
     local count=0
+    local contacted={}
     for i=1,#self.Gears-1 do
         local left=self.Gears[i]
         for j=i+1,#self.Gears do
@@ -156,10 +157,52 @@ function Kinematics:Detect()
             local ratio=-left.Teeth/right.Teeth*orientation
             table.insert(a.Links,{Group=b,Ratio=ratio})
             table.insert(b.Links,{Group=a,Ratio=1/ratio})
+            contacted[left]=true
+            contacted[right]=true
             count+=1
         end
     end
     self.Contacts=count
+    self.Unmeshed={}
+    -- Expose WHY a gear is stationary. A visually nearby gear may have
+    -- correct tooth spacing but sit slightly outside the face plane.
+    for _,entry in ipairs(self.Gears) do
+        if contacted[entry] then continue end
+        local nearest,reason,best=nil,nil,math.huge
+        for _,other in ipairs(self.Gears) do
+            if other~=entry and other.Group~=entry.Group then
+                local _,why,proximity=GearMath.AutoMeshStatus(
+                    entry.Model,other.Model)
+                if proximity<best then
+                    best=proximity
+                    reason=why
+                    nearest=other
+                end
+            end
+        end
+        table.insert(self.Unmeshed,{
+            Gear=entry.Model.Name,
+            Reason=reason or "No other gear in the assembly",
+            Nearest=nearest and nearest.Model.Name or nil,
+            Id=entry.Model:GetAttribute("InstanceId"),
+        })
+    end
+end
+
+function Kinematics:Explain(id)
+    local group=self.ById[id]
+    if not group or not self.Kinematic[group] then
+        return "Not a gear-driven rigid body"
+    end
+    if #group.Links>0 then
+        return string.format("%d automatic gear mesh(es)",#group.Links)
+    end
+    for _,info in ipairs(self.Unmeshed or {}) do
+        if self.ById[info.Id]==group then
+            return "Not engaged: "..info.Reason
+        end
+    end
+    return "Gear has no current mesh"
 end
 
 -- All motion is a fixed-axis rigid transform of authored gear/shaft/crank
