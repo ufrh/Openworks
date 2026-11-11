@@ -192,6 +192,12 @@ function Simulation:BeginCrank(player,request)
     if not root or (root.Position-crank.Root.Position).Magnitude>22 then
         return false,"Move closer to the hand crank to turn it"
     end
+    -- If a different crank now backdrives this gear graph, reset the
+    -- previous input's coast to avoid a sudden gearbox direction jump.
+    if session.Gears and session.Gears.LastDrivenId
+        and session.Gears.LastDrivenId~=crank.DrivenId then
+        session.Gears:StopMotion()
+    end
     for previousId in pairs(session.Cranks) do
         self:StopCrank(session,previousId)
     end
@@ -916,6 +922,7 @@ function Simulation:Pause(player)
     for crankId in pairs(session.Cranks) do
         self:StopCrank(session,crankId)
     end
+    if session.Gears then session.Gears:StopMotion() end
     local state = {}
     for _, item in ipairs(session.World:GetDescendants()) do
         if item:IsA("BasePart") then
