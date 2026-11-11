@@ -670,6 +670,20 @@ def main() -> int:
           'group.BottomParts=parts' in gears
           and 'IDLE_SCAN_PERIOD=0.25' in gears
           and 'if moving then SCAN_PERIOD else IDLE_SCAN_PERIOD' in gears)
+    compact_hole=read("src/server/Runtime/CompactHoleLibrary.lua")
+    check("Compact 1U drilled block is a true 0.98U CSG bore",
+          'OUTER_U=1' in compact_hole
+          and 'HOLE_U=0.98' in compact_hole
+          and 'Shape=Enum.PartType.Cylinder' in compact_hole
+          and 'GeometryService:SubtractAsync(base,{cutter}' in compact_hole
+          and 'model:SetAttribute("HoleDiameterU",HOLE_U)' in compact_hole
+          and 'model:SetAttribute("OpeningAxis","Y")' in compact_hole
+          and 'CompactHoleLibrary.Ensure()' in service
+          and 'SplitApart=false' in compact_hole)
+    check("Compact bored block does not misrepresent CSG errors as valid geometry",
+          'if not ok or type(solids)~="table" or #solids~=1' in compact_hole
+          and 'template discarded' in compact_hole
+          and 'model.Parent=category' in compact_hole)
     shaft_library=read("src/server/Runtime/ShaftLibrary.lua")
     check("Default Shaft is a separate 0.95U diameter x 2U cylinder",
           'model.Name="Shaft"' in shaft_library

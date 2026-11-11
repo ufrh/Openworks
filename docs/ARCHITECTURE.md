@@ -116,3 +116,7 @@ The shared Studio-style UI design lives in `StudioTheme.lua`. Normal Simulate re
 - Physics constraints can become unstable at small scale/high mass ratios; verify springs, multi-point joints, bolts and hand crank using the regression checklist.
 - The large `ConstructionController`, `MechanicalService`, and `SimulationService` are still monolithic and should be split by responsibility in controlled future changes with tests. Rewriting them all without runtime verification risks losing current working behavior.
 - Historical phase documents and the archived README contain superseded controls/decisions. Follow the present README and this document.
+
+
+### Compact drilled block
+`CompactHoleLibrary.Ensure()` runs a single GeometryService subtraction at server startup to provision the optional `DrilledBlock_1U_D098` template, and never during construction, snapping or simulation. It produces a 1 U cube with a true Y-axis 0.98 U circular bore and explicit `HoleDiameterU` metadata consumed by the shared BoreClearance math. It is separate from all existing authored drilled blocks. If CSG fails, no misleading solid-block substitute is installed. Its 0.01 U walls are exceptionally thin and require in-Studio verification; this is a deliberate compact-sized exception to the generally prebaked template policy.

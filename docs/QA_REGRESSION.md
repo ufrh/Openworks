@@ -144,3 +144,10 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 - [ ] Springs are the exception: moving either or both endpoints keeps Spring authored, allowing stretch/reposition independently.
 - [ ] Single Ctrl+Z restores both the exact prior geometry and every disconnected relationship, including original anchor frames and motor settings; Ctrl+Y detaches them again. F6 save/load persists the disconnected state. No failed overlapping/invalid movement should remove a relation.
 - [ ] Explicit joint editing (insertion-depth pose, fine-fit diameter and existing connection repositioning) must not accidentally detach the joint being deliberately adjusted.
+
+
+## Compact 1U drilled-block prefab
+- [ ] Build catalog includes Mechanics > DrilledBlock_1U_D098, alongside all existing drilled blocks. Preview and placed solid show a real circular Y-axis through-hole, not a cylinder-shaped visual decal or an uncut cube.
+- [ ] Its outer dimensions are 1 U × 1 U × 1 U. Hole diameter measures 0.98 U. Place Shaft (0.95 U diameter), aim at the opening and perform Bore fit. 0.03 U total diametral clearance is accepted by geometry, collision validation and server. Cylinder remains available.
+- [ ] F-copy, save/load and assembly simulation retain actual collision geometry and HoleDiameterU metadata. Position/rotation of the block must not change the Y-axis hole definition. Invalid CSG startup must log a warning rather than register a fake uncut block.
+- [ ] Acknowledge exceptionally thin remaining wall (0.01 U per side): under high load, Roblox collision decomposition and native physics might not remain stable. Verify in Studio, not only source contracts.
