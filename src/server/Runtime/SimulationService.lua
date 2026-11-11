@@ -573,8 +573,15 @@ function Simulation:Start(player, payload)
                     local other=if edge.source==original then edge.target
                         elseif edge.target==original then edge.source else nil
                     if other and HandCrankMath.IsOutputShaft(other) then
-                        coupled=true
-                        break
+                        -- Legacy floating/incorrectly sized welds must never
+                        -- power a shaft. Authoring validates and sizes first.
+                        local fitted=HandCrankMath.Fits(original,other)
+                        local sized=math.abs(original.PrimaryPart.Size.Y
+                            -other.PrimaryPart.Size.Y)<0.001
+                        if fitted and sized then
+                            coupled=true
+                            break
+                        end
                     end
                 end
             end
