@@ -67,6 +67,7 @@ local function transmissionNetwork(graph)
     end
     local links={}
     local gearBodyKeys={}
+    local gearAxes={}
     for _,edge in ipairs(graph.edges) do
         if edge.kind~="Gear" then continue end
         local a=root(edge.source:GetAttribute("InstanceId"))
@@ -78,8 +79,12 @@ local function transmissionNetwork(graph)
             or nA<=0 or nB<=0 then continue end
         local axisA=edge.source:GetPivot().RightVector
         local axisB=edge.target:GetPivot().RightVector
-        -- Angles are measured around each gear's +X axle direction.
+        gearAxes[a]=gearAxes[a] or axisA
+        gearAxes[b]=gearAxes[b] or axisB
+        -- Convert both gear angular speeds into a SHARED world-axis
+        -- convention. This also handles reverse-facing shaft pivots.
         local ratio=-nA/nB*axisA:Dot(axisB)
+            *gearAxes[a]:Dot(axisA)*gearAxes[b]:Dot(axisB)
         links[a]=links[a] or {}
         links[b]=links[b] or {}
         table.insert(links[a],{key=b,ratio=ratio})
@@ -87,7 +92,7 @@ local function transmissionNetwork(graph)
         gearBodyKeys[a]=true
         gearBodyKeys[b]=true
     end
-    return root,links,gearBodyKeys
+    return root,links,gearBodyKeys,gearAxes
 end
 
 local function bodyKey(model)
@@ -206,9 +211,18 @@ function Simulation:BeginCrank(player,request)
         if driver.Part.Parent then
             -- Match axis to actual gear/shaft spindle. The ratio already
             -- accounts for any opposite-facing gear axial directions.
-            driver.Drive.AngularVelocity=driver.Part.CFrame.RightVector
-                *HandCrankMath.FixedAngularSpeed*output.Ratio
-            driver.Drive.Enabled=true
+            local grounded=false
+            for _,key in ipairs(driver.Models) do
+                if session.GroundKeys and session.GroundKeys[key] then
+                    grounded=true
+                    break
+                end
+            end
+            if not grounded then
+                driver.Drive.AngularVelocity=driver.Axis
+                    *HandCrankMath.FixedAngularSpeed*output.Ratio
+                driver.Drive.Enabled=true
+            end
         end
     end
     crank.Model:SetAttribute("OPENWORKS_CrankRunning",true)
@@ -491,7 +505,7 @@ function Simulation:Start(player, payload)
         -- Compile authored rigid groups and explicit Gear mesh edges.
         -- The actual tooth meshes are kinematic speed ratios; shafts,
         -- bearings and all unrelated mechanisms retain native physics.
-        local rigidKey,gearLinks,gearKeys=transmissionNetwork(graph)
+        local rigidKey,gearLinks,gearKeys,gearAxes=transmissionNetwork(graph)
         local gearBodies={}
         for _,original in ipairs(graph.models) do
             local key=rigidKey(original:GetAttribute("InstanceId"))
@@ -692,7 +706,15 @@ function Simulation:Start(player, payload)
             motor.AngularVelocity=Vector3.zero
             motor.Enabled=false
             motor.Parent=runtime
-            gearDrivers[key]={Drive=motor,Part=part}
+            gearDrivers[key]={Drive=motor,Part=part,
+                Axis=gearAxes[key],Models={}}
+        end
+
+        for _,original in ipairs(graph.models) do
+            local key=rigidKey(original:GetAttribute("InstanceId"))
+            if gearDrivers[key] then
+                table.insert(gearDrivers[key].Models,bodyKey(original))
+            end
         end
 
         -- Install an actual velocity-regulating motor on the SHAFT.
@@ -756,7 +778,11 @@ function Simulation:Start(player, payload)
             -- traversing ONLY explicitly authored gear-mesh links.
             local inputKey=rigidKey(if coupledShaft then
                 coupledShaft:GetAttribute("InstanceId") else id)
-            local speeds={[inputKey]=1}
+            local inputRatio=1
+            if gearAxes[inputKey] then
+                inputRatio=root.CFrame.RightVector:Dot(gearAxes[inputKey])
+            end
+            local speeds={[inputKey]=inputRatio}
             local queue={inputKey}
             local index=1
             while index<=#queue do
