@@ -229,8 +229,8 @@ function Tool:Refresh()
     local count=0
     for _ in pairs(self.Selected) do count+=1 end
     self.Shortcuts.Text=if self.Stage=="Selecting"
-        then "Alt+Wheel  HEIGHT    Enter  CONFIRM    N  NEW"
-        else "Alt+Wheel  HEIGHT    N  NEW    Click  EDIT"
+        then "Alt+Arrows  MOVE    Shift+Alt+Up/Down  HEIGHT"
+        else "Alt+Arrows  MOVE    Shift+Alt+Up/Down  HEIGHT"
     if self.Stage=="Selecting" then
         self.Title.Text="ASSEMBLY / "..self.Name
         self.Status.Text=tostring(count).." primitives selected"
@@ -413,7 +413,29 @@ end
 -- Move only a SAVED named assembly, never an uncommitted draft
 -- selection. Moving all its authored members together preserves internal
 -- alignment. Server rejects out-of-bounds/colliding positions atomically.
-function Tool:VerticalNudge(direction)
+function Tool:VerticalNudge(key)
+    local alt=UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
+        or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
+    if not alt then return end
+    local shift=UIS:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UIS:IsKeyDown(Enum.KeyCode.RightShift)
+    local axis,direction
+    if shift and (key==Enum.KeyCode.Up or key==Enum.KeyCode.Down) then
+        axis,direction="Y",(if key==Enum.KeyCode.Up then 1 else -1)
+    else
+        local camera=workspace.CurrentCamera
+        if not camera then return end
+        local v=if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down
+            then camera.CFrame.LookVector else camera.CFrame.RightVector
+        if math.abs(v.X)>=math.abs(v.Z) then
+            axis,direction="X",(if v.X>=0 then 1 else -1)
+        else
+            axis,direction="Z",(if v.Z>=0 then 1 else -1)
+        end
+        if key==Enum.KeyCode.Left or key==Enum.KeyCode.Down then
+            direction=-direction
+        end
+    end
     if self.Tools.ActiveId~="Assembly" or self.Busy
         or self.Stage=="Naming" then return end
     local id=self.EditingId
@@ -431,7 +453,7 @@ function Tool:VerticalNudge(direction)
     local remote=RS:WaitForChild(Config.RequestName)
     local ok,answer=pcall(function()
         return remote:InvokeServer({action="VerticalMove",scope="Assembly",
-            id=id,direction=direction,fine=fine})
+            id=id,axis=axis,direction=direction,fine=fine})
     end)
     self.Busy=false
     self.PreviewCache=""
@@ -617,8 +639,11 @@ function Tool:Start()
         local key=input.KeyCode
         local control=UIS:IsKeyDown(Enum.KeyCode.LeftControl)
             or UIS:IsKeyDown(Enum.KeyCode.RightControl)
-        if key==Enum.KeyCode.PageUp or key==Enum.KeyCode.PageDown then
-            self:VerticalNudge(if key==Enum.KeyCode.PageUp then 1 else -1)
+        if (UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
+                or UIS:IsKeyDown(Enum.KeyCode.RightAlt))
+            and (key==Enum.KeyCode.Left or key==Enum.KeyCode.Right
+                or key==Enum.KeyCode.Up or key==Enum.KeyCode.Down) then
+            self:VerticalNudge(key)
             self.VerticalHeld=key
             self.VerticalElapsed=0
             return
@@ -645,22 +670,14 @@ function Tool:Start()
     table.insert(self.Connections,UIS.InputEnded:Connect(function(input)
         if input.KeyCode==self.VerticalHeld then self.VerticalHeld=nil end
     end))
-    table.insert(self.Connections,UIS.InputChanged:Connect(function(input)
-        if input.UserInputType~=Enum.UserInputType.MouseWheel
-            or input.Position.Z==0
-            or self.Tools.ActiveId~="Assembly" or self.Stage=="Naming"
-            or self.Busy or UIS:GetFocusedTextBox() then return end
-        local alt=UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
-            or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
-        if alt then
-            self:VerticalNudge(if input.Position.Z>0 then 1 else -1)
-        end
-    end))
     table.insert(self.Connections,RunService.Heartbeat:Connect(function(dt)
         local key=self.VerticalHeld
         if not key then return end
         if self.Tools.ActiveId~="Assembly" or self.Stage=="Naming"
-            or UIS:GetFocusedTextBox() or not UIS:IsKeyDown(key) then
+            or UIS:GetFocusedTextBox()
+            or not (UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
+                or UIS:IsKeyDown(Enum.KeyCode.RightAlt))
+            or not UIS:IsKeyDown(key) then
             self.VerticalHeld=nil
             return
         end
@@ -668,7 +685,7 @@ function Tool:Start()
         if self.VerticalElapsed<0.24 then return end
         self.VerticalElapsed=0.09
         task.spawn(function()
-            self:VerticalNudge(if key==Enum.KeyCode.PageUp then 1 else -1)
+            self:VerticalNudge(key)
         end)
     end))
     table.insert(self.Connections,RunService.RenderStepped:Connect(function()
