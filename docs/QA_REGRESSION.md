@@ -90,3 +90,7 @@ Run after changing the shared geometry code, construction services, tool dispatc
 ## Verify code without Studio
 
 Run `python scripts/verify_source.py` from the repository root. This is a static consistency check only; it cannot validate Luau syntax, input behavior or physics. Use the installed Rojo toolchain to perform `rojo build default.project.json --output builds/openworks.rbxlx` and then complete the actual Play tests above.
+
+- [ ] Component Group/Ungroup regression: select 2+ primitives and press C to create a component; no `ComponentService:87: attempt to call a nil value` error. U splits the group without losing original primitive IDs. Ctrl+Z/Ctrl+Y must undo/redo membership without destroying models or invalidating authored mechanical relationships.
+- [ ] Edit multiselect visuals: select multiple primitives (and also select an existing component). Each real primitive gets its OWN blue outline, with no shared rectangular bounding box spanning empty space. Deselecting, moving/copying previews and tool switching must clear or hide the old outlines correctly.
+- [ ] Assembly multiselect visuals: choose multiple primitives across multiple editor components. Each selected primitive has its own purple silhouette, no single shared group bounding box; hover and selection changes must not leave stale adornments.
