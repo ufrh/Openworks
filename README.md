@@ -1,6 +1,6 @@
 # OPENWORKS
 
-A Roblox mechanical construction and engineering sandbox. The active `dev` branch is currently on **assembly-only simulation, cohesive component ghost/selection rendering, and left-docked passive simulation controls**. Earlier milestones included Phase 05 mechanical relationship authoring: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment (L in Edit), first-person Assemble tool authoring Bearing/Slider/Fixed constraints, and fixed 0.5-U sizing and movement increments. The pre-redesign editor is preserved in an archive branch.
+A Roblox mechanical construction and engineering sandbox. The active `dev` branch is currently on **named Assembly tool authoring, explicit primitive/component membership, and purple full-assembly simulation preview**. Earlier milestones included Phase 05 mechanical relationship authoring: first-person native Roblox Tools, primitive catalog, drag resizing, placement/editing, undo/redo, multi-selection, editable rigid component groups, dark gray Metal primitives, layered depth selection, X-ray/isolation, and guided coaxial alignment (L in Edit), first-person Assemble tool authoring Bearing/Slider/Fixed constraints, and fixed 0.5-U sizing and movement increments. The pre-redesign editor is preserved in an archive branch.
 
 ## Direction
 
@@ -279,3 +279,23 @@ This section supersedes the previous per-mechanism Simulate behavior and per-mem
 - **Property inspection:** click a part to open its right-side Studio-style settings/relationships grid. It is not permanently open and can be dismissed with Esc. Mouse stays center-locked in ordinary simulation and during manual crank input.
 - **Existing preserved systems:** full-pattern bore alignment, springs, passive bearings/sliders, gears, physical bolts, explicit welds, assembly membership undo/redo, and **manual-only F6 plot saving** remain.
 - **Studio verification:** changes are committed on `dev` and statically reviewed; the exact renderer and simulated physics must still be checked in Roblox Studio. No test document was created.
+
+
+## Dedicated Assembly tool — named member selection and purple Simulate preview (November 10, 2026)
+
+This supersedes every older instruction saying that Edit Ctrl+G auto-registers a connected mechanism. Assembly registration is **explicit** and independent of the physical relationship graph.
+
+**Native tool:** Build, Edit, **Assembly**, Simulate, Inspect, Weld. Assembly receives a normal Roblox Tool/hotbar slot and retains the existing first-person center crosshair.
+
+**Create and name an assembly:**
+1. Equip **Assembly**, press **N**, enter a 1–48-character name and press **Enter** (or click Continue in the temporary naming dialog).
+2. The naming dialog closes and the cursor returns to locked first-person. Aim at objects and **click** to toggle them in/out of the draft. Clicking a **component** includes every current primitive in that editor group; clicking a standalone **primitive** includes just that primitive. **Alt+click** targets only the aimed primitive, even if it belongs to an editor component. Selections are visualized in purple with a single outer component outline rather than internal per-member edge seams.
+3. Press **Enter** to confirm; the server validates the exact set of owned primitive IDs, the name, the 128-member limit, and rejects membership collisions with other assemblies. Nothing is auto-added merely because it is nearby or mechanically connected. Escape cancels the draft without changes.
+
+**Edit existing assembly:** With Assembly equipped, aim and click an already-registered member to load its entire saved membership. Click components/primitives to add or remove them, use **Alt+click** to toggle an individual member inside a component, press **R** to rename, and **Enter** to commit the changed set. The old AssemblyId remains stable so simulation and manual saves work. Undo/redo records each confirmed membership operation as an atomic batch in the existing construction history. Existing player-owned assemblies load from plot save; **F6 manual save remains the only DataStore write**.
+
+**Simulation preview:** Equip **Simulate** and aim at any registered primitive. Every member of that assembly (including disconnected primitive parts and editor components) is highlighted **PURPLE** before pressing P. Components have a single external purple outline and soft purple fill; individual primitives have purple highlights. This preview tracks aim, immediately clears on tool changes/simulation start, and never adds helper Parts or welds. Green/orange grounding fills are suppressed just for the hovered assembly so the purple preview is unambiguous. Press **P** to run **only the registered assembly**; unregistered mechanisms cannot run. If physical relationships connect to excluded members, the server warns the user to edit the assembly and add them. Editor ComponentId is strictly organizational, so Alt-selecting only part of a component is permitted unless a real physical relationship crosses outside membership.
+
+**Scope vs mechanical connectivity:** Registered assemblies can contain a mix of unconnected primitives, whole editor components, and articulated mechanisms. Assembly membership organizes what Simulate compiles. It does not add welds, bearings, powered drives, or any other mechanical relationship.
+
+**Status:** Code committed to `dev`; Roblox Studio playtesting (modal naming, native Tool activation, 3D purple highlight and physics) still required. No test document has been generated.
