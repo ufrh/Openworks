@@ -13,6 +13,7 @@ local Kinematics={}
 Kinematics.__index=Kinematics
 local MAX_GEARS=40
 local SCAN_PERIOD=0.08
+local ROTATION_PERIOD=1/30 -- avoid 60 Hz * 40 gears * dozens of teeth replication
 local CYCLE_TOLERANCE=0.002
 
 local function identifier(model)
@@ -107,7 +108,7 @@ function Kinematics.new(graph,copies)
 
     local self=setmetatable({
         Groups=groups,ById=byId,Gears=gears,Kinematic=kinematic,
-        ScanElapsed=SCAN_PERIOD,Contacts=0,
+        ScanElapsed=SCAN_PERIOD,MotionElapsed=0,Contacts=0,
     },Kinematics)
     self:Detect()
     return self
@@ -170,7 +171,14 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
         self.ScanElapsed=0
         self:Detect()
     end
-    if not drivenId or not shaftAxis or inputSpeed==0 then return end
+    if not drivenId or not shaftAxis or inputSpeed==0 then
+        self.MotionElapsed=0
+        return
+    end
+    self.MotionElapsed+=dt
+    if self.MotionElapsed<ROTATION_PERIOD then return end
+    local step=math.clamp(self.MotionElapsed,0,0.08)
+    self.MotionElapsed=0
     local source=self.ById[drivenId]
     if not source or not self.Kinematic[source] then return end
 
@@ -196,7 +204,6 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
         end
     end
     if stalled then return end
-    local step=math.clamp(dt,0,1/30)
     for group,omega in pairs(speed) do
         if math.abs(omega)>0.00001 then
             local center=group.Center
