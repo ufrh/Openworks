@@ -249,26 +249,16 @@ function Visuals:Update()
             self.Ground[model]=nil
         end
     end
-    local groups={}
-    if not simulating then
-        for model in pairs(allowed) do
-            local group=model:GetAttribute("ComponentId")
-            if type(group)=="string" and group~="" then
-                groups[group]=groups[group] or false
-                if model:GetAttribute("Grounded")==true then groups[group]=true end
-            end
-        end
-    end
     for model in pairs(allowed) do
         local cue=self.Ground[model]
         if not cue then
             cue=self:GroundCue(model)
             self.Ground[model]=cue
         end
-        local group=model:GetAttribute("ComponentId")
+        -- ComponentId is only an editor grouping, not a rigid joint.
+        -- Never color an ungrounded component member green because another
+        -- editor-grouped member is grounded.
         local grounded=if simulating then model.PrimaryPart.Anchored
-            elseif type(group)=="string" and group~="" then
-                groups[group]==true
             else model:GetAttribute("Grounded")==true
         cue.FillColor=if grounded then GROUNDED else MOVABLE
         cue.OutlineTransparency=1
