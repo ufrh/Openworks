@@ -436,6 +436,12 @@ def main() -> int:
           and 'self.SmartMatch.kind=="Gear"' in selection
           and 'self.SmartMatch.kind=="Rack"' in selection
           and 'self.SmartMatch.kind=="Guide"' in selection)
+    check("Oversized cylinders and wheel-like rollers never auto-snap into holes",
+          'function Bore.CanInsert(source,target)' in gear_clearance
+          and 'shaftDiameter>=openingDiameter-2*TOL' in gear_clearance
+          and 'local housingLength=' in gear_clearance
+          and 'if not Bore.CanInsert(shaft,target) then return nil end' in smart_placement
+          and 'if not Bore.CanInsert(shaft,opening) then return nil end' in smart_placement)
     check("Gear-to-gear snap retains tight separate shaft bore hitbox",
           'Smart.HubSnapRadius = 0.34' in smart_placement
           and 'Smart.HubAimRadius = 0.24' in smart_placement
