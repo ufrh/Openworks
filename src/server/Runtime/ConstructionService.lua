@@ -24,6 +24,7 @@ local AssemblyService = require(script.Parent:WaitForChild("AssemblyService"))
 local PlotService = require(script.Parent:WaitForChild("PlotService"))
 local PlotPersistence = require(script.Parent:WaitForChild("PlotPersistence"))
 local RotationMath = require(construction:WaitForChild("RotationMath"))
+local HandCrankMath = require(construction:WaitForChild("HandCrankMath"))
 
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
 
@@ -250,9 +251,12 @@ local function validState(player, entry, proposed)
     if proposed.fitPrecision == true and not isCylinder then
         return false, "Fine-fit precision is reserved for full Cylinder shafts"
     end
-    if not Grid.ValidSize(original.Size, proposed.size,
-        entry.ResizeMode, proposed.fitPrecision == true,
-        proposed.numericPrecision == true) then
+    local validSize=if HandCrankMath.IsCrank(entry.Model)
+        then HandCrankMath.ValidSize(original.Size,proposed.size)
+        else Grid.ValidSize(original.Size, proposed.size,
+            entry.ResizeMode, proposed.fitPrecision == true,
+            proposed.numericPrecision == true)
+    if not validSize then
         return false, "Size does not match allowed Unit increments"
     end
 
@@ -263,7 +267,11 @@ local function validState(player, entry, proposed)
 end
 
 local function applyState(model, data)
-    model.PrimaryPart.Size = data.size
+    if HandCrankMath.IsCrank(model) then
+        HandCrankMath.ApplySize(model,data.size)
+    else
+        model.PrimaryPart.Size = data.size
+    end
     local rotation = if typeof(data.orientation) == "CFrame"
         then data.orientation.Rotation else Grid.Rotation(data.steps)
     model:PivotTo(CFrame.new(data.position) * rotation)
@@ -447,6 +455,10 @@ local function place(player, payload)
     local entry = Registry.Get(payload.templateId)
     if not entry then return false, "Unknown primitive" end
     local template = entry.Model.PrimaryPart
+    if HandCrankMath.IsCrank(entry.Model) and typeof(payload.size)=="Vector3"
+        and (payload.size-template.Size).Magnitude>0.001 then
+        return false,"Hand crank size is set by coupling to a shaft"
+    end
     local proposed = {
         position = payload.position,
         steps = payload.steps,
@@ -570,6 +582,11 @@ local function update(player, payload)
         alignedOffsetU = model:GetAttribute("AlignedOffsetU") or 0,
     }
     local before=snapshot(model)
+    if HandCrankMath.IsCrank(model)
+        and typeof(proposed.size)=="Vector3"
+        and (proposed.size-before.size).Magnitude>0.001 then
+        return false,"Disconnect and recouple to change the crank output diameter"
+    end
     local opening=before.alignedOpeningId
         and findOwned(player,before.alignedOpeningId) or nil
     if opening and Alignment.IsShaft(model) then
