@@ -626,12 +626,13 @@ end
 
 function Controller:OpenMateChoice(mode)
     local match=self.SmartMatch
-    if not match or match.kind~="Bore" or self.PendingMateChoice then
+    if not match or (match.kind~="Bore" and match.kind~="Hub")
+        or self.PendingMateChoice then
         return false
     end
-    -- First click locks the GEOMETRIC fit; user adjusts the insertion
-    -- with scroll and rotation with Q/E. A second click opens motion choice.
-    if not self.LockedAlignment then
+    -- Shaft/housing choices follow the existing two-click fit adjustment;
+    -- gear hubs are already geometrically aligned and choose motion now.
+    if match.kind=="Bore" and not self.LockedAlignment then
         return self:BeginAlignmentPositioning()
     end
     self.PendingMateChoice=mode
@@ -648,7 +649,7 @@ function Controller:OpenMateChoice(mode)
             self:CancelPending()
         end
         self:RefreshHUD()
-    end, match.fittedCount or 1)
+    end, match.fittedCount or 1, match.kind=="Hub")
     return true
 end
 
@@ -662,7 +663,7 @@ function Controller:SmartDrop(chosenKind)
         self:Message(self.PreviewReason or "Red snap: physical interference")
         return true
     end
-    if match.kind=="Bore" and not chosenKind then
+    if (match.kind=="Bore" or match.kind=="Hub") and not chosenKind then
         return self:OpenMateChoice("Edit")
     end
     -- A multi-primitive ghost pivots at its central anchor, but the
@@ -1385,7 +1386,8 @@ function Controller:Place(chosenKind)
         self:Message("Red preview: construction intersects existing geometry")
         return
     end
-    if self.SmartMatch and self.SmartMatch.kind=="Bore"
+    if self.SmartMatch
+        and (self.SmartMatch.kind=="Bore" or self.SmartMatch.kind=="Hub")
         and not chosenKind then
         self:OpenMateChoice("Build")
         return
@@ -1400,7 +1402,8 @@ function Controller:Place(chosenKind)
         orientation=if self.SmartMatch
             and (self.SmartMatch.kind=="BoltHole"
                 or self.SmartMatch.kind=="Bore"
-                or self.SmartMatch.kind=="CrankCoupling")
+                or self.SmartMatch.kind=="CrankCoupling"
+                or self.SmartMatch.kind=="Hub")
             then self.PreviewCF.Rotation else nil,
         autoMate=if self.SmartMatch then {
             kind=self.SmartMatch.kind,
