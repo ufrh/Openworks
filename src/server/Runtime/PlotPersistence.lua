@@ -109,6 +109,7 @@ function Persistence:Encode(player)
                 assemblyName=snap.assemblyName,
                 roll=snap.shaftRollDegrees,
                 offset=snap.alignedOffsetU,
+                material=snap.materialId,
             }
             if type(record.id)~="string" or ids[record.id] then
                 return nil,"Duplicate construction ID; cannot save safely"
@@ -205,6 +206,7 @@ function Persistence:Decode(player,document)
             assemblyId=record.assembly,assemblyName=record.assemblyName,
             shaftRollDegrees=record.roll or 0,
             alignedOffsetU=record.offset or 0,
+            materialId=record.material or "Steel",
         })
     end
     local seen={}
