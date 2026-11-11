@@ -1209,7 +1209,37 @@ function Mechanical:CreateWeld(player,request)
             if ok and #hit>0 then close=true break end
         end
     end
-    if not close then return false,"Weld requires touching solid surfaces" end
+    if not close then
+        -- A drilled block can be rigidly joined to an inserted shaft with
+        -- genuine clearance; no metal-to-metal surface contact is needed.
+        -- Ordinary parts and unengaged, distant shafts still cannot weld.
+        local shaft=if Alignment.IsShaft(source) then source
+            else if Alignment.IsShaft(target) then target else nil
+        local hole=if shaft==source then target else source
+        local name=string.lower(tostring(hole:GetAttribute("TemplateId")
+            or hole.Name)):gsub("[%s_%-]","")
+        local drilled=string.find(name,"drilledblock",1,true)~=nil
+            or string.find(name,"holeblock",1,true)~=nil
+        if not shaft or not drilled then
+            return false,"Weld requires contact or an inserted shaft in a drilled block"
+        end
+        local fitted,why=Bore.ShaftFits(shaft,hole)
+        if not fitted then
+            return false,why or "Shaft must be aligned and inserted through the hole"
+        end
+    end
+    -- A rigid weld must not sit alongside an already-authored motion joint
+    -- between the same bodies; remove the old relationship deliberately.
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId")==player.UserId then
+            local a=relation:GetAttribute("SourceId")
+            local b=relation:GetAttribute("TargetId")
+            if (a==request.sourceId and b==request.targetId)
+                or (a==request.targetId and b==request.sourceId) then
+                return false,"Remove the existing relationship before rigid welding"
+            end
+        end
+    end
     local spec={
         relationId=HttpService:GenerateGUID(false),
         ownerUserId=player.UserId,kind="Weld",
