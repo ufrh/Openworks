@@ -155,12 +155,13 @@ def main() -> int:
         s in assembly for s in ("function Service:Create(", "function Service:Update(",
                                "MAX_NAME=48", "MAX_MEMBERS=128")))
     assembly_tool=read("src/client/Controllers/AssemblyToolController.lua")
-    check("World-Y movement is explicitly scoped to owned registered members",
+    check("Cardinal X/Y/Z nudge is scoped to owned registered members",
           'local function verticalMove(player,payload)' in service
           and 'selected=components:Members(player,id)' in service
           and 'selected=assemblies:Members(player,id)' in service
           and 'local model=findOwned(player,id)' in service
-          and 'Vector3.new(0,payload.direction*step,0)' in service
+          and 'if axis~="X" and axis~="Y" and axis~="Z" then' in service
+          and 'local delta=(if axis=="X" then Vector3.xAxis' in service
           and 'd.Valid' not in service)
     check("Vertical move is one validated atomic undoable transaction",
           'local ok,reason=validState(player,entry,nextState)' in service
@@ -168,16 +169,70 @@ def main() -> int:
           and 'applyState(model,before[i])' in service
           and 'commitBatch(player,before,after)' in service
           and 'if (payload.scope=="Assembly" and not hasEquippedTool(player,"Assembly"))' in service)
-    check("Alt+wheel provides convenient first-person vertical edit movement",
-          'UserInputService.InputChanged:Connect(function(input)' in selection
-          and 'if alt and self.Mode=="Edit" and not self.Pending' in selection
-          and 'self:VerticalNudge(if input.Position.Z>0 then 1 else -1)' in selection
+    check("Alt+arrow editor nudge uses camera-relative X/Z; Shift enables height",
+          'function Controller:VerticalNudge(key)' in selection
+          and 'Enum.KeyCode.LeftAlt' in selection
+          and 'Enum.KeyCode.Up' in selection
+          and 'axis,direction="Y"' in selection
+          and 'self:VerticalNudge(key)' in selection
           and 'if fine then 0.05 else 0.25' in service)
-    check("Alt+wheel moves all assembly members, Page keys remain optional",
-          'UIS.InputChanged:Connect(function(input)' in assembly_tool
-          and 'self:VerticalNudge(if input.Position.Z>0 then 1 else -1)' in assembly_tool
-          and 'key==Enum.KeyCode.PageUp or key==Enum.KeyCode.PageDown' in assembly_tool
-          and 'action="VerticalMove",scope="Assembly"' in assembly_tool)
+    check("Alt+arrow assembly nudge retains grouped move transaction",
+          'function Tool:VerticalNudge(key)' in assembly_tool
+          and 'self:VerticalNudge(key)' in assembly_tool
+          and 'axis=axis,direction=direction,fine=fine' in assembly_tool
+          and 'action="VerticalMove",scope="Assembly"' in assembly_tool
+          and 'Enum.KeyCode.PageUp' not in assembly_tool)
+    materials=read("src/shared/Construction/MaterialCatalog.lua")
+    material_ui=read("src/client/Controllers/MaterialPickerController.lua")
+    angular=read("src/client/Controllers/AngularJointController.lua")
+    joint_frames=read("src/shared/Construction/JointFrameMath.lua")
+    motor_client=read("src/client/Controllers/MotorControlController.lua")
+    assembly_client=read("src/client/Controllers/AssemblyController.lua")
+    check("Physical materials set density/grip/restitution and include tire rubber",
+          'Rubber={Name="Rubber (tires)"' in materials
+          and 'CustomPhysicalProperties=PhysicalProperties.new(' in materials
+          and 'settings.Friction,settings.Elasticity,100,100' in materials
+          and 'part.Material=settings.Material' in materials)
+    check("Material palette is user-selectable, owned, saved and undoable",
+          'action="SetMaterial"' in material_ui
+          and 'function Picker:Open()' in material_ui
+          and 'MaterialCatalog.IsValid(payload.materialId)' in service
+          and 'MaterialCatalog.Apply(model,if MaterialCatalog.IsValid' in service
+          and 'commitBatch(player,before,after)' in service
+          and 'material=snap.materialId' in persistence
+          and 'materialId=record.material or "Steel"' in persistence)
+    check("Arbitrary joint frames use 12 finite local coordinates",
+          'function Frames.Decode(values)' in joint_frames
+          and '#values~=12' in joint_frames
+          and 'function Frames.Validate(kind,a,b,frameA,frameB)' in joint_frames
+          and 'Frames.Encode(partA.CFrame:ToObjectSpace(worldFrame))' in joint_frames)
+    check("Arbitrary hinge, ball, universal and powered joints saved by server",
+          'function Mechanical:CreateAxisJoint(' in mechanical
+          and 'function Mechanical:EditAxisJoint(' in mechanical
+          and 'spec.frameA' in mechanical
+          and 'spec.frameB' in mechanical
+          and 'joint.Attachment0=a0' in mechanical
+          and 'joint.Attachment1=a1' in mechanical)
+    check("Joint authoring and reediting input paths are wired",
+          'AngularJointController.new(self)' in assembly_client
+          and 'self.Angular:Click()' in assembly_client
+          and 'function Angular:EditAimed()' in angular
+          and 'action=if self.EditId then "EditAxisJoint" else "CreateAxisJoint"' in angular
+          and 'action=="CreateAxisJoint"' in service
+          and 'action=="EditAxisJoint"' in service)
+    check("Powered hinge obeys configured held key with safety liveness timeout",
+          'OPENWORKS_MotorControl' in service
+          and 'simulation:InputMotor(player,key,holding)' in service
+          and 'function Simulation:InputMotor(player,key,holding)' in simulation
+          and 'os.clock()-motor.LastInput>0.45' in simulation
+          and 'motor.Constraint.AngularVelocity=0' in simulation
+          and 'self.Remote:FireServer(key,false)' in motor_client
+          and 'self.Remote:FireServer(key,true)' in motor_client)
+    check("Motor tuning persists and supports native key/speed/torque editing",
+          'function Mechanical:TuneAxisMotor(' in mechanical
+          and 'motorKey=relation:GetAttribute("MotorKey")' in mechanical
+          and 'action="TuneAxisMotor"' in angular
+          and 'action=="TuneAxisMotor"' in service)
     check("Assembly server authorization",
           'hasEquippedTool(player,"Assembly")' in service
           and 'action=="CreateAssembly"' in service
