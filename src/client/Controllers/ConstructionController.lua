@@ -6,6 +6,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local CameraAimRay=require(script.Parent:WaitForChild("CameraAimRay"))
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
@@ -742,8 +743,7 @@ function Controller:RecognizeAttachment(raw,hit)
         if self.Selected and self.Pending=="Move" then
             ignored[self.Selected]=true
         end
-        local half=camera.ViewportSize*0.5
-        local aim=camera:ViewportPointToRay(half.X,half.Y)
+        local aim=CameraAimRay.Ray(camera)
         local targets=SmartPlacement.NearbyTargets(
             folder,player.UserId,raw.Position,ignored,aim)
         local best,bestDistance=nil,math.huge
@@ -782,8 +782,7 @@ function Controller:RecognizeAttachment(raw,hit)
     if self.Pending=="ComponentMove" then
         for _,member in ipairs(self.SelectedParts) do ignore[member]=true end
     end
-    local half=camera.ViewportSize*0.5
-    local ray=camera:ViewportPointToRay(half.X,half.Y)
+    local ray=CameraAimRay.Ray(camera)
     local aimedModel=if hit and hit.Instance
         then topBuiltModel(hit.Instance,folder) else nil
     local movingGear=false
@@ -1164,10 +1163,7 @@ function Controller:CastCenter(excludeSelected)
     local camera = workspace.CurrentCamera
     if not camera then return nil end
 
-    local ray = camera:ViewportPointToRay(
-        camera.ViewportSize.X / 2,
-        camera.ViewportSize.Y / 2
-    )
+    local ray = CameraAimRay.Ray(camera)
 
     local ignored = {}
     if player.Character then table.insert(ignored, player.Character) end
