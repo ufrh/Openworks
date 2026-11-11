@@ -223,6 +223,33 @@ def main() -> int:
           'eccentricity>0.012' in smart_placement
           and 'return Bore.ShaftFits(shaft,gearBody)' in smart_placement
           and 'function Smart.HubPose(' in smart_placement)
+    check("Gear-to-gear acquisition targets teeth and true pitch circle",
+          'Smart.GearPitchCapture = 0.7' in smart_placement
+          and 'Smart.GearFaceCapture = 0.55' in smart_placement
+          and 'math.abs(radial.Magnitude-pitch)>Smart.GearPitchCapture' in smart_placement
+          and 'aimedPart:IsDescendantOf(model)' in smart_placement
+          and 'local directAim=aimedModel==target' in smart_placement
+          and 'score=if directAim then -0.15' in smart_placement)
+    check("Gear-to-gear snap retains tight separate shaft bore hitbox",
+          'Smart.HubSnapRadius = 0.34' in smart_placement
+          and 'Smart.HubAimRadius = 0.24' in smart_placement
+          and 'if hubAimed then boreAim*0.25+0.015' in smart_placement)
+    check("Gear selection retargets by tooth hit without old target lock",
+          'local switchedGear=movingGear and aimedModel' in selection
+          and 'local fullScan=switchedGear' in selection
+          and 'preview,hit and hit.Instance' in selection
+          and 'ray,allTargets,aimedModel' in selection
+          and 'if kind=="Gear" then 0.08 else 1.5' in smart_placement)
+    check("Gear placement authors geometry, not legacy mechanical mesh joints",
+          'if mode=="Gear" then' in mechanical
+          and 'd.commitAssembly(player,before,after,nil,false)' in mechanical
+          and 'mode~="Gear" and typeName~="FreeFit"' in mechanical
+          and 'GearMath.AutoMeshStatus(source,target)' in mechanical)
+    check("Preview, server and simulation agree on physical gear engagement",
+          'GearMath.AutoMeshable(movingModel,target)' in preview
+          and 'GearMath.AutoMeshable(candidate,target)' in service
+          and 'GearMath.AutoMeshStatus(source,target)' in mechanical
+          and 'GearMath.AutoMeshable(left.Model,right.Model)' in gears)
     gear_templates=read("src/server/Runtime/GearLibrary.lua")
     check("Gear snap uses tiny bore/axis-specific target, not gear bounding radius",
           'Smart.HubSnapRadius = 0.34' in smart_placement
