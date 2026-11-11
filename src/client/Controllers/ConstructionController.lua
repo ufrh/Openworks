@@ -28,6 +28,7 @@ local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local BoreClearance = require(construction:WaitForChild("BoreClearance"))
 local NumericSizePanel = require(script.Parent:WaitForChild("NumericSizePanel"))
 local MateChoicePanel = require(script.Parent:WaitForChild("MateChoicePanel"))
+local MaterialPickerController=require(script.Parent:WaitForChild("MaterialPickerController"))
 local ComponentOutline = require(script.Parent:WaitForChild("ComponentOutline"))
 local Theme = require(script.Parent:WaitForChild("StudioTheme"))
 
@@ -2133,6 +2134,14 @@ function Controller:OnInput(input, processed)
         if self.Pending then self:CancelPending() self:RefreshHUD() end
         return
     end
+    if self.MaterialPicker and self.MaterialPicker.Visible then
+        if key==Enum.KeyCode.Escape then self.MaterialPicker:Close() end
+        return
+    end
+    if key==Enum.KeyCode.M and self.Mode=="Edit" and not processed then
+        if self.MaterialPicker then self.MaterialPicker:Open() end
+        return
+    end
     if key == Enum.KeyCode.V and not processed then
         if self.ScaleMode then self:EndScale() else self:BeginScale() end
         return
@@ -2199,6 +2208,8 @@ function Controller:Start()
     if self.Started then return end
     self.Started = true
     self:MakeUI()
+    self.MaterialPicker=MaterialPickerController.new(self)
+    self.MaterialPicker:Start()
     -- Local-only 3D visual instances belong to Workspace, not ScreenGui.
     -- Keep a single owned container so reload/Destroy can't leak outlines.
     self.SelectionWorldRoot=Instance.new("Folder")
@@ -2354,6 +2365,7 @@ function Controller:Start()
 end
 
 function Controller:Destroy()
+    if self.MaterialPicker then self.MaterialPicker:Destroy() end
     if self.MateChoice then self.MateChoice:Destroy() end
     if self.Numeric then self.Numeric:Destroy() end
     self:EndScale()
