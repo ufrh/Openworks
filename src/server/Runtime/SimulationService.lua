@@ -630,7 +630,27 @@ function Simulation:Start(player, payload)
         local hasExplicitGround = next(explicitGround) ~= nil
         session.GroundKeys = explicitGround
         if not hasExplicitGround and session.Grounded then
-            session.GroundKeys[graph.rootKey] = true
+            -- Aim-at-crank must not ground the actuator you're about to
+            -- turn. Prefer the BEARING HOUSING of a crank mechanism.
+            local hasCrank=false
+            for _,model in ipairs(graph.models) do
+                if HandCrankMath.IsCrank(model) then hasCrank=true break end
+            end
+            local groundedKey=if hasCrank then nil else graph.rootKey
+            if hasCrank then
+                for _,edge in ipairs(graph.edges) do
+                    if (edge.kind=="Bearing" or edge.kind=="Slider"
+                            or edge.kind=="Cylindrical")
+                        and Alignment.TargetAxis(edge.target)
+                        and not HandCrankMath.IsCrank(edge.target) then
+                        groundedKey=edge.b
+                        break
+                    end
+                end
+            end
+            -- Without a real bearing housing and without explicit ground,
+            -- a crank mechanism is FREE rather than freezing the crank.
+            if groundedKey then session.GroundKeys[groundedKey]=true end
         end
 
         -- Subtle green/orange physical outlines tell players which
