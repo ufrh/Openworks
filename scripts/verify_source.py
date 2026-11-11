@@ -141,6 +141,23 @@ def main() -> int:
     check("Clearance weld requires real drilled bore fit",
           'Bore.ShaftFits(shaft,hole)' in mechanical
           and 'string.find(name,"drilledblock",1,true)' in mechanical)
+    layered=read("src/client/Controllers/LayeredEditingController.lua")
+    check("Relationship picker uses clickable modal, never numeric choices",
+          'Name="OPENWORKS_RelationshipPicker"' in mates
+          and 'Modal=true' in mates
+          and 'button.Activated:Connect' in mates
+          and 'Enum.KeyCode.Escape' in mates
+          and 'self:Choose((index-1)%4+1)' not in mates
+          and 'BLOCKED_KEYS' in mates)
+    check("Build/Edit plus manual L align all use same popup",
+          'self:OpenMateChoice("Build")' in selection
+          and 'self:OpenMateChoice("Edit")' in selection
+          and 'parent.MateChoice:Show' in layered
+          and 'action=if choice=="FreeFit" then "Align" else "CreateRelation"' in layered)
+    check("Relationship modal cannot duplicate world clicks",
+          'if self.PendingMateChoice or (self.Numeric and self.Numeric.Active) then return end' in selection
+          and 'self.IgnoreClickUntil=os.clock()+0.22' in selection
+          and 'self:RefreshPointer()' in selection)
 
     check("Metadata undo is in place",
           'kind="Metadata"' in service
