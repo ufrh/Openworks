@@ -1448,7 +1448,13 @@ function Controller:Place(chosenKind)
                 or self.SmartMatch.kind=="CrankCoupling"
                 or self.SmartMatch.kind=="Hub")
             then self.PreviewCF.Rotation else nil,
-        autoMate=if self.Pending~="Copy" and self.SmartMatch then {
+        autoMate=if self.SmartMatch
+            and (self.Pending~="Copy"
+                or self.SmartMatch.kind=="Gear"
+                or self.SmartMatch.kind=="Rack"
+                or self.SmartMatch.kind=="Guide") then {
+            -- Gear/Rack/Guide snaps only position geometry. All physical
+            -- bearing/weld/mount relationships are omitted on an F-copy.
             kind=self.SmartMatch.kind,
             targetId=self.SmartMatch.target:GetAttribute("InstanceId"),
             relationKind=chosenKind or self.SmartMatch.relationKind,
