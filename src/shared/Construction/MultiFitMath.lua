@@ -70,18 +70,91 @@ end
 -- Separate nearby components must not become accidental guide contacts.
 function Fit.Scope(target,all)
     if not target then return {} end
-    local id=target:GetAttribute("ComponentId")
-    if type(id)~="string" or id=="" then return {target} end
+    -- Rigid membership has TWO legitimate sources:
+    -- (1) the EDITOR ComponentId group and
+    -- (2) manually authored Weld/Fixed/Bolt relationships.
+    -- The latter was previously omitted, so welding four rods to one
+    -- lower plate still left the snap search looking at ONE rod.
+    local modelsById={}
+    local byComponent={}
     local owner=target:GetAttribute("OwnerUserId")
-    local result={}
-    for _,model in ipairs(all or {}) do
-        if model:IsA("Model") and model.PrimaryPart
-            and model:GetAttribute("ComponentId")==id
-            and model:GetAttribute("OwnerUserId")==owner then
-            table.insert(result,model)
+    local function record(model)
+        if not model:IsA("Model") or not model.PrimaryPart
+            or model:GetAttribute("OwnerUserId")~=owner then return end
+        local id=model:GetAttribute("InstanceId")
+        if type(id)~="string" then return end
+        modelsById[id]=model
+        local component=model:GetAttribute("ComponentId")
+        if type(component)=="string" and component~="" then
+            byComponent[component]=byComponent[component] or {}
+            table.insert(byComponent[component],id)
         end
     end
-    if #result==0 then return {target} end
+    for _,model in ipairs(all or {}) do record(model) end
+    record(target)
+
+    local neighbours={}
+    local function connect(a,b)
+        if type(a)~="string" or type(b)~="string"
+            or not modelsById[a] or not modelsById[b] then return end
+        neighbours[a]=neighbours[a] or {}
+        neighbours[b]=neighbours[b] or {}
+        table.insert(neighbours[a],b)
+        table.insert(neighbours[b],a)
+    end
+    local relations=workspace:FindFirstChild("OPENWORKS_Relationships")
+    if relations then
+        for _,relation in ipairs(relations:GetChildren()) do
+            if relation:GetAttribute("OwnerUserId")~=owner then continue end
+            local kind=relation:GetAttribute("Kind")
+            if kind=="Weld" or kind=="Fixed" or kind=="Bolt" then
+                local shaft=relation:GetAttribute("SourceId")
+                local body=relation:GetAttribute("TargetId")
+                connect(shaft,body)
+                if kind=="Bolt" then
+                    connect(shaft,relation:GetAttribute("SecondTargetId"))
+                end
+            end
+        end
+    end
+
+    local seen={}
+    local queue={}
+    local start=target:GetAttribute("InstanceId")
+    if type(start)~="string" then return {target} end
+    seen[start]=true
+    table.insert(queue,start)
+    local result={}
+    local cursor=1
+    while cursor<=#queue do
+        local id=queue[cursor]
+        cursor+=1
+        local member=modelsById[id]
+        if member then
+            table.insert(result,member)
+            local group=member:GetAttribute("ComponentId")
+            local candidates={}
+            if type(group)=="string" and group~="" then
+                for _,peer in ipairs(byComponent[group] or {}) do
+                    table.insert(candidates,peer)
+                end
+            end
+            for _,peer in ipairs(neighbours[id] or {}) do
+                table.insert(candidates,peer)
+            end
+            for _,peer in ipairs(candidates) do
+                if not seen[peer] then
+                    seen[peer]=true
+                    table.insert(queue,peer)
+                end
+            end
+        end
+        if #queue>128 then break end
+    end
+    table.sort(result,function(a,b)
+        return tostring(a:GetAttribute("InstanceId"))
+            <tostring(b:GetAttribute("InstanceId"))
+    end)
     return result
 end
 
