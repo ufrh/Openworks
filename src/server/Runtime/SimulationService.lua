@@ -779,6 +779,9 @@ function Simulation:Start(player, payload)
         .. (if next(session.GroundKeys)
             then "green grounded / orange movable • P stop"
             else "free assembly • orange bodies • P stop")
+        .. (if session.Gears and #session.Gears.Gears>0 then
+            string.format(" • %d automatically meshed gear pair(s)",
+                session.Gears.Contacts) else "")
 end
 
 -- Keep runtime native constraints synchronized with authored property edits.
@@ -900,6 +903,10 @@ function Simulation:Info(player,payload)
         table.insert(lines,if session.Paused then "PAUSED"
             elseif session.Gears and session.Gears:IsKinematic(id)
                 then "KINEMATIC GEARS" else "LIVE PHYSICS")
+        if session.Gears and #session.Gears.Gears>0 then
+            table.insert(lines,string.format("%d automatic gear meshes",
+                session.Gears.Contacts))
+        end
         for _, constraint in ipairs(session.Constraints) do
             if constraint:IsA("HingeConstraint") then
                 table.insert(lines,string.format("hinge %.1f°",constraint.CurrentAngle))
