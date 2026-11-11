@@ -211,8 +211,13 @@ local function bestBoreRoll(ghost,members,source,target,reverse,
     local baseDelta=baseCF*pivot:Inverse()
     local primary=(baseDelta*source:GetPivot()).Position
     local fixed=target:GetPivot().Position
-    local axis=if reverse then target:GetPivot().RightVector.Unit
-        else (baseDelta*source:GetPivot()).RightVector.Unit
+    -- A reversed housing may face opposite the fixed shaft. Rotate in
+    -- the MOVING opening's aligned axial direction, exactly as
+    -- Alignment.ReversePlan does, or the inferred roll sign flips.
+    local alignedSource=baseDelta*source:GetPivot()
+    local axis=if reverse then alignedSource:VectorToWorldSpace(
+        Alignment.TargetAxis(source)).Unit
+        else alignedSource.RightVector.Unit
     local candidates={roll}
     local used={}
     local function addAngle(theta)
@@ -255,7 +260,7 @@ local function bestBoreRoll(ghost,members,source,target,reverse,
         end
     end
     local bestCF,bestRoll,bestCount=baseCF,roll,0
-    local bestChange=math.huge
+    local bestError,bestChange=math.huge,math.huge
     for _,candidate in ipairs(candidates) do
         local plan=if reverse then Alignment.ReversePlan(
             members,source,target,offset,candidate)
@@ -269,11 +274,19 @@ local function bestBoreRoll(ghost,members,source,target,reverse,
                     source:GetAttribute("InstanceId"),
                     target:GetAttribute("InstanceId"))
                 local count=#unique
+                local error=0
+                for _,pair in ipairs(unique) do
+                    error+=pair.radial*pair.radial
+                        +math.max(0,1-(pair.angular or 1))*0.04
+                end
                 local change=math.abs(candidate-roll)
                 if count>bestCount
-                    or (count==bestCount and change<bestChange) then
+                    or (count==bestCount and
+                        (error<bestError-0.0000001
+                            or (math.abs(error-bestError)<0.0000001
+                                and change<bestChange))) then
                     bestCF,bestRoll,bestCount=nextCF,candidate,count
-                    bestChange=change
+                    bestError,bestChange=error,change
                 end
             end
         end
@@ -376,10 +389,12 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                         eligible+=1
                     end
                 end
-                local current=if initial then #MultiFit.Unique(initial,
+                local currentFits=initial and MultiFit.Unique(initial,
                     source:GetAttribute("InstanceId"),
-                    target:GetAttribute("InstanceId")) else 0
-                if current<eligible then
+                    target:GetAttribute("InstanceId")) or {}
+                local completed=MultiFit.Completeness(
+                    members,chosenTargets,currentFits,isOpening)
+                if #currentFits<eligible or not completed then
                     cf,roll=bestBoreRoll(ghost,members,source,target,
                         isOpening,offset,roll,cf,chosenTargets,ignored)
                 end
