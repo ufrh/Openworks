@@ -1177,6 +1177,7 @@ function Service.Start()
         nearPlayer = nearPlayer,
         intersectsConstructed = intersectsConstructed,
         commitBatch = commitBatch,
+        commitMetadata = commitMetadata,
     })
 
     alignmentService = AlignmentService.new({
