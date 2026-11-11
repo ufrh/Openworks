@@ -8,6 +8,11 @@ Mate.__index=Mate
 -- Kinematic joints are the default. Rigid bonds require the Weld tool.
 -- A FreeFit places geometry only; it adds no invisible solver constraint.
 local TYPES={"Cylindrical","Slider","Bearing","FreeFit"}
+local HUB_TYPES={"Rotation","Rigid"}
+local HUB_LABELS={
+    "Rotation only   •   gear spins freely on shaft",
+    "Rigid   •   gear and shaft rotate together",
+}
 local KEYS={Enum.KeyCode.One,Enum.KeyCode.Two,Enum.KeyCode.Three,
     Enum.KeyCode.Four,Enum.KeyCode.KeypadOne,Enum.KeyCode.KeypadTwo,
     Enum.KeyCode.KeypadThree,Enum.KeyCode.KeypadFour}
@@ -20,7 +25,7 @@ local function instance(class,parent,properties)
 end
 
 function Mate.new(gui)
-    local self=setmetatable({Active=false,Callback=nil},Mate)
+    local self=setmetatable({Active=false,Callback=nil,Types=TYPES,Buttons={}},Mate)
     local frame=instance("Frame",gui,{
         Name="OPENWORKS_ShaftConnectionChoice",
         Size=UDim2.fromOffset(314,268),
@@ -62,11 +67,12 @@ function Mate.new(gui)
             Text="   "..i.."   "..subtitles[i],ZIndex=121,
         })
         instance("UICorner",button,{CornerRadius=UDim.new(0,5)})
+        table.insert(self.Buttons,button)
         button.Activated:Connect(function()
             self:Choose(i)
         end)
     end
-    label("1–4 / Enter (default)   •   Esc cancels",238,18,11,
+    self.Footnote=label("1–4 / Enter (default)   •   Esc cancels",238,18,11,
         Color3.fromRGB(158,184,196))
     self.Frame=frame
     self.Heading=heading
@@ -74,15 +80,30 @@ function Mate.new(gui)
     return self
 end
 
-function Mate:Show(callback,fitCount)
+function Mate:Show(callback,fitCount,gearMount)
     if self.Active then return end
     fitCount=math.max(1,math.floor(tonumber(fitCount) or 1))
-    self.Heading.Text=if fitCount>1
+    self.Types=if gearMount then HUB_TYPES else TYPES
+    self.Heading.Text=if gearMount then "GEAR / SHAFT"
+        elseif fitCount>1
         then "MULTI-POINT FIT  /  "..tostring(fitCount).." GUIDES"
         else "SHAFT / HOUSING"
-    self.Detail.Text=if fitCount>1
+    self.Detail.Text=if gearMount
+        then "Choose how the gear attaches to the shaft"
+        elseif fitCount>1
         then "Slide only recommended for parallel guide rods"
         else "Choose motion; no automatic welding"
+    self.Frame.Size=UDim2.fromOffset(314,if gearMount then 182 else 268)
+    self.Footnote.Position=UDim2.fromOffset(16,if gearMount then 150 else 238)
+    self.Footnote.Text=if gearMount
+        then "1–2 / Enter (Rotation)   •   Esc cancels"
+        else "1–4 / Enter (default)   •   Esc cancels"
+    for i,button in ipairs(self.Buttons) do
+        button.Visible=not gearMount or i<=2
+        button.Text=if gearMount and HUB_LABELS[i]
+            then "   "..i.."   "..HUB_LABELS[i]
+            else "   "..i.."   "..subtitles[i]
+    end
     self.Active=true
     self.Callback=callback
     self.Frame.Visible=true
@@ -126,12 +147,12 @@ function Mate:Show(callback,fitCount)
 end
 
 function Mate:Choose(index)
-    if not self.Active or not TYPES[index] then return end
+    if not self.Active or not self.Types[index] then return end
     local callback=self.Callback
     -- Release the keyboard lock before issuing the request; the parent
     -- can show a validation error without leaving the hotbar disabled.
     self:Hide()
-    if callback then callback(TYPES[index]) end
+    if callback then callback(self.Types[index]) end
 end
 
 function Mate:Cancel()
