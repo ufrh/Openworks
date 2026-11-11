@@ -155,6 +155,23 @@ function Kinematics:IsKinematic(id)
     return group~=nil and self.Kinematic[group]==true
 end
 
+function Kinematics:CanDriveRack(id)
+    local group=self.ById[id]
+    return group~=nil and #group.Racks>0
+        and group.TravelAxis~=nil
+        and group.Guide~=nil and group.Supported and not group.Grounded
+end
+
+function Kinematics:RackAxis(id)
+    local group=self.ById[id]
+    return group and group.TravelAxis or nil
+end
+
+function Kinematics:RackModel(id)
+    local group=self.ById[id]
+    return group and group.Racks[1] and group.Racks[1].Model or nil
+end
+
 function Kinematics:IsGrounded(id)
     local group=self.ById[id]
     return group~=nil and group.Grounded==true
@@ -502,7 +519,11 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
     local source=self.ById[sourceId]
     if not source or not self.Kinematic[source] then return end
 
-    local speed={[source]=self.CurrentSpeed*source.Axis:Dot(inputAxis)}
+    -- A rack is the SAME graph node type as a gear but its DOF is
+    -- distance, not angle. Input speed is rad/s when rotational,
+    -- studs/s when linear; reciprocal edge ratios convert both ways.
+    local dof=source.TravelAxis or source.Axis
+    local speed={[source]=self.CurrentSpeed*dof:Dot(inputAxis)}
     local queue={source}
     local index=1
     local stalled=false
