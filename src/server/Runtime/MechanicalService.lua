@@ -1135,8 +1135,10 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
     local fittedState=table.clone(beforeSize)
     fittedState.size=desiredSize
     local entry=d.Registry.Get(fittedState.templateId)
-    local sizingValid,sizingWhy=if entry then
-        d.validState(player,entry,fittedState) else false,"Missing crank template"
+    local sizingValid,sizingWhy=false,"Missing crank template"
+    if entry then
+        sizingValid,sizingWhy=d.validState(player,entry,fittedState)
+    end
     if not sizingValid then
         if changed then
             for index,member in ipairs(members) do
