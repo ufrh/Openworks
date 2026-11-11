@@ -230,8 +230,8 @@ function Tool:Refresh()
     local count=0
     for _ in pairs(self.Selected) do count+=1 end
     self.Shortcuts.Text=if self.Stage=="Selecting"
-        then "PgUp/PgDn  Y MOVE    N  NEW    Enter  CONFIRM"
-        else "PgUp/PgDn  Y MOVE   N  NEW   Click  EDIT"
+        then "Alt+Wheel  HEIGHT    Enter  CONFIRM    N  NEW"
+        else "Alt+Wheel  HEIGHT    N  NEW    Click  EDIT"
     if self.Stage=="Selecting" then
         self.Title.Text="ASSEMBLY / "..self.Name
         self.Status.Text=tostring(count).." primitives selected"
@@ -669,6 +669,17 @@ function Tool:Start()
     end))
     table.insert(self.Connections,UIS.InputEnded:Connect(function(input)
         if input.KeyCode==self.VerticalHeld then self.VerticalHeld=nil end
+    end))
+    table.insert(self.Connections,UIS.InputChanged:Connect(function(input)
+        if input.UserInputType~=Enum.UserInputType.MouseWheel
+            or input.Position.Z==0
+            or self.Tools.ActiveId~="Assembly" or self.Stage=="Naming"
+            or self.Busy or UIS:GetFocusedTextBox() then return end
+        local alt=UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
+            or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
+        if alt then
+            self:VerticalNudge(if input.Position.Z>0 then 1 else -1)
+        end
     end))
     table.insert(self.Connections,RunService.Heartbeat:Connect(function(dt)
         local key=self.VerticalHeld
