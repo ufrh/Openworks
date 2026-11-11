@@ -425,7 +425,7 @@ def main() -> int:
     surface=read("src/shared/Construction/SurfacePlacement.lua")
     check("Neighbor face snap uses target local coordinates and exact contact",
           'function SurfacePlacement.SnapToNearbyFace(' in surface
-          and 'targetCF:VectorToObjectSpace(n)' in surface
+          and 'math.abs(n:Dot(axis))<0.6' in surface
           and 'SurfacePlacement.SnapToSurface(ghost,desired,' in surface
           and 'local FACE_LATTICE=0.0625' in surface
           and 'local bestEdge=EDGE_CAPTURE' in surface
