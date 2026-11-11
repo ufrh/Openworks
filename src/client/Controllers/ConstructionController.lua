@@ -319,6 +319,8 @@ function Controller:RefreshHUD()
             then (if self.LockedAlignment
                 then "POSITION  •  wheel depth • Q/E roll • click to finalize"
                 else "Align the shaft/hole pattern • click to adjust positioning")
+            elseif match.kind=="CrankCoupling"
+            then "Click to couple hand crank to shaft end • physical weld, not motor"
             elseif match.kind=="Gear"
             then (if self.Mode=="Build" then "Click to mesh gears" else "Release to mesh gears")
                 .. " • Tab target • Alt free"
@@ -665,7 +667,9 @@ function Controller:SmartDrop(chosenKind)
     local exactSourceCF=self.PreviewCF*sourceOffset
     local exactSourcePosition=exactSourceCF.Position
     local ok=self:Request({
-        action=if match.kind=="BoltHole" then "FastenBolt" else "SmartMate",
+        action=if match.kind=="BoltHole" then "FastenBolt"
+            elseif match.kind=="CrankCoupling" then "CoupleHandCrank"
+            else "SmartMate",
         boltId=if match.kind=="BoltHole" then match.source:GetAttribute("InstanceId") else nil,
         sourceId=match.source:GetAttribute("InstanceId"),
         targetId=match.target:GetAttribute("InstanceId"),
@@ -1386,7 +1390,8 @@ function Controller:Place(chosenKind)
         numericPrecision=self.NumericPrecision==true,
         orientation=if self.SmartMatch
             and (self.SmartMatch.kind=="BoltHole"
-                or self.SmartMatch.kind=="Bore")
+                or self.SmartMatch.kind=="Bore"
+                or self.SmartMatch.kind=="CrankCoupling")
             then self.PreviewCF.Rotation else nil,
         autoMate=if self.SmartMatch then {
             kind=self.SmartMatch.kind,

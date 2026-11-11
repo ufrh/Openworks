@@ -14,6 +14,8 @@ local Smart = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SmartPlacement"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
+local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
 local ComponentGeometry = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("ComponentGeometry"))
 local BoltMath = require(ReplicatedStorage:WaitForChild("Openworks")
@@ -1056,6 +1058,53 @@ function Mechanical:TuneSpring(player,request)
     self.D.commitJointEdit(player,before,self:Snapshot(relation))
     return true,string.format("Spring %.0f stiffness / %.0f damping / %.2f U rest",
         stiffness,damping,freeLength/self.D.Grid.Unit)
+end
+
+-- A user-authorized end-to-end coupling is a REAL rigid Weld relationship.
+-- Neither ComponentId nor a shaft-bearing joint supplies this connection.
+function Mechanical:CoupleHandCrank(player,request,newSource)
+    if type(request)~="table" then return false,"Invalid hand-crank coupling" end
+    local source=self.D.findOwned(player,request.sourceId)
+    local target=self.D.findOwned(player,request.targetId)
+    if not source or not target or source==target
+        or not HandCrankMath.IsCrank(source)
+        or not HandCrankMath.IsOutputShaft(target) then
+        return false,"Choose a HandCrank output and a separate cylinder shaft"
+    end
+    if not self.D.nearPlayer(player,source:GetPivot().Position)
+        or not self.D.nearPlayer(player,target:GetPivot().Position) then
+        return false,"Both parts must be in building range"
+    end
+    if self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
+        return false,"Mechanical relationship limit reached"
+    end
+    local fits,why=HandCrankMath.Fits(source,target)
+    if not fits then return false,why end
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId")==player.UserId
+            and (relation:GetAttribute("Kind")=="Weld"
+                or relation:GetAttribute("Kind")=="Fixed")
+            and ((relation:GetAttribute("SourceId")==request.sourceId
+                and relation:GetAttribute("TargetId")==request.targetId)
+                or (relation:GetAttribute("SourceId")==request.targetId
+                    and relation:GetAttribute("TargetId")==request.sourceId)) then
+            return false,"Crank output is already coupled to this shaft"
+        end
+    end
+    local spec={
+        relationId=HttpService:GenerateGUID(false),
+        ownerUserId=player.UserId,kind="Weld",
+        sourceId=request.sourceId,targetId=request.targetId,
+        componentId=source:GetAttribute("ComponentId"),
+    }
+    local ok,reason=self:Restore(player,spec)
+    if not ok then return false,reason end
+    if newSource then
+        self.D.commitAssembly(player,{}, {self.D.snapshot(source)},spec)
+    else
+        self.D.commitAssembly(player,{}, {},spec)
+    end
+    return true,"Hand crank physically coupled to shaft end • manual torque enabled in simulation"
 end
 
 function Mechanical:CreateWeld(player,request)

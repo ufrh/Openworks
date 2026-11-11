@@ -19,6 +19,7 @@ local MechanicalService = require(script.Parent:WaitForChild("MechanicalService"
 local SimulationService = require(script.Parent:WaitForChild("SimulationService"))
 local GearLibrary = require(script.Parent:WaitForChild("GearLibrary"))
 local FastenerLibrary = require(script.Parent:WaitForChild("FastenerLibrary"))
+local HandCrankLibrary = require(script.Parent:WaitForChild("HandCrankLibrary"))
 local AssemblyService = require(script.Parent:WaitForChild("AssemblyService"))
 local PlotService = require(script.Parent:WaitForChild("PlotService"))
 local PlotPersistence = require(script.Parent:WaitForChild("PlotPersistence"))
@@ -439,10 +440,12 @@ local function place(player, payload)
         size = payload.size or (template and template.Size),
         orientation = if payload.autoMate
             and (payload.autoMate.kind=="BoltHole"
-                or payload.autoMate.kind=="Bore")
+                or payload.autoMate.kind=="Bore"
+                or payload.autoMate.kind=="CrankCoupling")
             then payload.orientation else nil,
         freePosition=payload.autoMate and (payload.autoMate.kind=="BoltHole"
-            or payload.autoMate.kind=="Bore"),
+            or payload.autoMate.kind=="Bore"
+            or payload.autoMate.kind=="CrankCoupling"),
     }
     proposed.resizePrecision = Grid.HasFractionalSize(proposed.size)
     proposed.numericPrecision = payload.numericPrecision == true
@@ -472,6 +475,14 @@ local function place(player, payload)
             return false, "Invalid automatic attachment"
         end
         local mate=payload.autoMate
+        if mate.kind=="CrankCoupling" then
+            local ok,why=mechanical:CoupleHandCrank(player,{
+                sourceId=model:GetAttribute("InstanceId"),
+                targetId=mate.targetId,
+            },true)
+            if not ok then model:Destroy() return false,why end
+            return true,model:GetAttribute("InstanceId")
+        end
         if mate.kind=="BoltHole" then
             local ok,why=mechanical:FastenBolt(player,{
                 boltId=model:GetAttribute("InstanceId"),
@@ -789,6 +800,7 @@ local function handle(player, payload)
         or action == "SetGrounded" or action == "GetMechanismInfo"
         or action == "CreateSpring" or action == "TuneSpring"
         or action == "CreateWeld" or action == "CreateBolt"
+        or action == "CoupleHandCrank"
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
     local simulationAction = action == "StartSimulation"
         or action == "StopSimulation"
@@ -892,6 +904,9 @@ local function handle(player, payload)
         if action=="CreateWeld" then
             return mechanical:CreateWeld(player,payload)
         end
+        if action=="CoupleHandCrank" then
+            return mechanical:CoupleHandCrank(player,payload,false)
+        end
         if action=="CreateBolt" then
             return false,"Use Build > Fasteners to drag a real bolt through the holes"
         end
@@ -942,6 +957,7 @@ function Service.Start()
     plots=PlotService.new()
     GearLibrary.Ensure()
     FastenerLibrary.Ensure()
+    HandCrankLibrary.Ensure()
     folder = workspace:FindFirstChild(Config.FolderName)
     if not folder then
         folder = Instance.new("Folder")

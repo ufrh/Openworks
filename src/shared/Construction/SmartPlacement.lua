@@ -4,6 +4,7 @@
 -- not a two-click relationship selection or a compulsory world grid.
 local Alignment = require(script.Parent:WaitForChild("AlignmentMath"))
 local GearMath = require(script.Parent:WaitForChild("GearMath"))
+local HandCrankMath = require(script.Parent:WaitForChild("HandCrankMath"))
 local Grid = require(script.Parent:WaitForChild("GridMath"))
 local MultiFit = require(script.Parent:WaitForChild("MultiFitMath"))
 local Smart = {}
@@ -335,7 +336,15 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
             local aimReach=math.clamp(target.PrimaryPart.Size.Magnitude*0.38,0.48,1.5)
             local aimed=rayError<=aimReach
             local kind,cf,offset,roll,score,approach
-            if (isGear and Alignment.IsShaft(target))
+            if HandCrankMath.IsCrank(source)
+                and HandCrankMath.IsOutputShaft(target) then
+                local pose,dist=HandCrankMath.Snap(source,target)
+                if pose and (dist<Smart.SnapDistance+1.0 or aimed) then
+                    kind="CrankCoupling"
+                    cf=(pose*source:GetPivot():Inverse())*ghost:GetPivot()
+                    score=if aimed then rayError+0.04 else dist
+                end
+            elseif (isGear and Alignment.IsShaft(target))
                 or (isShaft and gear(target)) then
                 local near=source:GetPivot().Position
                 if aimed and (near-target:GetPivot().Position).Magnitude>3.5 then
@@ -452,6 +461,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 local candidate={kind=kind,target=target,source=source,
                     cf=cf,offsetUnits=offset or 0,rollDegrees=roll or 0,
                     relationKind=if kind=="Bore" then "Cylindrical"
+                        elseif kind=="CrankCoupling" then "Weld"
                         elseif kind=="Hub" then "Fixed" else "Gear",
                     reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score,
