@@ -305,10 +305,19 @@ function Mechanical:Restore(player, spec)
                 constraint.LowerAngle = spec.lowerLimit or -180
                 constraint.UpperAngle = spec.upperLimit or 180
             else
-                constraint.LowerLimit = math.max(low or -4,
-                    spec.lowerLimit or (low or -4))*self.D.Grid.Unit
-                constraint.UpperLimit = math.min(high or 4,
-                    spec.upperLimit or (high or 4))*self.D.Grid.Unit
+                local authoredLow=spec.lowerLimit
+                local authoredHigh=spec.upperLimit
+                local lower=math.max(low,if type(authoredLow)=="number"
+                    then authoredLow else low)
+                local upper=math.min(high,if type(authoredHigh)=="number"
+                    then authoredHigh else high)
+                if lower>=upper then
+                    -- Legacy saves may contain old, overly broad stops.
+                    -- Never let those invert or extend the real tube range.
+                    lower,upper=low,high
+                end
+                constraint.LowerLimit=lower*self.D.Grid.Unit
+                constraint.UpperLimit=upper*self.D.Grid.Unit
             end
         end
         constraint.Parent = folder
