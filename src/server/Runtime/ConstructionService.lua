@@ -299,7 +299,7 @@ local function commitJointEdit(player, before, after)
     table.clear(state.redo)
 end
 
-local function commitAssembly(player, before, after, relation, removed)
+local function commitAssembly(player, before, after, relation, removed, relationEdits)
     local state = historyFor(player)
     -- A multi-point fit is ONE history action containing N independently
     -- authored joint specifications. Single-relation history remains intact.
@@ -310,6 +310,7 @@ local function commitAssembly(player, before, after, relation, removed)
         after = after,
         relation = if batch then nil else relation,
         relations = if batch then relation else nil,
+        relationEdits=relationEdits,
         removed = removed == true,
     })
     if #state.undo > Config.UndoLimit then table.remove(state.undo, 1) end
