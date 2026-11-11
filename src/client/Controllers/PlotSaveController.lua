@@ -76,8 +76,9 @@ function UI:Refresh()
     self.Save.AutoButtonColor=state=="Ready" and not self.Busy
     self.Save.BackgroundColor3=if self.Save.Active then ACCENT else PANEL
     self.Load.Text=if self.Confirm then "CONFIRM RELOAD  /  DISCARD UNSAVED"
+        elseif state=="Error" then "RETRY STORAGE / LOAD PLOT"
         else "LOAD LAST MANUAL SAVE"
-    self.Load.Active=state=="Ready" and not self.Busy
+    self.Load.Active=(state=="Ready" or state=="Error") and not self.Busy
     self.Load.AutoButtonColor=self.Load.Active
 end
 
@@ -96,8 +97,9 @@ end
 
 function UI:Request(action)
     if self.Busy then return end
-    if player:GetAttribute("OPENWORKS_SaveState")~="Ready" then
-        self.State.Text="PLOT NOT READY  /  WAIT FOR LOAD"
+    local state=player:GetAttribute("OPENWORKS_SaveState")
+    if state~="Ready" and not (action=="LoadPlot" and state=="Error") then
+        self.State.Text="STORAGE NOT READY  /  RETRY LOADING"
         return
     end
     self.Busy=true

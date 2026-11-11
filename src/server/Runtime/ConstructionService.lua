@@ -773,8 +773,13 @@ local function handle(player, payload)
             then persistence:Save(player) else persistence:Load(player)
         return {ok=ok==true,message=tostring(message or "")}
     end
-    if not persistence or not persistence.Ready[player] then
-        return {ok=false,message="Plot is still loading or storage is unavailable"}
+    -- API outages must not prevent constructing on the currently owned
+    -- plot. They ONLY disable saving, protecting the previous remote save.
+    -- During an active load we block edits to avoid racing the swap.
+    if not persistence or not plots:Get(player)
+        or persistence.Busy[player]
+        or player:GetAttribute("OPENWORKS_SaveState")=="Loading" then
+        return {ok=false,message="Your plot is still loading"}
     end
     local alignmentAction = action == "Align"
     local mechanicalAction = action == "CreateRelation" or action == "RemoveRelation"
