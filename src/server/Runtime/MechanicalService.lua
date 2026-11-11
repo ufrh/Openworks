@@ -24,6 +24,8 @@ local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SpringMath"))
 local MultiFit = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("MultiFitMath"))
+local JointFrameMath=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("JointFrameMath"))
 
 local Mechanical = {}
 Mechanical.__index = Mechanical
@@ -33,6 +35,8 @@ local function relationValid(kind)
     return kind == "Bearing" or kind == "Slider"
         or kind == "Cylindrical" or kind == "Fixed" or kind == "Gear"
         or kind == "Spring" or kind == "Weld" or kind == "Bolt"
+        or kind=="AxisHinge" or kind=="AxisBall"
+        or kind=="AxisUniversal" or kind=="PoweredHinge"
 end
 
 function Mechanical.new(deps)
@@ -90,6 +94,14 @@ function Mechanical:Snapshot(relation)
         fitSetId = relation:GetAttribute("FitSetId"),
         fitSetIndex = relation:GetAttribute("FitSetIndex"),
         fitSetCount = relation:GetAttribute("FitSetCount"),
+        frameA=if relation:GetAttribute("JointFrameA") then
+            HttpService:JSONDecode(relation:GetAttribute("JointFrameA")) else nil,
+        frameB=if relation:GetAttribute("JointFrameB") then
+            HttpService:JSONDecode(relation:GetAttribute("JointFrameB")) else nil,
+        motorSpeed=relation:GetAttribute("MotorSpeed"),
+        motorTorque=relation:GetAttribute("MotorTorque"),
+        motorAcceleration=relation:GetAttribute("MotorAcceleration"),
+        motorKey=relation:GetAttribute("MotorKey"),
     }
 end
 
@@ -149,6 +161,14 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("FitSetId",spec.fitSetId)
     folder:SetAttribute("FitSetIndex",spec.fitSetIndex)
     folder:SetAttribute("FitSetCount",spec.fitSetCount)
+    if spec.frameA then folder:SetAttribute("JointFrameA",
+        HttpService:JSONEncode(spec.frameA)) end
+    if spec.frameB then folder:SetAttribute("JointFrameB",
+        HttpService:JSONEncode(spec.frameB)) end
+    folder:SetAttribute("MotorSpeed",spec.motorSpeed)
+    folder:SetAttribute("MotorTorque",spec.motorTorque)
+    folder:SetAttribute("MotorAcceleration",spec.motorAcceleration)
+    folder:SetAttribute("MotorKey",spec.motorKey)
 
     local targetPart, sourcePart = target.PrimaryPart, source.PrimaryPart
     if not targetPart or not sourcePart then
@@ -156,7 +176,57 @@ function Mechanical:Restore(player, spec)
         return false, "Missing relationship geometry"
     end
 
-    if spec.kind == "Gear" then
+    if spec.kind=="AxisHinge" or spec.kind=="AxisBall"
+        or spec.kind=="AxisUniversal" or spec.kind=="PoweredHinge" then
+        local valid,why=JointFrameMath.Validate(
+            spec.kind,target,source,spec.frameA,spec.frameB)
+        if not valid then folder:Destroy() return false,why end
+        local a0=Instance.new("Attachment")
+        a0.Name="OPENWORKS_JointAnchorA"
+        a0.CFrame=JointFrameMath.Decode(spec.frameA)
+        a0.Parent=targetPart
+        local a1=Instance.new("Attachment")
+        a1.Name="OPENWORKS_JointAnchorB"
+        a1.CFrame=JointFrameMath.Decode(spec.frameB)
+        a1.Parent=sourcePart
+        for _,attachment in ipairs({a0,a1}) do
+            local link=Instance.new("ObjectValue")
+            link.Name="ManagedAttachment"
+            link.Value=attachment
+            link.Parent=folder
+        end
+        local joint=if spec.kind=="AxisBall"
+            then Instance.new("BallSocketConstraint")
+            elseif spec.kind=="AxisUniversal"
+            then Instance.new("UniversalConstraint")
+            else Instance.new("HingeConstraint")
+        joint.Name=spec.kind
+        joint.Attachment0=a0
+        joint.Attachment1=a1
+        joint.Enabled=true
+        if joint:IsA("HingeConstraint") then
+            if spec.kind=="PoweredHinge" then
+                joint.ActuatorType=Enum.ActuatorType.Motor
+                joint.AngularVelocity=0
+                joint.MotorMaxTorque=math.clamp(
+                    tonumber(spec.motorTorque) or 3000,1,100000)
+                joint.MotorMaxAcceleration=math.clamp(
+                    tonumber(spec.motorAcceleration) or 40,0.1,1000)
+            else
+                joint.ActuatorType=Enum.ActuatorType.None
+                joint.LimitsEnabled=spec.limitsEnabled==true
+                if joint.LimitsEnabled then
+                    joint.LowerAngle=spec.lowerLimit or -90
+                    joint.UpperAngle=spec.upperLimit or 90
+                end
+            end
+        elseif joint:IsA("BallSocketConstraint") then
+            joint.LimitsEnabled=spec.limitsEnabled==true
+            joint.UpperAngle=math.clamp(tonumber(spec.upperLimit) or 45,0,180)
+            joint.TwistLimitsEnabled=false
+        end
+        joint.Parent=folder
+    elseif spec.kind == "Gear" then
         if not source:GetAttribute("GearTeeth")
             or not target:GetAttribute("GearTeeth") then
             folder:Destroy()
@@ -338,6 +408,74 @@ function Mechanical:Restore(player, spec)
     end
     folder.Parent = self.Folder
     return true, folder
+end
+
+local MOTOR_KEYS={
+    F=true,R=true,T=true,Y=true,H=true,J=true,K=true,L=true,
+    B=true,N=true,M=true,V=true,Z=true,X=true,C=true,
+    One=true,Two=true,Three=true,Four=true,
+}
+function Mechanical:CreateAxisJoint(player,request)
+    if type(request)~="table" then return false,"Invalid joint request" end
+    local kind=request.kind
+    if kind~="AxisHinge" and kind~="AxisBall"
+        and kind~="AxisUniversal" and kind~="PoweredHinge" then
+        return false,"Choose hinge, ball, universal or powered hinge"
+    end
+    local target=self.D.findOwned(player,request.targetId)
+    local source=self.D.findOwned(player,request.sourceId)
+    if not target or not source or source==target then
+        return false,"Select two different owned components"
+    end
+    if target:GetAttribute("ComponentId")
+        and target:GetAttribute("ComponentId")==source:GetAttribute("ComponentId") then
+        return false,"Joint endpoints cannot belong to the same component"
+    end
+    if not self.D.nearPlayer(player,target:GetPivot().Position)
+        or not self.D.nearPlayer(player,source:GetPivot().Position) then
+        return false,"Joint endpoints must stay on the owned plot"
+    end
+    if kind=="PoweredHinge" then
+        if type(request.motorKey)~="string"
+            or not MOTOR_KEYS[request.motorKey]
+            or type(request.motorSpeed)~="number"
+            or request.motorSpeed~=request.motorSpeed
+            or math.abs(request.motorSpeed)>35
+            or math.abs(request.motorSpeed)<0.05
+            or type(request.motorTorque)~="number"
+            or request.motorTorque~=request.motorTorque
+            or request.motorTorque<1 or request.motorTorque>100000 then
+            return false,"Motor requires a valid key, speed and torque"
+        end
+    end
+    for _,joint in ipairs(self.Folder:GetChildren()) do
+        if joint:GetAttribute("OwnerUserId")==player.UserId
+            and ((joint:GetAttribute("SourceId")==request.sourceId
+                and joint:GetAttribute("TargetId")==request.targetId)
+                or (joint:GetAttribute("SourceId")==request.targetId
+                    and joint:GetAttribute("TargetId")==request.sourceId))
+            and (joint:GetAttribute("Kind")=="AxisHinge"
+                or joint:GetAttribute("Kind")=="AxisBall"
+                or joint:GetAttribute("Kind")=="AxisUniversal"
+                or joint:GetAttribute("Kind")=="PoweredHinge") then
+            return false,"These bodies already have an arbitrary-axis joint"
+        end
+    end
+    local spec={
+        relationId=HttpService:GenerateGUID(false),
+        kind=kind,sourceId=request.sourceId,targetId=request.targetId,
+        ownerUserId=player.UserId,
+        frameA=request.frameA,frameB=request.frameB,
+        limitsEnabled=request.limitsEnabled==true,
+        lowerLimit=request.lowerLimit,upperLimit=request.upperLimit,
+        motorSpeed=request.motorSpeed,motorTorque=request.motorTorque,
+        motorAcceleration=request.motorAcceleration or 40,
+        motorKey=request.motorKey,
+    }
+    local ok,why=self:Restore(player,spec)
+    if not ok then return false,why end
+    self.D.commitAssembly(player,{}, {},spec)
+    return true,kind.." joint created • editable local anchor frames"
 end
 
 function Mechanical:Create(player, request)
