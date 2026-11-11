@@ -913,7 +913,11 @@ function Controller:Start()
             or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
         local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-        if key==Enum.KeyCode.J and shift then
+        -- Alt+Shift+J edits an existing angular joint; Shift+J alone
+        -- continues to create an ordinary spring connection.
+        local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+        if key==Enum.KeyCode.J and shift and not alt then
             self:StartPair("Spring")
             return
         end
