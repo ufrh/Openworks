@@ -360,7 +360,10 @@ local function restoreBatch(player, record, undo)
     end
 
     local relation=record.relation
-    local relations=record.relations or (relation and {relation} or {})
+    local relations=table.clone(record.relations or (relation and {relation} or {}))
+    for _,edit in ipairs(record.relationEdits or {}) do
+        table.insert(relations,if undo then edit.before else edit.after)
+    end
     local stagedById={}
     for _,stagedModel in ipairs(staged) do
         stagedById[stagedModel:GetAttribute("InstanceId")]=stagedModel
