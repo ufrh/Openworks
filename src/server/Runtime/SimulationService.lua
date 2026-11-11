@@ -674,8 +674,14 @@ function Simulation:Start(player, payload)
                     if not lower then
                         error(reason or "Invalid tube travel geometry")
                     end
-                    if lower>0 or upper<0 then
-                        error("Shaft starts outside tube end stops; align it inside the tube")
+                    local legacyOutside=lower>0 or upper<0
+                    if legacyOutside then
+                        -- The existing plot predates stricter tube stops.
+                        -- Preserve its saved pose and DO NOT invent travel
+                        -- beyond either tube end. Lock translation in the
+                        -- current pose until the user re-aligns the shaft.
+                        lower,upper=0,0
+                        constraint:SetAttribute("LegacyOutOfBounds",true)
                     end
                     local fittedTravel=edge.relation:GetAttribute("FitTravelU")
                     if type(fittedTravel)=="number" then
@@ -684,8 +690,12 @@ function Simulation:Start(player, payload)
                         lower=math.max(lower,-fittedTravel)
                         upper=math.min(upper,fittedTravel)
                     end
-                    if lower>=upper then
-                        error("Multi-point guides have no safe sliding travel")
+                    if lower>upper then
+                        -- Incompatible old multi-guide fit: hold the
+                        -- existing pose instead of rejecting plot load
+                        -- or allowing the shaft to escape the housing.
+                        lower,upper=0,0
+                        constraint:SetAttribute("LegacyOutOfBounds",true)
                     end
                     local physicalLower=lower*Grid.Unit
                     local physicalUpper=upper*Grid.Unit
