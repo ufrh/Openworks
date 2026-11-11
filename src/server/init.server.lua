@@ -17,7 +17,7 @@ FORGE.Start({ Bridge = bridge, Roots = {} })
 provisioner.Start()
 ConstructionService.Start()
 
-print(string.format("[OPENWORKS] FORGE %s | Studio-style UI / adornment joints / smooth manual crank ready", tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] FORGE %s | assembly-only physics / cohesive components / left passive HUD ready", tostring(FORGE.Version)))
 
 game:BindToClose(function()
     FORGE.Shutdown()

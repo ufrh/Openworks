@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS phase 01: native first-person tools and camera controls.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.10.STUDIO-UI-VISUAL-REFINEMENT"
+local BUILD = "2026.11.10.ASSEMBLY-ONLY-COHESIVE-VISUALS"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -53,4 +53,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | Studio-style UI / adornment joints / locked-mouse crank ready", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | assembly-only physics / cohesive components / left passive HUD ready", BUILD, tostring(FORGE.Version)))
