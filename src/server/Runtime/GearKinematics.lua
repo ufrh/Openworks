@@ -357,6 +357,13 @@ function Kinematics:Explain(id)
     return "Gear has no current mesh"
 end
 
+function Kinematics:StopMotion()
+    self.CurrentSpeed=0
+    self.MotionElapsed=0
+    self.LastDrivenId=nil
+    self.LastAxis=nil
+end
+
 -- Every gear group gets the same gravity/support and angular graph
 -- regardless of where the single crank is attached. Drive can start at
 -- ANY gear in a network, so transmission is inherently reversible and
