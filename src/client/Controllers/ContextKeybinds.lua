@@ -51,14 +51,12 @@ function Context:Lines()
     if tool=="Simulate" and player:GetAttribute("OPENWORKS_PropertiesOpen") then
         append(lines,"Mouse","Select a part, then its mechanical relationship")
         append(lines,"Properties","Adjust settings in the GUI")
-        append(lines,"H","Grip selected hand crank during simulation")
-        append(lines,"LMB","Trace circle to transmit manual torque")
+        append(lines,"LMB hold","Turn crank with horizontal locked-mouse drag")
         return lines
     end
     if player:GetAttribute("OPENWORKS_Simulating") == true then
         append(lines, "P", "Stop physics")
-        append(lines, "H", "Grip manual hand crank")
-        append(lines, "LMB drag", "Rotate hand-crank input circle")
+        append(lines, "LMB drag", "Turn crank with locked horizontal mouse movement")
         append(lines, "O / U", "Pause / Reset physics")
         append(lines, "I", "Inspect joint telemetry")
         return lines
@@ -196,7 +194,7 @@ function Context:Lines()
             append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
         end
     elseif tool=="Simulate" then
-        append(lines,"H","Grip hand crank after starting simulation")
+        append(lines,"LMB hold","Turn hand crank after starting simulation")
         append(lines,"Green","Grounded / stationary")
         append(lines,"Orange","Movable / dynamic")
         append(lines,"Click / G","Toggle grounding on aimed body")
