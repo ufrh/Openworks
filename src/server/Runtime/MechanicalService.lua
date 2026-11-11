@@ -285,14 +285,11 @@ function Mechanical:Restore(player, spec)
             or constraint:IsA("CylindricalConstraint")
         local low,high
         if linear then
-            low,high=Alignment.OffsetBounds(source,target)
-            if not low or high-low<0.5 then
+            low,high=Alignment.RelativeTravelBounds(source,target)
+            if not low or high-low<0.001 or low>0 or high<0 then
                 folder:Destroy()
-                return false,"Shaft is too short for a sliding relationship"
+                return false,"Shaft center must start between the tube end faces"
             end
-            local at=source:GetAttribute("AlignedOffsetU") or 0
-            low-=at
-            high-=at
             if type(spec.fitTravelU)=="number" then
                 low=math.max(low,-spec.fitTravelU)
                 high=math.min(high,spec.fitTravelU)
@@ -1770,11 +1767,8 @@ function Mechanical:AdjustJoint(player, request)
         local source=self.D.findOwned(player,joint:GetAttribute("SourceId"))
         local target=self.D.findOwned(player,joint:GetAttribute("TargetId"))
         if not source or not target then return false,"Shaft or housing deleted" end
-        local min,max=Alignment.OffsetBounds(source,target)
+        local min,max=Alignment.RelativeTravelBounds(source,target)
         if not min then return false,max end
-        local authored=source:GetAttribute("AlignedOffsetU") or 0
-        min-=authored
-        max-=authored
         local fittedTravel=joint:GetAttribute("FitTravelU")
         if type(fittedTravel)=="number" then
             min=math.max(min,-fittedTravel)
@@ -1841,13 +1835,20 @@ function Mechanical:ApplyJointEdit(player, record, undo)
             local source=self.D.findOwned(player,spec.sourceId)
             local target=self.D.findOwned(player,spec.targetId)
             if source and target then
-                local lo,hi=Alignment.OffsetBounds(source,target)
-                local at=source:GetAttribute("AlignedOffsetU") or 0
-                constraint.LimitsEnabled=true
-                constraint.LowerLimit=math.max(lo-at,spec.lowerLimit or lo-at)
-                    *self.D.Grid.Unit
-                constraint.UpperLimit=math.min(hi-at,spec.upperLimit or hi-at)
-                    *self.D.Grid.Unit
+                local lo,hi=Alignment.RelativeTravelBounds(source,target)
+                if lo and hi then
+                    local authoredLow=spec.lowerLimit
+                    local authoredHigh=spec.upperLimit
+                    local lower=math.max(lo,if type(authoredLow)=="number"
+                        then authoredLow else lo)
+                    local upper=math.min(hi,if type(authoredHigh)=="number"
+                        then authoredHigh else hi)
+                    if lower<upper then
+                        constraint.LimitsEnabled=true
+                        constraint.LowerLimit=lower*self.D.Grid.Unit
+                        constraint.UpperLimit=upper*self.D.Grid.Unit
+                    end
+                end
             end
         end
     end
