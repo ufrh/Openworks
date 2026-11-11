@@ -638,9 +638,19 @@ function Controller:OpenMateChoice(mode)
     self.PendingMateChoice=mode
     self.DirectDragCandidate=nil
     self.DirectDragActive=false
+    -- Keep the exact shaft/gear and transform selected when the modal
+    -- opened. The camera/ghost may update while the cursor is unlocked.
+    local chosenMatch=if match.kind=="Hub" then table.clone(match) else nil
+    local chosenPose=if chosenMatch then self.PreviewCF else nil
+    local chosenValid=self.PreviewValid
     self.MateChoice:Show(function(kind)
         local requestMode=self.PendingMateChoice
         self.PendingMateChoice=nil
+        if kind and chosenMatch then
+            self.SmartMatch=chosenMatch
+            self.PreviewCF=chosenPose
+            self.PreviewValid=chosenValid
+        end
         if kind and requestMode=="Build" then
             self:Place(kind)
         elseif kind and requestMode=="Edit" then
