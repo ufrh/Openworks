@@ -43,7 +43,8 @@ end
 function Angular.new(parent)
     return setmetatable({
         Parent=parent,Active=false,Stage="None",Kind="AxisHinge",
-        First=nil,Anchor=nil,AxisLetter="X",Yaw=0,Pitch=0,
+        First=nil,Other=nil,Anchor=nil,AxisLetter="X",Yaw=0,Pitch=0,
+        EditId=nil,EditFrame=nil,
         Connections={},Visuals={},
     },Angular)
 end
@@ -53,6 +54,9 @@ function Angular:ClearVisuals()
 end
 function Angular:Frame()
     if not self.First or not self.Anchor then return nil end
+    if self.EditFrame then
+        return CFrame.new(self.Anchor)*self.EditFrame.Rotation
+    end
     local camera=workspace.CurrentCamera
     if not camera then return nil end
     local basis=self.First.PrimaryPart.CFrame
@@ -103,11 +107,83 @@ function Angular:Cancel()
     self.Active=false
     self.Stage="None"
     self.First=nil
+    self.Other=nil
+    self.EditId=nil
+    self.EditFrame=nil
     self.Anchor=nil
     self:ClearVisuals()
     if self.Gui then self:ShowPicker(false) end
     self.Parent:RefreshHUD()
 end
+function Angular:EditAimed()
+    if self.Parent.Mode~="Edit" then return end
+    local selected=self.Parent:Pick()
+    if not selected then
+        self.Parent:Message("Aim at an angular-joint endpoint")
+        return
+    end
+    local folder=workspace:FindFirstChild("OPENWORKS_Relationships")
+    if not folder then return end
+    local id=selected:GetAttribute("InstanceId")
+    local relation
+    for _,joint in ipairs(folder:GetChildren()) do
+        local kind=joint:GetAttribute("Kind")
+        if joint:GetAttribute("OwnerUserId")==player.UserId
+            and (joint:GetAttribute("SourceId")==id
+                or joint:GetAttribute("TargetId")==id)
+            and (kind=="AxisHinge" or kind=="AxisBall"
+                or kind=="AxisUniversal" or kind=="PoweredHinge") then
+            relation=joint
+            break
+        end
+    end
+    if not relation then
+        self.Parent:Message("No angular joint on the aimed primitive")
+        return
+    end
+    local authoredA=relation:GetAttribute("JointFrameA")
+    local authoredB=relation:GetAttribute("JointFrameB")
+    if type(authoredA)~="string" or type(authoredB)~="string" then return end
+    local hs=game:GetService("HttpService")
+    local ok,a,b=pcall(function()
+        return Frames.Decode(hs:JSONDecode(authoredA)),
+            Frames.Decode(hs:JSONDecode(authoredB))
+    end)
+    if not ok or not a or not b then
+        self.Parent:Message("Joint frames are invalid")
+        return
+    end
+    local target,other
+    local world=workspace:FindFirstChild(Config.FolderName)
+    if world then
+        for _,model in ipairs(world:GetChildren()) do
+            if model:IsA("Model")
+                and model:GetAttribute("OwnerUserId")==player.UserId then
+                local mid=model:GetAttribute("InstanceId")
+                if mid==relation:GetAttribute("TargetId") then target=model end
+                if mid==relation:GetAttribute("SourceId") then other=model end
+            end
+        end
+    end
+    if not target or not target.PrimaryPart
+        or not other or not other.PrimaryPart then return end
+    self:Cancel()
+    self.Active=true
+    self.Stage="Second"
+    self.Kind=relation:GetAttribute("Kind")
+    self.First=target
+    self.Other=other
+    self.EditId=relation:GetAttribute("RelationId")
+    self.EditFrame=target.PrimaryPart.CFrame*a
+    self.Anchor=self.EditFrame.Position
+    self.KeyBox.Text=relation:GetAttribute("MotorKey") or "F"
+    self.SpeedBox.Text=tostring(relation:GetAttribute("MotorSpeed") or 3)
+    self.TorqueBox.Text=tostring(relation:GetAttribute("MotorTorque") or 3000)
+    self.AccelBox.Text=tostring(relation:GetAttribute("MotorAcceleration") or 40)
+    self:DrawAnchor()
+    self.Parent:Message("Editing joint • axes X/Y/Z reset • Q/E/U/O rotate • click to save")
+end
+
 function Angular:Begin()
     if self.Parent.Mode~="Edit" then return end
     self:Cancel()
@@ -140,7 +216,7 @@ function Angular:Click()
         return true
     end
     if self.Stage=="Second" then
-        local other=pickFace()
+        local other=if self.EditId then self.Other else pickFace()
         if not other or other==self.First then
             self.Parent:Message("Aim at the OTHER component near orange anchor")
             return true
@@ -150,7 +226,8 @@ function Angular:Click()
         local a,b=Frames.LocalPair(self.First.PrimaryPart,
             other.PrimaryPart,frame,self.Kind)
         local payload={
-            action="CreateAxisJoint",kind=self.Kind,
+            action=if self.EditId then "EditAxisJoint" else "CreateAxisJoint",
+            relationId=self.EditId,kind=self.Kind,
             targetId=self.First:GetAttribute("InstanceId"),
             sourceId=other:GetAttribute("InstanceId"),
             frameA=a,frameB=b,
@@ -172,20 +249,37 @@ function Angular:HandleKey(input,processed)
         or UIS:IsKeyDown(Enum.KeyCode.RightAlt))
         and key==Enum.KeyCode.J and not processed
         and not UIS:GetFocusedTextBox() then
-        if self.Active then self:Cancel() else self:Begin() end
+        if self.Active then self:Cancel()
+        elseif UIS:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UIS:IsKeyDown(Enum.KeyCode.RightShift) then
+            self:EditAimed()
+        else self:Begin() end
         return
     end
     if not self.Active or self.Stage=="Choose"
         or processed or UIS:GetFocusedTextBox() then return end
     if key==Enum.KeyCode.Escape then self:Cancel() return end
     if self.Stage~="Second" then return end
-    if key==Enum.KeyCode.X then self.AxisLetter="X"
-    elseif key==Enum.KeyCode.Y then self.AxisLetter="Y"
-    elseif key==Enum.KeyCode.Z then self.AxisLetter="Z"
-    elseif key==Enum.KeyCode.Q then self.Yaw-=5
-    elseif key==Enum.KeyCode.E then self.Yaw+=5
-    elseif key==Enum.KeyCode.U then self.Pitch-=5
-    elseif key==Enum.KeyCode.O then self.Pitch+=5
+    if key==Enum.KeyCode.X or key==Enum.KeyCode.Y
+        or key==Enum.KeyCode.Z then
+        self.AxisLetter=key.Name
+        self.EditFrame=nil
+    elseif key==Enum.KeyCode.Q or key==Enum.KeyCode.E
+        or key==Enum.KeyCode.U or key==Enum.KeyCode.O then
+        local amount=math.rad(if key==Enum.KeyCode.Q
+            or key==Enum.KeyCode.U then -5 else 5)
+        if self.EditFrame then
+            local camera=workspace.CurrentCamera
+            local axis=if key==Enum.KeyCode.Q or key==Enum.KeyCode.E
+                then Vector3.yAxis
+                else (if camera then camera.CFrame.RightVector
+                    else Vector3.xAxis)
+            self.EditFrame=CFrame.fromAxisAngle(axis,amount)
+                *self.EditFrame
+        elseif key==Enum.KeyCode.Q then self.Yaw-=5
+        elseif key==Enum.KeyCode.E then self.Yaw+=5
+        elseif key==Enum.KeyCode.U then self.Pitch-=5
+        else self.Pitch+=5 end
     elseif UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UIS:IsKeyDown(Enum.KeyCode.RightAlt) then
         local cam=workspace.CurrentCamera
