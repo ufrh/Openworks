@@ -1,5 +1,5 @@
 --!strict
--- OPENWORKS phase 01: preserve FORGE 4.4.1 and supply native Tools.
+-- OPENWORKS server bootstrap: preserve FORGE, provision tools, start services.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -17,7 +17,7 @@ FORGE.Start({ Bridge = bridge, Roots = {} })
 provisioner.Start()
 ConstructionService.Start()
 
-print(string.format("[OPENWORKS] FORGE %s | named Assembly tool / explicit membership / purple simulate preview ready", tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] FORGE %s | architecture audit / metadata history / guarded plot saves ready", tostring(FORGE.Version)))
 
 game:BindToClose(function()
     FORGE.Shutdown()

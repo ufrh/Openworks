@@ -18,7 +18,7 @@ Run after changing the shared geometry code, construction services, tool dispatc
 ## Named assemblies
 - [ ] Equip Assembly, N, name dialog, Enter; selected components and individual primitives turn purple.
 - [ ] Click whole component to toggle **all** members; Alt+click one inside component to toggle just that primitive. Confirm with Enter; Esc leaves prior assembly unchanged.
-- [ ] Reopen a named assembly, rename using R, add/remove members, confirm. **Undo/redo** changes names and membership in-place; reloading a manual save preserves it.
+- [ ] Reopen a named assembly, rename using R, add/remove members, confirm. **Ctrl+Z/Ctrl+Y with Assembly equipped** restores names and membership in place; reloading a manual save preserves it.
 - [ ] Deny mixed ownership, nonexistent IDs and attempts to add a primitive belonging to a second assembly. Reject empty assembly and more than 128 primitives.
 - [ ] Aim at any saved member with Simulate: every **actual registered member** highlights purple, including disconnected primitives and partial editor components. Highlight clears immediately on tool switch or starting sim; no stray purple outline.
 - [ ] If a mechanical joint crosses to an unregistered member, P refuses. Add that member explicitly in Assembly, P simulates exactly the registered set.

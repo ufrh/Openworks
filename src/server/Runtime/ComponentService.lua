@@ -1,8 +1,8 @@
 --!strict
--- Phase 03 component graph.
--- A rigid component is a set of authored primitive Models that share a
--- server-assigned ComponentId and stable anchor. Members remain individually
--- editable; FORGE physics compilation/welds are deliberately future work.
+-- Editor-only component group manager. ComponentId identifies primitive
+-- selections/transforms, NOT an implicit rigid physics relationship.
+-- Mechanical welds must be authored separately; named assemblies define
+-- an orthogonal simulation scope.
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

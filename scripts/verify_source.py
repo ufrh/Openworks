@@ -27,10 +27,6 @@ def check(name: str, condition: bool, detail: str = "") -> None:
     RESULTS.append((name, bool(condition), detail))
 
 
-def exact_one(text: str, token: str) -> bool:
-    return text.count(token) == 1
-
-
 def check_local_requires(parent: Path) -> None:
     # All explicit requires rooted at script.Parent:WaitForChild("Name")
     # must resolve to a current module in the same Rojo-mapped directory.
@@ -131,6 +127,10 @@ def main() -> int:
           'kind="Metadata"' in service
           and "local function restoreMetadata" in service
           and 'if record.kind == "Metadata" then' in service)
+    check("Assembly tool can directly undo and redo",
+          'hasEquippedTool(player,"Assembly")' in service
+          and "self:History(false)" in tool_ui
+          and "self:History(true)" in tool_ui)
     check("Assembly metadata history does not recreate geometry",
           "commitMetadata(player,before,after)" in assembly
           and "commitBatch(player,before,after)" not in assembly)

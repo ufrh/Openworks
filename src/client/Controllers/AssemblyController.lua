@@ -1,8 +1,8 @@
 --!strict
--- Phase 05: direct first-person mechanical relationship authoring.
--- Housing -> shaft/component -> axial offset -> create Bearing/Slider/Fixed.
--- No mouse unlock or custom Tool/hotbar. Native physics constraints are
--- authored while parts remain anchored in the construction phase.
+-- Combined Edit mechanical-relationship authoring and Simulate UX bridge.
+-- The dedicated AssemblyToolController owns named membership separately.
+-- Rename/split the older combined controller only after in-Studio coverage
+-- exists for its mechanical and simulation state transitions.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

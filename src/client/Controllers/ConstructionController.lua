@@ -1,5 +1,6 @@
 --!strict
--- Phase 02: first-person Build/Edit interactions, primitive catalog and ghost preview.
+-- First-person Build/Edit interaction orchestrator: selection, catalog,
+-- transformation, snapping and ghost preview. The server validates all edits.
 -- No runtime CSG; all authoritative edits are checked by ConstructionService.
 
 local Players = game:GetService("Players")

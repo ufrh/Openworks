@@ -1,8 +1,9 @@
 --!strict
--- Phase 06: temporary native-physics simulation of a connected mechanism.
--- Authored geometry remains anchored/unchanged; simulation uses server-owned
--- clones with welded rigid components and live Hinge/Prismatic/Weld joints.
--- Stop destroys every simulation object and restores original visibility.
+-- SimulationService: compile ONLY explicitly registered named assemblies.
+-- Each primitive is an independent body; component grouping never welds.
+-- Authored models remain unchanged; temporary clones receive passive native
+-- physics constraints and separately powered, input-limited actuator parts.
+-- Stop destroys clones and restores all original visibility/collision.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

@@ -1,5 +1,6 @@
 --!strict
--- Compact context-sensitive shortcut list, right side under the active HUD.
+-- Compact context-sensitive shortcuts: left of Assembly/Simulate HUD,
+-- right of ordinary Build/Edit where they do not obscure the construction.
 -- No buttons here: this only documents the controls that actually exist.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")

@@ -58,8 +58,8 @@ end
 
 function Provisioner.Start()
     StarterPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
-    -- Clean up saved older StarterPack tool and already-equipped legacy
-    -- Assemble copies, which must not occupy a fifth hotbar slot.
+    -- Clean up legacy Assemble tool copies from the pre-named-Assembly
+    -- workflow; native Assembly now occupies its own hotbar slot.
     local function removeLegacy(container)
         if not container then return end
         for _, tool in ipairs(container:GetChildren()) do

@@ -67,7 +67,7 @@ Simulating must never overwrite player-authored original CFrames or delete saved
 
 `PlotService` owns isolated 124×124 stud plots. `PlotPersistence` stores versioned records with primitive IDs, geometry state, component metadata, assembly metadata, grounding and mechanical relation specifications. On join the server attempts to **load the last manual save**. If Studio API access fails, the plot reports **Error** and saving is refused; *constructing may continue in the assigned in-memory plot*. Only the explicit `SavePlot` action invokes `DataStore:SetAsync`. Do not add autosaving on close, spawn, timer, pause or simulation.
 
-**Busy flag invariant:** every load/save error path must clear `persistence.Busy[player]`. Loader apply and save encode are guarded; failure must not leave the UI saying Loading forever. Save failures must not overwrite the last known good document intentionally. Undo is volatile and clears upon loading; undo is not a save.
+**Busy flag invariant:** every load/save error path must clear `persistence.Busy[player]`. Loader apply and save encode are guarded; failure must not leave the UI saying Loading forever. Save failures must not overwrite the last known good document intentionally. Undo is volatile and clears upon loading; undo is not a save. Ctrl+Z/Ctrl+Y are also available while Assembly is equipped.
 
 ## World visuals and UI
 

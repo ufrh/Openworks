@@ -35,7 +35,7 @@ A **mechanical relationship** restricts or permits motion. A distinct **actuator
 
 ## Assembly workflow
 
-Equip **Assembly**. Press **N** and name it; click primitives or whole components to toggle inclusion; **Alt + click** selects one primitive inside a component; press **Enter** to commit. Aim at an existing assembly member and click to edit membership; **R** renames. Assemblies can include disconnected objects, but a simulation is rejected when a real relationship crosses into an unregistered part. Press **Esc** to cancel the draft.
+Equip **Assembly**. Press **N** and name it; click primitives or whole components to toggle inclusion; **Alt + click** selects one primitive inside a component; press **Enter** to commit. **Ctrl+Z / Ctrl+Y** undo and redo assembly membership changes without switching tools. Aim at an existing assembly member and click to edit membership; **R** renames. Assemblies can include disconnected objects, but a simulation is rejected when a real relationship crosses into an unregistered part. Press **Esc** to cancel the draft.
 
 Equip **Simulate** and aim at a member to preview the complete saved assembly in **purple**. **P** starts/stops the assembly; **Shift+P** starts free, **G** toggles grounding before simulation, **O** pauses, and **U** resets. Clicking a running part opens the mechanical Properties inspector. Hold LMB and move the locked mouse horizontally on a properly coupled hand crank to supply physical torque.
 
