@@ -48,10 +48,23 @@ function GearLibrary.Ensure()
 
     for _, count in ipairs(TEETH) do
         local name = "Gear_" .. count .. "T"
-        if transmission:FindFirstChild(name) then continue end
+        -- All stock gears must accept the standard 0.375-stud minimum
+        -- cylindrical shaft. The old 12-tooth bore was only 0.28 studs
+        -- across, making a valid gear mount physically impossible.
+        local existing=transmission:FindFirstChild(name)
         local pitchRadius = MODULE * count / (2 * math.pi)
         local bodyRadius = pitchRadius - TOOTH_DEPTH * 0.42
-        local boreRadius = math.max(0.14, bodyRadius * 0.33)
+        local boreRadius = math.max(0.215, bodyRadius * 0.33)
+        if existing then
+            local oldRadius=existing:GetAttribute("BoreRadiusStuds")
+            if type(oldRadius)=="number"
+                and oldRadius>=boreRadius-0.0001 then
+                continue
+            end
+            -- An outdated existing gear must be rebuilt: changing the
+            -- radius attribute alone would misrepresent its solid rim.
+            existing:Destroy()
+        end
         local model = Instance.new("Model")
         model.Name = name
         model:SetAttribute("PrimitiveFamily", "Gear")
