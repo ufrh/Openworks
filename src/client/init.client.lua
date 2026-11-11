@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS phase 01: native first-person tools and camera controls.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.10.PHASE13.INDEPENDENT-MULTIFIT"
+local BUILD = "2026.11.10.PHASE14.MANUAL-PLOT-PERSISTENCE"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -16,6 +16,7 @@ local ConstructionController = require(controllers:WaitForChild("ConstructionCon
 local AssemblyController = require(controllers:WaitForChild("AssemblyController"))
 local ContextKeybinds = require(controllers:WaitForChild("ContextKeybinds"))
 local WorldVisuals = require(controllers:WaitForChild("WorldVisuals"))
+local PlotSaveController = require(controllers:WaitForChild("PlotSaveController"))
 
 FORGE.Start({ Roots = {} })
 
@@ -42,6 +43,9 @@ contextKeybinds:Start()
 local worldVisuals = WorldVisuals.new()
 worldVisuals:Start()
 
+local plotSave = PlotSaveController.new()
+plotSave:Start()
+
 local entries = PrimitiveRegistry.List()
 if not PrimitiveRegistry.IsAvailable() then
     warn("[OPENWORKS] Primitive library not found in ReplicatedStorage; run the Studio generator and save the place.")
@@ -49,4 +53,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | Phase 13 independent rod-hole joints / exact group centering ready", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | Phase 14 individual plots / manual save / persistent mechanisms ready", BUILD, tostring(FORGE.Version)))

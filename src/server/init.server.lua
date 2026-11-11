@@ -17,7 +17,7 @@ FORGE.Start({ Bridge = bridge, Roots = {} })
 provisioner.Start()
 ConstructionService.Start()
 
-print(string.format("[OPENWORKS] FORGE %s | Phase 09 assembly physics + mechanical constraints ready", tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] FORGE %s | Phase 14 owned plots / explicit persistence ready", tostring(FORGE.Version)))
 
 game:BindToClose(function()
     FORGE.Shutdown()

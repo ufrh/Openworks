@@ -7,4 +7,8 @@ return table.freeze({
     RequestName = "OPENWORKS_ConstructionRequest",
     FolderName = "OPENWORKS_Constructed",
     GalleryName = "OPENWORKS_PrimitiveGallery_DRAFT",
+    PlotSize = 124,
+    PlotSpacing = 168,
+    MaxPlotsPerServer = 20,
+    ManualSaveOnly = true,
 })
