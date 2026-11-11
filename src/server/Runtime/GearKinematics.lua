@@ -228,6 +228,29 @@ function Kinematics:ConfigureSupport(graph,copies,groundKeys,sessionFolder,
             end
         end
     end
+
+    -- Rack guides are independent, static constructions. A rack only
+    -- receives guided linear support when the actual guide's base body
+    -- was GROUNDED by the player, not because it merely touched teeth.
+    for _,original in ipairs(graph.models) do
+        if GearMath.Kind(original)~="RackGuide" then continue end
+        local id=identifier(original)
+        if not groundKeys["p:"..tostring(id)] then continue end
+        local guide=copies[id]
+        if not guide then continue end
+        for _,entry in ipairs(self.Racks) do
+            local ok=GearMath.AutoGuideStatus(entry.Model,guide)
+            if ok then
+                local group=entry.Group
+                group.Supported=true
+                group.Guide={
+                    Model=guide,
+                    Length=guide:GetAttribute("RackGuideLengthStuds"),
+                    RackLength=entry.Model:GetAttribute("RackLengthStuds"),
+                }
+            end
+        end
+    end
 end
 
 local function shiftGroup(group,delta)
@@ -495,6 +518,21 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
                 table.insert(queue,nextGroup)
             elseif math.abs(speed[nextGroup]-calculated)>CYCLE_TOLERANCE then
                 stalled=true
+            end
+        end
+    end
+    -- The guide's physical end stops limit the whole connected train,
+    -- never allow a rack to leave the rail while its pinion keeps turning.
+    for group,velocity in pairs(speed) do
+        if group.Guide and group.TravelAxis then
+            local guide=group.Guide
+            local maxTravel=math.max(0,(guide.Length-guide.RackLength)*0.5-0.02)
+            local travel=(group.Center-guide.Model:GetPivot().Position)
+                :Dot(group.TravelAxis)
+            local nextPosition=travel+velocity*step
+            if math.abs(nextPosition)>maxTravel+0.001 then
+                stalled=true
+                break
             end
         end
     end
