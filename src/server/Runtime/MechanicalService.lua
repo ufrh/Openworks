@@ -1064,22 +1064,21 @@ end
 -- Neither ComponentId nor a shaft-bearing joint supplies this connection.
 function Mechanical:CoupleHandCrank(player,request,newSource)
     if type(request)~="table" then return false,"Invalid hand-crank coupling" end
-    local source=self.D.findOwned(player,request.sourceId)
-    local target=self.D.findOwned(player,request.targetId)
+    local d=self.D
+    local source=d.findOwned(player,request.sourceId)
+    local target=d.findOwned(player,request.targetId)
     if not source or not target or source==target
         or not HandCrankMath.IsCrank(source)
         or not HandCrankMath.IsOutputShaft(target) then
         return false,"Choose a HandCrank output and a separate cylinder shaft"
     end
-    if not self.D.nearPlayer(player,source:GetPivot().Position)
-        or not self.D.nearPlayer(player,target:GetPivot().Position) then
+    if not d.nearPlayer(player,source:GetPivot().Position)
+        or not d.nearPlayer(player,target:GetPivot().Position) then
         return false,"Both parts must be in building range"
     end
     if self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
         return false,"Mechanical relationship limit reached"
     end
-    local fits,why=HandCrankMath.Fits(source,target)
-    if not fits then return false,why end
     for _,relation in ipairs(self.Folder:GetChildren()) do
         if relation:GetAttribute("OwnerUserId")==player.UserId
             and (relation:GetAttribute("Kind")=="Weld"
@@ -1091,6 +1090,64 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
             return false,"Crank output is already coupled to this shaft"
         end
     end
+
+    local before,after={},{}
+    local members={source}
+    local changed=false
+    if not newSource and typeof(request.position)=="Vector3"
+        and typeof(request.orientation)=="CFrame" then
+        -- Edit-mode SmartDrop sends the exact snapped preview pose.
+        -- Move the crank's ENTIRE editor component with the same delta,
+        -- never just its axle inside an existing grouped assembly.
+        local group=source:GetAttribute("ComponentId")
+        if type(group)=="string" and group~="" then
+            members=d.components:Members(player,group)
+        end
+        local desired=CFrame.new(request.position)*request.orientation.Rotation
+        local delta=desired*source:GetPivot():Inverse()
+        local excluding={}
+        for _,member in ipairs(members) do excluding[member]=true end
+        local plans={}
+        for _,member in ipairs(members) do
+            local old=d.snapshot(member)
+            local state=table.clone(old)
+            local pose=delta*member:GetPivot()
+            state.position=pose.Position
+            state.orientation=pose.Rotation
+            state.freePosition=true
+            state.assemblyPrecision=true
+            local entry=d.Registry.Get(state.templateId)
+            if not entry then return false,"Crank part template unavailable" end
+            local valid,why=d.validState(player,entry,state)
+            if not valid then return false,why end
+            table.insert(plans,state)
+            table.insert(before,old)
+        end
+        for i,member in ipairs(members) do
+            d.applyState(member,plans[i])
+        end
+        changed=true
+        local function rollback()
+            for i,member in ipairs(members) do
+                d.applyState(member,before[i])
+            end
+        end
+        for _,member in ipairs(members) do
+            if d.intersectsConstructed(member,excluding) then
+                rollback()
+                return false,"Crank/group intersects another construction"
+            end
+        end
+        local fits,why=HandCrankMath.Fits(source,target)
+        if not fits then rollback() return false,why end
+    else
+        local fits,why=HandCrankMath.Fits(source,target)
+        if not fits then return false,why end
+        if newSource and d.intersectsConstructed(source) then
+            return false,"Hand crank intersects another built part"
+        end
+    end
+
     local spec={
         relationId=HttpService:GenerateGUID(false),
         ownerUserId=player.UserId,kind="Weld",
@@ -1098,13 +1155,25 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
         componentId=source:GetAttribute("ComponentId"),
     }
     local ok,reason=self:Restore(player,spec)
-    if not ok then return false,reason end
-    if newSource then
-        self.D.commitAssembly(player,{}, {self.D.snapshot(source)},spec)
-    else
-        self.D.commitAssembly(player,{}, {},spec)
+    if not ok then
+        if changed then
+            for i,member in ipairs(members) do
+                d.applyState(member,before[i])
+            end
+        end
+        return false,reason
     end
-    return true,"Hand crank physically coupled to shaft end • manual torque enabled in simulation"
+    if newSource then
+        d.commitAssembly(player,{}, {d.snapshot(source)},spec)
+    else
+        if changed then
+            for _,member in ipairs(members) do
+                table.insert(after,d.snapshot(member))
+            end
+        end
+        d.commitAssembly(player,before,after,spec)
+    end
+    return true,"Hand crank physically coupled to shaft end • manual torque enabled"
 end
 
 function Mechanical:CreateWeld(player,request)
