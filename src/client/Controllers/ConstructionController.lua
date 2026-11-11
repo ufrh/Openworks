@@ -770,16 +770,53 @@ function Controller:RecognizeAttachment(raw,hit)
             local offset=math.clamp(
                 match.offsetUnits+self.SmartOffsetDeltaU,lower,upper)
             local roll=math.clamp(match.rollDegrees+self.SmartRollDelta,-360,360)
-            local moving=SmartPlacement.Members(preview)
-            local plan=if match.reverse then
-                AlignmentMath.ReversePlan(moving,match.source,match.target,
-                    offset,roll)
-                else AlignmentMath.Plan(moving,match.source,match.target,
-                    offset,roll)
-            if plan then
-                match.cf=plan.delta*preview:GetPivot()
+            -- SmartPlacement already solved the WHOLE hole pattern. The
+            -- old code unconditionally re-ran a SINGLE-hole plan here and
+            -- threw away multi-point roll and corrected centering every
+            -- frame. Preserve the exact multi-fit result unless the user
+            -- explicitly changes depth or roll.
+            if (match.fittedCount or 0)>1 then
+                local axialDelta=(offset-match.offsetUnits)*Grid.Unit
+                local rollDelta=roll-match.rollDegrees
+                if math.abs(axialDelta)>0.00001
+                    or math.abs(rollDelta)>0.00001 then
+                    local pivot=preview:GetPivot()
+                    local aligned=match.cf*pivot:Inverse()
+                        *match.source:GetPivot()
+                    local axis=if match.reverse then
+                        match.target:GetPivot().RightVector.Unit
+                        else match.target:GetPivot():VectorToWorldSpace(
+                            AlignmentMath.TargetAxis(match.target)).Unit
+                    local toward=if match.reverse then
+                        aligned:VectorToWorldSpace(
+                            AlignmentMath.TargetAxis(match.source)).Unit
+                        else axis
+                    local translation=if match.reverse then
+                        -toward*axialDelta else toward*axialDelta
+                    match.cf=CFrame.new(translation)*match.cf
+                    if math.abs(rollDelta)>0.00001 then
+                        local center=aligned.Position+translation
+                        local rotation=CFrame.new(center)
+                            *CFrame.fromAxisAngle(toward,
+                                math.rad(rollDelta))
+                            *CFrame.new(-center)
+                        match.cf=rotation*match.cf
+                    end
+                end
                 match.offsetUnits=offset
                 match.rollDegrees=roll
+            else
+                local moving=SmartPlacement.Members(preview)
+                local plan=if match.reverse then
+                    AlignmentMath.ReversePlan(moving,match.source,match.target,
+                        offset,roll)
+                    else AlignmentMath.Plan(moving,match.source,match.target,
+                        offset,roll)
+                if plan then
+                    match.cf=plan.delta*preview:GetPivot()
+                    match.offsetUnits=offset
+                    match.rollDegrees=roll
+                end
             end
         end
         return match
