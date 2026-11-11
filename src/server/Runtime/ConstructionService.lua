@@ -20,6 +20,8 @@ local SimulationService = require(script.Parent:WaitForChild("SimulationService"
 local GearLibrary = require(script.Parent:WaitForChild("GearLibrary"))
 local FastenerLibrary = require(script.Parent:WaitForChild("FastenerLibrary"))
 local AssemblyService = require(script.Parent:WaitForChild("AssemblyService"))
+local PlotService = require(script.Parent:WaitForChild("PlotService"))
+local PlotPersistence = require(script.Parent:WaitForChild("PlotPersistence"))
 local RotationMath = require(construction:WaitForChild("RotationMath"))
 
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
@@ -34,6 +36,8 @@ local alignmentService
 local mechanical
 local simulation
 local assemblies
+local plots
+local persistence
 
 local function historyFor(player)
     local state = histories[player]
@@ -73,6 +77,7 @@ local function accessFor(player, action)
 end
 
 local function nearPlayer(player, position)
+    if not plots or not plots:Contains(player,position) then return false end
     local character = player.Character
     local head = character and character:FindFirstChild("Head")
     return head and (head.Position - position).Magnitude <= Grid.MaxDistance
@@ -226,7 +231,10 @@ local function validState(player, entry, proposed)
         return false, "Invalid construction state"
     end
     if not nearPlayer(player, proposed.position) then
-        return false, "Target is too far away"
+        return false, "Target is outside your plot or too far away"
+    end
+    if not plots:Contains(player,proposed.position,proposed.size) then
+        return false, "Construction extends beyond your plot"
     end
 
     local original = entry.Model.PrimaryPart
@@ -752,6 +760,22 @@ local function handle(player, payload)
     end
 
     local action = payload.action
+    -- Saving and loading are deliberate, separate GUI actions; never timer,
+    -- departure, or server-shutdown callbacks.
+    if action=="SavePlot" or action=="LoadPlot" then
+        if not persistence or not plots:Get(player) then
+            return {ok=false,message="Plot isn't ready"}
+        end
+        if simulation and simulation:IsRunning(player) then
+            return {ok=false,message="Stop simulation before saving or loading"}
+        end
+        local ok,message=if action=="SavePlot"
+            then persistence:Save(player) else persistence:Load(player)
+        return {ok=ok==true,message=tostring(message or "")}
+    end
+    if not persistence or not persistence.Ready[player] then
+        return {ok=false,message="Plot is still loading or storage is unavailable"}
+    end
     local alignmentAction = action == "Align"
     local mechanicalAction = action == "CreateRelation" or action == "RemoveRelation"
         or action == "FastenBolt"
@@ -912,6 +936,7 @@ local function handle(player, payload)
 end
 
 function Service.Start()
+    plots=PlotService.new()
     GearLibrary.Ensure()
     FastenerLibrary.Ensure()
     folder = workspace:FindFirstChild(Config.FolderName)
@@ -986,11 +1011,40 @@ function Service.Start()
         nearPlayer = nearPlayer,
         mechanical = mechanical,
     })
+    persistence=PlotPersistence.new({
+        folder=folder,
+        plots=plots,
+        config=Config,
+        grid=Grid,
+        registry=Registry,
+        mechanical=mechanical,
+        assemblies=assemblies,
+        snapshot=snapshot,
+        applyState=applyState,
+        createFromTemplate=createFromTemplate,
+        histories=histories,
+    })
 
     local function initializePlayer(player)
+        local plot,why=plots:Assign(player)
+        if not plot then
+            warn("[OPENWORKS] Plot assignment failed for "..player.Name..": "..tostring(why))
+            player:Kick("All OPENWORKS plots are occupied")
+            return
+        end
+        persistence:Status(player,"Loading","Loading last manually saved plot")
         simulation:SetStatus(player, false, false)
-        player.CharacterAdded:Connect(function()
+        player.CharacterAdded:Connect(function(character)
             if simulation:IsRunning(player) then simulation:Stop(player) end
+            plots:Spawn(player,character)
+        end)
+        if player.Character then plots:Spawn(player,player.Character) end
+        task.spawn(function()
+            local ok,message=persistence:Load(player)
+            if not ok then
+                warn("[OPENWORKS] Plot load blocked for "..player.Name..": "..
+                    tostring(message))
+            end
         end)
     end
     Players.PlayerAdded:Connect(initializePlayer)
@@ -1020,11 +1074,13 @@ function Service.Start()
             end
         end
         if mechanical then mechanical:ClearPlayer(player) end
+        if persistence then persistence:Clear(player) end
+        if plots then plots:Release(player) end
         histories[player] = nil
         lastRequest[player] = nil
     end)
 
-    print("[OPENWORKS] ConstructionService ready: server-owned pieces and history")
+    print("[OPENWORKS] ConstructionService ready: isolated plots / manual saves / relationships")
 end
 
 return Service
