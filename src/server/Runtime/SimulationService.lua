@@ -116,8 +116,10 @@ function Simulation:BeginCrank(player,request)
     if not crank.Coupled then
         return false,"Couple the crank output to a cylindrical shaft in Edit"
     end
-    if session.GroundKeys and session.GroundKeys[crank.BodyKey] then
-        return false,"Ground the bearing housing, not the hand crank"
+    if session.GroundKeys and
+        (session.GroundKeys[crank.BodyKey]
+            or session.GroundKeys[crank.DrivenBodyKey]) then
+        return false,"Ground the bearing housing, not the crank or driven shaft"
     end
     local character=player.Character
     local root=character and character:FindFirstChild("HumanoidRootPart")
@@ -625,8 +627,10 @@ function Simulation:Start(player, payload)
             session.Cranks[id]={
                 Root=root,Model=model,Drive=drive,Axis=axis,
                 Coupled=coupledShaft~=nil,
-                BodyKey=bodyKey(original),Running=false,
-                LastInput=0,LastPacket=0,
+                BodyKey=bodyKey(original),
+                DrivenBodyKey=if coupledShaft then bodyKey(coupledShaft)
+                    else bodyKey(original),
+                Running=false,LastInput=0,LastPacket=0,
             }
         end
 
