@@ -197,7 +197,7 @@ function Controller:RefreshHUD()
         return
     end
     if self.Mode=="Simulate" then
-        self.Header.Text="SIMULATE / PASSIVE PHYSICS"
+        self.Header.Text="SIMULATE / MECHANICAL ASSEMBLY"
         if not self:IsSimulating() then
             local aimed=self:Pick()
             local name=aimed and aimed:GetAttribute("AssemblyName")
@@ -494,14 +494,12 @@ function Controller:ChangeRoll(delta)
 end
 
 function Controller:ToggleGearMode()
-    if self.Stage=="GearFirst" or self.Stage=="GearSecond" then
-        self:Reset()
-    else
-        self:Reset()
-        self.ManualActive=true
-        self.Stage="GearFirst"
-        self:RefreshHUD()
-    end
+    -- No manual K pairing. Contact, axle direction, tooth count and
+    -- physical pitch spacing now determine engagement automatically.
+    -- Existing saved Gear relationships remain readable as legacy data.
+    self:Reset()
+    self:Message("Gears auto-mesh in simulation • no K pairing required")
+    self:RefreshHUD()
 end
 
 -- Distinct authoring actions remain in Edit, but no extra native tool
@@ -852,7 +850,7 @@ function Controller:Start()
     table.insert(self.Connections,self.Tools.Activated.Event:Connect(function(mode)
         if mode=="Simulate"
             and not player:GetAttribute("OPENWORKS_PropertiesOpen") then
-            -- A held LMB on a physical crank applies bounded torque;
+            -- Hold LMB on the mechanism to drive a physically coupled crank;
             -- release stops it. Other clicks inspect the aimed body.
             if self.HandCrank and self.HandCrank:TryGrab() then return end
             self.Properties:InspectAtCenter()
