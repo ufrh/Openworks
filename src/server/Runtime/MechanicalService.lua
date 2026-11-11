@@ -478,6 +478,39 @@ function Mechanical:CreateAxisJoint(player,request)
     return true,kind.." joint created • editable local anchor frames"
 end
 
+function Mechanical:TuneAxisMotor(player,request)
+    local relation=self:OwnedRelation(player,
+        type(request)=="table" and request.relationId)
+    if not relation or relation:GetAttribute("Kind")~="PoweredHinge" then
+        return false,"Select an owned powered hinge"
+    end
+    local key=request.motorKey
+    local speed=request.motorSpeed
+    local torque=request.motorTorque
+    local accel=request.motorAcceleration
+    if type(key)~="string" or not MOTOR_KEYS[key]
+        or type(speed)~="number" or speed~=speed
+        or math.abs(speed)<0.05 or math.abs(speed)>35
+        or type(torque)~="number" or torque~=torque
+        or torque<1 or torque>100000
+        or type(accel)~="number" or accel~=accel
+        or accel<0.1 or accel>1000 then
+        return false,"Motor key/speed/torque/acceleration invalid"
+    end
+    local before=self:Snapshot(relation)
+    relation:SetAttribute("MotorKey",key)
+    relation:SetAttribute("MotorSpeed",speed)
+    relation:SetAttribute("MotorTorque",torque)
+    relation:SetAttribute("MotorAcceleration",accel)
+    local constraint=relation:FindFirstChildOfClass("HingeConstraint")
+    if constraint then
+        constraint.MotorMaxTorque=torque
+        constraint.MotorMaxAcceleration=accel
+    end
+    self.D.commitJointEdit(player,before,self:Snapshot(relation))
+    return true,"Powered hinge updated • hold "..key.." in Simulate"
+end
+
 function Mechanical:Create(player, request)
     local d = self.D
     -- New spring/bolt/weld mechanisms require their own geometry validation.
@@ -1970,6 +2003,18 @@ function Mechanical:ApplyJointEdit(player, record, undo)
     local spec = if undo then record.before else record.after
     local relation = self:OwnedRelation(player, spec.relationId)
     if not relation then return false, "Joint was deleted" end
+    if spec.kind=="PoweredHinge" then
+        relation:SetAttribute("MotorKey",spec.motorKey)
+        relation:SetAttribute("MotorSpeed",spec.motorSpeed)
+        relation:SetAttribute("MotorTorque",spec.motorTorque)
+        relation:SetAttribute("MotorAcceleration",spec.motorAcceleration)
+        local motor=relation:FindFirstChildOfClass("HingeConstraint")
+        if motor then
+            motor.MotorMaxTorque=spec.motorTorque or 3000
+            motor.MotorMaxAcceleration=spec.motorAcceleration or 40
+        end
+        return true
+    end
     if spec.kind=="Spring" then
         relation:SetAttribute("Stiffness",spec.stiffness)
         relation:SetAttribute("Damping",spec.damping)
