@@ -530,32 +530,58 @@ function Layered:AdjustRoll(deltaDegrees)
 end
 
 function Layered:ConfirmAlignment()
-    local align = self.Alignment
-    if not align or align.Stage ~= "Preview" then return end
-
-    if align.Valid == false then
-        self.Parent:Message(align.ConflictReason or "Red preview: solid interference")
+    local align=self.Alignment
+    local parent=self.Parent
+    if not align or align.Stage~="Preview" or parent.PendingMateChoice then return end
+    if align.Valid==false then
+        parent:Message(align.ConflictReason or "Red preview: solid interference")
         return
     end
-    local ok = self.Parent:Request({
-        action = "Align",
-        sourceId = align.Shaft:GetAttribute("InstanceId"),
-        componentId = align.ComponentId,
-        targetId = align.Target:GetAttribute("InstanceId"),
-        offsetUnits = align.OffsetUnits,
-        rollDegrees = align.RollDegrees,
-    })
-    if ok then
-        -- The placement is finished. Stay in a dedicated fine-fit state
-        -- so scrolling changes only shaft diameter, not insertion depth.
-        if align.Preview then align.Preview:Destroy() end
-        align.Preview = nil
-        align.Stage = "Fit"
-        self:RefreshVisuals()
-        player:SetAttribute("OPENWORKS_Inserting", true)
-        self.Parent:Message("Aligned • scroll to tighten shaft by 0.05 U • click/Esc done")
-        self.Parent:RefreshHUD()
-    end
+
+    -- Manual L > Align must ask for the actual relationship too. A plain
+    -- Align/FreeFit only adjusts geometry; other choices create their real
+    -- server-validated, passive native joint. Never infer a hidden weld.
+    local selected=align
+    local sourceId=align.Shaft:GetAttribute("InstanceId")
+    local targetId=align.Target:GetAttribute("InstanceId")
+    local componentId=align.ComponentId
+    local offset=align.OffsetUnits
+    local roll=align.RollDegrees
+    parent.PendingMateChoice="ManualAlign"
+    parent.MateChoice:Show(function(choice)
+        parent.PendingMateChoice=nil
+        parent.IgnoreClickUntil=os.clock()+0.22
+        if self.Alignment~=selected or selected.Stage~="Preview" then
+            parent:RefreshPointer()
+            return
+        end
+        -- Adjust (or dismiss the picker) returns to the live positioning
+        -- preview; the user can scroll depth/roll then click to choose again.
+        if not choice or choice=="__Adjust" then
+            parent:RefreshPointer()
+            parent:RefreshHUD()
+            return
+        end
+        local ok=parent:Request({
+            action=if choice=="FreeFit" then "Align" else "CreateRelation",
+            kind=if choice=="FreeFit" then nil else choice,
+            sourceId=sourceId,
+            componentId=componentId,
+            targetId=targetId,
+            offsetUnits=offset,
+            rollDegrees=roll,
+        })
+        if ok then
+            if selected.Preview then selected.Preview:Destroy() end
+            selected.Preview=nil
+            selected.Stage="Fit"
+            self:RefreshVisuals()
+            player:SetAttribute("OPENWORKS_Inserting",true)
+            parent:Message("Aligned • scroll to fine-fit shaft • click/Esc to finish")
+        end
+        parent:RefreshPointer()
+        parent:RefreshHUD()
+    end,1,false)
 end
 
 function Layered:Click()
