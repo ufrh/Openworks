@@ -1,351 +1,311 @@
 --!strict
--- Pure world-space decorative language: understated satin finish,
--- ground collars and mechanical-axis guide marks. No screen GUI.
--- Never participates in raycasts, contact or simulation authority.
-local Players = game:GetService("Players")
-local Lighting = game:GetService("Lighting")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local HttpService = game:GetService("HttpService")
-local constructor = ReplicatedStorage:WaitForChild("Openworks")
+-- Studio-style 3D feedback. NO helper Parts, BillboardGui or world text.
+-- Mechanisms are shown with native HandleAdornments attached to existing
+-- geometry; grounded/movable bodies use a literal fill-only Highlight.
+local Players=game:GetService("Players")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local RunService=game:GetService("RunService")
+local HttpService=game:GetService("HttpService")
+local construction=ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction")
-local Config = require(constructor:WaitForChild("BuildConfig"))
-local Alignment = require(constructor:WaitForChild("AlignmentMath"))
-local SpringMath = require(constructor:WaitForChild("SpringMath"))
-local Grid = require(constructor:WaitForChild("GridMath"))
+local Config=require(construction:WaitForChild("BuildConfig"))
+local Alignment=require(construction:WaitForChild("AlignmentMath"))
+local SpringMath=require(construction:WaitForChild("SpringMath"))
+local Grid=require(construction:WaitForChild("GridMath"))
 
-local localPlayer = Players.LocalPlayer
-local Visuals = {}
-Visuals.__index = Visuals
+local player=Players.LocalPlayer
+local Visuals={}
+Visuals.__index=Visuals
 
-local GROUNDED=Color3.fromRGB(57,212,127)
-local MOVABLE=Color3.fromRGB(252,160,73)
-local AXIS = Color3.fromRGB(92, 189, 228)
-local GEAR = Color3.fromRGB(209, 180, 124)
-local SLIDER = Color3.fromRGB(74, 196, 235)
-local BEARING = Color3.fromRGB(177, 132, 248)
-local SPRING = Color3.fromRGB(255, 153, 47)
-local WELD = Color3.fromRGB(73, 223, 150)
-local GUIDE = Color3.fromRGB(102, 220, 240)
+local GROUNDED=Color3.fromRGB(59,211,132)
+local MOVABLE=Color3.fromRGB(248,151,61)
+local COLORS={
+    Spring=Color3.fromRGB(255,161,52),
+    Weld=Color3.fromRGB(104,207,159),
+    Fixed=Color3.fromRGB(104,207,159),
+    Bolt=Color3.fromRGB(208,173,109),
+    Gear=Color3.fromRGB(208,173,109),
+    Bearing=Color3.fromRGB(158,146,229),
+    Slider=Color3.fromRGB(96,185,238),
+    Cylindrical=Color3.fromRGB(96,185,238),
+}
+local MAX_HIGHLIGHTS=180
 
-local function accentPart(parent, size)
-    local part = Instance.new("Part")
-    part.Name = "OPENWORKS_GeometryGuide"
-    part.Size = size
-    part.Anchored = true
-    part.CanCollide = false
-    part.CanQuery = false
-    part.CanTouch = false
-    part.CastShadow = false
-    part.Material = Enum.Material.SmoothPlastic
-    part.Transparency = 0.18
-    part.Color = AXIS
-    part.Parent = parent
-    return part
+local function newAdornment(parent,class,name)
+    local item=Instance.new(class)
+    item.Name=name
+    item.Color3=Color3.fromRGB(173,187,201)
+    item.Transparency=0.18
+    item.AlwaysOnTop=false
+    item.Visible=true
+    item.Parent=parent
+    return item
 end
 
-local function cylinderBetween(part, a, b, radius)
-    local delta = b-a
-    if delta.Magnitude < 0.001 then return end
-    part.Size = Vector3.new(delta.Magnitude,radius,radius)
-    part.CFrame = CFrame.lookAt((a+b)*0.5,b)
-        * CFrame.Angles(0,math.pi/2,0)
+local function frameOnAxis(position,direction)
+    local y=if direction.Magnitude>1e-5 then direction.Unit else Vector3.yAxis
+    local hint=if math.abs(y:Dot(Vector3.yAxis))<0.9
+        then Vector3.yAxis else Vector3.xAxis
+    local x=hint:Cross(y).Unit
+    return CFrame.fromMatrix(position,x,y,x:Cross(y))
+end
+
+local function put(adornment,part,frame)
+    adornment.Adornee=part
+    adornment.CFrame=part.CFrame:ToObjectSpace(frame)
+end
+
+local function cylinder(adornment,part,startPoint,endPoint,radius)
+    local diff=endPoint-startPoint
+    local distance=diff.Magnitude
+    adornment.Visible=distance>1e-4
+    if not adornment.Visible then return end
+    adornment.Radius=radius
+    adornment.Height=distance
+    put(adornment,part,frameOnAxis((startPoint+endPoint)*0.5,diff))
+end
+
+local function dot(adornment,part,point,radius)
+    adornment.Visible=true
+    adornment.Radius=radius
+    put(adornment,part,CFrame.new(point))
 end
 
 function Visuals.new()
-    local folder = Instance.new("Folder")
-    folder.Name = "OPENWORKS_PhysicalGuides"
-    folder.Parent = workspace
-    return setmetatable({Folder=folder, Ground={}, Joints={},
-        LastUpdate=0,Connections={}},Visuals)
+    local root=Instance.new("Folder")
+    root.Name="OPENWORKS_VisualAdornments"
+    root.Parent=workspace
+    return setmetatable({
+        Folder=root,
+        Ground={},
+        Joints={},
+        LastUpdate=0,
+        Connections={},
+    },Visuals)
 end
 
-function Visuals:GroundCue(key)
-    local ring = Instance.new("Folder")
-    ring.Name = "BodyStatus_"..key
-    ring.Parent = self.Folder
-    local bars = {}
-    for i=1,4 do
-        local p = accentPart(ring,Vector3.new(0.1,0.025,0.025))
-        p.Color = GROUNDED
-        p.Transparency = 0.17
-        table.insert(bars,p)
-    end
-    return {root=ring,bars=bars}
+function Visuals:GroundCue(model)
+    local highlight=Instance.new("Highlight")
+    highlight.Name="OPENWORKS_GroundStatus"
+    highlight.Adornee=model
+    highlight.DepthMode=Enum.HighlightDepthMode.Occluded
+    highlight.FillTransparency=0.83
+    highlight.OutlineTransparency=1
+    highlight.Parent=self.Folder
+    return highlight
 end
 
 function Visuals:JointCue(id)
-    local parent=Instance.new("Folder")
-    parent.Name="Joint_"..id
-    parent.Parent=self.Folder
-    local shaft=accentPart(parent,Vector3.new(0.1,0.025,0.025))
-    shaft.Transparency=0.35
-    local collar=accentPart(parent,Vector3.new(0.05,0.14,0.14))
-    collar.Shape=Enum.PartType.Cylinder
-    collar.Transparency=0.12
-    local function orb()
-        local part=accentPart(parent,Vector3.new(0.095,0.095,0.095))
-        part.Shape=Enum.PartType.Ball
-        part.Transparency=0.08
-        return part
+    local root=Instance.new("Folder")
+    root.Name="JointAdornment_"..id
+    root.Parent=self.Folder
+    local shaft=newAdornment(root,"CylinderHandleAdornment","Axis")
+    shaft.Radius=0.012
+    local collar=newAdornment(root,"CylinderHandleAdornment","Socket")
+    collar.Radius=0.13
+    collar.InnerRadius=0.109
+    collar.Height=0.025
+    local first=newAdornment(root,"SphereHandleAdornment","ContactA")
+    local second=newAdornment(root,"SphereHandleAdornment","ContactB")
+    local stopA=newAdornment(root,"CylinderHandleAdornment","TravelMin")
+    local stopB=newAdornment(root,"CylinderHandleAdornment","TravelMax")
+    for _,item in ipairs({stopA,stopB}) do
+        item.Radius=0.18
+        item.InnerRadius=0.15
+        item.Height=0.024
+        item.Visible=false
     end
-    local mark0,mark1=orb(),orb()
-    local stop0=accentPart(parent,Vector3.new(0.025,0.18,0.18))
-    local stop1=accentPart(parent,Vector3.new(0.025,0.18,0.18))
-    stop0.Shape=Enum.PartType.Cylinder
-    stop1.Shape=Enum.PartType.Cylinder
-    local tag=Instance.new("BillboardGui")
-    tag.Name="OPENWORKS_RelationshipLabel"
-    tag.Adornee=collar
-    tag.Size=UDim2.fromOffset(158,26)
-    tag.StudsOffsetWorldSpace=Vector3.new(0,0.35,0)
-    tag.AlwaysOnTop=false
-    tag.MaxDistance=42
-    tag.LightInfluence=0
-    tag.Parent=parent
-    local text=Instance.new("TextLabel")
-    text.Name="Label"
-    text.Size=UDim2.fromScale(1,1)
-    text.BackgroundColor3=Color3.fromRGB(19,28,36)
-    text.BackgroundTransparency=0.16
-    text.BorderSizePixel=0
-    text.Font=Enum.Font.GothamBold
-    text.TextSize=10
-    text.TextColor3=Color3.fromRGB(234,243,249)
-    text.TextStrokeTransparency=1
-    text.Parent=tag
-    local round=Instance.new("UICorner")
-    round.CornerRadius=UDim.new(0,6)
-    round.Parent=text
-    local stroke=Instance.new("UIStroke")
-    stroke.Thickness=1
-    stroke.Transparency=0.38
-    stroke.Parent=text
-    return {root=parent,shaft=shaft,collar=collar,
-        mark0=mark0,mark1=mark1,stop0=stop0,stop1=stop1,
-        text=text,stroke=stroke,fitMarkers={},fitData={},fitJSON=nil}
-end
-
-local function oriented(center,axis)
-    local dir=axis.Magnitude>0.0001 and axis.Unit or Vector3.xAxis
-    local reference=if math.abs(dir.Y)<0.9 then Vector3.yAxis else Vector3.zAxis
-    local up=(reference-dir*dir:Dot(reference)).Unit
-    return CFrame.fromMatrix(center,dir,up,dir:Cross(up))
-end
-
-local function drawEnd(part,position)
-    part.CFrame=CFrame.new(position)
+    return {
+        root=root,shaft=shaft,collar=collar,first=first,second=second,
+        stopA=stopA,stopB=stopB,
+        fitMarkers={},fitData={},fitJSON=nil,
+    }
 end
 
 function Visuals:UpdateJoint(cue,relation,source,target,models)
+    local part=target.PrimaryPart
+    if not part or not source.PrimaryPart then return end
     local kind=relation:GetAttribute("Kind")
-    local tint=if kind=="Spring" then SPRING
-        elseif kind=="Weld" then WELD
-        elseif kind=="Bolt" or kind=="Gear" then GEAR
-        elseif kind=="Bearing" then BEARING
-        elseif kind=="Slider" then SLIDER else AXIS
+    local color=COLORS[kind] or COLORS.Cylindrical
+    for _,adorn in ipairs({cue.shaft,cue.collar,cue.first,cue.second,
+        cue.stopA,cue.stopB}) do
+        adorn.Color3=color
+        adorn.Adornee=part
+    end
     local a,b=target:GetPivot().Position,source:GetPivot().Position
-    local localAxis=Alignment.TargetAxis(target)
-    local direction=if localAxis
-        then target:GetPivot():VectorToWorldSpace(localAxis).Unit
-        elseif (b-a).Magnitude>0.0001
-        then (b-a).Unit else Vector3.yAxis
+    local axisLocal=Alignment.TargetAxis(target)
+    local axis=if axisLocal then
+        target:GetPivot():VectorToWorldSpace(axisLocal).Unit
+        elseif (b-a).Magnitude>1e-4 then (b-a).Unit else Vector3.yAxis
     if kind=="Spring" then
         a,b=SpringMath.Frames(source,target,"General")
-        if (b-a).Magnitude>0.0001 then direction=(b-a).Unit end
+        if (b-a).Magnitude>1e-4 then axis=(b-a).Unit end
     end
     local center=(a+b)*0.5
-    local guideCount=relation:GetAttribute("FitPointCount") or 0
-    local labels={Spring="SPRING",Weld="WELD",Bolt="BOLT",Gear="GEARS",
-        Bearing="ROTATE",Slider="SLIDE",Cylindrical="SLIDE + ROTATE",
-        Fixed="FIXED"}
-    local setCount=relation:GetAttribute("FitSetCount")
-    local setIndex=relation:GetAttribute("FitSetIndex")
-    local suffix=if type(setCount)=="number" and setCount>1 then
-        "  "..tostring(setIndex or "?").."/"..tostring(setCount)
-        elseif guideCount>1 then "  ·  "..guideCount.." FITS" else ""
-    cue.text.Text=(labels[kind] or tostring(kind):upper())..suffix
-    cue.stroke.Color=tint
-    for _,part in ipairs({cue.shaft,cue.collar,cue.mark0,cue.mark1}) do
-        part.Color=tint
-    end
-    drawEnd(cue.mark0,a)
-    drawEnd(cue.mark1,b)
-    cue.collar.CFrame=oriented(center,direction)
-    if kind=="Slider" or kind=="Bearing" or kind=="Cylindrical" then
-        local reach=math.min(1.8,math.max(0.3,
+    dot(cue.first,part,a,0.058)
+    dot(cue.second,part,b,0.058)
+    put(cue.collar,part,frameOnAxis(center,axis))
+    cue.collar.Visible=true
+    if kind=="Bearing" or kind=="Slider" or kind=="Cylindrical" then
+        local distance=math.min(1.8,math.max(0.35,
             math.min(source.PrimaryPart.Size.Magnitude,
-                target.PrimaryPart.Size.Magnitude)*0.4))
-        cylinderBetween(cue.shaft,center-direction*reach,
-            center+direction*reach,0.024)
+                target.PrimaryPart.Size.Magnitude)*0.45))
+        cylinder(cue.shaft,part,center-axis*distance,center+axis*distance,0.012)
+    elseif kind=="Spring" then
+        -- The native SpringConstraint already draws the coil.
+        cue.shaft.Visible=false
+        cue.collar.Visible=false
     else
-        cylinderBetween(cue.shaft,a,b,if kind=="Spring" then 0.012 else 0.025)
+        cylinder(cue.shaft,part,a,b,0.014)
     end
+
     local travel=relation:GetAttribute("FitTravelU")
-    local hasStop=(kind=="Slider" or kind=="Cylindrical")
+    local hasStops=(kind=="Slider" or kind=="Cylindrical")
         and type(travel)=="number" and travel>0
-    for index,stop in ipairs({cue.stop0,cue.stop1}) do
-        stop.Color=tint
-        stop.Transparency=if hasStop then 0.22 else 1
-        if hasStop then
-            local sign=if index==1 then -1 else 1
-            stop.CFrame=oriented(center+direction*travel*Grid.Unit*sign,
-                direction)
-        end
+    cue.stopA.Visible=hasStops
+    cue.stopB.Visible=hasStops
+    if hasStops then
+        put(cue.stopA,part,frameOnAxis(center-axis*travel*Grid.Unit,axis))
+        put(cue.stopB,part,frameOnAxis(center+axis*travel*Grid.Unit,axis))
     end
+
     local json=relation:GetAttribute("FitPointsJSON")
     if json~=cue.fitJSON then
         cue.fitJSON=json
         cue.fitData={}
         if type(json)=="string" and #json<12000 then
-            local ok,result=pcall(function() return HttpService:JSONDecode(json) end)
+            local ok,result=pcall(function()return HttpService:JSONDecode(json)end)
             if ok and type(result)=="table" then cue.fitData=result end
         end
     end
-    local n=0
+    local count=0
     for _,entry in ipairs(cue.fitData) do
-        if n>=32 then break end
-        n+=1
-        local dot=cue.fitMarkers[n]
-        if not dot then
-            dot=accentPart(cue.root,Vector3.new(0.12,0.12,0.12))
-            dot.Shape=Enum.PartType.Ball
-            dot.Color=GUIDE
-            dot.Transparency=0.07
-            cue.fitMarkers[n]=dot
+        if count>=32 then break end
+        count+=1
+        local mark=cue.fitMarkers[count]
+        if not mark then
+            mark=newAdornment(cue.root,"SphereHandleAdornment",
+                "FitContact_"..count)
+            mark.Color3=Color3.fromRGB(130,211,227)
+            mark.Transparency=0.08
+            cue.fitMarkers[count]=mark
         end
         local moving=models[entry.movingId]
         local stationary=models[entry.stationaryId]
-        if moving and stationary then
-            local bore=if Alignment.TargetAxis(moving) then moving
-                elseif Alignment.TargetAxis(stationary) then stationary else nil
-            dot.CFrame=bore and bore:GetPivot() or CFrame.new(stationary:GetPivot().Position)
-            dot.Transparency=0.07
+        local bore=moving and Alignment.TargetAxis(moving) and moving
+            or (stationary and Alignment.TargetAxis(stationary) and stationary)
+        if bore then
+            dot(mark,part,bore:GetPivot().Position,0.066)
         else
-            dot.Transparency=1
+            mark.Visible=false
         end
     end
-    for i=#cue.fitMarkers,n+1,-1 do
+    for i=#cue.fitMarkers,count+1,-1 do
         cue.fitMarkers[i]:Destroy()
         table.remove(cue.fitMarkers,i)
     end
 end
 
 function Visuals:Update()
-    -- Authored spring coils are construction-only visuals.
-    local simulating=localPlayer:GetAttribute("OPENWORKS_Simulating")==true
+    local simulating=player:GetAttribute("OPENWORKS_Simulating")==true
     local authored=workspace:FindFirstChild("OPENWORKS_Relationships")
     if authored then
         for _,relation in ipairs(authored:GetChildren()) do
-            if relation:GetAttribute("OwnerUserId")==localPlayer.UserId
+            if relation:GetAttribute("OwnerUserId")==player.UserId
                 and relation:GetAttribute("Kind")=="Spring" then
                 local spring=relation:FindFirstChildOfClass("SpringConstraint")
                 if spring then spring.Visible=not simulating end
             end
         end
     end
-    -- Live simulation replaces authored bodies with moving clones.
-    if simulating then
-        self.Folder.Parent=nil
-        return
-    end
-    if not self.Folder.Parent then self.Folder.Parent=workspace end
-    local built = workspace:FindFirstChild(Config.FolderName)
-    if not built then return end
-    local models={}
-    local groups={}
-    for _,model in ipairs(built:GetChildren()) do
-        if model:IsA("Model")
-            and model:GetAttribute("OwnerUserId")==localPlayer.UserId then
-            local id = model:GetAttribute("InstanceId")
+
+    local root=if simulating then
+        (workspace:FindFirstChild("OPENWORKS_Simulated")
+            and workspace.OPENWORKS_Simulated:FindFirstChild(
+                "Simulation_"..tostring(player.UserId)))
+        else workspace:FindFirstChild(Config.FolderName)
+
+    local models,allowed={},{}
+    local amount=0
+    if root then
+        for _,model in ipairs(root:GetChildren()) do
+            if not model:IsA("Model")
+                or model:GetAttribute("OwnerUserId")~=player.UserId
+                or not model.PrimaryPart then continue end
+            local id=model:GetAttribute("InstanceId")
             if type(id)=="string" then models[id]=model end
-            local key=model:GetAttribute("ComponentId") or id
-            if key then
-                groups[key]=groups[key] or {models={},grounded=false}
-                table.insert(groups[key].models,model)
-                if model:GetAttribute("Grounded")==true then
-                    groups[key].grounded=true
-                end
-            end
-        end
-    end
-    for key,cue in pairs(self.Ground) do
-        if not groups[key] then cue.root:Destroy() self.Ground[key]=nil end
-    end
-    for key,status in pairs(groups) do
-        local cue=self.Ground[key]
-        if not cue then
-            cue=self:GroundCue(key)
-            self.Ground[key]=cue
-        end
-        for _,bar in ipairs(cue.bars) do
-            bar.Color=if status.grounded then GROUNDED else MOVABLE
-        end
-        local low=Vector3.new(math.huge,math.huge,math.huge)
-        local high=Vector3.new(-math.huge,-math.huge,-math.huge)
-        for _,model in ipairs(status.models) do
-            for _,part in ipairs(model:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    local r=part.Size.Magnitude * 0.5
-                    low=Vector3.new(math.min(low.X,part.Position.X-r),
-                        math.min(low.Y,part.Position.Y-r),
-                        math.min(low.Z,part.Position.Z-r))
-                    high=Vector3.new(math.max(high.X,part.Position.X+r),
-                        math.max(high.Y,part.Position.Y+r),
-                        math.max(high.Z,part.Position.Z+r))
-                end
-            end
-        end
-        if low.X~=math.huge then
-            local center=(low+high)*0.5
-            local radius=math.max(high.X-low.X, high.Z-low.Z)*0.45+0.15
-            local y=low.Y-0.045
-            for i,bar in ipairs(cue.bars) do
-                local a=(i-1)*math.pi/2
-                local p=center+Vector3.new(math.cos(a)*radius,y-center.Y,math.sin(a)*radius)
-                local tangent=Vector3.new(-math.sin(a),0,math.cos(a))
-                cylinderBetween(bar,p-tangent*0.11,p+tangent*0.11,0.032)
+            if amount<MAX_HIGHLIGHTS then
+                allowed[model]=true
+                amount+=1
             end
         end
     end
 
-    local joints=workspace:FindFirstChild("OPENWORKS_Relationships")
+    -- Keep one fill-only Highlight per visible body, never a second set
+    -- of floating Part-based green/orange grounding bars.
+    for model,highlight in pairs(self.Ground) do
+        if not allowed[model] or not model.Parent then
+            highlight:Destroy()
+            self.Ground[model]=nil
+        end
+    end
+    local groups={}
+    if not simulating then
+        for model in pairs(allowed) do
+            local group=model:GetAttribute("ComponentId")
+            if type(group)=="string" and group~="" then
+                groups[group]=groups[group] or false
+                if model:GetAttribute("Grounded")==true then groups[group]=true end
+            end
+        end
+    end
+    for model in pairs(allowed) do
+        local cue=self.Ground[model]
+        if not cue then
+            cue=self:GroundCue(model)
+            self.Ground[model]=cue
+        end
+        local group=model:GetAttribute("ComponentId")
+        local grounded=if simulating then model.PrimaryPart.Anchored
+            elseif type(group)=="string" and group~="" then
+                groups[group]==true
+            else model:GetAttribute("Grounded")==true
+        cue.FillColor=if grounded then GROUNDED else MOVABLE
+        cue.OutlineTransparency=1
+        cue.FillTransparency=0.84
+    end
+
+    -- Relationship guides are construction adornments, not active phantom
+    -- mechanisms. The moving simulation shows only real geometry and the
+    -- native spring coils; no helper text, guides or bars.
     local active={}
-    if joints then
-        for _,folder in ipairs(joints:GetChildren()) do
-            if folder:GetAttribute("OwnerUserId")~=localPlayer.UserId then continue end
-            local id=folder:GetAttribute("RelationId")
-            local target=models[folder:GetAttribute("TargetId")]
-            local source=models[folder:GetAttribute("SourceId")]
+    if not simulating and authored then
+        for _,relation in ipairs(authored:GetChildren()) do
+            if relation:GetAttribute("OwnerUserId")~=player.UserId then continue end
+            local id=relation:GetAttribute("RelationId")
+            local source=models[relation:GetAttribute("SourceId")]
+            local target=models[relation:GetAttribute("TargetId")]
             if type(id)~="string" or not source or not target then continue end
             active[id]=true
             local cue=self.Joints[id]
-            if not cue then cue=self:JointCue(id) self.Joints[id]=cue end
-            self:UpdateJoint(cue,folder,source,target,models)
+            if not cue then
+                cue=self:JointCue(id)
+                self.Joints[id]=cue
+            end
+            self:UpdateJoint(cue,relation,source,target,models)
         end
     end
-    for key,cue in pairs(self.Joints) do
-        if not active[key] then cue.root:Destroy() self.Joints[key]=nil end
+    for id,cue in pairs(self.Joints) do
+        if not active[id] then
+            cue.root:Destroy()
+            self.Joints[id]=nil
+        end
     end
 end
 
 function Visuals:Start()
-    -- Studio-generated workshop already supplies its enclosing workspace.
-    -- Apply light visual grading locally, rather than modifying physical
-    -- collisions, global environment, or user camera optics.
-    local grade=Lighting:FindFirstChild("OPENWORKS_IndustrialGrade")
-    if not grade then
-        grade=Instance.new("ColorCorrectionEffect")
-        grade.Name="OPENWORKS_IndustrialGrade"
-        grade.Brightness=0.012
-        grade.Contrast=0.075
-        grade.Saturation=-0.055
-        grade.TintColor=Color3.fromRGB(230,238,246)
-        grade.Parent=Lighting
-    end
-    self.Grade=grade
     table.insert(self.Connections,RunService.RenderStepped:Connect(function()
-        if os.clock()-self.LastUpdate<0.12 then return end
+        if os.clock()-self.LastUpdate<0.14 then return end
         self.LastUpdate=os.clock()
         self:Update()
     end))
@@ -353,6 +313,8 @@ end
 
 function Visuals:Destroy()
     for _,conn in ipairs(self.Connections) do conn:Disconnect() end
+    for _,cue in pairs(self.Ground) do cue:Destroy() end
+    for _,cue in pairs(self.Joints) do cue.root:Destroy() end
     self.Folder:Destroy()
 end
 
