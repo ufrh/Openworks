@@ -158,11 +158,11 @@ function Controller:ToggleSimulation()
     -- membership and rejects incomplete connected registrations.
     self.SimAssemblyName=seed:GetAttribute("AssemblyName") or "Assembly"
     self:Reset()
-    local free = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    -- Simulation starts ungrounded regardless of Shift. Grounding
+    -- is explicitly authored on supports when needed, not a camera mode.
     self.SimSeedId = id
     self:Request({ action = "StartSimulation", seedId = id,
-        grounded = not free })
+        grounded = false })
 end
 
 function Controller:Message(message)
@@ -205,7 +205,7 @@ function Controller:RefreshHUD()
             self.Detail.Text=if type(name)=="string" and name~=""
                 then name.."  /  REGISTERED"
                 else "No registered assembly selected"
-            self.Help.Text="P run assembly • G ground • Shift+P free"
+            self.Help.Text="P run ungrounded assembly • G configure grounding"
         else
             local paused=player:GetAttribute("OPENWORKS_SimulationPaused")==true
             local grounded=player:GetAttribute("OPENWORKS_Grounded")~=false
