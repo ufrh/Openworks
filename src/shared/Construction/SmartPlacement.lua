@@ -4,6 +4,7 @@
 -- not a two-click relationship selection or a compulsory world grid.
 local Alignment = require(script.Parent:WaitForChild("AlignmentMath"))
 local GearMath = require(script.Parent:WaitForChild("GearMath"))
+local Bore = require(script.Parent:WaitForChild("BoreClearance"))
 local HandCrankMath = require(script.Parent:WaitForChild("HandCrankMath"))
 local Grid = require(script.Parent:WaitForChild("GridMath"))
 local MultiFit = require(script.Parent:WaitForChild("MultiFitMath"))
@@ -74,29 +75,10 @@ function Smart.HubFits(source: Model, target: Model)
     if not gearBody or not shaft or not shaft.PrimaryPart then
         return false,"Hub requires one gear and one cylindrical shaft"
     end
-    local bore=gearBody:GetAttribute("BoreRadiusStuds")
-    if type(bore)~="number" or bore<=0 then
-        return false,"Gear has no verified center opening"
-    end
-    local shaftRadius=math.max(shaft.PrimaryPart.Size.Y,shaft.PrimaryPart.Size.Z)*0.5
-    if shaftRadius+0.002>bore then
-        return false,"Shaft diameter exceeds gear center opening"
-    end
-    local gcf,scf=gearBody:GetPivot(),shaft:GetPivot()
-    if math.abs(gcf.RightVector:Dot(scf.RightVector))<0.999 then
-        return false,"Gear and shaft axes must align"
-    end
-    local radial=gcf.Position-scf.Position
-    radial-=scf.RightVector*radial:Dot(scf.RightVector)
-    if radial.Magnitude>0.012 then
-        return false,"Shaft must pass through gear's center"
-    end
-    local axial=math.abs((gcf.Position-scf.Position):Dot(scf.RightVector))
-    local overlap=(shaft.PrimaryPart.Size.X+gearBody.PrimaryPart.Size.X)*0.5
-    if axial>overlap-0.015 then
-        return false,"Gear must overlap the shaft length"
-    end
-    return true
+    -- One authoritative clearance predicate for gears, tubes and holes.
+    -- Checks perpendicular distance from bore center, diameter, coaxial
+    -- orientation and physical engagement rather than pivot overlap alone.
+    return Bore.ShaftFits(shaft,gearBody)
 end
 
 function Smart.HubPose(source: Model, target: Model, near: Vector3)
