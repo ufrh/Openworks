@@ -99,8 +99,9 @@ function Smart.MultiGearPose(source:Model,target:Model,near:Vector3,
     for _,other in ipairs(options) do
         if other==target or other==source or not gear(other)
             or not other.PrimaryPart or not other.Parent then continue end
-        if math.abs((other:GetAttribute("GearModuleStuds") or -1)
-            -module)>0.0001 then continue end
+        local otherModule=other:GetAttribute("GearModuleStuds")
+        if type(otherModule)~="number"
+            or math.abs(otherModule-module)>0.0001 then continue end
         local cf=other:GetPivot()
         if math.abs(axis:Dot(cf.RightVector))<0.999 then continue end
         local axial=math.abs((cf.Position-first.Position):Dot(axis))
