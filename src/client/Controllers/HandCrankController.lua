@@ -49,11 +49,25 @@ function Controller:CrankAtCenter()
     while node and node.Parent~=folder do
         node=node.Parent
     end
-    if node and node:IsA("Model") and Crank.IsCrank(node)
-        and node:GetAttribute("OwnerUserId")==player.UserId then
-        return node
+    if not node or not node:IsA("Model")
+        or node:GetAttribute("OwnerUserId")~=player.UserId then
+        return nil
     end
-    return nil
+    if Crank.IsCrank(node) then return node end
+
+    -- Aim at ANY part of your simulated mechanism when it contains exactly
+    -- one hand crank. The long shaft, gear, or housing can obscure its
+    -- small handle, making the original direct-hit-only control unusable.
+    -- Do not guess a crank when multiple independent cranks are present.
+    local only=nil
+    for _,candidate in ipairs(folder:GetChildren()) do
+        if candidate:IsA("Model") and Crank.IsCrank(candidate)
+            and candidate:GetAttribute("OwnerUserId")==player.UserId then
+            if only then return nil end
+            only=candidate
+        end
+    end
+    return only
 end
 
 function Controller:Release()
