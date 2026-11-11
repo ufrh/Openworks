@@ -17,7 +17,11 @@ function Frames.Decode(values)
         or cf.RightVector.Magnitude>1.01
         or cf.UpVector.Magnitude<0.99
         or cf.UpVector.Magnitude>1.01
-        or math.abs(cf.RightVector:Dot(cf.UpVector))>0.02 then return nil end
+        or cf.LookVector.Magnitude<0.99
+        or cf.LookVector.Magnitude>1.01
+        or math.abs(cf.RightVector:Dot(cf.UpVector))>0.02
+        or math.abs(cf.RightVector:Dot(cf.LookVector))>0.02
+        or math.abs(cf.UpVector:Dot(cf.LookVector))>0.02 then return nil end
     return cf
 end
 function Frames.Validate(kind,a,b,frameA,frameB)
@@ -47,8 +51,10 @@ function Frames.Validate(kind,a,b,frameA,frameB)
         return false,"Joint anchor must be near both components"
     end
     if kind=="AxisUniversal" then
-        if math.abs(wa.RightVector:Dot(wb.RightVector))>0.02 then
-            return false,"Universal joint axes must be perpendicular"
+        -- Roblox UniversalConstraint constrains SecondaryAxis (local Y),
+        -- not primary Axis (local X): both Y axes must be perpendicular.
+        if math.abs(wa.UpVector:Dot(wb.UpVector))>0.02 then
+            return false,"Universal joint secondary axes must be perpendicular"
         end
     elseif wa.RightVector:Dot(wb.RightVector)<0.999 then
         return false,"Joint axes do not align"
