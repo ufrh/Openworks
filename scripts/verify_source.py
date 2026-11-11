@@ -188,6 +188,7 @@ def main() -> int:
     joint_frames=read("src/shared/Construction/JointFrameMath.lua")
     motor_client=read("src/client/Controllers/MotorControlController.lua")
     assembly_client=read("src/client/Controllers/AssemblyController.lua")
+    mechanical=read("src/server/Runtime/MechanicalService.lua")
     check("Physical materials set density/grip/restitution and include tire rubber",
           'Rubber={Name="Rubber (tires)"' in materials
           and 'CustomPhysicalProperties=PhysicalProperties.new(' in materials
@@ -373,7 +374,6 @@ def main() -> int:
           and "self.Remote:FireServer(self.ActiveId,0,true,false)" in crank
           and "UserInputService:IsMouseButtonPressed(" in crank)
     crank_math=read("src/shared/Construction/HandCrankMath.lua")
-    mechanical=read("src/server/Runtime/MechanicalService.lua")
     mates=read("src/client/Controllers/MateChoicePanel.lua")
     check("Hand crank fitted size survives undo/load",
           "HandCrankMath.ApplySize(model,data.size)" in service
