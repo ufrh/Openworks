@@ -1269,11 +1269,19 @@ function Controller:UpdatePreview()
             local base=Grid.Rotation(attributesSteps(self.GroupAnchor))
             rotation=rotation*base:Inverse()*self.GroupAnchor:GetPivot().Rotation
         end
-        local proposed=Grid.FromSurface(hit.Position,hit.Normal,
-            self.CurrentSize,rotation)
+        local target=hit.Instance and topBuiltModel(
+            hit.Instance,workspace:FindFirstChild(Config.FolderName))
+        local proposed=if target then
+            -- Neighbor placement stays in the target's local face frame;
+            -- world-zero grid parity can offset different sized primitives.
+            CFrame.new(hit.Position)*rotation
+            else Grid.FromSurface(hit.Position,hit.Normal,
+                self.CurrentSize,rotation)
         if not self.Preview.Parent then self.Preview.Parent=workspace end
-        cf=SurfacePlacement.SnapToSurface(self.Preview,proposed,
-            hit.Position,hit.Normal)
+        cf=if target then SurfacePlacement.SnapToNearbyFace(
+            self.Preview,proposed,hit.Position,hit.Normal,hit.Instance)
+            else SurfacePlacement.SnapToSurface(self.Preview,proposed,
+                hit.Position,hit.Normal)
         local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
         self.Preview:PivotTo(cf)
