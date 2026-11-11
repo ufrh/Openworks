@@ -466,11 +466,13 @@ local function place(player, payload)
         orientation = if payload.autoMate
             and (payload.autoMate.kind=="BoltHole"
                 or payload.autoMate.kind=="Bore"
-                or payload.autoMate.kind=="CrankCoupling")
+                or payload.autoMate.kind=="CrankCoupling"
+                or payload.autoMate.kind=="Hub")
             then payload.orientation else nil,
         freePosition=payload.autoMate and (payload.autoMate.kind=="BoltHole"
             or payload.autoMate.kind=="Bore"
-            or payload.autoMate.kind=="CrankCoupling"),
+            or payload.autoMate.kind=="CrankCoupling"
+                or payload.autoMate.kind=="Hub"),
     }
     proposed.resizePrecision = Grid.HasFractionalSize(proposed.size)
     proposed.numericPrecision = payload.numericPrecision == true
