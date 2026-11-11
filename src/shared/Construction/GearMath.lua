@@ -27,4 +27,22 @@ function GearMath.Meshable(a:Model,b:Model):(boolean,string?)
     end
     return true
 end
+
+-- Continuous auto-engagement is tighter than the editor's generous
+-- placement tolerance. The actual faces must overlap and pitch-circle
+-- spacing must be accurate; touching outer tooth bounds is insufficient.
+function GearMath.AutoMeshable(a:Model,b:Model):boolean
+    if not GearMath.Meshable(a,b)
+        or not a.PrimaryPart or not b.PrimaryPart then return false end
+    local ca,cb=a:GetPivot(),b:GetPivot()
+    local axis=ca.RightVector.Unit
+    local separation=cb.Position-ca.Position
+    local axial=math.abs(separation:Dot(axis))
+    local radial=(separation-axis*separation:Dot(axis)).Magnitude
+    local pitch=(a:GetAttribute("GearTeeth")+b:GetAttribute("GearTeeth"))
+        *a:GetAttribute("GearModuleStuds")/(2*math.pi)
+    local overlap=(a.PrimaryPart.Size.X+b.PrimaryPart.Size.X)*0.5-0.012
+    return math.abs(radial-pitch)<=0.045 and axial<overlap
+end
+
 return table.freeze(GearMath)
