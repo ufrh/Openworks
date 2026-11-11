@@ -75,24 +75,30 @@ function Alignment.IsOffsetValid(units)
         and math.abs(units) <= Alignment.MaxOffsetUnits
 end
 
--- The shaft must remain physically engaged with the opening.
--- Bounds are based on ACTUAL current axial lengths (not a magic +/-64 U).
--- Keep at least 25% of the shorter part inserted, or 0.25 U.
+-- Physical translational stops are the TWO END FACES OF THE HOUSING,
+-- not the combined shaft/housing length. The reference for motion is
+-- the shaft's axial CENTER. A long shaft may protrude on both sides,
+-- but its center must never slide beyond either tube face.
+-- Returns absolute center offset in construction U, relative to the
+-- housing center; simulation converts it to its joint's initial frame.
 function Alignment.OffsetBounds(shaft, opening)
     if not Alignment.IsShaft(shaft) or not Alignment.TargetAxis(opening)
         or not shaft.PrimaryPart or not opening.PrimaryPart then
         return nil,nil,"An opening and cylindrical shaft are required"
     end
-    local openingLocal=Alignment.TargetAxis(opening)
+    local axis=Alignment.TargetAxis(opening)
     local size=opening.PrimaryPart.Size
-    local housingLength=math.abs(openingLocal.X)*size.X
-        +math.abs(openingLocal.Y)*size.Y
-        +math.abs(openingLocal.Z)*size.Z
+    local housingLength=math.abs(axis.X)*size.X
+        +math.abs(axis.Y)*size.Y+math.abs(axis.Z)*size.Z
     local shaftLength=shaft.PrimaryPart.Size.X
-    local engagement=math.max(Grid.Unit*0.25,
-        math.min(shaftLength,housingLength)*0.25)
-    local maxCenter=math.max(0,(shaftLength+housingLength)*0.5-engagement)
-    local bound=math.floor(maxCenter/(Grid.Unit*0.5)+1e-6)*0.5
+    if housingLength<=0 or shaftLength<=0 then
+        return nil,nil,"Tube and shaft must have nonzero length"
+    end
+    -- The center stays just INSIDE the two tube end planes. This small
+    -- clearance prevents native Prismatic/Cylindrical constraints from
+    -- pushing the center outside the housing due to solver tolerance.
+    local endInset=math.min(0.012,housingLength*0.1)
+    local bound=math.max(0,housingLength*0.5-endInset)/Grid.Unit
     return -bound,bound
 end
 
