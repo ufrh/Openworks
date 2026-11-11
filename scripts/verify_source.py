@@ -82,6 +82,28 @@ def main() -> int:
     ):
         check_local_requires(folder)
 
+    camera=read("src/client/Controllers/CameraController.lua")
+    plots_service=read("src/server/Runtime/PlotService.lua")
+    check("Freecam is permanent scriptable camera at spawn and respawn",
+          'player.CameraMode=Enum.CameraMode.Classic' in camera
+          and 'cam.CameraType=Enum.CameraType.Scriptable' in camera
+          and 'Enum.RenderPriority.Camera.Value+1' in camera
+          and 'player.CharacterAdded:Connect(function()' in camera
+          and 'Enum.CameraMode.LockFirstPerson' not in camera)
+    check("Freecam has immediate RMB look, MMB pan and plot-clamped flight",
+          'self.Rotating=true' in camera
+          and 'self.Panning=true' in camera
+          and 'UIS:GetMouseDelta()' in camera
+          and 'Enum.KeyCode.W' in camera
+          and 'Enum.KeyCode.Space' in camera
+          and 'clampToPlot(self.Position)' in camera
+          and 'Enum.RenderPriority.Camera.Value+3' in camera)
+    check("Character remains invisible, anchored and immobile with native tools",
+          'root.Anchored=true' in plots_service
+          and 'humanoid.WalkSpeed=0' in plots_service
+          and 'humanoid.JumpPower=0' in plots_service
+          and 'descendant.Transparency=1' in plots_service
+          and 'FindFirstAncestorOfClass("Tool")' in plots_service)
     assembly = read("src/server/Runtime/AssemblyService.lua")
     service = read("src/server/Runtime/ConstructionService.lua")
     component = read("src/server/Runtime/ComponentService.lua")
@@ -95,6 +117,16 @@ def main() -> int:
     crank = read("src/client/Controllers/HandCrankController.lua")
     client_entry = read("src/client/init.client.lua")
 
+    check("Construction and simulated crank range use owned plot, not frozen head",
+          'return plots~=nil and plots:Contains(player,position)' in service
+          and 'not self.D.nearPlayer(player,crank.Root.Position)' in simulation
+          and 'not self.D.nearPlayer(owner,root.Position)' in simulation)
+    check("Simulation starts ungrounded by default but honors authored supports",
+          'Grounded = payload.grounded == true' in simulation
+          and 'if member:GetAttribute("Grounded") == true then' in simulation
+          and 'if not hasExplicitGround and session.Grounded then' in simulation
+          and 'grounded = false' in read("src/client/Controllers/AssemblyController.lua")
+          and 'Shift+P free' not in read("src/client/Controllers/AssemblyController.lua"))
     check("Assembly only accepts explicit owned primitive ID lists",
           "payload.memberIds" in assembly
           and "self.D.findOwned(player,id)" in assembly
