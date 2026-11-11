@@ -117,34 +117,50 @@ def main() -> int:
           and "if left~=right then" in simulation)
     check("No per-component completeness requirement",
           "An editor component has members outside this assembly" not in simulation)
-    check("Native joints are passive; gear transmission is powered only by active crank",
-          "Enum.ActuatorType.None" in simulation
-          and 'Instance.new("AngularVelocity")' in simulation
-          and 'drive.Name="HandCrank_ControlledRotation"' in simulation
-          and 'motor.Name="AuthoredGearRatioDrive"' in simulation
-          and 'motor.Enabled=false' in simulation
-          and "HandCrank_PlayerTorque" not in simulation)
+    gears=read("src/server/Runtime/GearKinematics.lua")
+    gear_math=read("src/shared/Construction/GearMath.lua")
+    check("Kinematic gears no longer receive native bearings or prefab joints",
+          'session.Gears=GearKinematics.new(graph,copies)' in simulation
+          and 'not session.Gears:IsKinematic(id)' in simulation
+          and 'session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))' in simulation
+          and 'session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId"))' in simulation
+          and 'part.Anchored=true' in simulation
+          and 'part.CanCollide=false' in simulation
+          and 'motor.Name="AuthoredGearRatioDrive"' not in simulation)
+    check("Automatic gear meshes are independent of K authoring",
+          'GearMath.AutoMeshable(left.Model,right.Model)' in gears
+          and 'if left.Group==right.Group then continue end' in gears
+          and 'function GearMath.AutoMeshable(' in gear_math
+          and 'if edge.kind~="Gear" then continue end' not in gears
+          and 'function Controller:ToggleGearMode()' in read(
+              "src/client/Controllers/AssemblyController.lua")
+          and 'Gears auto-mesh in simulation' in read(
+              "src/client/Controllers/AssemblyController.lua"))
+    check("Kinematic gear train respects tooth ratios and rigid grouping",
+          'edge.kind=="Weld" or edge.kind=="Fixed" or edge.kind=="Bolt"' in gears
+          and 'local ratio=-left.Teeth/right.Teeth*orientation' in gears
+          and 'model:PivotTo(delta*model:GetPivot())' in gears
+          and 'local stalled=false' in gears
+          and 'if group.Grounded then stalled=true end' in gears)
+    check("Gear bodies are physics-free but remain selectable",
+          'model:SetAttribute("OPENWORKS_GearKinematic",true)' in gears
+          and 'part.CanQuery=part:GetAttribute("GearPivotOnly")~=true' in simulation
+          and 'session.Gears:MarkGrounding(session.GroundKeys)' in simulation
+          and 'not session.Gears:IsKinematic(id)' in simulation)
+    check("Crank powers kinematic gears without native motors",
+          'local kinematic=session.Gears:IsKinematic(drivenId)' in simulation
+          and 'if not kinematic then' in simulation
+          and 'session.Gears:Step(dt,' in simulation
+          and 'if crank.Drive then crank.Drive.Enabled=false end' in simulation
+          and 'crank.Drive.AngularVelocity=crank.Axis*HandCrankMath.FixedAngularSpeed' in simulation)
     check("Crank selectable through obstructing shaft / gear in single-crank assembly",
           'if Crank.IsCrank(node) then return node end' in crank
           and 'if only then return nil end' in crank
           and 'node:GetAttribute("OwnerUserId")~=player.UserId' in crank)
-    check("Explicit gear mesh drives ratios without tooth-to-tooth collision",
-          'local function transmissionNetwork(graph)' in simulation
-          and 'if edge.kind~="Gear" then continue end' in simulation
-          and 'local ratio=-nA/nB*axisA:Dot(axisB)' in simulation
-          and 'GEAR_COLLISION_GROUP,GEAR_COLLISION_GROUP,false' in simulation
-          and 'driver.Drive.AngularVelocity=driver.Axis' in simulation
-          and 'driver.Drive.Enabled=true' in simulation
-          and 'if output.Driver.Drive.Parent then output.Driver.Drive.Enabled=false end' in simulation)
-    check("Gear drives exclude grounded welded shafts",
-          'table.insert(gearDrivers[key].Models,bodyKey(original))' in simulation
-          and 'session.GroundKeys[key]' in simulation
-          and 'if not grounded then' in simulation)
     check("Controlled rotation targets the coupled physical shaft",
           'copies[coupledShaft:GetAttribute("InstanceId")]' in simulation
-          and 'crank.Drive.AngularVelocity=crank.Axis*HandCrankMath.FixedAngularSpeed' in simulation
-          and 'crank.Drive.Enabled=true' in simulation
-          and 'crank.Drive.Enabled=false' in simulation
+          and 'DrivenId=drivenId' in simulation
+          and 'if crank.Drive then' in simulation
           and 'crank.Torque' not in simulation
           and 'VelocityGain' not in simulation)
     check("Held-LMB crank is fixed-speed, range-limited, torque-capped",
