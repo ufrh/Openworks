@@ -92,6 +92,9 @@ function UI:Show(enabled)
     if enabled then
         UserInputService.MouseBehavior=Enum.MouseBehavior.Default
         UserInputService.MouseIconEnabled=true
+    elseif player:GetAttribute("OPENWORKS_PropertiesOpen")~=true then
+        UserInputService.MouseBehavior=Enum.MouseBehavior.LockCenter
+        UserInputService.MouseIconEnabled=false
     end
 end
 

@@ -1,5 +1,5 @@
 --!strict
--- Initial Build/Edit rules. Construction is limited per player until persistence.
+-- Player-owned construction and persistence limits for manual-save plots.
 return table.freeze({
     MaxPartsPerPlayer = 500,
     UndoLimit = 50,

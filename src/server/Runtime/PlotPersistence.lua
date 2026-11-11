@@ -60,6 +60,7 @@ function Persistence.new(deps)
         Ready={},
         Busy={},
         LastManualSave={},
+        LastWrittenDocument={},
     },Persistence)
 end
 
@@ -292,7 +293,20 @@ function Persistence:Load(player)
     if not self.D.plots:Get(player) then return false,"Plot not assigned" end
     self.Busy[player]=true
     self:Status(player,"Loading","Loading your last manual save")
-    local ok,document=pcall(function() return self.Store:GetAsync(self:Key(player)) end)
+    -- Roblox caches GetAsync results briefly. An explicit Reload directly
+    -- after a successful manual Save should restore the newly written data,
+    -- not an older cached server-side GetAsync result.
+    local recent=self.LastWrittenDocument[player]
+    local useRecent=recent and self.LastManualSave[player]
+        and os.clock()-self.LastManualSave[player]<30
+    local ok,document
+    if useRecent then
+        ok,document=true,recent
+    else
+        ok,document=pcall(function()
+            return self.Store:GetAsync(self:Key(player))
+        end)
+    end
     if not ok then
         self.Busy[player]=nil
         self.Ready[player]=false
@@ -301,8 +315,14 @@ function Persistence:Load(player)
         return false,"Could not access plot storage; your existing construction was not erased"
     end
     if not player.Parent then self.Busy[player]=nil return false,"Player left" end
-    local result,message=true,"New empty plot"
-    if document~=nil then
+    local result,message
+    if document==nil then
+        -- A confirmed Load is a real revert, even if nothing was saved yet.
+        result,message=self:Apply(player,{
+            version=SCHEMA_VERSION,parts={},joints={},
+        })
+        if result then message="Loaded empty plot (no manual save yet)" end
+    else
         result,message=self:Apply(player,document)
     end
     self.Busy[player]=nil
@@ -344,6 +364,7 @@ function Persistence:Save(player)
         return false,"Save failed; previous save was not intentionally overwritten"
     end
     self.LastManualSave[player]=os.clock()
+    self.LastWrittenDocument[player]=document
     player:SetAttribute("OPENWORKS_LastSavedAt",document.savedAt)
     self:Status(player,"Ready","Saved manually")
     return true,string.format("Saved %d parts and %d relationships",
@@ -355,6 +376,7 @@ function Persistence:Clear(player)
     self.Ready[player]=nil
     self.Busy[player]=nil
     self.LastManualSave[player]=nil
+    self.LastWrittenDocument[player]=nil
 end
 
 return Persistence
