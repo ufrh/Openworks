@@ -427,10 +427,9 @@ function Mechanical:CreateAxisJoint(player,request)
     if not target or not source or source==target then
         return false,"Select two different owned components"
     end
-    if target:GetAttribute("ComponentId")
-        and target:GetAttribute("ComponentId")==source:GetAttribute("ComponentId") then
-        return false,"Joint endpoints cannot belong to the same component"
-    end
+    -- ComponentId is an editor selection group, not a rigid body.
+    -- Separate primitives MAY share an editor group while being joined
+    -- by a hinge or ball joint. Only identical primitive IDs are invalid.
     if not self.D.nearPlayer(player,target:GetPivot().Position)
         or not self.D.nearPlayer(player,source:GetPivot().Position) then
         return false,"Joint endpoints must stay on the owned plot"
