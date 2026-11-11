@@ -989,6 +989,13 @@ function Controller:Start()
         self:UpdatePreview()
     end))
     table.insert(self.Connections, RunService.RenderStepped:Connect(function(dt)
+        if self.Mode=="Simulate" and not self:IsSimulating() then
+            local now=os.clock()
+            if now-(self.LastSimHUDPoll or 0)>0.25 then
+                self.LastSimHUDPoll=now
+                self:RefreshHUD()
+            end
+        end
         if self.Mode~="Edit" or not self.ManualActive
             or self:IsSimulating() then return end
         if self.Stage=="Preview" and self.PreviewModel and self.TargetPose then

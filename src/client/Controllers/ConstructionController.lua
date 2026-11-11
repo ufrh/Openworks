@@ -2155,8 +2155,20 @@ function Controller:Start()
         end)
 
     table.insert(self.Connections, RunService.RenderStepped:Connect(function()
+        -- Only the LIVE ghost is outlined while moving/copying/alignment.
+        -- Never leave a second stale selection boundary at the original
+        -- component location behind the ghost.
+        local previewing=self.Pending~=nil or (self.Layered
+            and self.Layered.Alignment
+            and self.Layered.Alignment.Stage=="Preview")
         if self.ComponentOutline then
-            self.ComponentOutline:Update(self.SelectedParts)
+            self.ComponentOutline:Update(
+                if previewing then {} else self.SelectedParts)
+        end
+        for _,highlight in ipairs(self.SelectionHighlights) do
+            if highlight and highlight.Parent then
+                highlight.Enabled=not previewing
+            end
         end
         -- Replicated deletion, undo/redo or plot reload may destroy selected
         -- models without calling SetSelection. Never leave orphan outlines.

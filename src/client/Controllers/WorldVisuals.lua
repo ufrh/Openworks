@@ -261,6 +261,9 @@ function Visuals:Update()
         local grounded=if simulating then model.PrimaryPart.Anchored
             else model:GetAttribute("Grounded")==true
         cue.FillColor=if grounded then GROUNDED else MOVABLE
+        -- Hidden authored originals must not project a colored "shadow"
+        -- through the live ghost of a moving component.
+        cue.Enabled=model.PrimaryPart.LocalTransparencyModifier<0.99
         cue.OutlineTransparency=1
         cue.FillTransparency=0.84
     end

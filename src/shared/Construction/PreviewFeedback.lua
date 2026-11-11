@@ -96,7 +96,11 @@ function Feedback.Paint(ghost: Model?, valid: boolean)
         elseif object:IsA("Highlight") then
             object.FillColor = color
             object.OutlineColor = color
-            object.OutlineTransparency = 1
+            -- A component ghost has exactly ONE model-wide Highlight.
+            -- Preserve that outer silhouette through validity updates;
+            -- never outline the individual member primitives.
+            object.OutlineTransparency=if object.Name=="OPENWORKS_UnifiedGhost"
+                then 0.08 else 1
         end
     end
 end
