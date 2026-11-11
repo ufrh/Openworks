@@ -61,16 +61,25 @@ end
 function Simulation:StepCranks(dt)
     local now=os.clock()
     local blend=1-math.exp(-18*math.clamp(dt,0,0.1))
-    for _,session in pairs(self.Sessions) do
+    for owner,session in pairs(self.Sessions) do
+        local character=owner.Character
+        local playerRoot=character and character:FindFirstChild("HumanoidRootPart")
         for id,crank in pairs(session.Cranks or {}) do
             local torque=crank.Torque
             local root=crank.Root
             if not torque.Parent or not root.Parent then continue end
             if session.Paused or session.ActiveCrankId~=id
                 or not crank.Dragging
+                or not playerRoot
+                or (playerRoot.Position-root.Position).Magnitude>22
                 or now-(crank.LastInput or 0)>INPUT_EXPIRES then
                 torque.Torque=Vector3.zero
                 crank.SmoothedDesired=0
+                if not playerRoot
+                    or (playerRoot.Position-root.Position).Magnitude>22 then
+                    crank.Dragging=false
+                    session.ActiveCrankId=nil
+                end
                 continue
             end
             local axis=root.CFrame.RightVector.Unit

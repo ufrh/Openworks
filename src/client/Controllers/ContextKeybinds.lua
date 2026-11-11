@@ -217,12 +217,6 @@ function Context:Lines()
         append(lines,"Click existing","Edit existing assembly")
         append(lines,"R","Rename selected assembly")
         append(lines,"Esc","Cancel the draft")
-    elseif tool=="Simulate" then
-        append(lines,"LMB hold","Turn hand crank after starting simulation")
-        append(lines,"Green","Grounded / stationary")
-        append(lines,"Orange","Movable / dynamic")
-        append(lines,"Click / G","Toggle grounding on aimed body")
-        append(lines,"P / Shift+P","Simulate entire assembly / free")
     elseif tool == "Inspect" then
         append(lines, "LMB", "Inspect")
         append(lines, "Tab", "Cycle depth")

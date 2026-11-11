@@ -6,9 +6,9 @@ local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
 local UIS=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
-local Config=require(RS:WaitForChild("Openworks"):WaitForChild("Construction")
-    :WaitForChild("BuildConfig"))
-local Crank=require(RS.Openworks.Construction:WaitForChild("HandCrankMath"))
+local Construction=RS:WaitForChild("Openworks"):WaitForChild("Construction")
+local Grid=require(Construction:WaitForChild("GridMath"))
+local Crank=require(Construction:WaitForChild("HandCrankMath"))
 local player=Players.LocalPlayer
 
 local Controller={}
@@ -47,7 +47,7 @@ function Controller:CrankAtCenter()
     params.IgnoreWater=true
     local ray=camera:ViewportPointToRay(
         camera.ViewportSize.X*0.5,camera.ViewportSize.Y*0.5)
-    local hit=workspace:Raycast(ray.Origin,ray.Direction*Config.PlotSize,params)
+    local hit=workspace:Raycast(ray.Origin,ray.Direction*Grid.MaxDistance,params)
     local member=hit and hit.Instance:FindFirstAncestorOfClass("Model")
     if member and Crank.IsCrank(member)
         and member:GetAttribute("OwnerUserId")==player.UserId then

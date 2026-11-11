@@ -5,9 +5,11 @@ local Players=game:GetService("Players")
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local UserInputService=game:GetService("UserInputService")
 local Theme=require(script.Parent:WaitForChild("StudioTheme"))
+local Config=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("BuildConfig"))
 
 local player=Players.LocalPlayer
-local remote=ReplicatedStorage:WaitForChild("OPENWORKS_ConstructionRequest")
+local remote=ReplicatedStorage:WaitForChild(Config.RequestName)
 local UI={}
 UI.__index=UI
 
