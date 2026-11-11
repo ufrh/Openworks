@@ -298,6 +298,44 @@ function ComponentService:Duplicate(player, payload)
         idMap[part.instanceId] = HttpService:GenerateGUID(false)
     end
 
+    -- Copy only fully INTERNAL authored relations. No copied joint may
+    -- reach back into the source component or another original component.
+    local relationships,fitSetMap={},{}
+    if d.mechanical then
+        for _,relation in ipairs(d.mechanical.Folder:GetChildren()) do
+            if not relation:IsA("Folder")
+                or relation:GetAttribute("OwnerUserId")~=player.UserId then
+                continue
+            end
+            local original=d.mechanical:Snapshot(relation)
+            if not idMap[original.sourceId] or not idMap[original.targetId]
+                or (original.boltId and not idMap[original.boltId])
+                or (original.secondTargetId
+                    and not idMap[original.secondTargetId]) then
+                continue
+            end
+            local spec=table.clone(original)
+            spec.relationId=HttpService:GenerateGUID(false)
+            spec.sourceId=idMap[original.sourceId]
+            spec.targetId=idMap[original.targetId]
+            spec.boltId=if original.boltId then idMap[original.boltId]
+                else nil
+            spec.secondTargetId=if original.secondTargetId then
+                idMap[original.secondTargetId] else nil
+            spec.componentId=componentId
+            if type(original.fitSetId)=="string" then
+                if not fitSetMap[original.fitSetId] then
+                    fitSetMap[original.fitSetId]=HttpService:GenerateGUID(false)
+                end
+                spec.fitSetId=fitSetMap[original.fitSetId]
+            end
+            table.insert(relationships,spec)
+        end
+        if d.mechanical:Count(player)+#relationships>128 then
+            return false,"Not enough mechanical relationship slots for copy"
+        end
+    end
+
     local candidates, after = {}, {}
     for _, desired in ipairs(planned) do
         local clone, why = d.createFromTemplate(
@@ -309,21 +347,20 @@ function ComponentService:Duplicate(player, payload)
         end
 
         local newState = copied(desired)
-        -- Duplicates are NEW construction objects. Preserve the visual
-        -- primitive geometry and grouping inside the new copy ONLY; never
-        -- inherit an authored assembly, grounding, external bore fit,
-        -- named relationship, or attachment from its source.
-        -- All mechanical relationships live in OPENWORKS_Relationships
-        -- and are deliberately NOT cloned or reattached to the new IDs.
+        -- Copy remaps every internal relationship independently. External
+        -- attachments and saved assembly membership are not inherited.
         newState.instanceId = idMap[desired.instanceId]
         newState.componentId = componentId
         newState.componentAnchorId = idMap[anchorOldId]
         newState.assemblyId = nil
         newState.assemblyName = nil
         newState.grounded = false
-        newState.alignedOpeningId = nil
-        newState.alignedOffsetU = 0
-        newState.shaftRollDegrees = 0
+        newState.alignedOpeningId=if type(desired.alignedOpeningId)=="string"
+            then idMap[desired.alignedOpeningId] else nil
+        if not newState.alignedOpeningId then
+            newState.alignedOffsetU=0
+            newState.shaftRollDegrees=0
+        end
         newState.freePosition = true
 
         d.applyState(clone, newState)
@@ -338,9 +375,28 @@ function ComponentService:Duplicate(player, payload)
         end
     end
 
-    for _, candidate in ipairs(candidates) do candidate.Parent = d.folder end
-    d.commitBatch(player, {}, after)
-    return true, componentId
+    for _,candidate in ipairs(candidates) do candidate.Parent=d.folder end
+    local restored={}
+    for _,spec in ipairs(relationships) do
+        local ok,detail=d.mechanical:Restore(player,spec)
+        if not ok then
+            for _,id in ipairs(restored) do
+                local rel=d.mechanical:OwnedRelation(player,id)
+                if rel then d.mechanical:DestroyRelation(rel) end
+            end
+            for _,model in ipairs(candidates) do model:Destroy() end
+            return false,"Cannot duplicate internal relationship: "..tostring(detail)
+        end
+        table.insert(restored,spec.relationId)
+    end
+    if #relationships>0 then
+        -- One operation: undo/redo handles BOTH duplicate geometry
+        -- and its freshly remapped internal mechanical relationships.
+        d.commitAssembly(player,{},after,relationships,false)
+    else
+        d.commitBatch(player,{},after)
+    end
+    return true,componentId
 end
 
 function ComponentService:Delete(player, payload)
