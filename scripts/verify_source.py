@@ -166,14 +166,43 @@ def main() -> int:
     check("Gear bodies are physics-free but remain selectable",
           'model:SetAttribute("OPENWORKS_GearKinematic",true)' in gears
           and 'part.CanQuery=part:GetAttribute("GearPivotOnly")~=true' in simulation
-          and 'session.Gears:MarkGrounding(session.GroundKeys)' in simulation
+          and 'session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,' in simulation
           and 'not session.Gears:IsKinematic(id)' in simulation)
     check("Crank powers kinematic gears without native motors",
           'local kinematic=session.Gears:IsKinematic(drivenId)' in simulation
           and 'if not kinematic then' in simulation
           and 'session.Gears:Step(dt,' in simulation
           and 'if crank.Drive then crank.Drive.Enabled=false end' in simulation
-          and 'crank.Drive.AngularVelocity=crank.Axis*HandCrankMath.FixedAngularSpeed' in simulation)
+          and 'crank.NativeSpeed+=(HandCrankMath.FixedAngularSpeed' in simulation)
+    check("Gear and rigid shaft fall as one kinematic body, no native gear forces",
+          'function Kinematics:Translate(dt)' in gears
+          and 'group.FallVelocity-workspace.Gravity*maxStep' in gears
+          and 'shiftGroup(group,Vector3.new(0,offset,0))' in gears
+          and 'part.Anchored=true' in simulation
+          and 'part.CanCollide=false' in simulation
+          and 'not session.Gears:IsKinematic(id)' in simulation)
+    check("Grounded bearing housing supports axle without native hinge forces",
+          'function Kinematics:ConfigureSupport(' in gears
+          and 'sg.Supported=true' in gears
+          and 'tg.Supported=true' in gears
+          and 'group.Supported then' in gears
+          and 'session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,' in simulation)
+    check("Free-spinning gear follows falling shaft position and tilt",
+          'tg.Followers' in gears
+          and 'shiftGroup(group,center-group.Center)' in gears
+          and 'local desiredAxis=shaft.RightVector.Unit*follower.AxisSign' in gears
+          and 'CFrame.fromAxisAngle(axis,math.acos(dot))' in gears)
+    check("Branched and reverse gear influence use one bidirectional graph",
+          'table.insert(a.Links,{Group=b,Ratio=ratio})' in gears
+          and 'table.insert(b.Links,{Group=a,Ratio=1/ratio})' in gears
+          and 'for _,edge in ipairs(group.Links) do' in gears
+          and 'for group,omega in pairs(speed) do' in gears)
+    check("Scripted crank ramps up and coasts down while gears stay physics-free",
+          'CRANK_ACCEL_RESPONSE=9' in gears
+          and 'CRANK_RELEASE_RESPONSE=6' in gears
+          and 'self.CurrentSpeed+=(target-self.CurrentSpeed)*alpha' in gears
+          and 'local ROTATION_PERIOD=1/60' in gears
+          and 'crank.NativeSpeed+=(HandCrankMath.FixedAngularSpeed' in simulation)
     check("Crank selectable through obstructing shaft / gear in single-crank assembly",
           'if Crank.IsCrank(node) then return node end' in crank
           and 'if only then return nil end' in crank
@@ -230,6 +259,12 @@ def main() -> int:
           and 'aimedPart:IsDescendantOf(model)' in smart_placement
           and 'local directAim=aimedModel==target' in smart_placement
           and 'score=if directAim then -0.15' in smart_placement)
+    check("One moving gear can align to two other gear pitch circles",
+          'function Smart.MultiGearPose(' in smart_placement
+          and 'local along=(r1*r1-r2*r2+distance*distance)/(2*distance)' in smart_placement
+          and 'local height=math.sqrt(math.max(0,height2))' in smart_placement
+          and 'local pose,dist,meshes=Smart.MultiGearPose(' in smart_placement
+          and 'math.max(0,meshes-1)*0.5' in smart_placement)
     check("Gear-to-gear snap retains tight separate shaft bore hitbox",
           'Smart.HubSnapRadius = 0.34' in smart_placement
           and 'Smart.HubAimRadius = 0.24' in smart_placement
