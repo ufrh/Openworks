@@ -1426,7 +1426,10 @@ function Controller:Place(chosenKind)
         self:Message("Red preview: construction intersects existing geometry")
         return
     end
-    if self.SmartMatch
+    -- F duplicates are independent objects, not implicit copies of a
+    -- mechanical connection. Their placement may use geometric snap,
+    -- but never auto-author a new bearing, weld, hub, or crank coupling.
+    if self.Pending~="Copy" and self.SmartMatch
         and (self.SmartMatch.kind=="Bore" or self.SmartMatch.kind=="Hub")
         and not chosenKind then
         self:OpenMateChoice("Build")
@@ -1445,7 +1448,7 @@ function Controller:Place(chosenKind)
                 or self.SmartMatch.kind=="CrankCoupling"
                 or self.SmartMatch.kind=="Hub")
             then self.PreviewCF.Rotation else nil,
-        autoMate=if self.SmartMatch then {
+        autoMate=if self.Pending~="Copy" and self.SmartMatch then {
             kind=self.SmartMatch.kind,
             targetId=self.SmartMatch.target:GetAttribute("InstanceId"),
             relationKind=chosenKind or self.SmartMatch.relationKind,
