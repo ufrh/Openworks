@@ -88,10 +88,13 @@ function SurfacePlacement.SnapToNearbyFace(ghost:Model,desired:CFrame,
                 -halfTarget-halfMoving,
             }
             local snapped=quantize(tangent,FACE_LATTICE)
+            local bestEdge=EDGE_CAPTURE
             for _,candidate in ipairs(candidates) do
-                if math.abs(tangent-candidate)<=EDGE_CAPTURE
-                    and math.abs(tangent-candidate)
-                        <math.abs(tangent-snapped) then
+                local distance=math.abs(tangent-candidate)
+                if distance<bestEdge then
+                    -- Real target face edges/centers outrank an arbitrary
+                    -- local lattice point if the cursor is near an edge.
+                    bestEdge=distance
                     snapped=candidate
                 end
             end
