@@ -136,6 +136,27 @@ def main() -> int:
               "src/client/Controllers/AssemblyController.lua")
           and 'Gears auto-mesh in simulation' in read(
               "src/client/Controllers/AssemblyController.lua"))
+    check("Runtime gear engagement matches real face overlap, not editor center-plane limit",
+          'function GearMath.AutoMeshStatus(' in gear_math
+          and 'MESH_PITCH_TOLERANCE=0.09' in gear_math
+          and 'math.min(a.PrimaryPart.Size.X,b.PrimaryPart.Size.X)*0.07' in gear_math
+          and 'if axial>=faceLimit then' in gear_math
+          and 'if not GearMath.Meshable(a,b)' not in gear_math)
+    check("Third gear diagnostics expose failed pitch or axial overlap",
+          'self.Unmeshed={}' in gears
+          and 'GearMath.AutoMeshStatus(' in gears
+          and 'function Kinematics:Explain(id)' in gears
+          and 'session.Gears.Unmeshed[1].Reason' in simulation
+          and 'session.Gears:Explain(id)' in simulation)
+    check("New unregistered gear cannot silently vanish from simulation",
+          'local function countNearbyUnregisteredGears(' in simulation
+          and 'countNearbyUnregisteredGears(' in simulation
+          and 'session.UnregisteredGears' in simulation
+          and 'NOT in assembly' in simulation)
+    check("Obsolete explicit K edge does not force registered assembly expansion",
+          'or kind == "Fixed" or kind == "Gear"' not in simulation
+          and 'or kind == "Cylindrical" or kind == "Fixed"' in simulation
+          and 'if edge.kind == "Gear" then' in simulation)
     check("Kinematic gear train respects tooth ratios and rigid grouping",
           'edge.kind=="Weld" or edge.kind=="Fixed" or edge.kind=="Bolt"' in gears
           and 'local ratio=-left.Teeth/right.Teeth*orientation' in gears
