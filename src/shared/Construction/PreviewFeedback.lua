@@ -80,7 +80,7 @@ function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
                 if not fits and movingModel then
                     fits=Smart.HubFits(movingModel,target)
                 end
-                if not fits and not GearMath.Meshable(movingModel,target) then
+                if not fits and not GearMath.AutoMeshable(movingModel,target) then
                     return false, tostring(movingModel and movingModel.Name or part.Name)
                         .. " interferes with " .. tostring(target.Name)
                 end
