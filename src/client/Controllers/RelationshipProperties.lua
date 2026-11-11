@@ -182,7 +182,12 @@ function Properties:Refresh()
     for _,r in ipairs(list) do
         local guides=r:GetAttribute("FitPointCount")
         local name=tostring(r:GetAttribute("Kind"))
-        if type(guides)=="number" and guides>1 then
+        local setCount=r:GetAttribute("FitSetCount")
+        local setIndex=r:GetAttribute("FitSetIndex")
+        if type(setCount)=="number" and setCount>1 then
+            name..="  •  rod "..tostring(setIndex or "?")
+                .."/"..tostring(setCount)
+        elseif type(guides)=="number" and guides>1 then
             name..="  •  "..tostring(guides).." fitted guides"
         end
         if name=="Spring" and r:GetAttribute("SpringMode")=="General" then

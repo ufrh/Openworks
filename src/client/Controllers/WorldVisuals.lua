@@ -159,8 +159,12 @@ function Visuals:UpdateJoint(cue,relation,source,target,models)
     local labels={Spring="SPRING",Weld="WELD",Bolt="BOLT",Gear="GEARS",
         Bearing="ROTATE",Slider="SLIDE",Cylindrical="SLIDE + ROTATE",
         Fixed="FIXED"}
-    cue.text.Text=(labels[kind] or tostring(kind):upper())
-        ..(if guideCount>1 then "  ·  "..guideCount.." FITS" else "")
+    local setCount=relation:GetAttribute("FitSetCount")
+    local setIndex=relation:GetAttribute("FitSetIndex")
+    local suffix=if type(setCount)=="number" and setCount>1 then
+        "  "..tostring(setIndex or "?").."/"..tostring(setCount)
+        elseif guideCount>1 then "  ·  "..guideCount.." FITS" else ""
+    cue.text.Text=(labels[kind] or tostring(kind):upper())..suffix
     cue.stroke.Color=tint
     for _,part in ipairs({cue.shaft,cue.collar,cue.mark0,cue.mark1}) do
         part.Color=tint
