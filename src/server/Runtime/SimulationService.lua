@@ -406,7 +406,10 @@ function Simulation:Start(player, payload)
                 spring.Radius=SpringMath.Radius(edge.source,edge.target,mode)
                 spring.Thickness=math.clamp(spring.Radius*0.085,0.012,0.065)
                 spring.Color=BrickColor.new("Bright orange")
-                spring.Visible=false -- native force only; hide edit coil
+                -- Render the live, physically attached orange spring
+                -- while simulation is running. The authored construction
+                -- coil remains hidden locally, avoiding a stationary ghost.
+                spring.Visible=true
                 spring:SetAttribute("AuthoredRelationId",
                     edge.relation:GetAttribute("RelationId"))
                 spring.Parent=runtime
