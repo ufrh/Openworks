@@ -478,6 +478,8 @@ local function place(player, payload)
         position = payload.position,
         steps = payload.steps,
         size = payload.size or (template and template.Size),
+        materialId=if MaterialCatalog.IsValid(payload.materialId)
+            then payload.materialId else "Steel",
         orientation = if payload.autoMate
             and (payload.autoMate.kind=="BoltHole"
                 or payload.autoMate.kind=="Bore"
