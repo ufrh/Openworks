@@ -168,13 +168,29 @@ function Properties:InspectAtCenter()
 end
 
 function Properties:Field(name,value)
-    label(self.Editor,name,19)
-    local edit=rounded(create("TextBox",self.Editor,{
-        Size=UDim2.new(1,-10,0,31),BackgroundColor3=SURFACE,
-        BorderSizePixel=0,Text=tostring(value),ClearTextOnFocus=false,
-        Font=Enum.Font.GothamMedium,TextSize=14,TextColor3=WHITE,
+    -- Studio-style property grid: labeled key on the left, editable
+    -- value on the right. Never a full-width form stacked under the label.
+    local row=create("Frame",self.Editor,{
+        Name="PropertyRow",Size=UDim2.new(1,-10,0,30),
+        BackgroundColor3=Theme.Panel,BorderSizePixel=0,ZIndex=4,
+    })
+    create("TextLabel",row,{
+        Name="PropertyName",Text=name,
+        Size=UDim2.new(0.5,-10,1,0),Position=UDim2.fromOffset(8,0),
+        BackgroundTransparency=1,
+        Font=Enum.Font.GothamMedium,TextSize=11,
+        TextColor3=Theme.Muted,TextXAlignment=Enum.TextXAlignment.Left,
+        ZIndex=5,
+    })
+    local edit=create("TextBox",row,{
+        Name="PropertyValue",Text=tostring(value),
+        Position=UDim2.new(0.5,0,0,3),
+        Size=UDim2.new(0.5,-4,1,-6),
+        BackgroundColor3=Theme.Input,BorderSizePixel=0,
+        ClearTextOnFocus=false,Font=Enum.Font.Gotham,
+        TextSize=12,TextColor3=Theme.Text,
         TextXAlignment=Enum.TextXAlignment.Center,ZIndex=5,
-    }))
+    })
     self.Fields[name]=edit
 end
 function Properties:Apply()
@@ -347,8 +363,10 @@ function Properties:Start()
         end
     end))
     local panel=rounded(create("Frame",gui,{
-        Name="PropertiesPanel",Position=UDim2.fromOffset(16,55),
-        Size=UDim2.fromOffset(320,565),
+        Name="PropertiesPanel",
+        AnchorPoint=Vector2.new(1,0),
+        Position=UDim2.new(1,-14,0,54),
+        Size=UDim2.new(0,342,1,-87),
         BackgroundColor3=BG,BorderSizePixel=0,ZIndex=3,
     }))
     create("UIPadding",panel,{
@@ -356,20 +374,22 @@ function Properties:Start()
         PaddingRight=UDim.new(0,12),
     })
     create("UIListLayout",panel,{Padding=UDim.new(0,8)})
-    local title=label(panel,"OPENWORKS  /  SIMULATE PROPERTIES",25)
+    local title=label(panel,"PROPERTIES  /  OPENWORKS",25)
     title.TextColor3=WHITE
     local close=button(panel,"×  Close Inspector  [Esc]",25)
     close.Activated:Connect(function() self:Show(false) end)
     self.Heading=label(panel,"CLICK A PART IN THE WORLD",35)
     self.RelationList=create("ScrollingFrame",panel,{
-        Size=UDim2.new(1,0,0,130),BackgroundTransparency=1,
+        Name="RelationshipExplorer",
+        Size=UDim2.new(1,0,0,168),BackgroundTransparency=1,
         BorderSizePixel=0,ScrollBarThickness=3,
         CanvasSize=UDim2.fromOffset(0,0),
         AutomaticCanvasSize=Enum.AutomaticSize.Y,ZIndex=4,
     })
     create("UIListLayout",self.RelationList,{Padding=UDim.new(0,5)})
     self.Editor=create("ScrollingFrame",panel,{
-        Size=UDim2.new(1,0,0,235),BackgroundTransparency=1,
+        Name="PropertyGrid",
+        Size=UDim2.new(1,0,1,-390),BackgroundTransparency=1,
         BorderSizePixel=0,ScrollBarThickness=3,
         CanvasSize=UDim2.fromOffset(0,0),
         AutomaticCanvasSize=Enum.AutomaticSize.Y,ZIndex=4,
@@ -377,13 +397,14 @@ function Properties:Start()
     create("UIListLayout",self.Editor,{Padding=UDim.new(0,5)})
     self.Status=label(panel,"Select a part and its relationship to change settings.",39)
     local actions=create("Frame",panel,{
+        Name="PropertyActions",
         Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,ZIndex=4,
     })
     create("UIListLayout",actions,{
         FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,8),
     })
     local run=button(actions,"RUN / STOP",35)
-    run.Size=UDim2.fromOffset(172,35)
+    run.Size=UDim2.fromOffset(164,35)
     run.Activated:Connect(function()
         if self.Controller:IsSimulating() then
             self.Controller:Request({action="StopSimulation"})
@@ -394,7 +415,7 @@ function Properties:Start()
         else self.Status.Text="Choose a part before running simulation" end
     end)
     local ground=button(actions,"GROUND",35)
-    ground.Size=UDim2.fromOffset(111,35)
+    ground.Size=UDim2.fromOffset(118,35)
     ground.Activated:Connect(function()
         if self.SelectedId and not self.Controller:IsSimulating() then
             self.Controller:Request({action="SetGrounded",
