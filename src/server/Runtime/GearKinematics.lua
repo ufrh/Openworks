@@ -12,6 +12,7 @@ local GearMath=require(ReplicatedStorage:WaitForChild("Openworks")
 local Kinematics={}
 Kinematics.__index=Kinematics
 local MAX_GEARS=40
+local MAX_RACKS=24
 local SCAN_PERIOD=0.08
 local ROTATION_PERIOD=1/60 -- smoother scripted motion, bounded server Heartbeat
 local GRAVITY_SPEED_CAP=160
@@ -24,8 +25,12 @@ local function identifier(model)
 end
 
 local function isGear(model)
-    return type(model:GetAttribute("GearTeeth"))=="number"
-        and type(model:GetAttribute("GearModuleStuds"))=="number"
+    return GearMath.Kind(model)=="Spur"
+        or GearMath.Kind(model)=="Bevel45"
+end
+
+local function isRack(model)
+    return GearMath.Kind(model)=="Rack"
         and model.PrimaryPart~=nil
 end
 
@@ -60,6 +65,7 @@ function Kinematics.new(graph,copies)
     local groups={}
     local byId={}
     local gears={}
+    local racks={}
     for _,original in ipairs(graph.models) do
         local id=identifier(original)
         local key=root(id)
@@ -67,8 +73,8 @@ function Kinematics.new(graph,copies)
         if key and clone then
             local group=groups[key]
             if not group then
-                group={Id=key,Models={},Gears={},Axis=nil,
-                    Center=nil,Grounded=false,Supported=false,
+                group={Id=key,Models={},Gears={},Racks={},Axis=nil,
+                    TravelAxis=nil,Center=nil,Grounded=false,Supported=false,
                     FallVelocity=0,Followers={},Links={}}
                 groups[key]=group
             end
@@ -82,12 +88,23 @@ function Kinematics.new(graph,copies)
                 if #gears>MAX_GEARS then
                     error("Too many kinematic gears (maximum 40 per assembly)")
                 end
+            elseif isRack(original) then
+                local entry={Group=group,Model=clone,
+                    Pitch=original:GetAttribute("RackPitchStuds")}
+                table.insert(racks,entry)
+                table.insert(group.Racks,entry)
+                if #racks>MAX_RACKS then
+                    error("Too many kinematic racks (maximum 24 per assembly)")
+                end
             end
         end
     end
 
     local kinematic={}
     for _,group in pairs(groups) do
+        if #group.Gears>0 and #group.Racks>0 then
+            error("Do not rigidly weld a sliding rack to a rotating gear")
+        end
         if #group.Gears>0 then
             group.Center=group.Gears[1].Model:GetPivot().Position
             group.Axis=group.Gears[1].Model:GetPivot().RightVector.Unit
@@ -104,6 +121,18 @@ function Kinematics.new(graph,copies)
                 end
             end
             kinematic[group]=true
+        elseif #group.Racks>0 then
+            group.Center=group.Racks[1].Model:GetPivot().Position
+            group.TravelAxis=group.Racks[1].Model:GetPivot().LookVector.Unit
+            for _,entry in ipairs(group.Racks) do
+                if math.abs(group.TravelAxis:Dot(
+                    entry.Model:GetPivot().LookVector))<0.999 then
+                    error("Rigidly grouped racks must have parallel slides")
+                end
+            end
+            kinematic[group]=true
+        end
+        if kinematic[group] then
             for _,model in ipairs(group.Models) do
                 model:SetAttribute("OPENWORKS_GearKinematic",true)
             end
@@ -111,7 +140,8 @@ function Kinematics.new(graph,copies)
     end
 
     local self=setmetatable({
-        Groups=groups,ById=byId,Gears=gears,Kinematic=kinematic,
+        Groups=groups,ById=byId,Gears=gears,Racks=racks,
+        Kinematic=kinematic,
         ScanElapsed=SCAN_PERIOD,MotionElapsed=0,Contacts=0,
         CurrentSpeed=0,LastDrivenId=nil,LastAxis=nil,
         RayParams=nil,
