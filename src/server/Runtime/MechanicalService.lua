@@ -227,6 +227,19 @@ function Mechanical:Restore(player, spec)
         -- No special-case auto guide. Slider or Cylindrical relationships
         -- are independently authored if linear motion needs guidance.
     else
+        -- Gear bores are legitimate joint housings, but never accept an
+        -- off-center restored hinge or a slider that can leave the hub.
+        if type(target:GetAttribute("GearTeeth"))=="number" then
+            if spec.kind~="Bearing" then
+                folder:Destroy()
+                return false,"Gear/shaft mount only allows Rotation or Rigid"
+            end
+            local fitted,why=Smart.HubFits(source,target)
+            if not fitted then
+                folder:Destroy()
+                return false,why or "Gear and shaft no longer align"
+            end
+        end
         local axisLocal = Alignment.TargetAxis(target)
         if not axisLocal or not Alignment.IsShaft(source) then
             folder:Destroy()
