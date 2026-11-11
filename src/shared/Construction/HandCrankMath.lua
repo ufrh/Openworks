@@ -8,7 +8,10 @@ Crank.EndTolerance=0.045 -- studs; reject floating shaft-to-shaft welds
 Crank.AlignmentTolerance=0.9995
 Crank.MaxTorque=1400
 Crank.MaxAngularSpeed=4.0
+Crank.FixedAngularSpeed=2.0 -- rad/s; one click toggles a torque-limited drive
 Crank.VelocityGain=420
+Crank.MinOutputDiameter=0.06
+Crank.MaxOutputDiameter=4.0
 
 function Crank.IsCrank(model)
     return model and model:IsA("Model") and model.PrimaryPart~=nil
@@ -24,6 +27,55 @@ function Crank.IsOutputShaft(model)
     if model:GetAttribute("BoltDiameterU")~=nil
         or model:GetAttribute("GearTeeth")~=nil then return false end
     return Alignment.IsShaft(model)
+end
+
+-- Cranks keep their 1-stud output length but adapt the complete handle's
+-- radial geometry to the actual attached cylinder. No permanent template edit.
+-- A fitted primary-part size is enough to reconstruct the crank after undo,
+-- redo and plot load, without adding a second persistence field.
+function Crank.ValidSize(templateSize, size)
+    return typeof(size)=="Vector3"
+        and math.abs(size.X-templateSize.X)<0.001
+        and math.abs(size.Y-size.Z)<0.001
+        and size.Y>=Crank.MinOutputDiameter
+        and size.Y<=Crank.MaxOutputDiameter
+end
+
+function Crank.ShaftSize(crank,shaft)
+    if not Crank.IsCrank(crank) or not Crank.IsOutputShaft(shaft) then
+        return nil,"A hand crank and a separate cylindrical shaft are required"
+    end
+    local size=shaft.PrimaryPart.Size
+    if math.abs(size.Y-size.Z)>0.001
+        or size.Y<Crank.MinOutputDiameter or size.Y>Crank.MaxOutputDiameter then
+        return nil,"Shaft diameter is outside the hand crank's supported range"
+    end
+    return Vector3.new(crank.PrimaryPart.Size.X,size.Y,size.Y)
+end
+
+function Crank.ApplySize(model,size)
+    if not Crank.IsCrank(model) or not model.PrimaryPart then return end
+    local primary=model.PrimaryPart
+    if math.abs(primary.Size.Y-size.Y)<0.000001 then
+        primary.Size=size
+        return
+    end
+    -- The pivot and the output face remain fixed along local X. Re-scale
+    -- all secondary geometry about the axle's Y/Z plane, including the
+    -- arm and manual grip. This works repeatedly without compounding error.
+    local ratio=size.Y/primary.Size.Y
+    local frame=primary.CFrame
+    for _,part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") and part~=primary then
+            local relative=frame:ToObjectSpace(part.CFrame)
+            local p=relative.Position
+            part.Size=Vector3.new(part.Size.X,
+                part.Size.Y*ratio,part.Size.Z*ratio)
+            part.CFrame=frame*CFrame.new(p.X,p.Y*ratio,p.Z*ratio)
+                *relative.Rotation
+        end
+    end
+    primary.Size=size
 end
 
 function Crank.OutputEnd(model)
