@@ -499,7 +499,9 @@ function Mechanical:SmartMate(player, request, newSource)
         and typeName~="FreeFit" then
         return false,"Choose Rotate + Slide, Slide, Rotate or Fit Only"
     end
-    if typeName~="FreeFit"
+    -- Auto-meshing gears are a PLACEMENT operation, not a permanent
+    -- authored relationship or a consumer of joint slots.
+    if mode~="Gear" and typeName~="FreeFit"
         and self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
         return false,"Relationship limit reached"
     end
@@ -680,7 +682,7 @@ function Mechanical:SmartMate(player, request, newSource)
         local fits,why=Bore.ShaftFits(shaft,opening)
         if not fits then restoreMoving() return false,why end
     elseif mode=="Gear" then
-        local fits,why=GearMath.Meshable(source,target)
+        local fits,why=GearMath.AutoMeshStatus(source,target)
         if not fits then restoreMoving() return false,why end
     elseif mode=="Hub" then
         local fits,why=Smart.HubFits(source,target)
@@ -789,6 +791,19 @@ function Mechanical:SmartMate(player, request, newSource)
             restoreMoving()
             return false,"Attachment intersects another solid"
         end
+    end
+
+    if mode=="Gear" then
+        -- The simulation discovers gear engagement from PHYSICAL tooth
+        -- spacing. Placing a gear must never silently create a legacy K
+        -- relationship (which could later interfere with assemblies).
+        -- Commit only the relocated construction; undo/redo stays atomic.
+        local after={}
+        for _,member in ipairs(members) do
+            table.insert(after,d.snapshot(member))
+        end
+        d.commitAssembly(player,before,after,nil,false)
+        return true,"Gear positioned at pitch circle • automatic mesh in simulation"
     end
 
     -- The fixed shaft in reverse alignment stays at its exact authored pose,
