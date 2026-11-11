@@ -2031,7 +2031,29 @@ end
 -- First-person vertical nudge. Always changes world Y only; the
 -- server expands a component into ALL its primitives atomically and
 -- validates every moved position before committing a single undo step.
-function Controller:VerticalNudge(direction)
+function Controller:VerticalNudge(key)
+    local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+    if not alt then return end
+    local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    local axis,direction
+    if shift and (key==Enum.KeyCode.Up or key==Enum.KeyCode.Down) then
+        axis,direction="Y",(if key==Enum.KeyCode.Up then 1 else -1)
+    else
+        local camera=workspace.CurrentCamera
+        if not camera then return end
+        local v=if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down
+            then camera.CFrame.LookVector else camera.CFrame.RightVector
+        if math.abs(v.X)>=math.abs(v.Z) then
+            axis,direction="X",(if v.X>=0 then 1 else -1)
+        else
+            axis,direction="Z",(if v.Z>=0 then 1 else -1)
+        end
+        if key==Enum.KeyCode.Left or key==Enum.KeyCode.Down then
+            direction=-direction
+        end
+    end
     if self.Mode~="Edit" or self.Busy or self.Pending or self.ScaleMode
         or self.CatalogOpen or self.PendingMateChoice
         or player:GetAttribute("OPENWORKS_Simulating")==true then return end
@@ -2048,7 +2070,7 @@ function Controller:VerticalNudge(direction)
     local fine=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
     self:Request({action="VerticalMove",scope=scope,id=id,
-        direction=direction,fine=fine})
+        axis=axis,direction=direction,fine=fine})
     self:RefreshHUD()
 end
 
@@ -2133,9 +2155,12 @@ function Controller:OnInput(input, processed)
         return
     end
 
-    if self.Mode=="Edit" and not self.Pending
-        and (key==Enum.KeyCode.PageUp or key==Enum.KeyCode.PageDown) then
-        self:VerticalNudge(if key==Enum.KeyCode.PageUp then 1 else -1)
+    local altHeld=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+    if self.Mode=="Edit" and not self.Pending and altHeld
+        and (key==Enum.KeyCode.Up or key==Enum.KeyCode.Down
+            or key==Enum.KeyCode.Left or key==Enum.KeyCode.Right) then
+        self:VerticalNudge(key)
         return
     end
 
@@ -2199,9 +2224,13 @@ function Controller:Start()
         end
         self:OnInput(input, processed)
         if not processed
-            and (input.KeyCode==Enum.KeyCode.PageUp
-                or input.KeyCode==Enum.KeyCode.PageDown)
-            and self.Mode=="Edit" then
+            and (input.KeyCode==Enum.KeyCode.Up
+                or input.KeyCode==Enum.KeyCode.Down
+                or input.KeyCode==Enum.KeyCode.Left
+                or input.KeyCode==Enum.KeyCode.Right)
+            and self.Mode=="Edit"
+            and (UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+                or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)) then
             self.VerticalHeld=input.KeyCode
             self.VerticalElapsed=0
         end
@@ -2214,22 +2243,6 @@ function Controller:Start()
         end
     end))
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseWheel then
-            local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
-                or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-            -- When nothing is being moved/aligned, Alt+wheel nudges the
-            -- selected primitive/component in WORLD Y. Otherwise preserve
-            -- the existing wheel behavior for shaft depth and editing.
-            if alt and self.Mode=="Edit" and not self.Pending
-                and not self.LockedAlignment and not self.ScaleMode
-                and not self.PendingMateChoice and not self.CatalogOpen
-                and (self.Selected or self.SelectedComponentId)
-                and not UserInputService:GetFocusedTextBox()
-                and input.Position.Z~=0 then
-                self:VerticalNudge(if input.Position.Z>0 then 1 else -1)
-                return
-            end
-        end
         if input.UserInputType==Enum.UserInputType.MouseWheel
             and not self.PendingMateChoice then
             if self.SmartMatch
@@ -2287,6 +2300,8 @@ function Controller:Start()
         if not key then return end
         if self.Mode~="Edit" or self.Pending or self.ScaleMode
             or UserInputService:GetFocusedTextBox()
+            or not (UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+                or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt))
             or not UserInputService:IsKeyDown(key) then
             self.VerticalHeld=nil
             return
@@ -2295,7 +2310,7 @@ function Controller:Start()
         if self.VerticalElapsed<0.24 then return end
         self.VerticalElapsed=0.09
         task.spawn(function()
-            self:VerticalNudge(if key==Enum.KeyCode.PageUp then 1 else -1)
+            self:VerticalNudge(key)
         end)
     end))
 
