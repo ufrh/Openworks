@@ -286,17 +286,30 @@ function Mechanical:Restore(player, spec)
         local low,high
         if linear then
             low,high=Alignment.RelativeTravelBounds(source,target)
-            if not low or high-low<0.001 or low>0 or high<0 then
+            if not low or high-low<0.001 then
                 folder:Destroy()
-                return false,"Shaft center must start between the tube end faces"
+                return false,"Tube and shaft have no usable sliding travel"
+            end
+            if low>0 or high<0 then
+                -- Saved layouts authored before tube-end limits could
+                -- legally leave the shaft center beyond the housing.
+                -- Restore these joints without changing saved geometry:
+                -- park their travel at the CURRENT pose (zero travel)
+                -- until the builder realigns the shaft into the tube.
+                -- New placement and edits still use strict limits.
+                folder:SetAttribute("LegacyOutOfBounds",true)
+                low,high=0,0
             end
             if type(spec.fitTravelU)=="number" then
                 low=math.max(low,-spec.fitTravelU)
                 high=math.min(high,spec.fitTravelU)
             end
-            if low>=high then
+            if low>high then
                 folder:Destroy()
                 return false,"Multiple guides leave no safe linear travel"
+            end
+            if low==high then
+                folder:SetAttribute("LegacyOutOfBounds",true)
             end
         end
         constraint.LimitsEnabled=linear or spec.limitsEnabled==true
@@ -312,8 +325,9 @@ function Mechanical:Restore(player, spec)
                 local upper=math.min(high,if type(authoredHigh)=="number"
                     then authoredHigh else high)
                 if lower>=upper then
-                    -- Legacy saves may contain old, overly broad stops.
-                    -- Never let those invert or extend the real tube range.
+                    -- Preserve a legacy out-of-bounds mount as a locked
+                    -- visual relationship; normal joints still normalize
+                    -- stale authored limits to the new physical stops.
                     lower,upper=low,high
                 end
                 constraint.LowerLimit=lower*self.D.Grid.Unit
