@@ -210,7 +210,7 @@ function Controller:RefreshHUD()
             local grounded=player:GetAttribute("OPENWORKS_Grounded")~=false
             self.Detail.Text=tostring(self.SimAssemblyName or "Assembly")
                 ..(if paused then "  /  PAUSED" else "  /  RUNNING")
-            self.Help.Text="Click crank to toggle • P stop • O pause"
+            self.Help.Text="Hold LMB on crank • release to stop • P stop"
                 ..(if grounded then " • green grounded" else " • free")
         end
         if self.LastMessage and os.clock()<self.MessageUntil then
@@ -852,8 +852,8 @@ function Controller:Start()
     table.insert(self.Connections,self.Tools.Activated.Event:Connect(function(mode)
         if mode=="Simulate"
             and not player:GetAttribute("OPENWORKS_PropertiesOpen") then
-            -- Short click selects a body and opens its Inspector. Holding
-            -- LMB on a physical crank drives it without unlocking mouse.
+            -- A held LMB on a physical crank applies bounded torque;
+            -- release stops it. Other clicks inspect the aimed body.
             if self.HandCrank and self.HandCrank:TryGrab() then return end
             self.Properties:InspectAtCenter()
         elseif mode=="Weld" then
