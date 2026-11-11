@@ -1127,6 +1127,21 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
         if relation:GetAttribute("OwnerUserId")==player.UserId
             and (relation:GetAttribute("Kind")=="Weld"
                 or relation:GetAttribute("Kind")=="Fixed")
+            and (relation:GetAttribute("SourceId")==request.sourceId
+                or relation:GetAttribute("TargetId")==request.sourceId) then
+            local otherId=if relation:GetAttribute("SourceId")==request.sourceId
+                then relation:GetAttribute("TargetId")
+                else relation:GetAttribute("SourceId")
+            local other=d.findOwned(player,otherId)
+            if HandCrankMath.IsOutputShaft(other) then
+                return false,"Hand crank output is already attached to a shaft"
+            end
+        end
+    end
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId")==player.UserId
+            and (relation:GetAttribute("Kind")=="Weld"
+                or relation:GetAttribute("Kind")=="Fixed")
             and ((relation:GetAttribute("SourceId")==request.sourceId
                 and relation:GetAttribute("TargetId")==request.targetId)
                 or (relation:GetAttribute("SourceId")==request.targetId
@@ -1260,6 +1275,9 @@ function Mechanical:CreateWeld(player,request)
     request.kind="Weld"
     local source,target,reason=validEndpoints(self,player,request)
     if not source then return false,reason end
+    if HandCrankMath.IsCrank(source) or HandCrankMath.IsCrank(target) then
+        return false,"Use the HandCrank output coupling to attach a crank to its shaft"
+    end
     -- The parts must be in REAL contact; being nearby is insufficient.
     local close=false
     local overlap=OverlapParams.new()
