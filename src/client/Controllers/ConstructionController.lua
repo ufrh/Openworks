@@ -268,9 +268,10 @@ function Controller:RefreshCatalog()
 end
 
 function Controller:RefreshPointer()
-    -- Only the library needs the free cursor. Scale mode stays LockCenter,
-    -- and the ResizeGizmo uses relative MouseMovement + crosshair aiming.
-    local unlocked = self.CatalogOpen or self.PendingMateChoice~=nil
+    -- Freecam cursor is ALWAYS unlocked outside active camera movement,
+    -- dedicated relative-motion Scale mode, and manual crank look.
+    local unlocked = not self.ScaleMode or self.CatalogOpen
+        or self.PendingMateChoice~=nil
     -- The click-only relationship picker owns its own full-screen modal
     -- surface; never show the catalog's invisible hitbox over the dialog.
     self.Unlock.Visible = self.CatalogOpen
@@ -1807,6 +1808,7 @@ function Controller:BeginScale()
     end
 
     self.ScaleMode = true
+    player:SetAttribute("OPENWORKS_ScaleActive",true)
     self.ScaleCF = cf
     self.ScaleSize = self.CurrentSize
 
@@ -1902,6 +1904,7 @@ function Controller:EndScale()
     end
 
     self.ScaleMode = false
+    player:SetAttribute("OPENWORKS_ScaleActive",false)
     self.ScaleHandles:Close()
 
     if self.ScaleGhost then
@@ -2263,6 +2266,12 @@ function Controller:Start()
             elseif self.ScaleMode then
                 UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
                 UserInputService.MouseIconEnabled = false
+            else
+                -- The previous first-person fallback left the cursor
+                -- locked when no overlay was active. Freecam uses a
+                -- visible, freely movable mouse by default.
+                UserInputService.MouseBehavior=Enum.MouseBehavior.Default
+                UserInputService.MouseIconEnabled=true
             end
         end)
 
