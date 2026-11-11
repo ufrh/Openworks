@@ -1,8 +1,8 @@
 --!strict
 -- OPENWORKS permanent construction free camera.
--- Scriptable with subtle responsiveness smoothing. Native Roblox
+-- Scriptable locked-mouse freecam. Native Roblox
 -- Tools, Backpack and UI remain fully active. Character is immobile on server.
--- RMB: look, MMB: pan, WASD: fly, Space/Ctrl: elevate, Z/Shift+Z: FOV.
+-- Mouse: always look, WASD: fly, Space/Ctrl: elevate, Z/Shift+Z: FOV.
 local Players=game:GetService("Players")
 local RunService=game:GetService("RunService")
 local UIS=game:GetService("UserInputService")
@@ -144,11 +144,7 @@ function Camera:Start()
 
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
         if processed or uiCapturesPointer() then return end
-        if input.UserInputType==Enum.UserInputType.MouseButton2 then
-            self.Rotating=true
-        elseif input.UserInputType==Enum.UserInputType.MouseButton3 then
-            self.Panning=true
-        elseif input.KeyCode==Enum.KeyCode.Z then
+        if input.KeyCode==Enum.KeyCode.Z then
             if UIS:IsKeyDown(Enum.KeyCode.LeftControl)
                 or UIS:IsKeyDown(Enum.KeyCode.RightControl)
                 or UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
@@ -160,14 +156,6 @@ function Camera:Start()
                 MIN_FOV,MAX_FOV)
         end
     end))
-    table.insert(self.Connections,UIS.InputEnded:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton2 then
-            self.Rotating=false
-        elseif input.UserInputType==Enum.UserInputType.MouseButton3 then
-            self.Panning=false
-        end
-    end))
-
     RunService:BindToRenderStep(RENDER_BINDING,
         Enum.RenderPriority.Camera.Value+1,function(dt)
         local camera=workspace.CurrentCamera
@@ -179,7 +167,7 @@ function Camera:Start()
         if not self.ViewPosition then self.ViewPosition=self.Position end
         local inputBlocked=uiCapturesPointer()
         local delta=UIS:GetMouseDelta()
-        if not inputBlocked and self.Rotating then
+        if not inputBlocked then
             self.Yaw-=delta.X*LOOK_SENSITIVITY
             self.Pitch=math.clamp(self.Pitch-delta.Y*LOOK_SENSITIVITY,
                 math.rad(-88),math.rad(88))
@@ -189,10 +177,6 @@ function Camera:Start()
         local right=rotation.RightVector
         local up=Vector3.yAxis
         if not inputBlocked then
-            if self.Panning then
-                self.Position-=right*delta.X*PAN_SENSITIVITY
-                self.Position+=rotation.UpVector*delta.Y*PAN_SENSITIVITY
-            end
             local horizontal=Vector3.zero
             if UIS:IsKeyDown(Enum.KeyCode.W) then horizontal+=forward end
             if UIS:IsKeyDown(Enum.KeyCode.S) then horizontal-=forward end
@@ -211,9 +195,6 @@ function Camera:Start()
                     then FAST_SPEED else MOVE_SPEED
                 self.Position+=horizontal.Unit*speed*math.min(dt,0.1)
             end
-        else
-            self.Rotating=false
-            self.Panning=false
         end
         self.Position=clampToPlot(self.Position)
         -- Light exponential smoothing, with immediate pointer capture.
@@ -233,15 +214,12 @@ function Camera:Start()
     end)
     RunService:BindToRenderStep(RENDER_BINDING.."_Pointer",
         Enum.RenderPriority.Camera.Value+3,function()
-        if (self.Rotating or self.Panning) and not uiCapturesPointer() then
-            UIS.MouseBehavior=Enum.MouseBehavior.LockCenter
-            UIS.MouseIconEnabled=false
-        elseif player:GetAttribute("OPENWORKS_CrankActive")~=true
-            and player:GetAttribute("OPENWORKS_PropertiesLooking")~=true
-            and player:GetAttribute("OPENWORKS_ScaleActive")~=true then
-            -- Ordinary freecam movement never captures the cursor.
+        if uiCapturesPointer() then
             UIS.MouseBehavior=Enum.MouseBehavior.Default
             UIS.MouseIconEnabled=true
+        else
+            UIS.MouseBehavior=Enum.MouseBehavior.LockCenter
+            UIS.MouseIconEnabled=false
         end
     end)
 end
