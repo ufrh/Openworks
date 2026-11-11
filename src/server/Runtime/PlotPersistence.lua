@@ -276,14 +276,9 @@ function Persistence:Apply(player,document)
     for _,model in ipairs(oldParts) do model:Destroy() end
     local history=d.histories[player]
     if history then table.clear(history.undo) table.clear(history.redo) end
-    -- Assembly labels continue after the highest restored display number.
-    local maximum=0
-    for _,state in ipairs(states) do
-        local num=type(state.assemblyName)=="string"
-            and tonumber(string.match(state.assemblyName,"^Assembly (%d+)$"))
-        if num then maximum=math.max(maximum,num) end
-    end
-    d.assemblies.NextNumber[player]=maximum
+    -- Named assemblies are now explicitly authored; their IDs and names
+    -- already live on each restored primitive. The retired NextNumber
+    -- counter no longer exists and must not be touched during plot load.
     return true,string.format("Loaded %d parts and %d relationships",
         #states,#specs)
 end
@@ -315,18 +310,24 @@ function Persistence:Load(player)
         return false,"Could not access plot storage; your existing construction was not erased"
     end
     if not player.Parent then self.Busy[player]=nil return false,"Player left" end
-    local result,message
-    if document==nil then
-        -- A confirmed Load is a real revert, even if nothing was saved yet.
-        result,message=self:Apply(player,{
-            version=SCHEMA_VERSION,parts={},joints={},
-        })
-        if result then message="Loaded empty plot (no manual save yet)" end
-    else
-        result,message=self:Apply(player,document)
-    end
+    local target=if document==nil
+        then {version=SCHEMA_VERSION,parts={},joints={}}
+        else document
+    -- Always release the plot's Loading lock, even if a future schema
+    -- migration or a runtime error escapes the normal validation path.
+    -- Explicit manual reload still restores an empty plot when no save
+    -- exists; normal data-store errors do not erase player constructions.
+    local completed,result,message=pcall(self.Apply,self,player,target)
     self.Busy[player]=nil
-    self.Ready[player]=result
+    if not completed then
+        warn("[OPENWORKS] Plot apply failed: "..tostring(result))
+        message="Plot load failed unexpectedly; check Output"
+        result=false
+    end
+    if result and document==nil then
+        message="Loaded empty plot (no manual save yet)"
+    end
+    self.Ready[player]=result==true
     if result then
         local savedAt=document and document.savedAt or 0
         player:SetAttribute("OPENWORKS_LastSavedAt",
