@@ -644,6 +644,9 @@ function Controller:SmartDrop(chosenKind)
         approach=match.approach or exactSourcePosition,
         position=exactSourcePosition,
         orientation=exactSourceCF.Rotation,
+        -- The ghost was pivoted around its WHOLE component anchor; sending
+        -- that exact pivot avoids re-deriving the transform from a corner.
+        groupPivot=if self.Pending=="ComponentMove" then self.PreviewCF else nil,
     })
     if ok then self:CancelPending() self:RefreshHUD() end
     return true

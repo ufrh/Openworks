@@ -528,6 +528,21 @@ function Mechanical:SmartMate(player, request, newSource)
             local desired=CFrame.new(request.position)
                 *request.orientation.Rotation
             local movement=desired*source:GetPivot():Inverse()
+            if movingComponent and typeof(request.groupPivot)=="CFrame" then
+                local groupPivot=request.groupPivot
+                if not d.Grid.ValidPosition(groupPivot.Position) then
+                    return false,"Component snap pivot is outside build range"
+                end
+                local anchor=ComponentGeometry.CentralPrimitive(members)
+                local groupMove=groupPivot*anchor:GetPivot():Inverse()
+                local aligned=groupMove*source:GetPivot()
+                if (aligned.Position-desired.Position).Magnitude>0.04
+                    or aligned.RightVector:Dot(desired.RightVector)<0.999
+                    or aligned.UpVector:Dot(desired.UpVector)<0.999 then
+                    return false,"Group snap and selected hole disagree; rescan alignment"
+                end
+                movement=groupMove
+            end
             plan={items={}}
             for _,member in ipairs(members) do
                 local world=movement*member:GetPivot()

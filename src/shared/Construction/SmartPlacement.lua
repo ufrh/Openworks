@@ -397,6 +397,31 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                         source:GetAttribute("InstanceId"),
                         target:GetAttribute("InstanceId"))
                     if fitted and #fitted>1 then
+                        -- Center the COMPLETE moving pattern on the complete
+                        -- fixed pattern. Correct average lateral drift after
+                        -- choosing the best rotation, not just corner #1.
+                        local error=Vector3.zero
+                        for _,pair in ipairs(fitted) do
+                            local current=delta*pair.moving:GetPivot()
+                            local gap=pair.stationary:GetPivot().Position
+                                -current.Position
+                            local axis=pair.axis
+                            error+=gap-axis*gap:Dot(axis)
+                        end
+                        error/= #fitted
+                        if error.Magnitude>0.00005 then
+                            local candidateCF=CFrame.new(error)*cf
+                            local checked=MultiFit.Find(members,
+                                MultiFit.Scope(target,allTargets or targets),
+                                candidateCF*ghost:GetPivot():Inverse(),ignored)
+                            local refined=checked and MultiFit.Unique(checked,
+                                source:GetAttribute("InstanceId"),
+                                target:GetAttribute("InstanceId"))
+                            if refined and #refined==#fitted then
+                                cf=candidateCF
+                                fitted=refined
+                            end
+                        end
                         score-=math.min(12,(#fitted-1)*2.5)
                     end
                 end
