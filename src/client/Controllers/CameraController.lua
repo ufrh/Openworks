@@ -1,6 +1,6 @@
 --!strict
 -- OPENWORKS permanent construction free camera.
--- Scriptable and immediate-response (no camera inertia). Native Roblox
+-- Scriptable with subtle responsiveness smoothing. Native Roblox
 -- Tools, Backpack and UI remain fully active. Character is immobile on server.
 -- RMB: look, MMB: pan, WASD: fly, Space/Ctrl: elevate, Z/Shift+Z: FOV.
 local Players=game:GetService("Players")
@@ -18,6 +18,8 @@ local MOVE_SPEED=22
 local FAST_SPEED=44
 local LOOK_SENSITIVITY=0.0036
 local PAN_SENSITIVITY=0.022
+local LOOK_RESPONSE=22
+local POSITION_RESPONSE=18
 
 local Camera={}
 Camera.__index=Camera
@@ -47,26 +49,67 @@ end
 
 function Camera.new()
     return setmetatable({
-        Position=nil,Pitch=math.rad(-35),Yaw=math.rad(45),
+        Position=nil,ViewPosition=nil,
+        Pitch=math.rad(-15),Yaw=math.rad(0),
+        ViewPitch=nil,ViewYaw=nil,
         TargetFov=DEFAULT_FOV,Rotating=false,Panning=false,
-        Connections={},Started=false,
+        Connections={},CharacterConnections={},Started=false,
     },Camera)
 end
 
-function Camera:ResetPosition()
+function Camera:ResetPosition(character)
+    character=character or player.Character
+    local head=character and character:FindFirstChild("Head")
+    local root=character and character:FindFirstChild("HumanoidRootPart")
     local origin=player:GetAttribute("OPENWORKS_PlotOrigin")
-    if typeof(origin)~="Vector3" then
-        local character=player.Character
-        local root=character and character:FindFirstChild("HumanoidRootPart")
-        origin=if root then root.Position-Vector3.new(0,5,0)
-            else Vector3.zero
+    local spawn=if head and head:IsA("BasePart") then head.Position
+        elseif root and root:IsA("BasePart") then
+            root.Position+Vector3.new(0,1.5,0)
+        elseif typeof(origin)=="Vector3" then
+            origin+Vector3.new(0,6.5,0)
+        else Vector3.new(0,6.5,0)
+    -- Spawn at the actual character's head, not an elevated arbitrary
+    -- 3/4-view offset. Start looking horizontally in the character's
+    -- facing direction, but no character movement follows the camera.
+    self.Position=clampToPlot(spawn)
+    self.ViewPosition=self.Position
+    if root and root:IsA("BasePart") then
+        local dir=root.CFrame.LookVector
+        self.Yaw=math.atan2(-dir.X,-dir.Z)
+    else
+        self.Yaw=0
     end
-    -- Start with a practical elevated, angled view of the work area.
-    local target=origin+Vector3.new(0,3,0)
-    self.Position=clampToPlot(origin+Vector3.new(13,17,19))
-    local dir=(target-self.Position).Unit
-    self.Yaw=math.atan2(-dir.X,-dir.Z)
-    self.Pitch=math.asin(math.clamp(dir.Y,-0.98,0.98))
+    self.Pitch=0
+    self.ViewYaw=self.Yaw
+    self.ViewPitch=self.Pitch
+end
+
+function Camera:BindCharacter(character)
+    for _,connection in ipairs(self.CharacterConnections) do
+        connection:Disconnect()
+    end
+    table.clear(self.CharacterConnections)
+    local function resetWhenReady()
+        -- PlotService signals only AFTER positioning the rooted avatar.
+        -- Without this handshake, spawn may reset to the old pre-teleport
+        -- character position and move again when replication catches up.
+        if character:GetAttribute("OPENWORKS_CameraSpawnReady")~=true then
+            return
+        end
+        if character~=player.Character then return end
+        local head=character:FindFirstChild("Head")
+        if head and head:IsA("BasePart") then
+            self:ResetPosition(character)
+        end
+    end
+    table.insert(self.CharacterConnections,
+        character:GetAttributeChangedSignal(
+            "OPENWORKS_CameraSpawnReady"):Connect(resetWhenReady))
+    table.insert(self.CharacterConnections,
+        character.ChildAdded:Connect(function(child)
+            if child.Name=="Head" then resetWhenReady() end
+        end))
+    resetWhenReady()
 end
 
 function Camera:Start()
@@ -84,14 +127,19 @@ function Camera:Start()
     cameraChanged()
     table.insert(self.Connections,workspace:GetPropertyChangedSignal(
         "CurrentCamera"):Connect(cameraChanged))
-    table.insert(self.Connections,player.CharacterAdded:Connect(function()
-        -- No first-person lock ever returns on respawn.
+    table.insert(self.Connections,player.CharacterAdded:Connect(function(character)
         player.CameraMode=Enum.CameraMode.Classic
         cameraChanged()
+        self:BindCharacter(character)
     end))
+    if player.Character then self:BindCharacter(player.Character) end
     table.insert(self.Connections,player:GetAttributeChangedSignal(
         "OPENWORKS_PlotOrigin"):Connect(function()
-            self:ResetPosition()
+            if not player.Character
+                or player.Character:GetAttribute(
+                    "OPENWORKS_CameraSpawnReady")~=true then
+                self:ResetPosition()
+            end
         end))
 
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
@@ -128,6 +176,7 @@ function Camera:Start()
             camera.CameraType=Enum.CameraType.Scriptable
         end
         if not self.Position then self:ResetPosition() end
+        if not self.ViewPosition then self.ViewPosition=self.Position end
         local inputBlocked=uiCapturesPointer()
         local delta=UIS:GetMouseDelta()
         if not inputBlocked and self.Rotating then
@@ -167,11 +216,19 @@ function Camera:Start()
             self.Panning=false
         end
         self.Position=clampToPlot(self.Position)
-        -- ConstructionController writes pointer mode at Camera+2;
-        -- while actively looking/panning, enforce capture AFTER that
-        -- controller so freecam never stalls at the window boundary.
-        camera.CFrame=CFrame.new(self.Position)*rotation
-        camera.Focus=CFrame.new(self.Position+forward*24)
+        -- Light exponential smoothing, with immediate pointer capture.
+        -- No long tails or cinematic easing that would impede editing.
+        local lookAlpha=1-math.exp(-LOOK_RESPONSE*math.min(dt,0.1))
+        local moveAlpha=1-math.exp(-POSITION_RESPONSE*math.min(dt,0.1))
+        self.ViewYaw=self.ViewYaw
+            +math.atan2(math.sin(self.Yaw-self.ViewYaw),
+                math.cos(self.Yaw-self.ViewYaw))*lookAlpha
+        self.ViewPitch+=(self.Pitch-self.ViewPitch)*lookAlpha
+        self.ViewPosition=self.ViewPosition:Lerp(self.Position,moveAlpha)
+        local viewRotation=CFrame.fromEulerAnglesYXZ(
+            self.ViewPitch,self.ViewYaw,0)
+        camera.CFrame=CFrame.new(self.ViewPosition)*viewRotation
+        camera.Focus=CFrame.new(self.ViewPosition+viewRotation.LookVector*24)
         camera.FieldOfView=self.TargetFov
     end)
     RunService:BindToRenderStep(RENDER_BINDING.."_Pointer",
@@ -179,6 +236,11 @@ function Camera:Start()
         if (self.Rotating or self.Panning) and not uiCapturesPointer() then
             UIS.MouseBehavior=Enum.MouseBehavior.LockCenter
             UIS.MouseIconEnabled=false
+        elseif player:GetAttribute("OPENWORKS_CrankActive")~=true
+            and player:GetAttribute("OPENWORKS_PropertiesLooking")~=true then
+            -- Ordinary freecam movement never captures the cursor.
+            UIS.MouseBehavior=Enum.MouseBehavior.Default
+            UIS.MouseIconEnabled=true
         end
     end)
 end
@@ -192,6 +254,12 @@ function Camera:Destroy()
         connection:Disconnect()
     end
     table.clear(self.Connections)
+    for _,connection in ipairs(self.CharacterConnections) do
+        connection:Disconnect()
+    end
+    table.clear(self.CharacterConnections)
+    UIS.MouseBehavior=Enum.MouseBehavior.Default
+    UIS.MouseIconEnabled=true
     local camera=workspace.CurrentCamera
     if camera then camera.CameraType=Enum.CameraType.Custom end
 end
