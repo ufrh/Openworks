@@ -796,6 +796,12 @@ function Controller:RecognizeAttachment(raw,hit)
             end
         end
         if match.kind=="Bore" then
+            -- Before click-to-lock, alignment is geometric only. Do not
+            -- carry an insertion offset from earlier hub fitting.
+            if not self.LockedAlignment then
+                self.SmartOffsetDeltaU=0
+                self.SmartRollDelta=0
+            end
             match.relationKind=self.SmartBoreKind
             local shaft=if match.reverse then match.target else match.source
             local hole=if match.reverse then match.source else match.target
@@ -2073,7 +2079,8 @@ function Controller:Start()
         end
     end))
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseWheel then
+        if input.UserInputType==Enum.UserInputType.MouseWheel
+            and not self.PendingMateChoice then
             if self.SmartMatch
                 and ((self.SmartMatch.kind=="Bore" and self.LockedAlignment)
                     or self.SmartMatch.kind=="Hub")
