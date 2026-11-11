@@ -269,8 +269,10 @@ end
 function Controller:RefreshPointer()
     -- Only the library needs the free cursor. Scale mode stays LockCenter,
     -- and the ResizeGizmo uses relative MouseMovement + crosshair aiming.
-    local unlocked = self.CatalogOpen
-    self.Unlock.Visible = unlocked
+    local unlocked = self.CatalogOpen or self.PendingMateChoice~=nil
+    -- The click-only relationship picker owns its own full-screen modal
+    -- surface; never show the catalog's invisible hitbox over the dialog.
+    self.Unlock.Visible = self.CatalogOpen
     self.Crosshair.Visible = not unlocked
     UserInputService.MouseIconEnabled = unlocked
 
@@ -322,16 +324,16 @@ function Controller:RefreshHUD()
                 then "  •  "..tostring(match.fittedCount).." points" else "")
         self.HelpLabel.Text=if match.kind=="Bore"
             then (if self.LockedAlignment
-                then "POSITION  •  wheel depth • Q/E roll • click to finalize"
-                else "Align the shaft/hole pattern • click to adjust positioning")
+                then "POSITION • wheel depth • Q/E roll • click for relationships"
+                else "Align shaft and hole • click to choose relationship")
             elseif match.kind=="CrankCoupling"
             then "Click to couple hand crank to shaft end • physical weld, not motor"
             elseif match.kind=="Gear"
             then (if self.Mode=="Build" then "Click to mesh gears" else "Release to mesh gears")
                 .. " • Tab target • Alt free"
             elseif match.kind=="Hub"
-            then (if self.Mode=="Build" then "Click to mount on shaft" else "Release to mount on shaft")
-                .. " • wheel insertion depth • editor group (weld manually)"
+            then "Click to choose Rotation or Rigid mount"
+                .. " • wheel insertion depth"
             elseif match.kind=="BoltHole" then
                 (if self.Mode=="Build" then "Click to place bolt"
                     else "Release to fasten bolt")
@@ -630,34 +632,46 @@ function Controller:OpenMateChoice(mode)
         or self.PendingMateChoice then
         return false
     end
-    -- Shaft/housing choices follow the existing two-click fit adjustment;
-    -- gear hubs are already geometrically aligned and choose motion now.
+    -- One click on a valid hole/shaft or gear/shaft fit opens a mouse
+    -- picker. Bore users can still choose "Adjust depth / roll first",
+    -- then click once more to reopen this picker after adjustments.
     if match.kind=="Bore" and not self.LockedAlignment then
-        return self:BeginAlignmentPositioning()
+        if not self:BeginAlignmentPositioning() then return false end
     end
     self.PendingMateChoice=mode
     self.DirectDragCandidate=nil
     self.DirectDragActive=false
-    -- Keep the exact shaft/gear and transform selected when the modal
-    -- opened. The camera/ghost may update while the cursor is unlocked.
-    local chosenMatch=if match.kind=="Hub" then table.clone(match) else nil
-    local chosenPose=if chosenMatch then self.PreviewCF else nil
+    -- Freeze the exact pair and solved pose while the mouse is unlocked.
+    -- Never let camera movement or a different hovered part change the
+    -- relationship that the user approves in the popup.
+    local chosenMatch=table.clone(match)
+    local chosenPose=self.PreviewCF
     local chosenValid=self.PreviewValid
     self.MateChoice:Show(function(kind)
         local requestMode=self.PendingMateChoice
         self.PendingMateChoice=nil
-        if kind and chosenMatch then
+        -- A UI click must not also activate the equipped Roblox build tool
+        -- and create a second placement on the same mouse release.
+        self.IgnoreClickUntil=os.clock()+0.22
+        if kind then
             self.SmartMatch=chosenMatch
             self.PreviewCF=chosenPose
             self.PreviewValid=chosenValid
         end
-        if kind and requestMode=="Build" then
+        if kind=="__Adjust" then
+            -- Continue with the pre-existing depth/roll adjustment stage.
+            -- No construction or relationship has been created yet.
+            self:RefreshPointer()
+            self:RefreshHUD()
+            return
+        elseif kind and requestMode=="Build" then
             self:Place(kind)
         elseif kind and requestMode=="Edit" then
             self:SmartDrop(kind)
         elseif requestMode=="Edit" then
             self:CancelPending()
         end
+        self:RefreshPointer()
         self:RefreshHUD()
     end, match.fittedCount or 1, match.kind=="Hub")
     return true
