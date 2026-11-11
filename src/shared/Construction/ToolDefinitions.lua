@@ -6,7 +6,7 @@ local definitions = {
     { Id = "Assembly", Tooltip = "Name assemblies and explicitly choose primitives or components" },
     { Id = "Simulate", Tooltip = "Simulate an authored assembly with native mechanical physics" },
     { Id = "Inspect", Tooltip = "Inspect, measure, and select obstructed components" },
-    { Id = "Weld", Tooltip = "Choose two touching solids and author an explicit weld" },
+    { Id = "Weld", Tooltip = "Weld touching solids or a fitted drilled block and shaft rigidly" },
 }
 
 for _, definition in ipairs(definitions) do
