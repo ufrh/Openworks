@@ -145,7 +145,7 @@ function Simulation:StepCranks(dt)
             end
             if session.Paused or session.ActiveCrankId~=id
                 or not crank.Running or not playerRoot
-                or (playerRoot.Position-root.Position).Magnitude>22
+                or not self.D.nearPlayer(owner,root.Position)
                 or os.clock()-(crank.LastInput or 0)>CRANK_HOLD_TIMEOUT then
                 if crank.Running then self:StopCrank(session,id) end
             elseif drive then
@@ -168,7 +168,7 @@ function Simulation:StepCranks(dt)
             if rackId and (not session.Gears:CanDriveRack(rackId)
                 or not rackModel or not rackModel.Parent
                 or not playerRoot
-                or (playerRoot.Position-rackModel:GetPivot().Position).Magnitude>22
+                or not self.D.nearPlayer(owner,rackModel:GetPivot().Position)
                 or os.clock()-(session.RackLastInput or 0)>RACK_HOLD_TIMEOUT) then
                 self:StopRack(session)
                 rackId=nil
@@ -213,8 +213,8 @@ function Simulation:BeginCrank(player,request)
     end
     local character=player.Character
     local root=character and character:FindFirstChild("HumanoidRootPart")
-    if not root or (root.Position-crank.Root.Position).Magnitude>22 then
-        return false,"Move closer to the hand crank to turn it"
+    if not root or not self.D.nearPlayer(player,crank.Root.Position) then
+        return false,"Crank must remain on your own plot"
     end
     -- If a different crank now backdrives this gear graph, reset the
     -- previous input's coast to avoid a sudden gearbox direction jump.
@@ -263,8 +263,8 @@ function Simulation:BeginRack(player,request)
     local rack=session.Gears:RackModel(id)
     local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if not rack or not rack.Parent or not root
-        or (root.Position-rack:GetPivot().Position).Magnitude>22 then
-        return false,"Move closer to the guided rack"
+        or not self.D.nearPlayer(player,rack:GetPivot().Position) then
+        return false,"Guided rack must remain on your own plot"
     end
     if session.ActiveRackId~=id
         or session.RackDirection~=direction then
