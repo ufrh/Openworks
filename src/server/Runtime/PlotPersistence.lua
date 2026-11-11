@@ -348,9 +348,18 @@ function Persistence:Save(player)
         return false,"Save was just requested; try again shortly"
     end
     self.Busy[player]=true
-    local document,problem=self:Encode(player)
+    local completed,document,problem=pcall(self.Encode,self,player)
+    if not completed then
+        -- A malformed template or unexpected serialize error must NOT
+        -- leave the save lock set for the rest of this player session.
+        self.Busy[player]=nil
+        warn("[OPENWORKS] Plot encode failed: "..tostring(document))
+        self:Status(player,"Ready","Save validation failed; previous save intact")
+        return false,"Could not prepare plot save (see Studio Output)"
+    end
     if not document then
         self.Busy[player]=nil
+        self:Status(player,"Ready","Save blocked: "..tostring(problem))
         return false,problem
     end
     self:Status(player,"Saving","Writing your manual save")
