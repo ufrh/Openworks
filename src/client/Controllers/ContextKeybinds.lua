@@ -31,11 +31,13 @@ function Context:Lines()
     local lines = {}
     if not tool then return { "Choose a tool: 1–5" } end
     if c.PendingMateChoice then
-        append(lines,"1 / Enter","Rotate + slide (default)")
-        append(lines,"2","Slide only (4-rod guides)")
-        append(lines,"3","Rotate only")
-        append(lines,"4","Fit only, no relationship")
-        append(lines,"Esc","Cancel connection")
+        if c.SmartMatch and c.SmartMatch.kind=="Hub" then
+            append(lines,"CLICK","Gear mount: Rotation or Rigid")
+        else
+            append(lines,"CLICK","Choose rotation, slide, bearing or fit")
+            append(lines,"ADJUST","Set shaft depth/roll before selecting")
+        end
+        append(lines,"ESC","Cancel • numeric hotbar disabled")
         return lines
     end
     if c.Numeric and c.Numeric.Active then
@@ -61,7 +63,7 @@ function Context:Lines()
             append(lines,"U","Reset assembly to authored pose")
             append(lines,"I","Inspect joint telemetry")
             append(lines,"Click","Inspect body / relationships")
-            append(lines,"LMB drag","Turn crank with locked mouse")
+            append(lines,"Click crank","Toggle fixed-speed rotation")
         else
             append(lines,"P","Run registered assembly")
             append(lines,"Shift+P","Run assembly ungrounded")
@@ -104,10 +106,10 @@ function Context:Lines()
                         append(lines,"Click","Finalize / choose passive joint")
                         append(lines,"Esc","Re-align")
                     else
-                        append(lines,"Click / release","Lock alignment first")
+                        append(lines,"Click","Choose relationship popup")
                     end
                 elseif c.SmartMatch.kind=="Hub" then
-                    append(lines, "Hub", "Group gear and shaft (no weld)")
+                    append(lines, "Click", "Choose Rotation / Rigid gear mount")
                 elseif c.SmartMatch.kind=="BoltHole" then
                     append(lines, "Bolt", "Fasten holes reached by prefab")
                 end
@@ -177,10 +179,10 @@ function Context:Lines()
                         append(lines,"Click","Finalize / choose passive joint")
                         append(lines,"Esc","Re-align")
                     else
-                        append(lines,"Click / release","Lock alignment first")
+                        append(lines,"Click","Choose relationship popup")
                     end
                 elseif c.SmartMatch.kind=="Hub" then
-                    append(lines, "Hub", "Group gear and shaft (no weld)")
+                    append(lines, "Click", "Choose Rotation / Rigid gear mount")
                 elseif c.SmartMatch.kind=="BoltHole" then
                     append(lines, "Bolt", "Fasten holes reached by prefab")
                 end
