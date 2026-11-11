@@ -102,6 +102,30 @@ def main() -> int:
     check("Assembly supports named create/update", all(
         s in assembly for s in ("function Service:Create(", "function Service:Update(",
                                "MAX_NAME=48", "MAX_MEMBERS=128")))
+    assembly_tool=read("src/client/Controllers/AssemblyToolController.lua")
+    check("World-Y movement is explicitly scoped to owned registered members",
+          'local function verticalMove(player,payload)' in service
+          and 'selected=components:Members(player,id)' in service
+          and 'selected=assemblies:Members(player,id)' in service
+          and 'local model=findOwned(player,id)' in service
+          and 'Vector3.new(0,payload.direction*step,0)' in service
+          and 'd.Valid' not in service)
+    check("Vertical move is one validated atomic undoable transaction",
+          'local ok,reason=validState(player,entry,nextState)' in service
+          and 'intersectsConstructed(model,ignored)' in service
+          and 'applyState(model,before[i])' in service
+          and 'commitBatch(player,before,after)' in service
+          and 'if (payload.scope=="Assembly" and not hasEquippedTool(player,"Assembly"))' in service)
+    check("Alt+wheel provides convenient first-person vertical edit movement",
+          'UserInputService.InputChanged:Connect(function(input)' in selection
+          and 'if alt and self.Mode=="Edit" and not self.Pending' in selection
+          and 'self:VerticalNudge(if input.Position.Z>0 then 1 else -1)' in selection
+          and 'if fine then 0.05 else 0.25' in service)
+    check("Alt+wheel moves all assembly members, Page keys remain optional",
+          'UIS.InputChanged:Connect(function(input)' in assembly_tool
+          and 'self:VerticalNudge(if input.Position.Z>0 then 1 else -1)' in assembly_tool
+          and 'key==Enum.KeyCode.PageUp or key==Enum.KeyCode.PageDown' in assembly_tool
+          and 'action="VerticalMove",scope="Assembly"' in assembly_tool)
     check("Assembly server authorization",
           'hasEquippedTool(player,"Assembly")' in service
           and 'action=="CreateAssembly"' in service
