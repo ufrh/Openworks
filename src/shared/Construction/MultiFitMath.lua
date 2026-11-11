@@ -61,7 +61,7 @@ function Fit.Check(moving,stationary,delta)
         moving=moving, stationary=stationary, shaft=shaft, hole=hole,
         movingId=key(moving),stationaryId=key(stationary),
         reverse=reverse,depthU=depth/Grid.Unit,radial=radial,
-        axis=axis,offsetMin=lo,offsetMax=hi,
+        angular=angular,axis=axis,offsetMin=lo,offsetMax=hi,
     }
 end
 
@@ -119,6 +119,14 @@ function Fit.Completeness(movingMembers,stationaryModels,pairs,reverse)
         return false,string.format(
             "Only %d/%d holes fitted. Check every rod, diameter, angle and spacing",
             fitCount,movingCount)
+    end
+    -- Multiple independent prismatic constraints cannot solve a pattern
+    -- whose axes are merely "close" to coaxial. Reject instead of letting
+    -- the physics solver shove the upper plate sideways on simulation.
+    for _,pair in ipairs(pairs or {}) do
+        if pair.radial>Grid.Unit*0.04 or (pair.angular or 0)<0.999995 then
+            return false,"All guides must be exactly aligned for multiple joints"
+        end
     end
     return true
 end
