@@ -54,6 +54,8 @@ function Context:Lines()
     end
     if player:GetAttribute("OPENWORKS_Simulating") == true then
         append(lines, "P", "Stop physics")
+        append(lines, "H", "Grip manual hand crank")
+        append(lines, "LMB drag", "Rotate hand-crank input circle")
         append(lines, "O / U", "Pause / Reset physics")
         append(lines, "I", "Inspect joint telemetry")
         return lines
@@ -178,6 +180,7 @@ function Context:Lines()
             append(lines, "L", "Manual align")
             append(lines,"K / H","Gear mesh / manual alignment")
             append(lines,"Shift+J","Spring between any two components")
+            append(lines,"Shift+C","Couple crank output to shaft end")
             append(lines,"Weld tool","Manually join touching solids")
             append(lines,"Build > Fasteners","Drag prefab bolts into real holes")
             append(lines,"Ctrl+G","Register whole connected assembly")
@@ -188,6 +191,7 @@ function Context:Lines()
             append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
         end
     elseif tool=="Simulate" then
+        append(lines,"H","Grip hand crank after starting simulation")
         append(lines,"Green","Grounded / stationary")
         append(lines,"Orange","Movable / dynamic")
         append(lines,"Click / G","Toggle grounding on aimed body")

@@ -2034,6 +2034,10 @@ function Controller:OnInput(input, processed)
     end
     if self.CatalogOpen then return end
 
+    if self.Mode=="Edit" and key==Enum.KeyCode.C and shiftHeld then
+        -- Shift+C is exclusively the hand-crank coupling workflow.
+        return
+    end
     if self.Mode == "Edit" and key == Enum.KeyCode.C then
         self:CreateComponent()
     elseif self.Mode == "Edit" and key == Enum.KeyCode.E then
@@ -2102,7 +2106,10 @@ function Controller:Start()
     end))
     RunService:BindToRenderStep("OPENWORKS_CursorUnlock",
         Enum.RenderPriority.Camera.Value + 2, function()
-            if player:GetAttribute("OPENWORKS_PropertiesLooking")==true then
+            if player:GetAttribute("OPENWORKS_CrankActive")==true then
+                UserInputService.MouseBehavior=Enum.MouseBehavior.Default
+                UserInputService.MouseIconEnabled=true
+            elseif player:GetAttribute("OPENWORKS_PropertiesLooking")==true then
                 UserInputService.MouseBehavior=Enum.MouseBehavior.LockCenter
                 UserInputService.MouseIconEnabled=false
             elseif player:GetAttribute("OPENWORKS_PlotMenuOpen")==true

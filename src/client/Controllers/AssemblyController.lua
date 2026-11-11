@@ -17,6 +17,8 @@ local Alignment = require(construction:WaitForChild("AlignmentMath"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local RelationshipProperties=require(script.Parent:WaitForChild("RelationshipProperties"))
+local HandCrankController=require(script.Parent:WaitForChild("HandCrankController"))
+local HandCrankMath=require(construction:WaitForChild("HandCrankMath"))
 local INSERTION_STEP_U = 0.5
 
 -- No implicit Fixed joint. Rigid fabrication requires explicit Weld.
@@ -189,7 +191,7 @@ function Controller:RefreshHUD()
         local grounded=player:GetAttribute("OPENWORKS_Grounded")~=false
         self.Detail.Text=if grounded then "PASSIVE PHYSICS / GROUNDED"
             else "PASSIVE PHYSICS / FREE"
-        self.Help.Text="Relationships permit motion • O pause • U reset • P stop"
+        self.Help.Text="H grip hand crank • hold LMB to turn • O pause • U reset • P stop"
         if self.LastMessage and os.clock() < self.MessageUntil then
             self.Detail.Text = self.LastMessage
         end
@@ -210,7 +212,9 @@ function Controller:RefreshHUD()
             tostring(self.PairKind or "MECHANICAL"))
         self.Detail.Text=if self.Stage=="PairFirst"
             then "Choose first mechanical part" else "Choose second physical part"
-        self.Help.Text=if self.PairKind=="Spring"
+        self.Help.Text=if self.PairKind=="CrankCoupling"
+            then "Choose hand crank, then the shaft END • rigid coupling • Esc cancel"
+            elseif self.PairKind=="Spring"
             then "Select any two components • spring force only • Esc cancel"
             elseif self.PairKind=="Bolt"
             then "Choose two aligned holes • physical bolt inserted"
@@ -643,6 +647,11 @@ function Controller:Activate()
     if self.Stage=="PairFirst" then
         local first=self:Pick()
         if not first then self:Message("Aim at a construction you own") return end
+        if self.PairKind=="CrankCoupling"
+            and not HandCrankMath.IsCrank(first) then
+            self:Message("Select the HandCrank first, then its output shaft")
+            return
+        end
         self.PairFirst=first
         self.Stage="PairSecond"
         self:RefreshHUD()
@@ -655,7 +664,8 @@ function Controller:Activate()
         end
         local first=self.PairFirst
         local request={
-            action="Create"..self.PairKind,
+            action=if self.PairKind=="CrankCoupling"
+                then "CoupleHandCrank" else "Create"..self.PairKind,
             sourceId=first:GetAttribute("InstanceId"),
             targetId=second:GetAttribute("InstanceId"),
         }
@@ -831,6 +841,8 @@ function Controller:Start()
     self.Gui, self.Header, self.Detail, self.Help = createGui()
     self.Properties=RelationshipProperties.new(self)
     self.Properties:Start()
+    self.HandCrank=HandCrankController.new(self)
+    self.HandCrank:Start()
     self.Remote = ReplicatedStorage:WaitForChild(Config.RequestName)
     table.insert(self.Connections,self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
@@ -886,6 +898,10 @@ function Controller:Start()
         end
         if key==Enum.KeyCode.J and shift then
             self:StartPair("Spring")
+            return
+        end
+        if key==Enum.KeyCode.C and shift then
+            self:StartPair("CrankCoupling")
             return
         end
         if key==Enum.KeyCode.K then self:ToggleGearMode() return end
@@ -988,6 +1004,7 @@ function Controller:Start()
 end
 
 function Controller:Destroy()
+    if self.HandCrank then self.HandCrank:Destroy() end
     self:Reset()
     for _, conn in ipairs(self.Connections) do conn:Disconnect() end
     table.clear(self.Connections)

@@ -45,7 +45,8 @@ function CameraController:Start()
         if processed or input.KeyCode~=Enum.KeyCode.Z
             or UserInputService:GetFocusedTextBox() or GuiService.MenuIsOpen
             or player:GetAttribute("OPENWORKS_PlotMenuOpen")==true
-            or player:GetAttribute("OPENWORKS_PropertiesOpen")==true then return end
+            or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
+            or player:GetAttribute("OPENWORKS_CrankActive")==true then return end
         if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
             or UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
