@@ -75,7 +75,6 @@ function Mechanical:Snapshot(relation)
         lowerLimit = relation:GetAttribute("LowerLimit"),
         upperLimit = relation:GetAttribute("UpperLimit"),
         limitsEnabled = relation:GetAttribute("LimitsEnabled") == true,
-        driveScale = relation:GetAttribute("DriveScale") or 1,
         gearRatio = relation:GetAttribute("GearRatio"),
         springMode = relation:GetAttribute("SpringMode"),
         stiffness = relation:GetAttribute("Stiffness"),
@@ -135,7 +134,6 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("LowerLimit", spec.lowerLimit)
     folder:SetAttribute("UpperLimit", spec.upperLimit)
     folder:SetAttribute("LimitsEnabled", spec.limitsEnabled == true)
-    folder:SetAttribute("DriveScale", spec.driveScale or 1)
     folder:SetAttribute("GearRatio", spec.gearRatio)
     folder:SetAttribute("SpringMode",spec.springMode)
     folder:SetAttribute("Stiffness",spec.stiffness)

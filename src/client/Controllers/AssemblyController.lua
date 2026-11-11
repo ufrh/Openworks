@@ -153,21 +153,6 @@ function Controller:ToggleSimulation()
         grounded = not free })
 end
 
-function Controller:ToggleMotor()
-    if self:IsSimulating() then
-        self:Request({ action = "ToggleSimulationMotor" })
-    else
-        self:Message("Press P to start simulation first")
-    end
-end
-
-function Controller:TuneMotor(flip, delta)
-    if not self:IsSimulating() then return end
-    local payload = { action = "TuneSimulationMotor" }
-    if flip then payload.flip = true else payload.speedDelta = delta end
-    self:Request(payload)
-end
-
 function Controller:Message(message)
     self.LastMessage = message
     self.MessageUntil = os.clock() + 2.5
@@ -201,17 +186,10 @@ function Controller:RefreshHUD()
     end
     if self:IsSimulating() then
         self.Header.Text = "OPENWORKS / PHYSICS SIMULATION"
-        local motor = player:GetAttribute("OPENWORKS_MotorOn") == true
-        local multiplier = player:GetAttribute("OPENWORKS_MotorSpeed") or 1
-        local direction = player:GetAttribute("OPENWORKS_MotorDirection") or 1
-        local grounded = player:GetAttribute("OPENWORKS_Grounded") ~= false
-        self.Detail.Text = string.format(
-            "%s  /  %.1fx %s  /  %s",
-            if motor then "MOTOR ON" else "MOTOR OFF",
-            multiplier, if direction == 1 then "FWD" else "REV",
-            if grounded then "GROUNDED" else "FREE"
-        )
-        self.Help.Text = "Properties edits joints • M motor • O pause • P stop"
+        local grounded=player:GetAttribute("OPENWORKS_Grounded")~=false
+        self.Detail.Text=if grounded then "PASSIVE PHYSICS / GROUNDED"
+            else "PASSIVE PHYSICS / FREE"
+        self.Help.Text="Relationships permit motion • O pause • U reset • P stop"
         if self.LastMessage and os.clock() < self.MessageUntil then
             self.Detail.Text = self.LastMessage
         end
@@ -882,7 +860,6 @@ function Controller:Start()
             if key==Enum.KeyCode.P then self:ToggleSimulation()
             elseif key==Enum.KeyCode.G then
                 if not self:IsSimulating() then self:ToggleGround() end
-            elseif key==Enum.KeyCode.M then self:ToggleMotor()
             elseif self:IsSimulating() then
                 if key==Enum.KeyCode.O then
                     self:Request({action="PauseSimulation"})
@@ -890,9 +867,6 @@ function Controller:Start()
                     self:Request({action="ResetSimulation"})
                 elseif key==Enum.KeyCode.I then
                     self:Request({action="GetMechanismInfo",seedId=self.SimSeedId})
-                elseif key==Enum.KeyCode.N then self:TuneMotor(true)
-                elseif key==Enum.KeyCode.LeftBracket then self:TuneMotor(false,-1)
-                elseif key==Enum.KeyCode.RightBracket then self:TuneMotor(false,1)
                 end
             end
             return
@@ -1005,12 +979,7 @@ function Controller:Start()
         "OPENWORKS_Simulating"):Connect(function()
             self:RefreshHUD()
         end))
-    table.insert(self.Connections, player:GetAttributeChangedSignal(
-        "OPENWORKS_MotorOn"):Connect(function()
-            self:RefreshHUD()
-        end))
-    for _, name in ipairs({ "OPENWORKS_MotorSpeed",
-        "OPENWORKS_MotorDirection", "OPENWORKS_Grounded" }) do
+    for _, name in ipairs({ "OPENWORKS_Grounded" }) do
         table.insert(self.Connections, player:GetAttributeChangedSignal(
             name):Connect(function() self:RefreshHUD() end))
     end

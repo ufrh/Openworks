@@ -54,9 +54,6 @@ function Context:Lines()
     end
     if player:GetAttribute("OPENWORKS_Simulating") == true then
         append(lines, "P", "Stop physics")
-        append(lines, "M", "Motor on / off")
-        append(lines, "N", "Reverse drive")
-        append(lines, "[  ]", "Motor speed")
         append(lines, "O / U", "Pause / Reset physics")
         append(lines, "I", "Inspect joint telemetry")
         return lines
@@ -185,7 +182,6 @@ function Context:Lines()
         append(lines,"Orange","Movable / dynamic")
         append(lines,"Click / G","Toggle grounding on aimed body")
         append(lines,"P / Shift+P","Simulate entire assembly / free")
-        append(lines,"M","Motor on/off during simulation")
     elseif tool == "Inspect" then
         append(lines, "LMB", "Inspect")
         append(lines, "Tab", "Cycle depth")

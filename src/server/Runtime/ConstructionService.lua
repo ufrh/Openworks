@@ -791,8 +791,7 @@ local function handle(player, payload)
         or action == "CreateWeld" or action == "CreateBolt"
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
     local simulationAction = action == "StartSimulation"
-        or action == "StopSimulation" or action == "ToggleSimulationMotor"
-        or action == "TuneSimulationMotor"
+        or action == "StopSimulation"
         or action == "PauseSimulation" or action == "ResetSimulation"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
@@ -852,7 +851,7 @@ local function handle(player, payload)
     -- Wheel-fitting is a short, discrete, server-validated operation.
     -- Give it a slightly shorter cooldown than placement so a normal
     -- wheel notch doesn't feel missed, without disabling request throttling.
-    local interval = if action == "FitShaft" or action == "TuneSimulationMotor"
+    local interval = if action == "FitShaft"
         then 0.035 else Config.MinActionInterval
     if now - (lastRequest[player] or 0) < interval then
         return { ok = false, message = "Try again" }
@@ -862,12 +861,8 @@ local function handle(player, payload)
     local ok,result,extra,detail=pcall(function()
         if action == "StartSimulation" then return simulation:Start(player, payload) end
         if action == "StopSimulation" then return simulation:Stop(player) end
-        if action == "ToggleSimulationMotor" then return simulation:Motor(player) end
         if action == "PauseSimulation" then return simulation:Pause(player) end
         if action == "ResetSimulation" then return simulation:Reset(player) end
-        if action == "TuneSimulationMotor" then
-            return simulation:TuneMotor(player, payload)
-        end
         if action == "Place" then return place(player, payload) end
         if action == "Update" then return update(player, payload) end
         if action == "Delete" then return delete(player, payload) end
@@ -1038,7 +1033,7 @@ function Service.Start()
             return
         end
         persistence:Status(player,"Loading","Loading last manually saved plot")
-        simulation:SetStatus(player, false, false)
+        simulation:SetStatus(player,false)
         player.CharacterAdded:Connect(function(character)
             if simulation:IsRunning(player) then simulation:Stop(player) end
             plots:Spawn(player,character)
