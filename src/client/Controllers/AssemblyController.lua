@@ -18,6 +18,7 @@ local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local RelationshipProperties=require(script.Parent:WaitForChild("RelationshipProperties"))
 local HandCrankController=require(script.Parent:WaitForChild("HandCrankController"))
+local RackControlController=require(script.Parent:WaitForChild("RackControlController"))
 local HandCrankMath=require(construction:WaitForChild("HandCrankMath"))
 local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 local INSERTION_STEP_U = 0.5
@@ -210,7 +211,7 @@ function Controller:RefreshHUD()
             local grounded=player:GetAttribute("OPENWORKS_Grounded")~=false
             self.Detail.Text=tostring(self.SimAssemblyName or "Assembly")
                 ..(if paused then "  /  PAUSED" else "  /  RUNNING")
-            self.Help.Text="Hold LMB on crank • release to stop • P stop"
+            self.Help.Text="Hold LMB crank • Z/X guided rack • P stop"
                 ..(if grounded then " • green grounded" else " • free")
         end
         if self.LastMessage and os.clock()<self.MessageUntil then
@@ -844,6 +845,8 @@ function Controller:Start()
     self.Remote = ReplicatedStorage:WaitForChild(Config.RequestName)
     self.HandCrank=HandCrankController.new(self)
     self.HandCrank:Start()
+    self.RackControl=RackControlController.new(self)
+    self.RackControl:Start()
     table.insert(self.Connections,self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
     end))
@@ -1015,6 +1018,7 @@ end
 
 function Controller:Destroy()
     if self.HandCrank then self.HandCrank:Destroy() end
+    if self.RackControl then self.RackControl:Destroy() end
     self:Reset()
     for _, conn in ipairs(self.Connections) do conn:Disconnect() end
     table.clear(self.Connections)
