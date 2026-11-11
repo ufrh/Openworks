@@ -662,8 +662,9 @@ function Simulation:Start(player, payload)
             if groundedKey then session.GroundKeys[groundedKey]=true end
         end
 
-        -- Subtle green/orange physical outlines tell players which
-        -- complete bodies are anchored and which will be free to move.
+        -- Ground/movable colors are drawn by client WorldVisuals as
+        -- fill-only Highlights. Do not create overlapping simulation
+        -- Highlights or outlines here; authored physics stays authoritative.
         for key, originals in pairs(graph.bodies) do
             if graph.included[key] then
                 for _,original in ipairs(originals) do
