@@ -303,7 +303,8 @@ local function commitAssembly(player, before, after, relation, removed, relation
     local state = historyFor(player)
     -- A multi-point fit is ONE history action containing N independently
     -- authored joint specifications. Single-relation history remains intact.
-    local batch=type(relation)=="table" and type(relation[1])=="table"
+    local batch=type(relation)=="table"
+        and (type(relation[1])=="table" or relationEdits~=nil)
     table.insert(state.undo, {
         kind = "Assembly",
         before = before,
