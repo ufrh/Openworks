@@ -189,8 +189,11 @@ function Kinematics:ConfigureSupport(graph,copies,groundKeys,sessionFolder,
             local model=copies[sourceId]
             if model then
                 table.insert(tg.Followers,{
-                    Model=model,Reference=model:GetPivot().Position,
-                    Offset=tg.Center-model:GetPivot().Position,
+                    Model=model,
+                    AxialOffset=(tg.Center-model:GetPivot().Position)
+                        :Dot(model:GetPivot().RightVector),
+                    AxisSign=if tg.Axis:Dot(model:GetPivot().RightVector)>=0
+                        then 1 else -1,
                 })
             end
         end
@@ -233,9 +236,30 @@ function Kinematics:Translate(dt)
         elseif #group.Followers>0 then
             local follower=group.Followers[1]
             if follower.Model.Parent then
-                local position=follower.Model:GetPivot().Position
-                    +follower.Offset
-                shiftGroup(group,position-group.Center)
+                local shaft=follower.Model:GetPivot()
+                local desiredAxis=shaft.RightVector.Unit*follower.AxisSign
+                local center=shaft.Position
+                    +shaft.RightVector*follower.AxialOffset
+                shiftGroup(group,center-group.Center)
+                -- The shaft may TILT while falling under native physics.
+                -- Follow its axle direction but strip axial shaft roll:
+                -- a Rotation-mounted gear must remain free to spin
+                -- independently rather than being welded to the shaft.
+                local dot=math.clamp(group.Axis:Dot(desiredAxis),-1,1)
+                if dot<0.99999 then
+                    local cross=group.Axis:Cross(desiredAxis)
+                    local axis=if cross.Magnitude>0.00001 then cross.Unit
+                        else shaft.UpVector
+                    local rotation=CFrame.new(group.Center)
+                        *CFrame.fromAxisAngle(axis,math.acos(dot))
+                        *CFrame.new(-group.Center)
+                    for _,model in ipairs(group.Models) do
+                        if model.Parent then
+                            model:PivotTo(rotation*model:GetPivot())
+                        end
+                    end
+                    group.Axis=desiredAxis
+                end
             end
             group.FallVelocity=0
         elseif group.Supported then
