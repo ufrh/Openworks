@@ -64,9 +64,9 @@ function Smart.GearPose(source: Model, target: Model, near: Vector3)
     return CFrame.new(center)*rotation,math.abs(radial.Magnitude-pitch)+math.abs(depth)
 end
 
--- Gear bores are real open centers, not bearings. Dragging a gear
--- onto a shaft (or a shaft through a gear) mounts the two as one rigid
--- mechanical assembly, without any two-click hub wizard.
+-- Gear bores are real open centers. Dragging a gear onto a shaft (or
+-- vice versa) aligns the hub; the user must explicitly choose a free
+-- rotational hinge or a rigid weld before the mount is committed.
 function Smart.HubFits(source: Model, target: Model)
     local gearBody=if gear(source) then source else if gear(target) then target else nil
     local shaft=if Alignment.IsShaft(source) then source
@@ -462,7 +462,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     cf=cf,offsetUnits=offset or 0,rollDegrees=roll or 0,
                     relationKind=if kind=="Bore" then "Cylindrical"
                         elseif kind=="CrankCoupling" then "Weld"
-                        elseif kind=="Hub" then "Fixed" else "Gear",
+                        elseif kind=="Hub" then "Rotation" else "Gear",
                     reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score,
                     fittedCount=fitted and #fitted or 0}
