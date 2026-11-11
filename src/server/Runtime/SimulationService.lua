@@ -58,8 +58,9 @@ end
 
 -- The ONLY powered source is a distinct physical HandCrank prefab.
 -- Mechanical relationships never receive an ActuatorType/Motor setting.
-function Simulation:StepCranks(_dt)
+function Simulation:StepCranks(dt)
     local now=os.clock()
+    local blend=1-math.exp(-18*math.clamp(dt,0,0.1))
     for _,session in pairs(self.Sessions) do
         for id,crank in pairs(session.Cranks or {}) do
             local torque=crank.Torque
@@ -69,14 +70,17 @@ function Simulation:StepCranks(_dt)
                 or not crank.Dragging
                 or now-(crank.LastInput or 0)>INPUT_EXPIRES then
                 torque.Torque=Vector3.zero
+                crank.SmoothedDesired=0
                 continue
             end
             local axis=root.CFrame.RightVector.Unit
             local actual=root.AssemblyAngularVelocity:Dot(axis)
             local demand=math.clamp(crank.Desired or 0,
                 -HandCrankMath.MaxAngularSpeed,HandCrankMath.MaxAngularSpeed)
+            crank.SmoothedDesired=(crank.SmoothedDesired or 0)
+                +(demand-(crank.SmoothedDesired or 0))*blend
             local effort=math.clamp(
-                (demand-actual)*HandCrankMath.VelocityGain,
+                (crank.SmoothedDesired-actual)*HandCrankMath.VelocityGain,
                 -HandCrankMath.MaxTorque,HandCrankMath.MaxTorque)
             torque.Torque=axis*effort
         end
@@ -105,11 +109,13 @@ function Simulation:BeginCrank(player,request)
         previous.Torque.Torque=Vector3.zero
         previous.Dragging=false
         previous.Desired=0
+        previous.SmoothedDesired=0
     end
     session.ActiveCrankId=id
     crank.LastInput=os.clock()
     crank.Dragging=false
     crank.Desired=0
+    crank.SmoothedDesired=0
     return true,"Hand crank gripped • hold LMB and drag around the ring"
 end
 
@@ -124,6 +130,7 @@ function Simulation:InputCrank(player,id,desired,dragging,release)
         crank.Torque.Torque=Vector3.zero
         crank.Dragging=false
         crank.Desired=0
+        crank.SmoothedDesired=0
         session.ActiveCrankId=nil
         return
     end
@@ -600,7 +607,7 @@ function Simulation:Start(player, payload)
             session.Cranks[id]={
                 Root=root,Torque=torque,Coupled=coupled,
                 BodyKey=bodyKey(original),LastInput=0,LastPacket=0,
-                Desired=0,Dragging=false,
+                Desired=0,SmoothedDesired=0,Dragging=false,
             }
         end
 
