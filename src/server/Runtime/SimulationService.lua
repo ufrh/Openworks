@@ -24,7 +24,6 @@ Simulation.__index = Simulation
 local MAX_PARTS = 128
 local MAX_JOINTS = 64
 local MAX_COLLISION_PAIRS = 1200
-local INPUT_EXPIRES = 0.35
 
 local function bodyKey(model)
     -- ComponentId is only an editor grouping; NEVER a physical joint.
@@ -59,8 +58,21 @@ end
 
 -- The ONLY powered source is a distinct physical HandCrank prefab.
 -- Mechanical relationships never receive an ActuatorType/Motor setting.
+-- Server-owned on/off state. No per-frame remote input and no mouse
+-- velocity mapping: a click simply requests a fixed angular speed.
+function Simulation:StopCrank(session,id)
+    local crank=session.Cranks and session.Cranks[id]
+    if not crank then return end
+    crank.Running=false
+    crank.Torque.Torque=Vector3.zero
+    crank.SmoothedDesired=0
+    if crank.Model and crank.Model.Parent then
+        crank.Model:SetAttribute("OPENWORKS_CrankRunning",false)
+    end
+    if session.ActiveCrankId==id then session.ActiveCrankId=nil end
+end
+
 function Simulation:StepCranks(dt)
-    local now=os.clock()
     local blend=1-math.exp(-18*math.clamp(dt,0,0.1))
     for owner,session in pairs(self.Sessions) do
         local character=owner.Character
@@ -70,25 +82,16 @@ function Simulation:StepCranks(dt)
             local root=crank.Root
             if not torque.Parent or not root.Parent then continue end
             if session.Paused or session.ActiveCrankId~=id
-                or not crank.Dragging
-                or not playerRoot
-                or (playerRoot.Position-root.Position).Magnitude>22
-                or now-(crank.LastInput or 0)>INPUT_EXPIRES then
+                or not crank.Running or not playerRoot
+                or (playerRoot.Position-root.Position).Magnitude>22 then
                 torque.Torque=Vector3.zero
-                crank.SmoothedDesired=0
-                if not playerRoot
-                    or (playerRoot.Position-root.Position).Magnitude>22 then
-                    crank.Dragging=false
-                    session.ActiveCrankId=nil
-                end
+                if crank.Running then self:StopCrank(session,id) end
                 continue
             end
             local axis=root.CFrame.RightVector.Unit
             local actual=root.AssemblyAngularVelocity:Dot(axis)
-            local demand=math.clamp(crank.Desired or 0,
-                -HandCrankMath.MaxAngularSpeed,HandCrankMath.MaxAngularSpeed)
-            crank.SmoothedDesired=(crank.SmoothedDesired or 0)
-                +(demand-(crank.SmoothedDesired or 0))*blend
+            crank.SmoothedDesired+=(HandCrankMath.FixedAngularSpeed
+                -crank.SmoothedDesired)*blend
             local effort=math.clamp(
                 (crank.SmoothedDesired-actual)*HandCrankMath.VelocityGain,
                 -HandCrankMath.MaxTorque,HandCrankMath.MaxTorque)
@@ -97,6 +100,8 @@ function Simulation:StepCranks(dt)
     end
 end
 
+-- Keep the established request action for compatibility, but change its
+-- behavior to a toggle. The same click starts or stops the drive.
 function Simulation:BeginCrank(player,request)
     local session=self.Sessions[player]
     if not session then return false,"Start simulation (P) before turning a crank" end
@@ -104,58 +109,38 @@ function Simulation:BeginCrank(player,request)
     local id=type(request)=="table" and request.crankId or nil
     local crank=type(id)=="string" and session.Cranks[id] or nil
     if not crank then return false,"Choose a HandCrank in this running assembly" end
+    if session.ActiveCrankId==id and crank.Running then
+        self:StopCrank(session,id)
+        return true,"Hand crank stopped"
+    end
     if not crank.Coupled then
-        return false,"Couple the crank output to a cylinder shaft end in Edit"
+        return false,"Couple the crank output to a cylindrical shaft in Edit"
     end
     if session.GroundKeys and session.GroundKeys[crank.BodyKey] then
-        return false,"The hand crank itself is grounded; ground its bearing housing instead"
+        return false,"Ground the bearing housing, not the hand crank"
     end
     local character=player.Character
     local root=character and character:FindFirstChild("HumanoidRootPart")
     if not root or (root.Position-crank.Root.Position).Magnitude>22 then
         return false,"Move closer to the hand crank to turn it"
     end
-    for _,previous in pairs(session.Cranks) do
-        previous.Torque.Torque=Vector3.zero
-        previous.Dragging=false
-        previous.Desired=0
-        previous.SmoothedDesired=0
+    for previousId in pairs(session.Cranks) do
+        self:StopCrank(session,previousId)
     end
     session.ActiveCrankId=id
-    crank.LastInput=os.clock()
-    crank.Dragging=false
-    crank.Desired=0
+    crank.Running=true
     crank.SmoothedDesired=0
-    return true,"Hand crank gripped • hold LMB and drag around the ring"
+    crank.Model:SetAttribute("OPENWORKS_CrankRunning",true)
+    return true,"Hand crank running • click again to stop"
 end
 
--- Unreliable-speed firehose runs through an Event, not the throttled build
--- request. All incoming values are validated and expire unless refreshed.
-function Simulation:InputCrank(player,id,desired,dragging,release)
+-- Legacy CrankControl remote is release-only. It can no longer inject
+-- arbitrary speed or torque; all drive speed comes from shared constants.
+function Simulation:InputCrank(player,id,_desired,_dragging,release)
+    if release~=true then return end
     local session=self.Sessions[player]
     if not session or session.ActiveCrankId~=id then return end
-    local crank=session.Cranks and session.Cranks[id]
-    if not crank or not crank.Torque.Parent then return end
-    if release==true then
-        crank.Torque.Torque=Vector3.zero
-        crank.Dragging=false
-        crank.Desired=0
-        crank.SmoothedDesired=0
-        session.ActiveCrankId=nil
-        return
-    end
-    if type(desired)~="number" or desired~=desired
-        or desired==math.huge or desired==-math.huge
-        or math.abs(desired)>HandCrankMath.MaxAngularSpeed*2
-        or type(dragging)~="boolean" then return end
-    local now=os.clock()
-    if now-(crank.LastPacket or 0)<0.035 then return end
-    crank.LastPacket=now
-    crank.LastInput=now
-    crank.Dragging=dragging
-    crank.Desired=if dragging
-        then math.clamp(desired,-HandCrankMath.MaxAngularSpeed,
-            HandCrankMath.MaxAngularSpeed) else 0
+    self:StopCrank(session,id)
 end
 
 function Simulation:SetStatus(player,running,grounded)
@@ -603,10 +588,10 @@ function Simulation:Start(player, payload)
             torque.RelativeTo=Enum.ActuatorRelativeTo.World
             torque.Torque=Vector3.zero
             torque.Parent=runtime
+            model:SetAttribute("OPENWORKS_CrankRunning",false)
             session.Cranks[id]={
-                Root=root,Torque=torque,Coupled=coupled,
-                BodyKey=bodyKey(original),LastInput=0,LastPacket=0,
-                Desired=0,SmoothedDesired=0,Dragging=false,
+                Root=root,Model=model,Torque=torque,Coupled=coupled,
+                BodyKey=bodyKey(original),SmoothedDesired=0,Running=false,
             }
         end
 
@@ -773,6 +758,9 @@ function Simulation:Pause(player)
         return true,"Simulation resumed"
     end
 
+    for crankId in pairs(session.Cranks) do
+        self:StopCrank(session,crankId)
+    end
     local state = {}
     for _, item in ipairs(session.World:GetDescendants()) do
         if item:IsA("BasePart") then
