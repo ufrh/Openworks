@@ -970,7 +970,7 @@ function Controller:RefreshSelectionHighlights()
         -- The WHOLE selected component receives one outer boundary, with
         -- no internal primitive outlines or invisible bounding Parts.
         self.ComponentOutline=ComponentOutline.new(
-            self.Gui,self.SelectedParts,Color3.fromRGB(0,170,255))
+            self.SelectionWorldRoot,self.SelectedParts,Color3.fromRGB(0,170,255))
     else
         local model=self.SelectedParts[1]
         if model and model.Parent and model.PrimaryPart then
@@ -980,7 +980,7 @@ function Controller:RefreshSelectionHighlights()
                 OutlineTransparency=0,
                 OutlineColor=Color3.fromRGB(0,170,255),
                 DepthMode=Enum.HighlightDepthMode.Occluded,
-            },self.Gui)
+            },self.SelectionWorldRoot)
             table.insert(self.SelectionHighlights,highlight)
         end
     end
@@ -2087,6 +2087,11 @@ function Controller:Start()
     if self.Started then return end
     self.Started = true
     self:MakeUI()
+    -- Local-only 3D visual instances belong to Workspace, not ScreenGui.
+    -- Keep a single owned container so reload/Destroy can't leak outlines.
+    self.SelectionWorldRoot=Instance.new("Folder")
+    self.SelectionWorldRoot.Name="OPENWORKS_LocalSelectionVisuals"
+    self.SelectionWorldRoot.Parent=workspace
     table.insert(self.Connections,Theme.Attach(self.Gui))
     self.Layered = LayeredEditingController.new(self)
     self.Layered:Start()
@@ -2210,6 +2215,7 @@ function Controller:Destroy()
     for _, connection in ipairs(self.Connections) do connection:Disconnect() end
     table.clear(self.Connections)
     if self.Gui then self.Gui:Destroy() end
+    if self.SelectionWorldRoot then self.SelectionWorldRoot:Destroy() end
 end
 
 return Controller

@@ -29,7 +29,9 @@ local COLORS={
     Slider=Color3.fromRGB(96,185,238),
     Cylindrical=Color3.fromRGB(96,185,238),
 }
-local MAX_HIGHLIGHTS=180
+-- Purple Assembly preview can use up to 128 extra Highlights. Reserve
+-- sufficient slots under Roblox's 255 simultaneous-highlight limit.
+local MAX_HIGHLIGHTS=96
 
 local function newAdornment(parent,class,name)
     local item=Instance.new(class)

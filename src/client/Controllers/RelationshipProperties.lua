@@ -150,7 +150,7 @@ function Properties:OutlineSelection(model)
     h.OutlineTransparency=0
     h.OutlineColor=Color3.fromRGB(0,170,255)
     h.DepthMode=Enum.HighlightDepthMode.Occluded
-    h.Parent=self.Gui
+    h.Parent=self.VisualRoot
     self.SelectedOutline=h
     self.SelectionDestroyConnection=model.Destroying:Connect(function()
         if self.SelectedOutline then
@@ -327,6 +327,9 @@ function Properties:Show(open)
     end
 end
 function Properties:Start()
+    self.VisualRoot=Instance.new("Folder")
+    self.VisualRoot.Name="OPENWORKS_LocalInspectorSelection"
+    self.VisualRoot.Parent=workspace
     local gui=create("ScreenGui",player:WaitForChild("PlayerGui"),{
         Name="OPENWORKS_RelationshipProperties",Enabled=false,
         ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=83,
@@ -433,5 +436,6 @@ function Properties:Destroy()
     self:Show(false)
     for _,connection in ipairs(self.Connections) do connection:Disconnect() end
     if self.Gui then self.Gui:Destroy() end
+    if self.VisualRoot then self.VisualRoot:Destroy() end
 end
 return Properties

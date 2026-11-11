@@ -458,8 +458,11 @@ function Tool:ShowVisuals(members,color)
     self:ClearVisuals()
     if #ids==0 then return end
     self.PreviewCache=signature
-    local root=make("Folder",self.Gui,{
-        Name="OPENWORKS_AssemblySelectionPreview",
+    -- Native Highlights/HandleAdornments render as 3D world feedback.
+    -- Their lifetime is still owned by this client controller, not the
+    -- server's authored constructions.
+    local root=make("Folder",workspace,{
+        Name="OPENWORKS_LocalAssemblyPreview",
     })
     self.PreviewRoot=root
     self.PreviewModels=byId
