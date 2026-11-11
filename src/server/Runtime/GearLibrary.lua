@@ -10,6 +10,8 @@ local LIBRARY = "OPENWORKS_PrimitiveLibrary_DRAFT"
 local MODULE = 0.25 -- stud circular tooth pitch; same for all sizes
 local THICKNESS = 0.3
 local TOOTH_DEPTH = 0.11
+-- Embed each tooth deeper into the body while preserving its outer tip.
+local TOOTH_EMBED = 0.045
 local TEETH = { 12, 20, 32 }
 
 local function solid(name, parent, size, cf, color)
@@ -94,11 +96,14 @@ function GearLibrary.Ensure()
             local angle = (index + 0.5) * 2 * math.pi / count
             local radial = Vector3.new(0, math.cos(angle), math.sin(angle))
             local tangential = Vector3.xAxis:Cross(radial)
-            local position = radial * (pitchRadius + TOOTH_DEPTH * 0.02)
+            -- Tooth roots overlap the gear body by about 0.052 studs,
+            -- while the outer tips and gear pitch remain unchanged.
+            local position = radial *
+                (pitchRadius + TOOTH_DEPTH * 0.02 - TOOTH_EMBED * 0.5)
             local cf = CFrame.fromMatrix(position, Vector3.xAxis, radial, tangential)
             solid("Tooth_" .. tostring(index + 1), model,
-                Vector3.new(THICKNESS, TOOTH_DEPTH, MODULE * 0.51),
-                cf, steel)
+                Vector3.new(THICKNESS, TOOTH_DEPTH + TOOTH_EMBED,
+                    MODULE * 0.51), cf, steel)
         end
 
         model.Parent = transmission
