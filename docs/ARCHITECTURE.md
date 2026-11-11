@@ -13,7 +13,7 @@ Roblox native Tool (Build / Edit / Assembly / Simulate / Inspect / Weld)
   │    ├─ LayeredEditingController, PhysicalHandles, ResizeGizmo (geometry editing)
   │    ├─ AssemblyToolController (named assembly drafts and purple preview)
   │    ├─ AssemblyController (Edit relationships + Simulate UX)
-  │    ├─ HandCrankController (one-click start/stop; no mouse drag)
+  │    ├─ HandCrankController (hold LMB to drive; release stops; no mouse drag)
   │    ├─ RelationshipProperties (read/edit mechanical settings)
   │    ├─ WorldVisuals, ComponentOutline (adornments / grounded state)
   │    ├─ PlotSaveController (manual F6 Save/Load)
@@ -52,14 +52,14 @@ FORGE/Reforge remains in `src/forge-shared` and `src/forge-server`; domain-speci
 
 - Client state, ghost transforms, property panels and adornments are **advisory**.
 - Server must verify **equipped native Tool**, owning player, individual IDs, valid data, plot, distance where appropriate, collisions and physical-fit limits before mutating.
-- `ConstructionService` is the only dispatcher for `OPENWORKS_ConstructionRequest`. The hand crank uses a validated `BeginCrank` toggle through this request; the legacy `OPENWORKS_CrankControl` event is release-only and cannot inject speeds. The server applies a fixed angular-speed target with bounded physical torque and cancels it on pause/range loss/stop.
+- `ConstructionService` is the only dispatcher for `OPENWORKS_ConstructionRequest`. The hand crank uses a validated `BeginCrank` press through this request; `OPENWORKS_CrankControl` carries authenticated held-input heartbeats and release signals, never arbitrary speeds. The server applies a fixed angular-speed target with bounded physical torque and cancels it on release, heartbeat timeout, pause, range loss, or stop.
 - Only `Assembly` may `CreateAssembly` / `UpdateAssembly`. Only `Simulate` may start/pause/reset and operate a manual crank. `Edit` authors mechanical joints; `Weld` creates explicit touching-solid welds.
 - Naming an assembly sends the **exact** selected primitive IDs to the server; it never trusts selected client Instances or automatically traverses relationships.
 - Geometry mutation is different from metadata-only mutation. The latter uses `commitMetadata` / `restoreMetadata` to undo/redo membership, grouping and grounding **in place**; do not route it through destructive geometry reconstruction.
 
 ## Constructed vs simulated world
 
-Authoritative constructed models live under `Workspace.OPENWORKS_Constructed`. They remain anchored while editing. Registered assemblies are simulated by making temporary clones under `Workspace.OPENWORKS_Simulated.Simulation_<UserId>`. The compiler installs native passive joints on the cloned primary parts, internal prefab welds, explicit authored rigid relationships, and actual spring constraints. Only the hand-crank prefab may install native Torque input, toggled by a player click at a fixed requested angular speed. No relationship itself receives motor energy. Hand cranks resize their physical output diameter and radial subparts when explicitly coupled to a cylindrical shaft; the primary-part size is persisted and reconstructed by undo/redo and plot load. A gear hub mount must be explicitly authored as Rotation (unpowered Hinge/Bearing) or Rigid (Weld), never an editor-only component merge. A drilled block may be rigidly welded to a truly inserted, clearance-fitted shaft without metal-to-metal surface contact; arbitrary remote or floating welds remain rejected.
+Authoritative constructed models live under `Workspace.OPENWORKS_Constructed`. They remain anchored while editing. Registered assemblies are simulated by making temporary clones under `Workspace.OPENWORKS_Simulated.Simulation_<UserId>`. The compiler installs native passive joints on the cloned primary parts, internal prefab welds, explicit authored rigid relationships, and actual spring constraints. Only the hand-crank prefab may install native Torque input, driven only while the player holds LMB at a fixed requested angular speed. No relationship itself receives motor energy. Hand cranks resize their physical output diameter and radial subparts when explicitly coupled to a cylindrical shaft; the primary-part size is persisted and reconstructed by undo/redo and plot load. A gear hub mount must be explicitly authored as Rotation (unpowered Hinge/Bearing) or Rigid (Weld), never an editor-only component merge. A drilled block may be rigidly welded to a truly inserted, clearance-fitted shaft without metal-to-metal surface contact; arbitrary remote or floating welds remain rejected.
 
 Simulating must never overwrite player-authored original CFrames or delete saved membership. Stop/Reset destroys session clones and restores original transparency/collision/anchoring. The server owns simulation physics; the client may only view/operate it through validated controls.
 
@@ -80,7 +80,7 @@ The shared Studio-style UI design lives in `StudioTheme.lua`. Normal Simulate re
 - Only `ConstructionService` should dispatch authoritative construction requests and own construction history.
 - Domain services should receive explicit dependencies through `.new(deps)`; do not write to arbitrary client state or DataStores.
 - Add physical geometry algorithms to `src/shared/Construction` when reusable by both client preview and server validation.
-- Avoid per-frame remote invocations. Hand-crank activation is a one-shot validated construction request; torque is integrated on server Heartbeat and the legacy crank event can only release.
+- Avoid per-frame remote invocations. Hand-crank activation is a one-shot validated construction request; held-input liveness and release use the separate crank event, while bounded torque is integrated on server Heartbeat.
 - Every client controller should own and disconnect its signals, visual folders and render bindings on `:Destroy()`.
 - Do not change tool action names or IDs, template IDs, saved schema fields or relationship kinds without a deliberate migration.
 - Retire dead UI paths instead of leaving unreachable branches; keep current rules in this document and old experiments in the archive.
