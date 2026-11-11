@@ -12,7 +12,6 @@ local Construction=RS:WaitForChild("Openworks"):WaitForChild("Construction")
 local Config=require(Construction:WaitForChild("BuildConfig"))
 local Grid=require(Construction:WaitForChild("GridMath"))
 local Theme=require(script.Parent:WaitForChild("StudioTheme"))
-local ComponentOutline=require(script.Parent:WaitForChild("ComponentOutline"))
 
 local player=Players.LocalPlayer
 local PURPLE=Color3.fromRGB(179,115,255)
@@ -528,35 +527,11 @@ function Tool:ShowVisuals(members,color)
     })
     self.PreviewRoot=root
     self.PreviewModels=byId
-    local groups={}
-    local singles={}
+    -- Each selected assembly primitive gets its OWN silhouette, even
+    -- when it belongs to the same editor component. The former unified
+    -- component bounding-box outline enclosed unwanted empty space.
     for _,id in ipairs(ids) do
         local model=byId[id]
-        local group=model:GetAttribute("ComponentId")
-        if type(group)=="string" and group~="" then
-            groups[group]=groups[group] or {}
-            table.insert(groups[group],model)
-        else
-            table.insert(singles,model)
-        end
-    end
-    for _,membersOfGroup in pairs(groups) do
-        if #membersOfGroup>1 then
-            local outer=ComponentOutline.new(root,membersOfGroup,color)
-            table.insert(self.PreviewOutlines,outer)
-            for _,member in ipairs(membersOfGroup) do
-                make("Highlight",root,{
-                    Name="AssemblyGroupFill",Adornee=member,
-                    FillColor=color,FillTransparency=0.84,
-                    OutlineTransparency=1,
-                    DepthMode=Enum.HighlightDepthMode.Occluded,
-                })
-            end
-        else
-            table.insert(singles,membersOfGroup[1])
-        end
-    end
-    for _,model in ipairs(singles) do
         make("Highlight",root,{
             Name="AssemblyPrimitive",Adornee=model,
             FillColor=color,FillTransparency=0.88,
