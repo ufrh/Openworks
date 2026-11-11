@@ -276,7 +276,7 @@ function Context:Start()
         if now - self.LastUpdate < 0.15 then return end
         self.LastUpdate = now
         local mode = self.Tools.ActiveId
-        self.Panel.Visible = mode ~= nil
+        self.Panel.Visible = mode ~= nil and mode~="Simulate"
         if not mode then return end
         self.Title.Text = "CONTROLS  /  " .. string.upper(mode)
         local value = table.concat(self:Lines(), "\n")

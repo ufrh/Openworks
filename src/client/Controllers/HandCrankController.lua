@@ -83,6 +83,9 @@ function Controller:TryGrab()
         self.Starting=false
         if not accepted then
             self.Pressed=false
+            if self.Assembly.Properties then
+                self.Assembly.Properties:InspectAtCenter()
+            end
             return
         end
         if not self.Pressed then

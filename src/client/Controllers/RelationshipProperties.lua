@@ -92,7 +92,7 @@ function Properties:Relations()
     end)
     return relations
 end
-function Properties:SelectWorld()
+function Properties:SelectWorld(centered)
     local camera=workspace.CurrentCamera
     if not camera then return end
     local roots={}
@@ -104,7 +104,8 @@ function Properties:SelectWorld()
     params.FilterType=Enum.RaycastFilterType.Include
     params.FilterDescendantsInstances=roots
     params.IgnoreWater=true
-    local mouse=UIS:GetMouseLocation()
+    local mouse=if centered then camera.ViewportSize*0.5
+        else UIS:GetMouseLocation()
     local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
     local hit=workspace:Raycast(ray.Origin,ray.Direction*Grid.MaxDistance,params)
     local instance=hit and hit.Instance
@@ -115,13 +116,36 @@ function Properties:SelectWorld()
             self.SelectedId=instance:GetAttribute("InstanceId")
             self.SelectedName=instance.Name:gsub("^Sim_","")
             self.SelectedRelation=nil
-            self:Refresh()
+            self:OutlineSelection(instance)
+            if not self.Open then self:Show(true) else self:Refresh() end
             return
         end
         instance=instance.Parent
     end
-    self.Status.Text="Click one of your constructed or simulated parts"
+    if self.Status then
+        self.Status.Text="Aim at a constructed or simulated part"
+    end
 end
+
+function Properties:OutlineSelection(model)
+    if self.SelectedOutline then self.SelectedOutline:Destroy() end
+    self.SelectedOutline=nil
+    if not model or not model.Parent then return end
+    local h=Instance.new("Highlight")
+    h.Name="OPENWORKS_InspectorSelection"
+    h.Adornee=model
+    h.FillTransparency=1
+    h.OutlineTransparency=0
+    h.OutlineColor=Color3.fromRGB(0,170,255)
+    h.DepthMode=Enum.HighlightDepthMode.Occluded
+    h.Parent=self.Gui
+    self.SelectedOutline=h
+end
+
+function Properties:InspectAtCenter()
+    self:SelectWorld(true)
+end
+
 function Properties:Field(name,value)
     label(self.Editor,name,19)
     local edit=rounded(create("TextBox",self.Editor,{
@@ -168,6 +192,12 @@ function Properties:Apply()
 end
 function Properties:Refresh()
     if not self.Gui then return end
+    if self.SelectedOutline and not self.SelectedOutline.Adornee.Parent then
+        self.SelectedOutline:Destroy()
+        self.SelectedOutline=nil
+        self.SelectedRelation=nil
+        self.SelectedId=nil
+    end
     clear(self.RelationList)
     clear(self.Editor)
     self.Fields={}
@@ -242,6 +272,10 @@ function Properties:Show(open)
     if not open then
         self.Looking=false
         player:SetAttribute("OPENWORKS_PropertiesLooking",false)
+        if self.SelectedOutline then self.SelectedOutline:Destroy() end
+        self.SelectedOutline=nil
+        UIS.MouseBehavior=Enum.MouseBehavior.LockCenter
+        UIS.MouseIconEnabled=false
     end
     if open then
         UIS.MouseBehavior=Enum.MouseBehavior.Default
@@ -262,10 +296,14 @@ function Properties:Start()
     })
     self.WorldSurface=surface
     surface.Activated:Connect(function()
-        if not self.Looking then self:SelectWorld() end
+        if not self.Looking then self:SelectWorld(false) end
     end)
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,_processed)
         if not self.Open then return end
+        if input.KeyCode==Enum.KeyCode.Escape then
+            self:Show(false)
+            return
+        end
         if input.UserInputType==Enum.UserInputType.MouseButton2 then
             self.Looking=true
             surface.Visible=false
@@ -293,7 +331,9 @@ function Properties:Start()
     create("UIListLayout",panel,{Padding=UDim.new(0,8)})
     local title=label(panel,"OPENWORKS  /  SIMULATE PROPERTIES",25)
     title.TextColor3=WHITE
-    self.Heading=label(panel,"CLICK A PART IN THE WORLD",40)
+    local close=button(panel,"×  Close Inspector  [Esc]",25)
+    close.Activated:Connect(function() self:Show(false) end)
+    self.Heading=label(panel,"CLICK A PART IN THE WORLD",35)
     self.RelationList=create("ScrollingFrame",panel,{
         Size=UDim2.new(1,0,0,130),BackgroundTransparency=1,
         BorderSizePixel=0,ScrollBarThickness=3,

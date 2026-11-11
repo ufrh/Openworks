@@ -2090,8 +2090,8 @@ function Controller:Start()
     RunService:BindToRenderStep("OPENWORKS_CursorUnlock",
         Enum.RenderPriority.Camera.Value + 2, function()
             if player:GetAttribute("OPENWORKS_CrankActive")==true then
-                UserInputService.MouseBehavior=Enum.MouseBehavior.Default
-                UserInputService.MouseIconEnabled=true
+                UserInputService.MouseBehavior=Enum.MouseBehavior.LockCenter
+                UserInputService.MouseIconEnabled=false
             elseif player:GetAttribute("OPENWORKS_PropertiesLooking")==true then
                 UserInputService.MouseBehavior=Enum.MouseBehavior.LockCenter
                 UserInputService.MouseIconEnabled=false

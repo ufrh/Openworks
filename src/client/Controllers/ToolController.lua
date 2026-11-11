@@ -43,6 +43,7 @@ function ToolController:SetActive(tool)
 
     self.ActiveTool = tool
     self.ActiveId = if tool then tool:GetAttribute("OpenworksToolId") else nil
+    player:SetAttribute("OPENWORKS_ActiveTool",self.ActiveId or "")
     self.Changed:Fire(self.ActiveId)
 
     if self.ActiveId then

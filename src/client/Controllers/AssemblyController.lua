@@ -84,7 +84,7 @@ local function createGui()
         return object
     end
 
-    return gui, label(7, 26, 15, Color3.fromRGB(234, 242, 249)),
+    return gui, panel, label(7, 26, 15, Color3.fromRGB(234, 242, 249)),
         label(37, 31, 14, Color3.fromRGB(181, 214, 230)),
         label(72, 39, 12, Color3.fromRGB(169, 191, 204))
 end
@@ -164,8 +164,11 @@ end
 function Controller:RefreshHUD()
     if not self.Gui then return end
     self.Gui.Enabled = self.Active
-        and (self.Mode == "Simulate" or self.Mode=="Weld" or self.ManualActive)
-    if not self.Gui.Enabled then return end
+        and (self.Mode=="Simulate" or self.Mode=="Weld" or self.ManualActive)
+    self.HUDPanel.Visible=self.Mode~="Simulate"
+    -- Simulate keeps ONLY the minimal aiming crosshair, no persistent
+    -- relationship text or instructions. Click a part for its inspector.
+    if not self.Gui.Enabled or self.Mode=="Simulate" then return end
 
     if self.Mode=="Weld" then
         self.Header.Text="OPENWORKS / WELD"
@@ -833,12 +836,12 @@ function Controller:OnModeChanged(mode)
     if self.Mode~=mode then self:Reset() end
     self.Mode=mode
     self.Active=mode=="Edit" or mode=="Simulate" or mode=="Weld"
-    if self.Properties then self.Properties:Show(mode=="Simulate") end
+    if self.Properties then self.Properties:Show(false) end
     self:RefreshHUD()
 end
 
 function Controller:Start()
-    self.Gui, self.Header, self.Detail, self.Help = createGui()
+    self.Gui, self.HUDPanel, self.Header, self.Detail, self.Help = createGui()
     self.Properties=RelationshipProperties.new(self)
     self.Properties:Start()
     self.Remote = ReplicatedStorage:WaitForChild(Config.RequestName)
@@ -848,9 +851,12 @@ function Controller:Start()
         self:OnModeChanged(mode)
     end))
     table.insert(self.Connections,self.Tools.Activated.Event:Connect(function(mode)
-        if mode=="Simulate" and not self:IsSimulating()
+        if mode=="Simulate"
             and not player:GetAttribute("OPENWORKS_PropertiesOpen") then
-            self:ToggleGround()
+            -- Short click selects a body and opens its Inspector. Holding
+            -- LMB on a physical crank drives it without unlocking mouse.
+            if self.HandCrank and self.HandCrank:TryGrab() then return end
+            self.Properties:InspectAtCenter()
         elseif mode=="Weld" then
             self:WeldClick()
         end
