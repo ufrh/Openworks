@@ -11,6 +11,9 @@ local RACK_POSITION_TOLERANCE=0.075
 
 function GearMath.Kind(model:Model?):string
     if not model then return "None" end
+    if type(model:GetAttribute("RackGuideLengthStuds"))=="number" then
+        return "RackGuide"
+    end
     if type(model:GetAttribute("RackPitchStuds"))=="number" then
         return "Rack"
     end
@@ -60,6 +63,43 @@ function GearMath.AutoBevelStatus(a:Model,b:Model):(boolean,string,number)
         return false,"Bevel pitch-cone apexes do not coincide",proximity
     end
     return true,"45-degree bevel mesh",proximity
+end
+
+-- An unpowered, grounded rack guide constrains ONLY translation.
+-- A guide must be at least as long as the toothed rack and share its
+-- X/Up/slide orientation. Small clearance between rail and rack is
+-- geometric, not simulated Roblox PrismaticConstraint force.
+function GearMath.AutoGuideStatus(a:Model,b:Model):(boolean,string,number)
+    local rack=if GearMath.Kind(a)=="Rack" then a else b
+    local guide=if rack==a then b else a
+    if GearMath.Kind(rack)~="Rack"
+        or GearMath.Kind(guide)~="RackGuide" then
+        return false,"Rack requires a matching stationary guide",math.huge
+    end
+    local rackLength=rack:GetAttribute("RackLengthStuds")
+    local guideLength=guide:GetAttribute("RackGuideLengthStuds")
+    if type(rackLength)~="number" or type(guideLength)~="number"
+        or rackLength>guideLength-0.25 then
+        return false,"Guide is too short for the rack",math.huge
+    end
+    local rf,gf=rack:GetPivot(),guide:GetPivot()
+    local alignment=1-rf.LookVector:Dot(gf.LookVector)
+    local difference=rf.Position-gf.Position
+    local x=math.abs(difference:Dot(gf.RightVector))
+    local y=math.abs(difference:Dot(gf.UpVector))
+    local travel=math.abs(difference:Dot(gf.LookVector))
+    local limit=(guideLength-rackLength)*0.5
+    local error=x+y+math.max(0,travel-limit)
+    if alignment>0.001 or rf.UpVector:Dot(gf.UpVector)<0.999 then
+        return false,"Rack and guide axes must match",error+1
+    end
+    if x>0.09 or y>0.10 then
+        return false,"Rack is outside guide lane",error
+    end
+    if travel>limit+0.03 then
+        return false,"Rack would slide beyond the guide",error
+    end
+    return true,"Rack in guide",error
 end
 
 -- Rack gear teeth run along local Z, with tooth pitch surface at local
@@ -144,6 +184,9 @@ local MESH_PITCH_TOLERANCE=0.09
 function GearMath.AutoMeshStatus(a:Model,b:Model):(boolean,string,number)
     local kindA=GearMath.Kind(a)
     local kindB=GearMath.Kind(b)
+    if kindA=="RackGuide" or kindB=="RackGuide" then
+        return GearMath.AutoGuideStatus(a,b)
+    end
     if kindA=="Rack" or kindB=="Rack" then
         return GearMath.AutoRackStatus(a,b)
     end
