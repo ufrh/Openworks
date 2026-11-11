@@ -302,6 +302,15 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
 
     local members=Smart.Members(ghost)
     if #members==0 then return nil end
+    -- Cache welded/editor-group scope per scan to avoid redundant network
+    -- traversals for every one of four holes and four fixed shafts.
+    local scopedCache={}
+    local function scoped(target)
+        if scopedCache[target] then return scopedCache[target] end
+        local group=MultiFit.Scope(target,allTargets or targets)
+        for _,member in ipairs(group) do scopedCache[member]=group end
+        return group
+    end
     local best,bestScore=nil,math.huge
     local matches={}
     for _,source in ipairs(members) do
@@ -376,7 +385,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 end
             end
             if cf and kind=="Bore" and #members>1 then
-                local chosenTargets=MultiFit.Scope(target,allTargets or targets)
+                local chosenTargets=scoped(target)
                 local initial=MultiFit.Find(members,chosenTargets,
                     cf*ghost:GetPivot():Inverse(),ignored)
                 -- Solve the full pattern even if a partial 2/4 snap
@@ -406,7 +415,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 if kind=="Bore" then
                     local delta=cf*ghost:GetPivot():Inverse()
                     local raw=MultiFit.Find(members,
-                        MultiFit.Scope(target,allTargets or targets),
+                        scoped(target),
                         delta,ignored)
                     fitted=raw and MultiFit.Unique(raw,
                         source:GetAttribute("InstanceId"),
@@ -427,7 +436,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                         if error.Magnitude>0.00005 then
                             local candidateCF=CFrame.new(error)*cf
                             local checked=MultiFit.Find(members,
-                                MultiFit.Scope(target,allTargets or targets),
+                                scoped(target),
                                 candidateCF*ghost:GetPivot():Inverse(),ignored)
                             local refined=checked and MultiFit.Unique(checked,
                                 source:GetAttribute("InstanceId"),
