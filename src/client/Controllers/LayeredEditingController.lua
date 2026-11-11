@@ -410,7 +410,7 @@ function Layered:StartAlignment()
     self.HoveredCandidate = nil
     self.LastHoverRefresh = 0
     self:RefreshVisuals()
-    parent:Message("Aim at a tube or drilled opening, then click")
+    parent:Message("Aim at a tube, drilled opening or gear bore, then click")
 end
 
 function Layered:ChooseTarget()
@@ -427,7 +427,7 @@ function Layered:ChooseTarget()
         return
     end
     if not AlignmentMath.TargetAxis(target) then
-        self.Parent:Message("Choose a CircularTube, SquareTube, or DrilledBlock")
+        self.Parent:Message("Choose a tube, DrilledBlock or gear center opening")
         return
     end
 
@@ -547,6 +547,7 @@ function Layered:ConfirmAlignment()
     local componentId=align.ComponentId
     local offset=align.OffsetUnits
     local roll=align.RollDegrees
+    local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"
     parent.PendingMateChoice="ManualAlign"
     parent.MateChoice:Show(function(choice)
         parent.PendingMateChoice=nil
@@ -562,7 +563,18 @@ function Layered:ConfirmAlignment()
             parent:RefreshHUD()
             return
         end
-        local ok=parent:Request({
+        -- The gear uses the same atomic Hub transaction as drag-snap.
+        -- This creates a validated unpowered hinge or rigid shaft weld.
+        local approach=selected.Target:GetPivot().Position
+            +selected.Target:GetPivot().RightVector*offset*Grid.Unit
+        local ok=parent:Request(if isGear then {
+            action="SmartMate",
+            mateKind="Hub",
+            relationKind=choice,
+            sourceId=sourceId,
+            targetId=targetId,
+            approach=approach,
+        } else {
             action=if choice=="FreeFit" then "Align" else "CreateRelation",
             kind=if choice=="FreeFit" then nil else choice,
             sourceId=sourceId,
@@ -581,7 +593,7 @@ function Layered:ConfirmAlignment()
         end
         parent:RefreshPointer()
         parent:RefreshHUD()
-    end,1,false)
+    end,1,isGear)
 end
 
 function Layered:Click()
