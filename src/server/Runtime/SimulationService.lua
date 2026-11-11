@@ -773,7 +773,12 @@ function Simulation:Start(player, payload)
             if groundedKey then session.GroundKeys[groundedKey]=true end
         end
 
-        session.Gears:MarkGrounding(session.GroundKeys)
+        -- Bearing housings support geared axles translationally without
+        -- applying any native Roblox hinge force to gear rotation. Loose
+        -- geared shafts instead fall as one scripted rigid body; a free
+        -- bearing-mounted gear follows the shaft's movement.
+        session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,
+            created,player.Character,d.folder)
 
         -- Ground/movable colors are drawn by client WorldVisuals as
         -- fill-only Highlights. Do not create overlapping simulation
