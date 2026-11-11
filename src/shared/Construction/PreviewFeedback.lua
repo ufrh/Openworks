@@ -8,6 +8,8 @@ local Bore = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("BoreClearance"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
+local Smart = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("SmartPlacement"))
 
 local BoltMath=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("BoltMath"))
@@ -71,6 +73,12 @@ function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
                 end
                 if BoltMath.IsBolt(movingModel) then
                     fits=BoltMath.Fits(movingModel,target)
+                end
+                -- A shaft can be inserted into the genuine opening of
+                -- a gear in either direction, without a false red preview.
+                -- Only exempt a verified concentric, clearance-fitting hub.
+                if not fits and movingModel then
+                    fits=Smart.HubFits(movingModel,target)
                 end
                 if not fits and not GearMath.Meshable(movingModel,target) then
                     return false, tostring(movingModel and movingModel.Name or part.Name)
