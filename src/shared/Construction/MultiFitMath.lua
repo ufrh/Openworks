@@ -176,7 +176,11 @@ function Fit.Completeness(movingMembers,stationaryModels,pairs,reverse)
             stationaryCount+=1
         end
     end
-    if movingCount<=1 or movingCount~=stationaryCount then return true end
+    local expected=math.min(movingCount,stationaryCount)
+    if expected<=1 then return true end
+    -- A 4-hole plate can fit four rods even if its supporting structure
+    -- also has unrelated fifth/sixth shafts. The expected count is the
+    -- smaller compatible side, NOT only when both counts are identical.
     local movingUnique,stationaryUnique={},{}
     local fitCount=0
     for _,pair in ipairs(pairs or {}) do
@@ -188,17 +192,16 @@ function Fit.Completeness(movingMembers,stationaryModels,pairs,reverse)
             fitCount+=1
         end
     end
-    if fitCount<movingCount then
+    if fitCount<expected then
         return false,string.format(
-            "Only %d/%d holes fitted. Check every rod, diameter, angle and spacing",
-            fitCount,movingCount)
+            "Only %d/%d shaft-hole pairs fitted. Check all angles and spacing",
+            fitCount,expected)
     end
-    -- Multiple independent prismatic constraints cannot solve a pattern
-    -- whose axes are merely "close" to coaxial. Reject instead of letting
-    -- the physics solver shove the upper plate sideways on simulation.
+    -- Multiple genuine constraints require their axes to be exceptionally
+    -- close. Do not silently use just one accepted guide.
     for _,pair in ipairs(pairs or {}) do
         if pair.radial>Grid.Unit*0.04 or (pair.angular or 0)<0.999995 then
-            return false,"All guides must be exactly aligned for multiple joints"
+            return false,"Guide pattern is slightly offset; re-align the whole component"
         end
     end
     return true
