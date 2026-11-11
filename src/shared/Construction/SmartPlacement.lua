@@ -75,9 +75,19 @@ function Smart.HubFits(source: Model, target: Model)
     if not gearBody or not shaft or not shaft.PrimaryPart then
         return false,"Hub requires one gear and one cylindrical shaft"
     end
+    -- A gear hub is truly concentric, not merely somewhere within
+    -- its clearance cavity. Keep a precise centered mount (including
+    -- both polarities of shaft insertion) so the simulated hinge axis
+    -- cannot be offset from the actual rotating gear center.
+    local gcf,scf=gearBody:GetPivot(),shaft:GetPivot()
+    local direction=scf.RightVector.Unit
+    local separation=gcf.Position-scf.Position
+    local eccentricity=(separation-direction*separation:Dot(direction)).Magnitude
+    if eccentricity>0.012 then
+        return false,"Gear hub must be centered on the shaft axis"
+    end
     -- One authoritative clearance predicate for gears, tubes and holes.
-    -- Checks perpendicular distance from bore center, diameter, coaxial
-    -- orientation and physical engagement rather than pivot overlap alone.
+    -- Also checks shaft diameter, coaxial orientation and engagement.
     return Bore.ShaftFits(shaft,gearBody)
 end
 
