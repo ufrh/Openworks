@@ -15,11 +15,16 @@ Smart.HubAimRadius = 0.24 -- small crosshair tolerance through an empty bore
 Smart.HubAxialReach = 0.65 -- axial approach tolerance, excluding shaft overlap
 Smart.GearPitchCapture = 0.7 -- radial proximity to the true mesh pitch circle
 Smart.GearFaceCapture = 0.55 -- transient cursor distance from axial gear plane
+Smart.BevelCapture = 0.85 -- near the proper 45-degree pitch-cone apex
+Smart.RackCapture = 0.65 -- near actual straight toothed pitch line
 Smart.MaxAxialOffsetUnits = 64
 Smart.PreviewInterval = 0.08
 
 local function gear(model)
     return model and type(model:GetAttribute("GearTeeth")) == "number"
+end
+local function rack(model)
+    return GearMath.Kind(model)=="Rack"
 end
 
 function Smart.Members(ghost: Model)
@@ -38,6 +43,10 @@ end
 
 function Smart.GearPose(source: Model, target: Model, near: Vector3)
     if not gear(source) or not gear(target) then return nil end
+    if GearMath.Kind(source)=="Bevel45"
+        or GearMath.Kind(target)=="Bevel45" then
+        return Smart.BevelPose(source,target,near)
+    end
     local moduleA, moduleB = source:GetAttribute("GearModuleStuds"),
         target:GetAttribute("GearModuleStuds")
     if type(moduleA) ~= "number" or type(moduleB) ~= "number"
@@ -79,6 +88,87 @@ function Smart.GearPose(source: Model, target: Model, near: Vector3)
         math.abs(radial.Magnitude-pitch)+math.abs(depth)
 end
 
+-- Place an equal-tooth bevel at the intersection of two pitch
+-- cones, where the shaft directions meet at 45 degrees. The direction
+-- around the fixed shaft is selected by approaching with the cursor;
+-- the cone apex position and exact shaft angle are never guessed.
+function Smart.BevelPose(source:Model,target:Model,near:Vector3)
+    if GearMath.Kind(source)~="Bevel45"
+        or GearMath.Kind(target)~="Bevel45" then return nil end
+    if source:GetAttribute("GearTeeth")~=target:GetAttribute("GearTeeth")
+        or math.abs((source:GetAttribute("GearModuleStuds") or -1)
+            -(target:GetAttribute("GearModuleStuds") or -2))>0.0001 then
+        return nil
+    end
+    local fixed=target:GetPivot()
+    local xaxis=fixed.RightVector.Unit
+    local apex=GearMath.BevelApex(target)
+    local diff=near-apex
+    local lateral=diff-xaxis*diff:Dot(xaxis)
+    local side=if lateral.Magnitude>0.001
+        then lateral.Unit else fixed.UpVector
+    local angle=math.rad(45)
+    local newAxis=xaxis*math.cos(angle)+side*math.sin(angle)
+    local radius=GearMath.PitchRadius(source)
+    local center=apex+newAxis*radius/math.tan(math.rad(22.5))
+    if (center-near).Magnitude>Smart.BevelCapture
+        +radius*0.75 then return nil end
+    local up=side-newAxis*side:Dot(newAxis)
+    if up.Magnitude<0.001 then up=fixed.UpVector end
+    up=up.Unit
+    local pose=CFrame.fromMatrix(center,newAxis,up,newAxis:Cross(up))
+    return pose,(center-near).Magnitude
+end
+
+-- A rack slides along its own long axis. For Rack->Pinion we keep the
+-- rack's pitch surface facing the pinion; for Pinion->Rack we place the
+-- pinion over the rack's actual pitch line. Both are reversible in the
+-- simulation solver once physically positioned.
+function Smart.RackPose(source:Model,target:Model,near:Vector3)
+    local kindSource,kindTarget=GearMath.Kind(source),GearMath.Kind(target)
+    if not ((kindSource=="Rack" and kindTarget=="Spur")
+        or (kindSource=="Spur" and kindTarget=="Rack")) then
+        return nil
+    end
+    local rackBody=if kindSource=="Rack" then source else target
+    local pinion=if kindSource=="Spur" then source else target
+    if math.abs((rackBody:GetAttribute("RackPitchStuds") or -1)
+        -(pinion:GetAttribute("GearModuleStuds") or -2))>0.0001 then
+        return nil
+    end
+    local radius=GearMath.PitchRadius(pinion)
+    local offset=rackBody:GetAttribute("RackPitchOffsetStuds")
+    local length=rackBody:GetAttribute("RackLengthStuds")
+    if type(offset)~="number" or type(length)~="number" then return nil end
+    local pose
+    if kindTarget=="Rack" then
+        local cf=target:GetPivot()
+        local along=(near-cf.Position):Dot(cf.LookVector)
+        local maxAlong=math.max(0,length*0.5
+            -(rackBody:GetAttribute("RackPitchStuds") or 0)*2)
+        along=math.clamp(along,-maxAlong,maxAlong)
+        local center=cf.Position+cf.UpVector*(radius+offset)
+            +cf.LookVector*along
+        pose=CFrame.fromMatrix(center,cf.RightVector,cf.UpVector,
+            cf.RightVector:Cross(cf.UpVector))
+    else
+        local cf=target:GetPivot()
+        local axis=cf.RightVector.Unit
+        local direction=cf.Position-near
+        direction-=axis*direction:Dot(axis)
+        local up=if direction.Magnitude>0.001
+            then direction.Unit else cf.UpVector
+        local back=axis:Cross(up)
+        local center=cf.Position-up*(radius+offset)
+        pose=CFrame.fromMatrix(center,axis,up,back)
+    end
+    if (pose.Position-near).Magnitude>
+        math.max(Smart.RackCapture,radius*0.65+Smart.RackCapture) then
+        return nil
+    end
+    return pose,(pose.Position-near).Magnitude
+end
+
 -- Solve the intersection of TWO pitch circles when the moving gear
 -- can simultaneously engage two stationary gears. This is an ordinary
 -- geometry problem, not a hardcoded 3-gear relationship. Repeated gear
@@ -87,6 +177,10 @@ function Smart.MultiGearPose(source:Model,target:Model,near:Vector3,
     options:{Model}?):(CFrame?,number?,number)
     local base,baseError=Smart.GearPose(source,target,near)
     if not base then return nil,nil,0 end
+    if GearMath.Kind(source)~="Spur"
+        or GearMath.Kind(target)~="Spur" then
+        return base,baseError,1
+    end
     if not options or not source.PrimaryPart then return base,baseError,1 end
     local first=target:GetPivot()
     local axis=first.RightVector.Unit
@@ -415,8 +509,9 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
     for _,source in ipairs(members) do
         local isShaft=Alignment.IsShaft(source)
         local isGear=gear(source)
+        local isRack=rack(source)
         local isOpening=Alignment.TargetAxis(source)~=nil
-        if not isShaft and not isGear and not isOpening then continue end
+        if not isShaft and not isGear and not isRack and not isOpening then continue end
         for _,target in ipairs(targets) do
             if not target or not target.Parent or not target.PrimaryPart
                 or (ignored and ignored[target]) then continue end
@@ -494,10 +589,23 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     roll=r
                     score=if aimed then math.min(dist,rayError+0.12) else dist
                 end
+            elseif (isRack and GearMath.Kind(target)=="Spur")
+                or (isGear and GearMath.Kind(source)=="Spur"
+                    and rack(target)) then
+                local directAim=aimedModel==target
+                approach=source:GetPivot().Position
+                local pose,dist=Smart.RackPose(source,target,approach)
+                if pose then
+                    kind="Rack"
+                    cf=(pose*source:GetPivot():Inverse())*ghost:GetPivot()
+                    approach=pose.Position
+                    score=if directAim then -0.15 else dist+0.12
+                end
             elseif isGear and gear(target) then
                 local directAim=aimedModel==target
                 approach=source:GetPivot().Position
-                if directAim then
+                if directAim and GearMath.Kind(source)=="Spur"
+                    and GearMath.Kind(target)=="Spur" then
                     -- The ray often strikes a TOOTH, not the transparent
                     -- center pivot. Surface-placement may therefore push
                     -- the moving gear away from its ideal pitch ring.
@@ -597,12 +705,14 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     cf=cf,offsetUnits=offset or 0,rollDegrees=roll or 0,
                     relationKind=if kind=="Bore" then "Cylindrical"
                         elseif kind=="CrankCoupling" then "Weld"
-                        elseif kind=="Hub" then "Rotation" else "Gear",
+                        elseif kind=="Hub" then "Rotation"
+                        elseif kind=="Rack" then "Rack" else "Gear",
                     reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score,
                     fittedCount=fitted and #fitted or 0}
                 if target==preferred then
-                    score-=if kind=="Gear" then 0.08 else 1.5
+                    score-=if kind=="Gear" or kind=="Rack"
+                        then 0.08 else 1.5
                 end
                 candidate.score=score
                 table.insert(matches,candidate)
