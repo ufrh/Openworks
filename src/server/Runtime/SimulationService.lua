@@ -925,9 +925,11 @@ function Simulation:Start(player, payload)
         .. (if next(session.GroundKeys)
             then "green grounded / orange movable • P stop"
             else "free assembly • orange bodies • P stop")
-        .. (if session.Gears and #session.Gears.Gears>0 then
-            string.format(" • %d gears / %d automatic mesh(es)",
-                #session.Gears.Gears,session.Gears.Contacts) else "")
+        .. (if session.Gears
+            and (#session.Gears.Gears>0 or #session.Gears.Racks>0) then
+            string.format(" • %d gears / %d racks / %d automatic contact(s)",
+                #session.Gears.Gears,#session.Gears.Racks,
+                session.Gears.Contacts) else "")
         .. (if unregisteredGears>0 then
             string.format(" • WARNING: %d nearby gear(s) NOT in assembly",
                 unregisteredGears) elseif session.Gears
@@ -1056,10 +1058,13 @@ function Simulation:Info(player,payload)
     if session then
         table.insert(lines,if session.Paused then "PAUSED"
             elseif session.Gears and session.Gears:IsKinematic(id)
-                then "KINEMATIC GEARS" else "LIVE PHYSICS")
-        if session.Gears and #session.Gears.Gears>0 then
-            table.insert(lines,string.format("%d automatic gear meshes",
-                session.Gears.Contacts))
+                then "KINEMATIC TRANSMISSION" else "LIVE PHYSICS")
+        if session.Gears
+            and (#session.Gears.Gears>0 or #session.Gears.Racks>0) then
+            table.insert(lines,string.format(
+                "%d transmission contact(s) • %d gears • %d racks",
+                session.Gears.Contacts,#session.Gears.Gears,
+                #session.Gears.Racks))
         end
         if session.Gears and session.Gears:IsKinematic(id) then
             table.insert(lines,session.Gears:Explain(id))
