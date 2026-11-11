@@ -78,8 +78,13 @@ function Context:Lines()
             if c.SmartMatch then
                 append(lines, "Tab", "Next compatible target")
                 if c.SmartMatch.kind=="Bore" then
-                    append(lines, "Wheel / Q E", "Depth / shaft roll")
-                    append(lines, "On release", "1–4 relationship choice")
+                    if c.LockedAlignment then
+                        append(lines,"Wheel / Q E","Depth / roll (after alignment)")
+                        append(lines,"Click","Finalize / choose passive joint")
+                        append(lines,"Esc","Re-align")
+                    else
+                        append(lines,"Click / release","Lock alignment first")
+                    end
                 elseif c.SmartMatch.kind=="Hub" then
                     append(lines, "Hub", "Group gear and shaft (no weld)")
                 elseif c.SmartMatch.kind=="BoltHole" then
@@ -144,8 +149,13 @@ function Context:Lines()
             if c.SmartMatch then
                 append(lines, "Tab / Alt", "Change target / bypass")
                 if c.SmartMatch.kind=="Bore" then
-                    append(lines, "Wheel / Q E", "Depth / shaft roll")
-                    append(lines, "On release", "1–4 relationship choice")
+                    if c.LockedAlignment then
+                        append(lines,"Wheel / Q E","Depth / roll (after alignment)")
+                        append(lines,"Click","Finalize / choose passive joint")
+                        append(lines,"Esc","Re-align")
+                    else
+                        append(lines,"Click / release","Lock alignment first")
+                    end
                 elseif c.SmartMatch.kind=="Hub" then
                     append(lines, "Hub", "Group gear and shaft (no weld)")
                 elseif c.SmartMatch.kind=="BoltHole" then
@@ -187,6 +197,7 @@ function Context:Lines()
         append(lines, "Tab", "Cycle depth")
         append(lines, "X / I", "X-ray / Isolate")
     end
+    append(lines,"Z / Shift+Z","Camera zoom in / out")
     return lines
 end
 

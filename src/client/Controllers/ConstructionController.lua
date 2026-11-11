@@ -597,6 +597,9 @@ function Controller:BeginAlignmentPositioning()
         return false
     end
     if self.LockedAlignment then return true end
+    -- Capture source-to-group offset at the EXACT solved pose, not the
+    -- easing/damped visual ghost from a previous RenderStepped frame.
+    self.Preview:PivotTo(self.PreviewCF)
     local localSource=self.Preview:GetPivot():ToObjectSpace(match.source:GetPivot())
     self.LockedAlignment={
         cf=self.PreviewCF,
@@ -1956,24 +1959,6 @@ function Controller:OnInput(input, processed)
             -360,360)
         self.LastPreviewCheck=0
         return
-    end
-    if false and not processed and self.SmartMatch
-        and (self.Mode=="Build" or self.Pending) then
-        if key==Enum.KeyCode.Tab then
-            local reverse=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-                or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-            if self:CycleSmartTarget(reverse) then return end
-        elseif key==Enum.KeyCode.C and self.SmartMatch.kind=="Bore" then
-            -- Connection type is chosen on release, not by cycling modes.
-            return
-        elseif (key==Enum.KeyCode.Q or key==Enum.KeyCode.E)
-            and self.SmartMatch.kind=="Bore" then
-            self.SmartRollDelta=math.clamp(
-                self.SmartRollDelta+(if key==Enum.KeyCode.E then 5 else -5),
-                -360,360)
-            self.LastPreviewCheck=0
-            return
-        end
     end
     if self.Mode ~= "Build" and self.Mode ~= "Edit"
         and self.Mode ~= "Inspect" then return end

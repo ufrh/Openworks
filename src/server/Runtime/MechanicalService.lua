@@ -259,7 +259,10 @@ function Mechanical:Restore(player, spec)
         constraint.Name = spec.kind
         constraint.Attachment0 = attachment0
         constraint.Attachment1 = attachment1
-        constraint.Enabled = true
+        constraint.Enabled=true
+        -- Relationships permit motion; they do not create motive power.
+        -- Future actuator components will be authored separately.
+        constraint.ActuatorType=Enum.ActuatorType.None
         -- A slider/cylinder ALWAYS has hard mechanical travel stops.
         -- User limits can narrow them but can never permit the shaft
         -- to slide entirely clear of its real opening.
