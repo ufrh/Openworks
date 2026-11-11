@@ -56,7 +56,6 @@ function SurfacePlacement.SnapToNearbyFace(ghost:Model,desired:CFrame,
         hitPosition,hitNormal)
     local targetCF=hitPart.CFrame
     local n=hitNormal.Unit
-    local normalLocal=targetCF:VectorToObjectSpace(n)
     ghost:PivotTo(cf)
     local delta=Vector3.zero
     local axisVectors={targetCF.RightVector,targetCF.UpVector,
@@ -64,8 +63,7 @@ function SurfacePlacement.SnapToNearbyFace(ghost:Model,desired:CFrame,
     local targetSize=hitPart.Size
     local components={targetSize.X,targetSize.Y,targetSize.Z}
     for i,axis in ipairs(axisVectors) do
-        if math.abs(normalLocal[i==1 and "X" or i==2 and "Y" or "Z"])
-            <0.6 then
+        if math.abs(n:Dot(axis))<0.6 then
             -- Coordinates are relative to the target's own center.
             -- Snap to any existing face edge when near it; otherwise
             -- use the fine local fabrication lattice rather than world 0.
