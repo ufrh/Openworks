@@ -58,6 +58,7 @@ function Tool.new(tools)
         PreviewRoot=nil,PreviewCache="",PreviewOutlines={},
         PreviewModels=nil,IgnoreConfirmUntil=0,
         LastTick=0,Connections={},
+        VerticalHeld=nil,VerticalElapsed=0,
     },Tool)
 end
 
@@ -229,8 +230,8 @@ function Tool:Refresh()
     local count=0
     for _ in pairs(self.Selected) do count+=1 end
     self.Shortcuts.Text=if self.Stage=="Selecting"
-        then "N  NEW          Enter  CONFIRM          Esc  CANCEL"
-        else "N  NEW ASSEMBLY             Click  EDIT EXISTING"
+        then "PgUp/PgDn  Y MOVE    N  NEW    Enter  CONFIRM"
+        else "PgUp/PgDn  Y MOVE   N  NEW   Click  EDIT"
     if self.Stage=="Selecting" then
         self.Title.Text="ASSEMBLY / "..self.Name
         self.Status.Text=tostring(count).." primitives selected"
@@ -410,6 +411,39 @@ function Tool:Confirm()
     self:Tell(answer.message or "Assembly saved")
 end
 
+-- Move only a SAVED named assembly, never an uncommitted draft
+-- selection. Moving all its authored members together preserves internal
+-- alignment. Server rejects out-of-bounds/colliding positions atomically.
+function Tool:VerticalNudge(direction)
+    if self.Tools.ActiveId~="Assembly" or self.Busy
+        or self.Stage=="Naming" then return end
+    local id=self.EditingId
+    if not id then
+        local aimed=self:Pick()
+        id=aimed and aimed:GetAttribute("AssemblyId")
+    end
+    if type(id)~="string" or id=="" then
+        self:Tell("Select a saved assembly to raise or lower")
+        return
+    end
+    local fine=UIS:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UIS:IsKeyDown(Enum.KeyCode.RightShift)
+    self.Busy=true
+    local remote=RS:WaitForChild(Config.RequestName)
+    local ok,answer=pcall(function()
+        return remote:InvokeServer({action="VerticalMove",scope="Assembly",
+            id=id,direction=direction,fine=fine})
+    end)
+    self.Busy=false
+    self.PreviewCache=""
+    if not ok or type(answer)~="table" or not answer.ok then
+        self:Tell(if ok and type(answer)=="table"
+            then tostring(answer.message) else "Vertical move failed")
+    else
+        self:Tell(tostring(answer.message))
+    end
+end
+
 function Tool:History(redo)
     if self.Tools.ActiveId~="Assembly" or self.Busy
         or self.Stage=="Naming" then return end
@@ -541,6 +575,7 @@ function Tool:OnModeChanged(mode)
         self.Stage="Idle"
         self.Selected={}
         self.EditingId=nil
+        self.VerticalHeld=nil
     end
     self:Refresh()
 end
@@ -607,6 +642,12 @@ function Tool:Start()
         local key=input.KeyCode
         local control=UIS:IsKeyDown(Enum.KeyCode.LeftControl)
             or UIS:IsKeyDown(Enum.KeyCode.RightControl)
+        if key==Enum.KeyCode.PageUp or key==Enum.KeyCode.PageDown then
+            self:VerticalNudge(if key==Enum.KeyCode.PageUp then 1 else -1)
+            self.VerticalHeld=key
+            self.VerticalElapsed=0
+            return
+        end
         if control and key==Enum.KeyCode.Z then
             self:History(false)
             return
@@ -625,6 +666,24 @@ function Tool:Start()
         elseif key==Enum.KeyCode.Escape then
             self:Cancel()
         end
+    end))
+    table.insert(self.Connections,UIS.InputEnded:Connect(function(input)
+        if input.KeyCode==self.VerticalHeld then self.VerticalHeld=nil end
+    end))
+    table.insert(self.Connections,RunService.Heartbeat:Connect(function(dt)
+        local key=self.VerticalHeld
+        if not key then return end
+        if self.Tools.ActiveId~="Assembly" or self.Stage=="Naming"
+            or UIS:GetFocusedTextBox() or not UIS:IsKeyDown(key) then
+            self.VerticalHeld=nil
+            return
+        end
+        self.VerticalElapsed+=dt
+        if self.VerticalElapsed<0.24 then return end
+        self.VerticalElapsed=0.09
+        task.spawn(function()
+            self:VerticalNudge(if key==Enum.KeyCode.PageUp then 1 else -1)
+        end)
     end))
     table.insert(self.Connections,RunService.RenderStepped:Connect(function()
         if os.clock()-self.LastTick<0.09 then return end
