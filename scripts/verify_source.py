@@ -117,9 +117,18 @@ def main() -> int:
           and "if left~=right then" in simulation)
     check("No per-component completeness requirement",
           "An editor component has members outside this assembly" not in simulation)
-    check("No mechanical relationship powered by hidden motor",
+    check("Passive relationships remain unpowered; only crank gets a drive",
           "Enum.ActuatorType.None" in simulation
-          and "HandCrank_PlayerTorque" in simulation)
+          and 'Instance.new("AngularVelocity")' in simulation
+          and 'drive.Name="HandCrank_ControlledRotation"' in simulation
+          and "HandCrank_PlayerTorque" not in simulation)
+    check("Controlled rotation targets the coupled physical shaft",
+          'copies[coupledShaft:GetAttribute("InstanceId")]' in simulation
+          and 'crank.Drive.AngularVelocity=crank.Axis*HandCrankMath.FixedAngularSpeed' in simulation
+          and 'crank.Drive.Enabled=true' in simulation
+          and 'crank.Drive.Enabled=false' in simulation
+          and 'crank.Torque' not in simulation
+          and 'VelocityGain' not in simulation)
     check("Held-LMB crank is fixed-speed, range-limited, torque-capped",
           "HandCrankMath.FixedAngularSpeed" in simulation
           and "self:StopCrank(session,id)" in simulation
