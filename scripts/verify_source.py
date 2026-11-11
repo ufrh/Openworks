@@ -168,6 +168,18 @@ def main() -> int:
           'eccentricity>0.012' in smart_placement
           and 'return Bore.ShaftFits(shaft,gearBody)' in smart_placement
           and 'function Smart.HubPose(' in smart_placement)
+    gear_templates=read("src/server/Runtime/GearLibrary.lua")
+    check("Gear snap uses tiny bore/axis-specific target, not gear bounding radius",
+          'Smart.HubSnapRadius = 0.34' in smart_placement
+          and 'Smart.HubAimRadius = 0.24' in smart_placement
+          and 'hubAimDistance(aimRay,target)' in smart_placement
+          and 'local range=if isGear then Smart.HubSnapRadius' in smart_placement
+          and 'local aimThreshold=if isGear then Smart.HubAimRadius' in smart_placement
+          and 'if hubAimed then boreAim*0.25+0.015' in smart_placement)
+    check("All stock gear bores accept standard minimum shaft",
+          'math.max(0.215, bodyRadius * 0.33)' in gear_templates
+          and 'existing:Destroy()' in gear_templates
+          and 'oldRadius>=boreRadius-0.0001' in gear_templates)
     check("Build/Edit gear shaft fits validated by preview and server",
           'Smart.HubFits(movingModel,target)' in preview
           and 'Smart.HubFits(candidate,target)' in service
