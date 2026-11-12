@@ -2526,7 +2526,7 @@ end
 function Controller:VerticalNudge(key)
     local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-    if not alt then return end
+    if not alt or self.Tools.ActiveId~="Build" then return end
     local axis,direction
     if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then
         -- Height never depends on camera orientation, even without Shift.
@@ -2543,29 +2543,52 @@ function Controller:VerticalNudge(key)
         if key==Enum.KeyCode.Left then direction=-direction end
     end
     if self.Mode~="Edit" or self.Busy or self.Pending or self.ScaleMode
-        or self.CatalogOpen or self.PendingMateChoice
+        or self.CatalogOpen or self.PendingMateChoice or self.PivotSetting
+        or self.DirectDragActive or self.LockedAlignment
+        or (self.BankModal and self.BankModal.Visible)
+        or (self.Numeric and self.Numeric.Active)
+        or (self.MaterialPicker and self.MaterialPicker.Visible)
+        or (self.Layered and self.Layered.Alignment)
+        or (self.Assembly and self.Assembly:IsEditingJoint())
+        or UserInputService:GetFocusedTextBox()
         or player:GetAttribute("OPENWORKS_Simulating")==true then return end
-    local scope,id
+
+    local scope,id,ids
+    local selected=self.SelectedParts
     if self.SelectedComponentId then
         scope,id="Component",self.SelectedComponentId
+    elseif #selected>1 then
+        -- Shift-selected independent primitives are moved together, without
+        -- silently grouping them or moving any unselected construction.
+        scope,ids="Primitives",{}
+        for _,model in ipairs(selected) do
+            if not model or not model.Parent or model:GetAttribute("ComponentId") then
+                self:Message("Multi-nudge only supports independent primitives")
+                return
+            end
+            table.insert(ids,model:GetAttribute("InstanceId"))
+        end
     elseif self.Selected then
+        -- Deep-selected members keep their ComponentId, but move alone.
         scope,id="Primitive",self.Selected:GetAttribute("InstanceId")
     end
-    if not id then
+    if not scope or (scope~="Primitives" and not id) then
         self:Message("Select a primitive or component to nudge")
         return
     end
     local fine=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-    local affected=if scope=="Component" then self.SelectedParts
-        else if self.Selected then {self.Selected} else {}
+    local affected=if scope=="Component" or scope=="Primitives"
+        then selected else {self.Selected}
     local amount=(if fine then 0.05 else 0.25)*direction
     local displacement=if axis=="X" then Vector3.new(amount,0,0)
         elseif axis=="Y" then Vector3.new(0,amount,0)
         else Vector3.new(0,0,amount)
     local stop=WorldMotion.AnimateMove(affected,displacement)
-    local succeeded=self:Request({action="VerticalMove",scope=scope,id=id,
-        axis=axis,direction=direction,fine=fine})
+    local succeeded=self:Request({
+        action="VerticalMove",scope=scope,id=id,ids=ids,
+        axis=axis,direction=direction,fine=fine,
+    })
     if not succeeded then stop() end
     self:RefreshHUD()
 end
