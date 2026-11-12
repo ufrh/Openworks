@@ -720,6 +720,11 @@ end
 function Layered:OnInput(input, processed)
     local parent = self.Parent
     if parent.Mode ~= "Edit" and parent.Mode ~= "Inspect" then return false end
+    -- Tab cycles depth only in the actual Edit subtool. Resize and Paint
+    -- share the legacy Edit compatibility mode but not its layer commands.
+    if parent.Tools.PrimaryId=="Build"
+        and parent.Tools.SubtoolId~="Edit"
+        and not self.Alignment then return false end
     local key = input.KeyCode
     if key == Enum.KeyCode.Escape and self.Alignment then
         self:CancelAlignment()
