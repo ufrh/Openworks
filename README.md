@@ -1,12 +1,12 @@
 # OPENWORKS
 
-**OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The stable pre-UI-v2 implementation lives on `dev`. UI v2 Phases 1–5 are isolated on `feature/ui-reorganization-v2`. Both use **Rojo** and **FORGE/Reforge** and still require Roblox Studio validation.
+**OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The stable pre-UI-v2 implementation lives on `dev`. UI v2 Phases 1–6 are isolated on `feature/ui-reorganization-v2`. Both use **Rojo** and **FORGE/Reforge** and still require Roblox Studio validation.
 
 > **State:** Experimental. Do not assume a feature is Studio-verified merely because it is committed. See [current regression checks](docs/QA_REGRESSION.md) and [known limitations](docs/ARCHITECTURE.md#known-limitations).
 
 ## Start developing
 
-1. Check out `feature/ui-reorganization-v2` to test UI v2 Phases 1–5 (`dev` remains the fallback); install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
+1. Check out `feature/ui-reorganization-v2` to test UI v2 Phases 1–6 (`dev` remains the fallback); install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
 2. Run `START_OPENWORKS.bat` (Windows) or `scripts/start-dev.ps1` using PowerShell.
 3. Connect the Roblox Studio Rojo plugin to **localhost:34872**. The place ID and Rojo mapping are in `default.project.json`.
 4. The **Studio-generated primitive bank** must exist in `ReplicatedStorage` and be saved with the place. The server only backfills some dynamic prefab families. Restart **Play** after switching code because Roblox caches ModuleScripts.
@@ -29,13 +29,13 @@ The native Roblox hotbar now contains **exactly three** primary tools. Letter ke
 | 3 | **Assembly & Simulation** | Assembly Editor | E | Create/edit named assembly membership |
 | 3 | **Assembly & Simulation** | Simulation | Y | Ground and test registered assembly |
 
-**Mechanics / Connect (Phase 4):** click a first physical part, then a second; the same compact connection picker appears for welding, springs, bearing/slider/cylindrical joints, bolt insertion, hand-crank coupling, and gear-to-shaft mounting. The picker presents only type-compatible choices; all actual collisions, fits and clearances remain server-validated. A shaft/hole motion choice opens the existing insertion/roll preview; click again to finalize, then adjust snug fit if applicable. **Esc** cancels the pending interaction. The old **F/H/Shift+J/Shift+C/R-to-cycle** mechanical creation routes are retired; Configure and the Explorer's Connections view own relationship adjustment/removal. Automatic Build shaft/hole and gear/shaft fittings now use this same connection picker, including **Fit Only** and **Adjust depth / roll** options.
+**Mechanics / Connect (Phase 4):** click a first physical part, then a second; the same compact connection picker appears for welding, springs, bearing/slider/cylindrical joints, hand-crank coupling, and gear-to-shaft mounting. Real bolt placement remains in Build > Fasteners. The picker presents only type-compatible choices; all actual collisions, fits and clearances remain server-validated. A shaft/hole motion choice opens the existing insertion/roll preview; click again to finalize, then adjust snug fit if applicable. **Esc** cancels the pending interaction. The old **F/H/Shift+J/Shift+C/R-to-cycle** mechanical creation routes are retired; Configure and the Explorer's Connections view own relationship adjustment/removal. Automatic Build shaft/hole and gear/shaft fittings now use this same connection picker, including **Fit Only** and **Adjust depth / roll** options.
 
 Use the Explorer or right-click menu to select the first connection participant, or select either part directly from the 3D world. Selecting a second primitive in the Explorer uses the same workflow. Two orange bounds indicate pending participants; failed server validation turns the second red, and accepted connections briefly turn both green.
 
 Build/Place still uses **B** to open the catalog when already active; Build/Edit still uses **E** for component interior editing when already active; Build/Resize uses **V** to toggle face handles when already active. A live fit reserves Q/E for shaft roll so E does not inadvertently switch subtools.
 
-Phase 2 implements shared aqua/purple/orange/green/red wireframe feedback, geometry ghosts and minimal mechanical indicators. **Exact CSG triangle edges and localized CSG collision outlines remain unfinished.** Phase 3 adds a docked unified Explorer/Properties panel with real assembly/component membership, connection inspection, contextual actions, hover tooltips, and inline paint/material/joint/motor/assembly configuration. Press **Tab** to unlock the dock, or right-click an authored object for its context menu. Persistent legacy instruction HUDs are hidden; some modal editing components remain as fallbacks pending Studio testing. See [Phase 5 notes](docs/UI_V2_PHASE_5_IMPLEMENTATION.md), [Phase 4 notes](docs/UI_V2_PHASE_4_IMPLEMENTATION.md), and the [regression matrix](docs/UI_V2_REGRESSION_MATRIX.md).
+Phase 2 implements shared aqua/purple/orange/green/red wireframe feedback, geometry ghosts and minimal mechanical indicators. **Exact CSG triangle edges and localized CSG collision outlines remain unfinished.** Phase 3 adds a docked unified Explorer/Properties panel with real assembly/component membership, connection inspection, contextual actions, hover tooltips, and inline paint/material/joint/motor/assembly configuration. Press **Tab** to unlock the dock, or right-click an authored object for its context menu. Redundant standalone material, relationship and shortcut panels have been removed, and the remaining legacy Assembly/Mechanics HUDs are not instantiated when the unified dock is active. See [Phase 6 notes](docs/UI_V2_PHASE_6_IMPLEMENTATION.md), [Phase 5 notes](docs/UI_V2_PHASE_5_IMPLEMENTATION.md), [Phase 4 notes](docs/UI_V2_PHASE_4_IMPLEMENTATION.md), and the [regression matrix](docs/UI_V2_REGRESSION_MATRIX.md).
 
 The following three ideas **must never be conflated**:
 
@@ -68,7 +68,7 @@ Switch to **Simulation (Y)**. Select an assembly in the Explorer and press **Run
 
 ## Code checks
 
-- `python scripts/verify_source.py` checks cross-file architecture invariants and source organization without Roblox Studio. It **does not compile or execute Luau**.
+- `python scripts/verify_source.py` checks cross-file architecture invariants and source organization without Roblox Studio. GitHub Actions also runs pinned StyLua 2.1.0 with `--verify --syntax luau src` to **parse all Luau source and check AST-safe formatting on an ephemeral checkout**. Neither check executes Roblox gameplay, constraints, GUI events or DataStores.
 - `rojo build default.project.json --output builds/openworks.rbxlx` verifies project mapping with an installed Rojo toolchain.
 - `stylua --check src/` and `selene src/` can report style/type diagnostics; existing legacy source is **not yet guaranteed warning-free** under those tools. Do not mass-autoformat FORGE or large mechanic services during feature development without checking the diff.
 - For gameplay changes, follow `docs/QA_REGRESSION.md`. Static checks cannot prove physics stability, GUI input behavior or DataStore access.
