@@ -344,7 +344,7 @@ def main() -> int:
           'model:SetAttribute("PrimitiveFamily","Pulley")' in pulleys
           and 'model:SetAttribute("BoreRadiusStuds",BORE)' in pulleys
           and 'pivot.CanCollide=false' in pulleys
-          and 'PulleyLibrary.Ensure()' in construction)
+          and 'PulleyLibrary.Ensure()' in service)
     check("Belt routing validates tangent length, coplanarity and clearance",
           'function Belt.Path(a,b)' in belt_math
           and 'math.abs(axial)>0.075' in belt_math
@@ -352,9 +352,9 @@ def main() -> int:
           and 'local length=2*tangent+ra*wrapA+rb*wrapB' in belt_math)
     check("Belt is a server-authorized two-click native tool",
           '{ Id = "Belt"' in definitions
-          and 'action == "CreateBelt"' in construction
+          and 'action == "CreateBelt"' in service
           and 'function Mechanical:CreateBelt(' in mechanical
-          and 'function Controller:BeltClick()' in assembly)
+          and 'function Controller:BeltClick()' in assembly_client)
     check("Belt tension and friction limit bidirectional shaft torques",
           'local tension=math.max(0,(path.Length-loop.RestLength)*STIFFNESS)' in belts
           and 'local capstan=math.tanh(' in belts
