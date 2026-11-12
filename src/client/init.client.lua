@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS client bootstrap: native tools, Forge, editor and simulation controllers.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.12.UI-V2-PHASE3-EXPLORER"
+local BUILD = "2026.11.12.UI-V2-PHASE4-CONNECT"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -91,4 +91,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 phase 3 / unified Explorer and Properties", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 phase 4 / unified mechanical connection workflow", BUILD, tostring(FORGE.Version)))
