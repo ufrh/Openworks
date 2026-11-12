@@ -307,20 +307,12 @@ function Layered:RefreshTargetCue()
     if target == self.HoveredCandidate then return end
 
     self.HoveredCandidate = target
-    if self.TargetHighlight then self.TargetHighlight:Destroy() end
-    self.TargetHighlight = nil
-    if target then
-        local highlight = Instance.new("Highlight")
-        highlight.Adornee = target
-        highlight.FillTransparency = 0.83
-        highlight.OutlineTransparency = 1
-        highlight.FillColor = if AlignmentMath.TargetAxis(target)
-            then Color3.fromRGB(88, 209, 158)
-            else Color3.fromRGB(228, 170, 98)
-        highlight.OutlineColor = highlight.FillColor
-        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        highlight.Parent = self.Parent.Gui
-        self.TargetHighlight = highlight
+    if self.Parent.Feedback then
+        self.Parent.Feedback:Clear("manual-target")
+        if target then
+            self.Parent.Feedback:Set("manual-target","target",
+                {target},"snap",false)
+        end
     end
 end
 
@@ -702,7 +694,7 @@ function Layered:CancelAlignment()
     local align = self.Alignment
     if align and align.Preview then align.Preview:Destroy() end
     self.Alignment = nil
-    if self.TargetHighlight then self.TargetHighlight:Destroy() end
+    if self.Parent.Feedback then self.Parent.Feedback:Clear("manual-target") end
     self.TargetHighlight = nil
     self.HoveredCandidate = nil
     self.TargetDepthIndex = 0
