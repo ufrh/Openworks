@@ -350,7 +350,7 @@ def main() -> int:
           and 'Name="AssemblyPrimitive",Adornee=model' not in tool_ui)
     check("UI v2 orange/red/green connection feedback is server-confirmed",
           'self.Feedback:Set("connection","first",{first},"pending",false)' in alignment_editor
-          and 'if self.PreviewValid then "pending" else "invalid"' in alignment_editor
+          and 'if valid then "pending" else "invalid"' in alignment_editor
           and 'if self:Request(request) then' in alignment_editor
           and 'self.Feedback:FlashSuccess({first,second})' in alignment_editor
           and 'self.Feedback:FlashSuccess({self.WeldFirst,picked})' in alignment_editor)
