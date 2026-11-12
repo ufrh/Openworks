@@ -337,8 +337,8 @@ function Controller:RefreshHUD()
             then (if self.Mode=="Build" then "Click to place meshed gear" else "Release to position gear")
                 .. " • automatic engagement in Simulate • Tab target • Alt free"
             elseif match.kind=="Hub"
-            then "Click to choose Rotation or Rigid mount"
-                .. " • wheel insertion depth"
+            then "Click to weld gear to shaft • insertion depth"
+                .. " • multiple aligned gear hubs are included"
             elseif match.kind=="BoltHole" then
                 (if self.Mode=="Build" then "Click to place bolt"
                     else "Release to fasten bolt")
@@ -637,12 +637,13 @@ end
 
 function Controller:OpenMateChoice(mode)
     local match=self.SmartMatch
-    if not match or (match.kind~="Bore" and match.kind~="Hub")
+    if not match or match.kind~="Bore"
         or self.PendingMateChoice then
         return false
     end
-    -- One click on a valid hole/shaft or gear/shaft fit opens a mouse
-    -- picker. Bore users can still choose "Adjust depth / roll first",
+    -- A hole/shaft motion fit opens a choice picker. Gear hubs never
+    -- present a choice: gear-to-shaft fitting always welds automatically.
+    -- Bore users can still choose "Adjust depth / roll first",
     -- then click once more to reopen this picker after adjustments.
     if match.kind=="Bore" and not self.LockedAlignment then
         if not self:BeginAlignmentPositioning() then return false end
@@ -721,7 +722,7 @@ function Controller:SmartDrop(chosenKind)
         self:Message(self.PreviewReason or "Red snap: physical interference")
         return true
     end
-    if (match.kind=="Bore" or match.kind=="Hub") and not chosenKind then
+    if match.kind=="Bore" and not chosenKind then
         return self:OpenMateChoice("Edit")
     end
     -- A multi-primitive ghost pivots at its central anchor, but the
@@ -1489,7 +1490,7 @@ function Controller:Place(chosenKind)
     -- mechanical connection. Their placement may use geometric snap,
     -- but never auto-author a new bearing, weld, hub, or crank coupling.
     if self.Pending~="Copy" and self.SmartMatch
-        and (self.SmartMatch.kind=="Bore" or self.SmartMatch.kind=="Hub")
+        and self.SmartMatch.kind=="Bore"
         and not chosenKind then
         self:OpenMateChoice("Build")
         return
