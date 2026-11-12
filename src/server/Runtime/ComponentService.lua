@@ -11,6 +11,8 @@ local ComponentGeometry = require(
         :WaitForChild("Construction")
         :WaitForChild("ComponentGeometry")
 )
+local FitOrigin = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("FitOrigin"))
 local RotationMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("RotationMath"))
 
@@ -81,6 +83,7 @@ function ComponentService:Group(player, payload)
         table.insert(before, self.D.snapshot(model))
         model:SetAttribute("ComponentId", componentId)
         model:SetAttribute("ComponentAnchorId", anchorId)
+        model:SetAttribute("ComponentFitPivotLocal",nil)
         table.insert(after, self.D.snapshot(model))
     end
 
@@ -101,6 +104,7 @@ function ComponentService:Ungroup(player, payload)
     for _, model in ipairs(members) do
         model:SetAttribute("ComponentId", nil)
         model:SetAttribute("ComponentAnchorId", nil)
+        model:SetAttribute("ComponentFitPivotLocal",nil)
         table.insert(after, self.D.snapshot(model))
     end
     self.D.commitMetadata(player, before, after)
@@ -139,8 +143,8 @@ function ComponentService:Plan(player, payload)
         end
     end
     if not anchor then return nil, nil, "Invalid component anchor" end
-    if anchor ~= ComponentGeometry.CentralPrimitive(members) then
-        return nil, nil, "Component center changed; reselect the component"
+    if anchor ~= FitOrigin.ComponentAnchor(members) then
+        return nil, nil, "Component alignment anchor changed; reselect it"
     end
 
     local anchorState = d.snapshot(anchor)
@@ -248,7 +252,10 @@ end
 function ComponentService:RotateWorld(player, payload)
     local members, reason = self:RequireMembers(player, payload.componentId)
     if not members then return false, reason end
-    local center = ComponentGeometry.Bounds(members)
+    local anchor=FitOrigin.ComponentAnchor(members)
+    local center=if anchor and FitOrigin.HasComponent(anchor)
+        then FitOrigin.World(anchor,"Component")
+        else ComponentGeometry.Bounds(members)
     local delta = center and RotationMath.Delta(payload.axis, payload.direction, center)
     if not delta then return false, "Choose X, Y or Z rotation" end
     local d = self.D
@@ -435,9 +442,35 @@ function ComponentService:Delete(player, payload)
         table.insert(before, self.D.snapshot(model))
     end
 
-    for _, member in ipairs(members) do member:Destroy() end
-    self.D.commitBatch(player, before, {})
-    return true, "Component deleted"
+    -- A bank-placed body can contain many real native relationships.
+    -- Remove their relationship folders BEFORE the parts are destroyed,
+    -- and record all snapshots in the SAME undo transaction.
+    local memberIds={}
+    for _,member in ipairs(members) do
+        memberIds[member:GetAttribute("InstanceId")]=true
+    end
+    local deletedRelations={}
+    if self.D.mechanical then
+        for _,relation in ipairs(self.D.mechanical.Folder:GetChildren()) do
+            if relation:IsA("Folder")
+                and relation:GetAttribute("OwnerUserId")==player.UserId then
+                local spec=self.D.mechanical:Snapshot(relation)
+                if memberIds[spec.sourceId] or memberIds[spec.targetId]
+                    or (spec.secondTargetId and memberIds[spec.secondTargetId])
+                    or (spec.boltId and memberIds[spec.boltId]) then
+                    table.insert(deletedRelations,spec)
+                    self.D.mechanical:DestroyRelation(relation)
+                end
+            end
+        end
+    end
+    for _,member in ipairs(members) do member:Destroy() end
+    if #deletedRelations>0 then
+        self.D.commitAssembly(player,before,{},deletedRelations,true)
+    else
+        self.D.commitBatch(player,before,{})
+    end
+    return true,"Component and internal/external relationships deleted"
 end
 
 function ComponentService:Handle(player, action, payload)
