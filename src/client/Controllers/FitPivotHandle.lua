@@ -32,6 +32,36 @@ function Handle:Update(anchor,scope,active)
     ad.Color3=if scope=="Component" then Color3.fromRGB(162,127,242)
         else Color3.fromRGB(83,221,239)
 end
+function Handle:UpdatePreview(ghost)
+    local ad=self.Adornment
+    if not ghost or not ghost.Parent then
+        ad.Visible=false
+        ad.Adornee=nil
+        return
+    end
+    local offset,custom=Origin.PreviewLocal(ghost)
+    if not custom then
+        ad.Visible=false
+        ad.Adornee=nil
+        return
+    end
+    local root=ghost.PrimaryPart
+    if not root then
+        for _,desc in ipairs(ghost:GetDescendants()) do
+            if desc:IsA("BasePart") and desc:GetAttribute("GearPivotOnly")~=true then
+                root=desc
+                break
+            end
+        end
+    end
+    if not root then ad.Visible=false return end
+    local point=ghost:GetPivot():PointToWorldSpace(offset)
+    ad.Adornee=root
+    ad.CFrame=CFrame.new(root.CFrame:PointToObjectSpace(point))
+    ad.Color3=Color3.fromRGB(83,221,239)
+    ad.Visible=true
+end
+
 function Handle:Destroy()
     self.Adornment:Destroy()
 end
