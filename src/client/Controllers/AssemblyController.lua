@@ -466,7 +466,11 @@ function Controller:UpdatePreview()
         self.RollDegrees
     )
     if not plan then
-        self:Message(tostring(reason))
+        self.PreviewValid=false
+        self.PreviewReason=tostring(reason or "Incompatible geometry")
+        if self.Feedback then self.Feedback:SetGhostValid(false) end
+        self:Message(self.PreviewReason)
+        self:RefreshHUD()
         return
     end
     if self.PreviewModel then
