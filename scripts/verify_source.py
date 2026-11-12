@@ -355,6 +355,13 @@ def main() -> int:
           and 'action == "CreateBelt"' in service
           and 'function Mechanical:CreateBelt(' in mechanical
           and 'function Controller:BeltClick()' in assembly_client)
+    check("Belt preload is server bounded and Belt removal preserves hub welds",
+          'preloadPercent' in mechanical
+          and 'math.abs(preload*2-math.round(preload*2))' in mechanical
+          and 'function Mechanical:RemoveBelt(' in mechanical
+          and 'action=="RemoveBelt"' in service
+          and 'self.BeltPreloadPercent=math.min(8' in assembly_client
+          and 'then "RemoveBelt" else "CreateBelt"' in assembly_client)
     check("Belt tension and friction limit bidirectional shaft torques",
           'local tension=math.max(0,(path.Length-loop.RestLength)*STIFFNESS)' in belts
           and 'local capstan=math.tanh(' in belts
