@@ -194,7 +194,8 @@ def main() -> int:
           'ContextActionService:BindActionAtPriority(' in selection
           and '"OPENWORKS_BuildNudge"' in selection
           and 'Enum.ContextActionPriority.High.Value+150' in selection
-          and 'if self:VerticalNudge(key) then' in selection
+          and 'if self:CanNudge() then' in selection
+          and 'task.spawn(function() self:VerticalNudge(key) end)' in selection
           and 'ContextActionService:UnbindAction("OPENWORKS_BuildNudge")' in selection)
     check("Nudge preserves collision checks and atomic relationship-aware undo",
           'intersectsConstructed(model,ignored)' in service
