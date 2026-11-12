@@ -1,6 +1,6 @@
 --!strict
--- Manual save UI: opening this panel DOES NOT save; only pressing SAVE does.
--- The server loads the most recent explicitly saved plot on join.
+-- F6 plot persistence panel: show autosave state, pending edits, and
+-- manual Save/Load. Server-side periodic autosaves do not depend on this UI.
 local Players=game:GetService("Players")
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local UserInputService=game:GetService("UserInputService")
@@ -70,8 +70,13 @@ function UI:Refresh()
     local stamp=if type(saved)=="number" and saved>0
         then os.date("%b %d  •  %I:%M %p",saved)
         else "Never saved"
-    self.Saved.Text="LAST MANUAL SAVE  /  "..stamp
+    local mode=player:GetAttribute("OPENWORKS_LastSaveMode") or ""
+    self.Saved.Text="LAST SAVED  /  "..stamp
+        ..(if mode~="" and mode~="None" then "  •  "..mode else "")
+    local pending=player:GetAttribute("OPENWORKS_AutoSavePending")==true
     self.State.Text=if self.Busy then "WORKING..."
+        elseif state=="Ready" and pending then
+            "UNSAVED EDITS  ·  Autosave pending"
         else string.upper(state).."  ·  "..message
     self.State.TextColor3=if state=="Error" then Color3.fromRGB(251,140,124)
         elseif state=="Ready" then Color3.fromRGB(124,219,192) else MUTED
@@ -82,7 +87,7 @@ function UI:Refresh()
     self.Save.BackgroundColor3=if self.Save.Active then ACCENT else PANEL
     self.Load.Text=if self.Confirm then "CONFIRM RELOAD  /  DISCARD UNSAVED"
         elseif state=="Error" then "RETRY STORAGE / LOAD PLOT"
-        else "LOAD LAST MANUAL SAVE"
+        else "LOAD LATEST SAVED PLOT"
     self.Load.Active=(state=="Ready" or state=="Error") and not self.Busy
     self.Load.AutoButtonColor=self.Load.Active
 end
@@ -153,17 +158,17 @@ function UI:Start()
     })
     self.Backdrop=overlay
     local panel=round(make("Frame",gui,{
-        Name="ManualPersistencePanel",
+        Name="PlotPersistencePanel",
         Position=UDim2.fromOffset(14,60),Size=UDim2.fromOffset(302,254),
         BackgroundColor3=BG,BackgroundTransparency=0.02,
         BorderSizePixel=0,Visible=false,ZIndex=3,
     }),10)
     self.Panel=panel
-    text(panel,"MY PLOT  /  MANUAL PERSISTENCE",11,26,13,true)
-    text(panel,"No autosaving. Only SAVE PLOT writes your work.",39,35,12,false,MUTED)
+    text(panel,"MY PLOT  /  AUTOSAVE ON",11,26,13,true)
+    text(panel,"Autosaves every ~2 min while building; saves on exit.",39,35,12,false,MUTED)
     self.Save=button(panel,"SAVE PLOT",83,ACCENT)
-    self.Load=button(panel,"LOAD LAST MANUAL SAVE",133,PANEL)
-    self.Saved=text(panel,"LAST MANUAL SAVE  /  Never saved",184,22,11,false,MUTED)
+    self.Load=button(panel,"LOAD LATEST SAVED PLOT",133,PANEL)
+    self.Saved=text(panel,"LAST SAVED  /  Never saved",184,22,11,false,MUTED)
     self.State=text(panel,"LOADING PLOT…",208,36,11,false,MUTED)
 
     opener.Activated:Connect(function() self:Show(not self.Open) end)
@@ -181,6 +186,7 @@ function UI:Start()
     table.insert(self.Connections,Theme.Attach(gui))
     for _,name in ipairs({"OPENWORKS_PlotIndex","OPENWORKS_SaveState",
         "OPENWORKS_SaveMessage","OPENWORKS_LastSavedAt",
+        "OPENWORKS_LastSaveMode","OPENWORKS_AutoSavePending",
         "OPENWORKS_ActiveTool"}) do
         table.insert(self.Connections,
             player:GetAttributeChangedSignal(name):Connect(function()
