@@ -261,7 +261,7 @@ function Panel:MakeUI()
         end)
     self.NewAssemblyButton.Visible=false
     self:Hint(self.NewAssemblyButton,"Create and name an assembly in Properties")
-    self:Hint(self.FocusButton,"Tab · Unlock the cursor to inspect and edit the workspace")
+    self:Hint(self.FocusButton,"F2 · Unlock the cursor (Tab where available)")
     self.TabObjects=button(main,"OBJECTS",UDim2.fromOffset(10,43),
         UDim2.new(0.5,-15,0,27),function()
             self.View="Objects"
@@ -1397,11 +1397,18 @@ function Panel:Start()
         self:OnSimulationSessionChanged()
     end))
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
-        if input.KeyCode==Enum.KeyCode.Tab and not processed
+        -- F2 always opens the dock; Tab remains a convenience toggle
+        -- where it does not already mean depth selection or fit targeting.
+        local cursorKey=input.KeyCode==Enum.KeyCode.F2
+        local tabKey=input.KeyCode==Enum.KeyCode.Tab
+            and (self.Tools.PrimaryId~="Build"
+                or self.Tools.SubtoolId=="Place")
+        if (cursorKey or tabKey) and not processed
             and not self.ConnectionChoiceOpen
             and not self.Build.SmartMatch
             and not self.Build.LockedAlignment
             and not self.Build.PendingMateChoice
+            and not (self.Build.Layered and self.Build.Layered.Alignment)
             and not UIS:GetFocusedTextBox()
             and not player:GetAttribute("OPENWORKS_AssemblyNaming")
             and not player:GetAttribute("OPENWORKS_PlotMenuOpen")
