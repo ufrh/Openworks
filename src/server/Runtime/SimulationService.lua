@@ -19,6 +19,7 @@ local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
 local GearTransmission=require(script.Parent:WaitForChild("GearTransmission"))
+local BeltTransmission=require(script.Parent:WaitForChild("BeltTransmission"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
 
@@ -181,6 +182,9 @@ function Simulation:StepCranks(dt)
         if session.Gears and not session.Paused then
             session.Gears:Step(dt)
         end
+        if session.Belts and not session.Paused then
+            session.Belts:Step(dt)
+        end
     end
 end
 
@@ -298,7 +302,7 @@ function Simulation:Graph(player, seed)
                 and (kind == "Bearing" or kind == "Slider"
                     or kind == "Cylindrical" or kind == "Fixed"
                     or kind == "Spring" or kind == "Weld" or kind == "Bolt"
-) then
+                    or kind == "Belt") then
                 local a, b = bodyKey(source), bodyKey(target)
                 if a ~= b then
                     local edge = {source = source, target = target, kind = kind,
@@ -392,6 +396,9 @@ function Simulation:Stop(player)
     self.Sessions[player] = nil
     -- Remove live physics first, THEN bring edit geometry back.
     if session.World then session.World:Destroy() end
+    for _,beam in ipairs(session.BeltVisuals or {}) do
+        if beam.Parent then beam.Enabled=true end
+    end
     for _, saved in ipairs(session.Originals) do
         if saved.Part and saved.Part.Parent then
             saved.Part.Transparency = saved.Transparency
@@ -441,6 +448,8 @@ function Simulation:Start(player, payload)
         Cranks={},
         ActiveCrankId=nil,
         Gears=nil,
+        Belts=nil,
+        BeltVisuals={},
         Motors={},
         UnregisteredGears=unregisteredGears,
     }
@@ -485,6 +494,7 @@ function Simulation:Start(player, payload)
 
         -- Build the torque transfer map, not a scripted animation graph.
         session.Gears=GearTransmission.new(graph,copies,runtime)
+        session.Belts=BeltTransmission.new(graph,copies,runtime)
 
         -- A prefab is a physical primitive even if it has several geometry
         -- Parts (bolt heads / gear teeth). Only those INTERNAL parts are welded.
@@ -519,7 +529,7 @@ function Simulation:Start(player, payload)
             local source = copies[edge.source:GetAttribute("InstanceId")]
             if not target or not source then error("Missing joint endpoint") end
             local p0, p1 = target.PrimaryPart, source.PrimaryPart
-            if edge.kind == "Gear" then
+            if edge.kind == "Gear" or edge.kind=="Belt" then
                 -- Legacy K relationships are OPTIONAL metadata.
                 -- Meshing and transmission use geometry every frame.
                 continue
@@ -753,6 +763,19 @@ function Simulation:Start(player, payload)
             }
         end
 
+        -- Hide authored belt graphics while the simulation visual follows
+        -- the actual moving shaft centers, restoring them when it stops.
+        for _,edge in ipairs(graph.edges) do
+            if edge.kind=="Belt" then
+                for _,object in ipairs(edge.relation:GetDescendants()) do
+                    if object:IsA("Beam") then
+                        object.Enabled=false
+                        table.insert(session.BeltVisuals,object)
+                    end
+                end
+            end
+        end
+
         -- 4. Hide originals but preserve every authored transform/material.
         for _, original in ipairs(graph.models) do
             for _, part in ipairs(allParts(original)) do
@@ -857,6 +880,8 @@ function Simulation:Start(player, payload)
         .. (if next(session.GroundKeys)
             then "green grounded / orange movable • P stop"
             else "free assembly • orange bodies • P stop")
+        .. (if session.Belts and #session.Belts.Loops>0 then
+            string.format(" • %d friction belt(s)",#session.Belts.Loops) else "")
         .. (if session.Gears and #session.Gears.Gears>0 then
             string.format(" • %d gears / %d automatic contact(s)",
                 #session.Gears.Gears,session.Gears.Contacts) else "")
@@ -972,6 +997,7 @@ function Simulation:Pause(player)
         if motor.Constraint.Parent then motor.Constraint.AngularVelocity=0 end
     end
     if session.Gears then session.Gears:StopMotion() end
+    if session.Belts then session.Belts:StopMotion() end
     local state = {}
     for _, item in ipairs(session.World:GetDescendants()) do
         if item:IsA("BasePart") then
