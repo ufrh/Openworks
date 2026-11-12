@@ -226,6 +226,7 @@ function Tool:Refresh()
     if not self.Panel then return end
     self.Panel.Visible=self.Mode=="Assembly" and self.UnifiedExplorer==nil
     self.Crosshair.Visible=self.Mode=="Assembly" and self.Stage~="Naming"
+        and self.UnifiedExplorer==nil
     if self.Mode~="Assembly" then return end
     local count=0
     for _ in pairs(self.Selected) do count+=1 end
@@ -249,10 +250,21 @@ function Tool:Refresh()
     if self.LastMessage and os.clock()<self.MessageUntil then
         self.Instruction.Text=self.LastMessage
     end
+    if self.UnifiedExplorer then self.UnifiedExplorer:OnAssemblyDraftChanged() end
 end
 
 function Tool:OpenName(rename)
-    if self.Tools.ActiveId~="Assembly" or self.Busy then return end
+    if self.Tools.ActiveId~="Assembly" or self.Busy
+        or player:GetAttribute("OPENWORKS_Simulating")==true then return end
+    if self.UnifiedExplorer then
+        if rename and not self.EditingId then return end
+        -- Naming lives in the unified draft Properties; avoid a second modal.
+        self.Stage="Selecting"
+        self:Refresh()
+        self.UnifiedExplorer:Focus(true)
+        self.UnifiedExplorer:FocusAssemblyName()
+        return
+    end
     self.Mode="Assembly"
     if rename and not self.EditingId then return end
     self.Stage="Naming"
@@ -271,6 +283,7 @@ function Tool:CloseName(cancel)
     self.Modal.Visible=false
     player:SetAttribute("OPENWORKS_AssemblyNaming",false)
     if not player:GetAttribute("OPENWORKS_PropertiesOpen")
+        and not player:GetAttribute("OPENWORKS_ExplorerOpen")
         and not player:GetAttribute("OPENWORKS_PlotMenuOpen") then
         UIS.MouseBehavior=Enum.MouseBehavior.LockCenter
         UIS.MouseIconEnabled=false
@@ -296,13 +309,21 @@ function Tool:AcceptName()
 end
 
 function Tool:BeginNew()
+    if self.Mode~="Assembly" or self.Busy
+        or player:GetAttribute("OPENWORKS_Simulating")==true then return end
     self.Selected={}
     self.EditingId=nil
-    self.Name=""
+    self.Name=if self.UnifiedExplorer then "New Assembly" else ""
+    self.Stage="Selecting"
+    self.PreviewCache=""
     self:OpenName(false)
+    self:Refresh()
 end
 
 function Tool:LoadExisting(model)
+    if self.Mode~="Assembly" or self.Busy or not model or not model.Parent
+        or player:GetAttribute("OPENWORKS_Simulating")==true
+        or model:GetAttribute("OwnerUserId")~=player.UserId then return end
     local id=model:GetAttribute("AssemblyId")
     if type(id)~="string" or id=="" then
         self:Tell("Press N to create a named assembly")
@@ -328,9 +349,10 @@ function Tool:Click()
     self:ToggleMember(model)
 end
 
-function Tool:ToggleMember(model)
+function Tool:ToggleMember(model,forceSingle)
     if self.Mode~="Assembly" or self.Busy
-        or self.Stage=="Naming" then return end
+        or self.Stage=="Naming"
+        or player:GetAttribute("OPENWORKS_Simulating")==true then return end
     if not model then
         self:Tell("Aim at a constructed primitive or editor component")
         return
@@ -342,7 +364,7 @@ function Tool:ToggleMember(model)
     local alt=UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
     local targets={model}
-    local group=not alt and model:GetAttribute("ComponentId")
+    local group=not (alt or forceSingle) and model:GetAttribute("ComponentId")
     if type(group)=="string" and group~="" then
         targets={}
         for _,member in ipairs(ownedModels()) do
@@ -390,7 +412,11 @@ end
 
 function Tool:Confirm()
     if self.Mode~="Assembly" or self.Stage~="Selecting"
-        or self.Busy or os.clock()<(self.IgnoreConfirmUntil or 0) then return end
+        or self.Busy or player:GetAttribute("OPENWORKS_Simulating")==true
+        or os.clock()<(self.IgnoreConfirmUntil or 0) then return end
+    if self.UnifiedExplorer and not self.UnifiedExplorer:ApplyDraftName() then
+        return
+    end
     local ids={}
     for id in pairs(self.Selected) do table.insert(ids,id) end
     table.sort(ids)
@@ -423,6 +449,7 @@ end
 -- selection. Moving all its authored members together preserves internal
 -- alignment. Server rejects out-of-bounds/colliding positions atomically.
 function Tool:VerticalNudge(key)
+    if player:GetAttribute("OPENWORKS_Simulating")==true then return end
     local alt=UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
     if not alt then return end
@@ -479,6 +506,7 @@ function Tool:VerticalNudge(key)
 end
 
 function Tool:History(redo)
+    if player:GetAttribute("OPENWORKS_Simulating")==true then return end
     if self.Tools.ActiveId~="Assembly" or self.Busy
         or self.Stage=="Naming" then return end
     self.Busy=true
@@ -507,6 +535,10 @@ function Tool:History(redo)
 end
 
 function Tool:Cancel()
+    if self.UnifiedExplorer and self.UnifiedExplorer:HasDirtyDraftName() then
+        -- Leaving a draft discards uncommitted name and membership only.
+        -- No network mutation occurs until Confirm().
+    end
     self:CloseName(false)
     self.Stage="Idle"
     self.Selected={}
@@ -615,7 +647,13 @@ function Tool:Tick()
     -- Hover preview belongs to the registered assembly, not the moving
     -- individual seed primitive. In Simulate, fill suppression prevents
     -- purple from fighting green/orange grounding Highlights.
-    self:ShowVisuals(members,PURPLE)
+    if self.UnifiedExplorer and self.UnifiedExplorer.Selected
+        and self.UnifiedExplorer.Selected.kind=="assembly"
+        and self.UnifiedExplorer.Selected.id==id and self.Stage~="Selecting" then
+        self.Feedback:Clear("assembly")
+    else
+        self:ShowVisuals(members,PURPLE)
+    end
     player:SetAttribute("OPENWORKS_HoverAssemblyId",id)
 end
 
@@ -631,7 +669,8 @@ function Tool:Start()
             if mode=="Assembly" then self:Click() end
         end))
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
-        if self.Tools.ActiveId~="Assembly" or self.Busy then return end
+        if self.Tools.ActiveId~="Assembly" or self.Busy
+            or player:GetAttribute("OPENWORKS_Simulating")==true then return end
         if self.Stage=="Naming" then
             if input.KeyCode==Enum.KeyCode.Escape then
                 self:CloseName(true)
@@ -678,6 +717,7 @@ function Tool:Start()
         local key=self.VerticalHeld
         if not key then return end
         if self.Tools.ActiveId~="Assembly" or self.Stage=="Naming"
+            or player:GetAttribute("OPENWORKS_Simulating")==true
             or UIS:GetFocusedTextBox()
             or not (UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
                 or UIS:IsKeyDown(Enum.KeyCode.RightAlt))
