@@ -504,6 +504,48 @@ def main() -> int:
           and 'if bankAction then return componentBank:Handle(player,action,payload)' in service
           and 'and not simulationAction and not bankAction' in service
           and 'local metadataOnly=bankAction or' in service)
+    primitive_registry=read("src/shared/Construction/PrimitiveRegistry.lua")
+    catalog_meta=read("src/shared/Construction/PrimitiveCatalogMetadata.lua")
+    check("Primitive catalog has stable IDs with friendly grouped display metadata",
+          'Id = model.Name,' in primitive_registry
+          and 'DisplayName=presentation.DisplayName' in primitive_registry
+          and 'GroupOrder=presentation.GroupOrder' in primitive_registry
+          and 'SearchText=presentation.SearchText' in primitive_registry
+          and 'local Catalog=require(script.Parent:WaitForChild("PrimitiveCatalogMetadata"))' in primitive_registry)
+    check("Primitive catalog presents meaningful mechanical shape categories",
+          all(name in catalog_meta for name in (
+              "Basic Shapes","Plates & Profiles","Shafts & Rods",
+              "Tubes","Holes & Slots","Gears","Pulleys",
+              "Fasteners","Actuators","Other"
+          )))
+    check("Technical gear, fastener and shaft IDs have human-readable names",
+          'Spur Gear  ·  ' in catalog_meta
+          and 'Bevel Gear  ·  ' in catalog_meta
+          and 'Belt Pulley  ·  Ø' in catalog_meta
+          and 'Hex Bolt  ·  Ø' in catalog_meta
+          and 'Drilled Block  ·  ' in catalog_meta
+          and 'Round Shaft' in catalog_meta)
+    check("Fixed-size tube and slotted hole variants keep distinct names",
+          'variantSuffix(id,"SquareTube")' in catalog_meta
+          and 'variantSuffix(id,"CircularTube")' in catalog_meta
+          and 'variantSuffix(id,"SlottedHole")' in catalog_meta
+          and 'variantSuffix(id,"HoleBlock")' in catalog_meta)
+    check("Build catalog searches and collapses mechanical families",
+          'local search=create("TextBox"' in construction_ui
+          and 'self.CatalogSearch.Text:lower()' in construction_ui
+          and 'self.CatalogCollapsed[name]=not collapsed' in construction_ui
+          and 'for _,category in ipairs(CatalogMetadata.Categories)' in construction_ui
+          and 'entry.SearchText:find(search,1,true)' in construction_ui)
+    check("Component bank remains searchable without DataStore reads per keystroke",
+          'function Controller:RefreshBankEntries()' in construction_ui
+          and 'self:RefreshBankEntries()' in construction_ui
+          and 'self.BankEntries' in construction_ui
+          and 'function Controller:SelectBank(id)' in construction_ui)
+    check("Build and selection HUD show friendly primitive names",
+          'self.CurrentDisplayName=entry.DisplayName' in construction_ui
+          and 'function Controller:DisplayName(model)' in construction_ui
+          and 'self:DisplayName(match.target)' in construction_ui
+          and 'self:DisplayName(self.Selected)' in construction_ui)
     check("World rotations use the authored origin on client and server",
           'FitOrigin.World(self.GroupAnchor,"Component")' in construction_ui
           and 'FitOrigin.World(self.Selected,"Primitive")' in construction_ui
