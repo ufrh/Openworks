@@ -1689,27 +1689,31 @@ function Controller:EditFitPivot(reset)
     self:Message("Choose the alignment origin • aim at a selected surface and click")
 end
 
-function Controller:CommitFitPivot()
-    if not self.PivotSetting or self.Busy then return end
+function Controller:PivotHit()
     local camera=workspace.CurrentCamera
-    if not camera then return end
+    if not camera then return nil end
     local members=if self.SelectedComponentId then self.SelectedParts
         else (if self.Selected then {self.Selected} else {})
-    if #members==0 then self.PivotSetting=false return end
+    if #members==0 then return nil end
     local ray=CameraAimRay.Ray(camera)
     local params=RaycastParams.new()
     params.FilterType=Enum.RaycastFilterType.Include
     params.FilterDescendantsInstances=members
     params.IgnoreWater=true
     local hit=workspace:Raycast(ray.Origin,ray.Direction*Grid.MaxDistance,params)
-    if not hit then
-        self:Message("Look at a solid surface in the selected part or component")
-        return
-    end
-    local folder=workspace:FindFirstChild(Config.FolderName)
-    local selected=topBuiltModel(hit.Instance,folder)
-    if not selected or not table.find(members,selected) then
-        self:Message("Choose a surface belonging to the selected geometry")
+    if not hit then return nil end
+    local selected=topBuiltModel(hit.Instance,
+        workspace:FindFirstChild(Config.FolderName))
+    if not selected or not table.find(members,selected) then return nil end
+    return selected,FitPivotSnap.Point(hit.Instance,hit.Position,
+        FitPivotSnap.Modes[self.PivotModeIndex])
+end
+
+function Controller:CommitFitPivot()
+    if not self.PivotSetting or self.Busy then return end
+    local selected,position=self:PivotHit()
+    if not selected then
+        self:Message("Aim at a surface belonging to the selected construction")
         return
     end
     local anchor=if self.SelectedComponentId then self.GroupAnchor else self.Selected
@@ -1719,8 +1723,7 @@ function Controller:CommitFitPivot()
         id=if self.SelectedComponentId then self.SelectedComponentId
             else anchor:GetAttribute("InstanceId"),
         hitId=selected:GetAttribute("InstanceId"),
-        position=FitPivotSnap.Point(hit.Instance,hit.Position,
-            FitPivotSnap.Modes[self.PivotModeIndex]),
+        position=position,
     })
     if succeeded then
         self.PivotSetting=false
@@ -2581,7 +2584,16 @@ function Controller:Start()
         if self.FitPivotHandle then
             local originAnchor=if self.SelectedComponentId then self.GroupAnchor
                 else self.Selected
-            if self.Pending and self.Preview then
+            if self.PivotSetting then
+                local _,point=self:PivotHit()
+                if point then
+                    self.FitPivotHandle:UpdateCandidate(originAnchor,point,
+                        if self.SelectedComponentId then "Component" else "Primitive")
+                else
+                    self.FitPivotHandle:Update(originAnchor,
+                        if self.SelectedComponentId then "Component" else "Primitive",true)
+                end
+            elseif self.Pending and self.Preview then
                 self.FitPivotHandle:UpdatePreview(self.Preview)
             else
                 self.FitPivotHandle:Update(originAnchor,
