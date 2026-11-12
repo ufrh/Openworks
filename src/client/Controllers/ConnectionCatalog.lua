@@ -16,7 +16,6 @@ local LABELS={
     FreeFit="Fit only · no joint",
     Weld="Rigid weld",
     Spring="Spring",
-    Bolt="Insert fitted bolt",
     CrankCoupling="Couple hand crank",
     Rotation="Independent gear mount",
     Rigid="Rigid gear mount",
@@ -67,9 +66,6 @@ function Catalog.Pair(first,second)
         else if HandCrankMath.IsCrank(second) then second else nil
     if crank and Alignment.IsShaft(if crank==first then second else first) then
         add("CrankCoupling")
-    end
-    if Alignment.TargetAxis(first) and Alignment.TargetAxis(second) then
-        add("Bolt")
     end
     if not crank then
         -- A hub's Rigid mount already creates its validated physical Weld.
