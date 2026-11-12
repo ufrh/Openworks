@@ -606,7 +606,7 @@ def main() -> int:
           and 'local requiredOverlap=' in alignment_math
           and 'Alignment.InsertionBounds(shaft,target)' in alignment_math
           and 'Alignment.InsertionBounds(fixedShaft,opening)' in alignment_math
-          and 'Alignment.InsertionBounds(shaft,opening)' in multi_fit
+          and 'Alignment.InsertionBounds(shaft,hole)' in multi_fit
           and 'Alignment.InsertionBounds(shaft,opening)' in smart_place)
     check("One shaft can pierce several ungrouped owned bore models",
           'function Fit.StationarySet(movingMembers,primary,all,delta,ignored)' in multi_fit
@@ -614,7 +614,7 @@ def main() -> int:
           and 'and not usedStationary[pair.stationaryId]' in multi_fit
           and 'and not usedMoving[pair.movingId]' in multi_fit
           and 'MultiFit.StationarySet(members,target,' in mechanical
-          and 'MultiFit.StationarySet(members,target,' in smart_place)
+          and 'MultiFit.StationarySet(\n                    members,target,' in smart_place)
     check("Manual L selects empty bore centers and validates all penetrations",
           'function Layered:AimedOpening(excluded)' in layered
           and 'target=self:AimedOpening(excluded) or target' in layered
