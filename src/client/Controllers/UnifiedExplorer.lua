@@ -773,9 +773,11 @@ function Panel:OnSimulationSessionChanged()
 end
 
 function Panel:RunSimulationAction(action,node)
-    if self.Tools.PrimaryId~="AssemblySimulation"
-        or self.Tools.SubtoolId~="Simulation" then return false end
     local running=simulating()
+    -- Stop is a safety escape hatch even when another native tool was
+    -- equipped during physics; all other actions require Simulation.
+    if action~="stop" and (self.Tools.PrimaryId~="AssemblySimulation"
+        or self.Tools.SubtoolId~="Simulation") then return false end
     if action=="run" then
         if running or not node or node.kind~="assembly" then return false end
         local seed=node.members and node.members[1]
@@ -845,6 +847,11 @@ function Panel:RenderSimulationControls(node)
         "Stop physics and restore the authored construction",function()
             self:RunSimulationAction("stop",node)
         end)
+    if self.Tools.PrimaryId~="AssemblySimulation"
+        or self.Tools.SubtoolId~="Simulation" then
+        self:Value("Controls","Equip Assembly & Simulation to continue")
+        return
+    end
     self:ActionButton(
         if player:GetAttribute("OPENWORKS_SimulationPaused")==true
             then "Resume physics" else "Pause physics",
@@ -1204,6 +1211,7 @@ function Panel:RenderProperties()
         and subtool=="AssemblyEditor" and not simulating()
     if self.NewAssemblyButton then
         self.NewAssemblyButton.Visible=editing
+            and self.AssemblyTool.Stage~="Selecting"
     end
     local node=self.Selected
     if not node then
@@ -1222,7 +1230,8 @@ function Panel:RenderProperties()
     -- It must remain visible with zero selected primitives.
     if editing then
         self:RenderAssemblyDraft(node)
-    elseif primary=="AssemblySimulation" and subtool=="Simulation" then
+    elseif primary=="AssemblySimulation" and subtool=="Simulation"
+        or simulating() then
         self:RenderSimulationControls(node)
     end
 end
@@ -1430,7 +1439,7 @@ function Panel:Start()
     }) do
         table.insert(self.Connections,
             player:GetAttributeChangedSignal(attribute):Connect(function()
-                if self.Tools.PrimaryId=="AssemblySimulation" then
+                if self.Tools.PrimaryId=="AssemblySimulation" or simulating() then
                     self:OnSimulationSessionChanged()
                     self:RenderProperties()
                 end
