@@ -2445,6 +2445,49 @@ function Mechanical:DisconnectMoved(player,beforeStates,afterStates,exemptRelati
             end
         end
     end
+    -- Belt endpoints can remain perfectly coplanar even after a moved shaft
+    -- DISCONNECTS from its pulley. Validate again AFTER all rigid joints
+    -- have been detached. Otherwise a visually intact but unpowered belt
+    -- could poison a saved mechanism or make simulation compilation fail.
+    local function mountedShaft(pulley)
+        if not pulley then return nil end
+        local pulleyId=pulley:GetAttribute("InstanceId")
+        for _,rel in ipairs(self.Folder:GetChildren()) do
+            if rel:GetAttribute("OwnerUserId")==player.UserId
+                and (rel:GetAttribute("Kind")=="Weld"
+                    or rel:GetAttribute("Kind")=="Fixed") then
+                local a,b=rel:GetAttribute("SourceId"),rel:GetAttribute("TargetId")
+                local otherId=if a==pulleyId then b
+                    elseif b==pulleyId then a else nil
+                local shaft=otherId and self.D.findOwned(player,otherId)
+                if shaft and Alignment.IsShaft(shaft)
+                    and Smart.HubFits(pulley,shaft) then
+                    return otherId
+                end
+            end
+        end
+        return nil
+    end
+    for _,rel in ipairs(self.Folder:GetChildren()) do
+        if rel:IsA("Folder") and rel:GetAttribute("Kind")=="Belt"
+            and rel:GetAttribute("OwnerUserId")==player.UserId
+            and not (exemptRelations and exemptRelations[rel:GetAttribute("RelationId")]) then
+            local a=self.D.findOwned(player,rel:GetAttribute("SourceId"))
+            local b=self.D.findOwned(player,rel:GetAttribute("TargetId"))
+            local path=a and b and BeltMath.Path(a,b)
+            local rest=rel:GetAttribute("BeltRestLength")
+            local ma=mountedShaft(a)
+            local mb=mountedShaft(b)
+            local valid=path and type(rest)=="number" and rest>0
+                and rest<=300 and rest<=path.Length*1.3
+                and rest>=path.Length*0.7
+                and ma~=nil and mb~=nil and ma~=mb
+            if not valid then
+                table.insert(disconnected,self:Snapshot(rel))
+                self:DestroyRelation(rel)
+            end
+        end
+    end
     return disconnected
 end
 
