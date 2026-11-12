@@ -16,15 +16,17 @@ local definitions = require(
 local Provisioner = {}
 
 local function createTemplate(definition)
-    local existing = StarterPack:FindFirstChild(definition.Id)
-
-    if existing then
-        if not existing:IsA("Tool")
-            or existing:GetAttribute("OpenworksToolId") ~= definition.Id then
-            warn("[OPENWORKS] StarterPack name conflict: " .. definition.Id)
+    local displayName=definition.Name or definition.Id
+    -- Tool names may differ from internal IDs (Assembly & Simulation).
+    -- Always replace by the immutable OpenworksToolId, not by display name.
+    for _, existing in ipairs(StarterPack:GetChildren()) do
+        if existing:IsA("Tool")
+            and existing:GetAttribute("OpenworksToolId")==definition.Id then
+            existing:Destroy()
+        elseif existing.Name==displayName then
+            warn("[OPENWORKS] StarterPack name conflict: "..displayName)
             return nil
         end
-        existing:Destroy()
     end
 
     local tool = Instance.new("Tool")
