@@ -2278,6 +2278,11 @@ function Controller:OnInput(input, processed)
     local shiftHeld=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
     if self.PivotSetting then
+        if self.Mode=="Edit" and not processed and shiftHeld
+            and key==Enum.KeyCode.O then
+            self:EditFitPivot(true)
+            return
+        end
         if key==Enum.KeyCode.Escape then
             self.PivotSetting=false
             self:RefreshHUD()
