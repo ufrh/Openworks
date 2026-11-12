@@ -25,13 +25,6 @@ local function numberLabel(num)
     local n=tonumber(num)
     return if n then tostring(n) else num
 end
-local function compactUnit(num)
-    local n=tonumber(num)
-    if not n then return num end
-    if n>=10 and n%10==0 then n/=10
-    elseif n>=100 and n%100==0 then n/=100 end
-    return tostring(n)
-end
 local function titleCase(s)
     -- For unrecognized older Studio primitives. Do not mutate template IDs.
     s=s:gsub("([a-z])([A-Z])","%1 %2")
@@ -75,6 +68,17 @@ local function familyFor(id,folder,model)
         then return "Basic Shapes" end
     return "Other"
 end
+local function variantSuffix(id,prefix)
+    local rest=id:sub(#prefix+1)
+    if rest:sub(1,1)=="_" or rest:sub(1,1)=="-" then
+        rest=rest:sub(2)
+    end
+    if rest=="" then return "" end
+    local rendered=titleCase(rest)
+    -- Keep the distinction between different fixed-size original templates,
+    -- including diameter, wall and slot variants that share a shape family.
+    return if rendered~="" then "  ·  "..rendered else ""
+end
 local function readable(id,model)
     local n=id:lower()
     if id=="HandCrank" then return "Hand Crank" end
@@ -102,18 +106,28 @@ local function readable(id,model)
         return "Drilled Block  ·  "..blockSize.." U / Ø"
             ..tostring(tonumber(diameter)/100).." U"
     end
-    if n:find("rectangulartube",1,true) or n:find("recttube",1,true)
-        then return "Rectangular Tube" end
-    if n:find("squaretube",1,true) then return "Square Tube" end
-    if n:find("halftube",1,true) then return "Half-Round Tube" end
-    if n:find("circulartube",1,true) or n=="tube"
-        then return "Round Tube" end
-    if n:find("slottedhole",1,true) then
-        if n:find("long",1,true) then return "Slotted Hole  ·  Long" end
-        if n:find("short",1,true) then return "Slotted Hole  ·  Short" end
-        return "Slotted Hole"
+    if n:find("rectangulartube",1,true) then
+        return "Rectangular Tube"..variantSuffix(id,"RectangularTube")
     end
-    if n:find("holeblock",1,true) then return "Bored Block" end
+    if n:find("recttube",1,true) then
+        return "Rectangular Tube"..variantSuffix(id,"RectTube")
+    end
+    if n:find("squaretube",1,true) then
+        return "Square Tube"..variantSuffix(id,"SquareTube")
+    end
+    if n:find("halftube",1,true) then
+        return "Half-Round Tube"..variantSuffix(id,"HalfTube")
+    end
+    if n:find("circulartube",1,true) then
+        return "Round Tube"..variantSuffix(id,"CircularTube")
+    end
+    if n=="tube" then return "Round Tube" end
+    if n:find("slottedhole",1,true) then
+        return "Slotted Hole"..variantSuffix(id,"SlottedHole")
+    end
+    if n:find("holeblock",1,true) then
+        return "Bored Block"..variantSuffix(id,"HoleBlock")
+    end
     if n=="block" then return "Solid Block" end
     if n=="plate" or n=="flat" then return "Flat Plate" end
     if n=="cylinder" then return "Solid Cylinder" end
