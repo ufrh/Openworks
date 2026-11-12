@@ -175,8 +175,10 @@ end
 
 function Controller:SyncConnectionFeedback()
     if not self.Feedback then return end
-    self.Feedback:Clear("connection")
-    if self.Mode~="Mechanics" or self.Tools.SubtoolId~="Connect" then return end
+    if self.Mode~="Mechanics" or self.Tools.SubtoolId~="Connect" then
+        self.Feedback:Clear("connection")
+        return
+    end
     local first=if self.WeldMode then self.WeldFirst
         elseif self.Stage=="PairSecond" then self.PairFirst
         elseif self.Stage=="GearSecond" then self.GearFirst
@@ -185,11 +187,11 @@ function Controller:SyncConnectionFeedback()
         elseif self.Stage=="Preview" then self.Source else nil
     if first and first.Parent then
         self.Feedback:Set("connection","first",{first},"pending",false)
-    end
+    else self.Feedback:Remove("connection","first") end
     if second and second.Parent then
         self.Feedback:Set("connection","second",{second},
             if self.PreviewValid then "pending" else "invalid",false)
-    end
+    else self.Feedback:Remove("connection","second") end
 end
 
 function Controller:RefreshHUD()
