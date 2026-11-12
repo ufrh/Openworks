@@ -535,10 +535,8 @@ function Tool:History(redo)
 end
 
 function Tool:Cancel()
-    if self.UnifiedExplorer and self.UnifiedExplorer:HasDirtyDraftName() then
-        -- Leaving a draft discards uncommitted name and membership only.
-        -- No network mutation occurs until Confirm().
-    end
+    -- Only uncommitted selection and naming are discarded; saved membership
+    -- remains unchanged until Confirm sends CreateAssembly/UpdateAssembly.
     self:CloseName(false)
     self.Stage="Idle"
     self.Selected={}
