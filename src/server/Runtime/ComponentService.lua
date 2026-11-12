@@ -442,9 +442,35 @@ function ComponentService:Delete(player, payload)
         table.insert(before, self.D.snapshot(model))
     end
 
-    for _, member in ipairs(members) do member:Destroy() end
-    self.D.commitBatch(player, before, {})
-    return true, "Component deleted"
+    -- A bank-placed body can contain many real native relationships.
+    -- Remove their relationship folders BEFORE the parts are destroyed,
+    -- and record all snapshots in the SAME undo transaction.
+    local memberIds={}
+    for _,member in ipairs(members) do
+        memberIds[member:GetAttribute("InstanceId")]=true
+    end
+    local deletedRelations={}
+    if self.D.mechanical then
+        for _,relation in ipairs(self.D.mechanical.Folder:GetChildren()) do
+            if relation:IsA("Folder")
+                and relation:GetAttribute("OwnerUserId")==player.UserId then
+                local spec=self.D.mechanical:Snapshot(relation)
+                if memberIds[spec.sourceId] or memberIds[spec.targetId]
+                    or (spec.secondTargetId and memberIds[spec.secondTargetId])
+                    or (spec.boltId and memberIds[spec.boltId]) then
+                    table.insert(deletedRelations,spec)
+                    self.D.mechanical:DestroyRelation(relation)
+                end
+            end
+        end
+    end
+    for _,member in ipairs(members) do member:Destroy() end
+    if #deletedRelations>0 then
+        self.D.commitAssembly(player,before,{},deletedRelations,true)
+    else
+        self.D.commitBatch(player,before,{})
+    end
+    return true,"Component and internal/external relationships deleted"
 end
 
 function ComponentService:Handle(player, action, payload)
