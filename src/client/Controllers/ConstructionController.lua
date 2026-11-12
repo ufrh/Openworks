@@ -2301,7 +2301,8 @@ function Controller:OnInput(input, processed)
         return
     end
     if key==Enum.KeyCode.M and self.Mode=="Edit" and not processed then
-        if self.UnifiedExplorer then self.UnifiedExplorer:Focus(true)
+        if self.UnifiedExplorer then
+            self.UnifiedExplorer:OpenSelectedContext()
         end
         return
     end
