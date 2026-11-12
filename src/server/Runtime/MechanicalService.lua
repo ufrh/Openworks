@@ -134,6 +134,15 @@ function Mechanical:Restore(player, spec)
         spec=table.clone(spec)
         spec.kind="Weld"
     end
+    -- Saved and freshly authored gear/shaft welds obey the same geometry
+    -- preflight. A weld never teleports a gear or accepts an offset bore.
+    if spec.kind=="Weld" and
+        (type(source:GetAttribute("GearTeeth"))=="number"
+            or type(target:GetAttribute("GearTeeth"))=="number")
+        and (Alignment.IsShaft(source) or Alignment.IsShaft(target)) then
+        local fitted,reason=Smart.HubFits(source,target)
+        if not fitted then return false,reason or "Gear hub is not fitted" end
+    end
 
     local folder = Instance.new("Folder")
     folder.Name = "Relationship_" .. spec.relationId
@@ -857,6 +866,10 @@ function Mechanical:SmartMate(player, request, newSource)
         fitMap={[shaft]={}}
         for _,gear in ipairs(hubGears) do
             fitMap[shaft][gear]=true
+            -- The moving object may be the gear rather than the shaft.
+            -- Collision authorization must work in BOTH mount directions.
+            fitMap[gear]=fitMap[gear] or {}
+            fitMap[gear][shaft]=true
         end
     end
     if mode=="Bore" then
@@ -1073,7 +1086,7 @@ function Mechanical:SmartMate(player, request, newSource)
         local key=candidate.sourceId..":"..candidate.targetId
         local prior=existingByPair[key]
         if prior then
-            if prior:GetAttribute("Kind")~=typeName then
+            if prior:GetAttribute("Kind")~=candidate.kind then
                 if reverse then d.applyState(shaft,fixedShaftBefore) end
                 restoreMoving()
                 return false,"An existing relationship has a different motion type"
