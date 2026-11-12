@@ -814,6 +814,63 @@ def main() -> int:
           "MAX_HIGHLIGHTS=64" in world
           and "Color3.fromRGB(179,115,255)" in tool_ui)
     handles=read("src/client/Controllers/PhysicalHandles.lua")
+    motion=read("src/client/Controllers/WorldMotion.lua")
+    gizmo=read("src/client/Controllers/ResizeGizmo.lua")
+    layered=read("src/client/Controllers/LayeredEditingController.lua")
+    alignment_editor=read("src/client/Controllers/AssemblyController.lua")
+    assembly_tool=read("src/client/Controllers/AssemblyToolController.lua")
+    check("All authoring previews inherit ONE fast, framerate independent motion profile",
+          'WorldMotion.Profile=table.freeze({' in motion
+          and 'Placement=30' in motion
+          and 'Scale=34' in motion
+          and 'function WorldMotion.Alpha(' in motion
+          and '1-math.exp(' in motion
+          and 'WorldMotion.Profile.Placement' in selection
+          and 'WorldMotion.Profile.Placement' in layered
+          and 'WorldMotion.Profile.Placement' in alignment_editor
+          and 'self.PreviewVisualPose=WorldMotion.Step(' in selection
+          and 'align.VisualPose=WorldMotion.Step(' in layered
+          and 'self.VisualPose=WorldMotion.Step(' in alignment_editor)
+    check("Visual resizing eases block center and dimensions together with grips",
+          'function WorldMotion.StepSize(' in motion
+          and 'function Controller:AdvanceScalePreview(dt)' in selection
+          and 'self.ScaleVisualCF=WorldMotion.Step(' in selection
+          and 'self.ScaleVisualSize=WorldMotion.StepSize(' in selection
+          and 'ghost.PrimaryPart.Size=self.ScaleVisualSize' in selection
+          and 'self:AdvanceScalePreview(dt)' in selection
+          and 'self.VisualCF=WorldMotion.Step(' in gizmo
+          and 'self.VisualSize=WorldMotion.StepSize(' in gizmo
+          and 'self.Visual:Update(self.VisualCF or self.CFrame,' in gizmo)
+    check("Server commits keep exact geometry rather than eased visual poses",
+          'position=self.PreviewCF.Position' in selection
+          and 'position=self.PreviewCF.Position,' in selection
+          and 'size=self.CurrentSize' in selection
+          and 'position=cf.Position' in selection
+          and 'self.ScaleCF' in selection
+          and 'position = cf.Position' in selection
+          and 'WorldMotion.SettlePreview(snapshot,goal,models)' in selection
+          and 'function WorldMotion.SettlePreview(' in motion
+          and 'item.CanQuery=false' in motion
+          and 'part.CanQuery=false' in motion)
+    check("Primitive, component, assembly nudges and world turns are visually damped",
+          'function WorldMotion.AnimateMove(' in motion
+          and 'function WorldMotion.AnimateTurn(' in motion
+          and 'local stop=WorldMotion.AnimateMove(affected,displacement)' in selection
+          and 'local stop=WorldMotion.AnimateMove(members,displacement)' in assembly_tool
+          and 'WorldMotion.Profile.TurnSeconds' in selection
+          and 'if not succeeded then stop() end' in selection
+          and 'if not ok or type(answer)~="table" or not answer.ok then stop() end' in assembly_tool
+          and 'function WorldMotion.Cancel(models)' in motion)
+    check("Drag commit handoffs never leave persistent hidden or colliding ghosts",
+          'local handoff,goal,models=self:CapturePendingHandoff()' in selection
+          and 'self:FinishPendingHandoff(handoff,goal,models,success)' in selection
+          and 'self:FinishPendingHandoff(handoff,goal,models,ok)' in selection
+          and 'function WorldMotion.SettlePreview(' in motion
+          and 'snapshot:SetAttribute("OPENWORKS_PresentationOnly",true)' in motion
+          and 'snapshot:Destroy()' in motion
+          and 'part.LocalTransparencyModifier=item.previous' in motion
+          and 'partCount>MAX_ANIMATED_PARTS' in motion
+          and 'or distance>WorldMotion.Profile.TeleportDistance' in motion)
     check("Frame-budgeted placement retains per-render ghost smoothing",
           'visualNow-(self.PreviewComputeTime or 0)<1/30' in selection
           and 'self.PreviewVisualPose=WorldMotion.Step(' in selection
