@@ -897,20 +897,41 @@ local function verticalMove(player,payload)
     local selected={}
     local scope=payload.scope
     local id=payload.id
-    if type(id)~="string" or #id==0 or #id>64 then
-        return false,"Select an existing component or assembly"
-    end
-    if scope=="Component" then
-        selected=components:Members(player,id)
-    elseif scope=="Assembly" then
-        selected=assemblies:Members(player,id)
-    elseif scope=="Primitive" then
-        local model=findOwned(player,id)
-        if model and not model:GetAttribute("ComponentId") then
-            selected={model}
+    if scope=="Primitives" then
+        -- The caller's exact Shift-selection; one transaction, no grouping.
+        local ids=payload.ids
+        if type(ids)~="table" or #ids<2 or #ids>128 then
+            return false,"Select 2–128 distinct primitives"
+        end
+        local seen={}
+        for _,primitiveId in ipairs(ids) do
+            if type(primitiveId)~="string" or #primitiveId==0
+                or #primitiveId>64 or seen[primitiveId] then
+                return false,"Invalid or duplicate nudge selection"
+            end
+            seen[primitiveId]=true
+            local model=findOwned(player,primitiveId)
+            if not model or model:GetAttribute("ComponentId") then
+                return false,"Multi-nudge requires independent primitives"
+            end
+            table.insert(selected,model)
         end
     else
-        return false,"Invalid vertical movement scope"
+        if type(id)~="string" or #id==0 or #id>64 then
+            return false,"Select an existing primitive, component or assembly"
+        end
+        if scope=="Component" then
+            selected=components:Members(player,id)
+        elseif scope=="Assembly" then
+            selected=assemblies:Members(player,id)
+        elseif scope=="Primitive" then
+            -- A deep-selected grouped member can move by itself; its
+            -- ComponentId is preserved and incompatible joints disconnect.
+            local model=findOwned(player,id)
+            if model then selected={model} end
+        else
+            return false,"Invalid nudge selection scope"
+        end
     end
     if #selected==0 or #selected>128 then
         return false,"Selection unavailable or too large"
