@@ -104,6 +104,23 @@ def main() -> int:
           and 'group.components[cid]' in explorer_data
           and 'relation:GetAttribute("SourceId")' in explorer_data
           and 'model:GetAttribute("OwnerUserId")==player.UserId' in explorer_data)
+    check("Partial component entries cannot issue whole-component destructive actions",
+          'comp.partialComponent=#comp.members<comp.totalMembers' in explorer_data
+          and 'and not node.partialComponent' in context_actions
+          and 'if node.partialComponent then' in unified_panel
+          and 'self.Build:SetSelection(nil)' in unified_panel
+          and 'whole-component:' in unified_panel)
+    check("Explorer refreshes replicated mechanical and appearance properties",
+          all(token in explorer_data for token in (
+              'tostring(m:GetAttribute("PaintFinish") or "")',
+              'tostring(m:GetAttribute("ConstructionMaterial") or "")',
+              'tostring(m:GetAttribute("Grounded") or "")',
+              'tostring(relation:GetAttribute("LowerLimit") or "")',
+              'tostring(relation:GetAttribute("MotorEnabled") or "")',
+              'tostring(relation:GetAttribute("Stiffness") or "")',
+          ))
+          and 'not UIS:GetFocusedTextBox()' in unified_panel)
+
     check("Unified selection synchronizes World and Explorer, including simulation",
           'function Panel:SelectWorldAtCenter()' in unified_panel
           and 'function Panel:OnConstructionSelection()' in unified_panel
