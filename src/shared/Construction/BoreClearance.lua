@@ -16,7 +16,8 @@ local function boreProfile(target)
     -- a colliding root cylinder. Their bore radius is authored in STUDS.
     -- Treat this as a circular X-axis cavity for the SAME engagement,
     -- diameter and eccentricity checks used by the hole block and tubes.
-    if type(target:GetAttribute("GearTeeth"))=="number" then
+    if type(target:GetAttribute("GearTeeth"))=="number"
+        or target:GetAttribute("PrimitiveFamily")=="Pulley" then
         local radius=target:GetAttribute("BoreRadiusStuds")
         if type(radius)~="number" or radius<=0
             or axis~=Vector3.xAxis then return nil end
