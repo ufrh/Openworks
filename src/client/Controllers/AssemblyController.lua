@@ -205,7 +205,7 @@ end
 function Controller:RefreshHUD()
     self:SyncConnectionFeedback()
     if not self.Gui then return end
-    self.Gui.Enabled = self.Active
+    self.Gui.Enabled = self.Active and self.UnifiedExplorer==nil
         and (self.Mode=="Simulate" or self.WeldMode or self.ManualActive)
     self.HUDPanel.Visible=self.Mode=="Simulate"
         or self.WeldMode or self.ManualActive
