@@ -98,7 +98,9 @@ end
 
 function Ghost:Update()
     if not self.Model or not self.Model.Parent then
-        self:Bind(nil)
+        -- A normal placement preview is temporarily unparented while the
+        -- center ray has no hit. Retain it so edges recover on the next hit.
+        for _,line in ipairs(self.Edges) do line.Visible=false end
         return
     end
     if os.clock()-self.LastRender<0.08 then return end
