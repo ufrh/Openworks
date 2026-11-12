@@ -140,27 +140,20 @@ function Properties:OutlineSelection(model)
         self.SelectionDestroyConnection:Disconnect()
         self.SelectionDestroyConnection=nil
     end
-    if self.SelectedOutline then self.SelectedOutline:Destroy() end
-    self.SelectedOutline=nil
-    if not model or not model.Parent then return end
-    local h=Instance.new("Highlight")
-    h.Name="OPENWORKS_InspectorSelection"
-    h.Adornee=model
-    h.FillTransparency=1
-    h.OutlineTransparency=0
-    h.OutlineColor=Color3.fromRGB(0,170,255)
-    h.DepthMode=Enum.HighlightDepthMode.Occluded
-    h.Parent=self.VisualRoot
-    self.SelectedOutline=h
-    self.SelectionDestroyConnection=model.Destroying:Connect(function()
-        if self.SelectedOutline then
-            self.SelectedOutline:Destroy()
-            self.SelectedOutline=nil
+    if self.Feedback then
+        self.Feedback:Clear("inspection")
+        if model and model.Parent then
+            self.Feedback:Set("inspection","chosen",{model},"selection",false)
         end
-        self.SelectedId=nil
-        self.SelectedRelation=nil
-        if self.Open and self.Gui then self:Refresh() end
-    end)
+    end
+    if model and model.Parent then
+        self.SelectionDestroyConnection=model.Destroying:Connect(function()
+            if self.Feedback then self.Feedback:Clear("inspection") end
+            self.SelectedId=nil
+            self.SelectedRelation=nil
+            if self.Open and self.Gui then self:Refresh() end
+        end)
+    end
 end
 
 function Properties:InspectAtCenter()
@@ -359,8 +352,7 @@ function Properties:Show(open)
     if not open then
         self.Looking=false
         player:SetAttribute("OPENWORKS_PropertiesLooking",false)
-        if self.SelectedOutline then self.SelectedOutline:Destroy() end
-        self.SelectedOutline=nil
+        if self.Feedback then self.Feedback:Clear("inspection") end
         if self.SelectionDestroyConnection then
             self.SelectionDestroyConnection:Disconnect()
             self.SelectionDestroyConnection=nil
