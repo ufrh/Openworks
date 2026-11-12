@@ -173,7 +173,27 @@ function Controller:Message(message)
     self:RefreshHUD()
 end
 
+function Controller:SyncConnectionFeedback()
+    if not self.Feedback then return end
+    self.Feedback:Clear("connection")
+    if self.Mode~="Mechanics" or self.Tools.SubtoolId~="Connect" then return end
+    local first=if self.WeldMode then self.WeldFirst
+        elseif self.Stage=="PairSecond" then self.PairFirst
+        elseif self.Stage=="GearSecond" then self.GearFirst
+        else self.Housing
+    local second=if self.WeldMode then nil
+        elseif self.Stage=="Preview" then self.Source else nil
+    if first and first.Parent then
+        self.Feedback:Set("connection","first",{first},"pending",false)
+    end
+    if second and second.Parent then
+        self.Feedback:Set("connection","second",{second},
+            if self.PreviewValid then "pending" else "invalid",false)
+    end
+end
+
 function Controller:RefreshHUD()
+    self:SyncConnectionFeedback()
     if not self.Gui then return end
     self.Gui.Enabled = self.Active
         and (self.Mode=="Simulate" or self.WeldMode or self.ManualActive)
@@ -291,17 +311,6 @@ function Controller:ClearHighlights()
     self.SourceHighlight = nil
 end
 
-local function highlight(model, color)
-    local h = Instance.new("Highlight")
-    h.Adornee = model
-    h.FillColor = color
-    h.OutlineColor = color
-    h.FillTransparency = 0.8
-    h.OutlineTransparency = 1
-    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    h.Parent = model
-    return h
-end
 
 function Controller:ClearPreview()
     if self.PreviewModel then self.PreviewModel:Destroy() end
@@ -542,7 +551,14 @@ function Controller:WeldClick()
         sourceId=self.WeldFirst:GetAttribute("InstanceId"),
         targetId=picked:GetAttribute("InstanceId"),
     })
-    if success then self.WeldFirst=nil end
+    if success then
+        if self.Feedback then
+            self.Feedback:FlashSuccess({self.WeldFirst,picked})
+        end
+        self.WeldFirst=nil
+        self.WeldMode=false
+        self:StartManualJoint()
+    end
     self:RefreshHUD()
 end
 
@@ -683,7 +699,12 @@ function Controller:Activate()
                 request.targetId=first:GetAttribute("InstanceId")
             end
         end
-        if self:Request(request) then self:Reset() end
+        if self:Request(request) then
+            if self.Feedback then
+                self.Feedback:FlashSuccess({first,second})
+            end
+            self:StartManualJoint()
+        end
         return
     end
     if self.Stage=="GearFirst" then
@@ -719,7 +740,7 @@ function Controller:Activate()
             return
         end
         self.Housing = candidate
-        self.HousingHighlight = highlight(candidate, Color3.fromRGB(94, 207, 157))
+        -- First participant outlined orange by shared feedback renderer.
         self.Stage = "Source"
     elseif self.Stage == "Source" then
         local housing = self.Housing
@@ -742,7 +763,7 @@ function Controller:Activate()
         end
         self.Source = candidate
         self.Members = members
-        self.SourceHighlight = highlight(candidate, Color3.fromRGB(236, 174, 102))
+        -- Second participant outlined orange (red if preview is invalid).
         self.OffsetUnits = 0
         self.RollDegrees = 0
         self.Stage = "Preview"
@@ -764,6 +785,9 @@ function Controller:Activate()
             offsetUnits = self.OffsetUnits,
             rollDegrees = self.RollDegrees,
         }) then
+            if self.Feedback then
+                self.Feedback:FlashSuccess({self.Housing,self.Source})
+            end
             if self:Kind() ~= "Fixed" then
                 self:ClearPreview()
                 self.Stage = "Fit"
@@ -861,6 +885,7 @@ function Controller:Start()
     self.Gui, self.HUDPanel, self.Header, self.Detail, self.Help = createGui()
     table.insert(self.Connections,Theme.Attach(self.Gui))
     self.Properties=RelationshipProperties.new(self)
+    self.Properties.Feedback=self.Feedback
     self.Properties:Start()
     self.Remote = ReplicatedStorage:WaitForChild(Config.RequestName)
     self.HandCrank=HandCrankController.new(self)
