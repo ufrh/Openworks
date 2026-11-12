@@ -439,7 +439,7 @@ def main() -> int:
           and 'math.abs(radial.Magnitude-pitch)>Smart.GearPitchCapture' in smart_placement
           and 'aimedPart:IsDescendantOf(model)' in smart_placement
           and 'local directAim=aimedModel==target' in smart_placement
-          and 'score=if directAim then -0.15' in smart_placement)
+          and 'score=(if directAim then -0.15 else dist+0.2)' in smart_placement)
     check("One moving gear can align to two other gear pitch circles",
           'function Smart.MultiGearPose(' in smart_placement
           and 'local along=(r1*r1-r2*r2+distance*distance)/(2*distance)' in smart_placement
@@ -882,10 +882,12 @@ def main() -> int:
           'grip.Parts=if mode=="Move"' in handles
           and 'grip.LastVisible~=grip.Visible' in handles
           and 'grip.Model:GetDescendants()' not in handles)
-    check("Gear physics caches solids and slows only idle scans",
-          'group.BottomParts=parts' in gears
-          and 'IDLE_SCAN_PERIOD=0.25' in gears
-          and 'if moving then SCAN_PERIOD else IDLE_SCAN_PERIOD' in gears)
+    check("Physical shaft torque solver has bounded mesh rescans and no CFrame teleport",
+          'SCAN_INTERVAL=0.10' in gears
+          and 'if self.ScanElapsed>=SCAN_INTERVAL then' in gears
+          and 'self:Detect()' in gears
+          and 'PivotTo(' not in gears
+          and 'group.Torque.Torque=group.Pending' in gears)
     compact_hole=read("src/server/Runtime/CompactHoleLibrary.lua")
     check("Compact 1U drilled block is a true 0.98U CSG bore",
           'OUTER_U=1' in compact_hole
