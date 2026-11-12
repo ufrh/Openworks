@@ -135,6 +135,7 @@ function Controller.new(tools)
         BankModal=nil,
         BankEntries={},
         BankConfirmRemove=nil,
+        CatalogCollapsed={},
         ScaleMode = false,
         NumericPrecision = false,
         Numeric = nil,
@@ -203,17 +204,30 @@ function Controller:MakeUI()
         Visible = false,
     }, gui), 10)
 
-    label(catalog, "PRIMITIVES", UDim2.fromOffset(220, 30), UDim2.fromOffset(13, 9), 17)
+    label(catalog, "BUILD LIBRARY", UDim2.fromOffset(220, 30), UDim2.fromOffset(13, 9), 17)
     local close = button(catalog, "×  CLOSE", UDim2.fromOffset(90, 29), UDim2.fromOffset(226, 10))
     close.Activated:Connect(function() self:ShowCatalog(false) end)
 
     label(catalog, "Place primitives or saved custom components", UDim2.fromOffset(300, 24),
         UDim2.fromOffset(13, 40), 12, MUTED)
 
+    local search=create("TextBox",{
+        Name="Search",Text="",PlaceholderText="Search parts or components…",
+        ClearTextOnFocus=false,BackgroundColor3=PANEL,
+        TextColor3=TEXT,PlaceholderColor3=MUTED,
+        Font=Enum.Font.GothamMedium,TextSize=13,
+        TextXAlignment=Enum.TextXAlignment.Left,
+        Position=UDim2.fromOffset(12,72),
+        Size=UDim2.new(1,-24,0,34),BorderSizePixel=0,
+    },catalog)
+    rounded(search,7)
+    local pad=create("UIPadding",{
+        PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,10),
+    },search)
     local list = create("ScrollingFrame", {
         Name = "Items",
-        Position = UDim2.fromOffset(12, 71),
-        Size = UDim2.new(1, -24, 1, -130),
+        Position = UDim2.fromOffset(12,116),
+        Size = UDim2.new(1, -24, 1, -175),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 5,
@@ -231,9 +245,9 @@ function Controller:MakeUI()
         Position=UDim2.fromScale(0.5,0.43),Size=UDim2.fromOffset(370,172),
         BackgroundColor3=DARK,BorderSizePixel=0,
     },gui),10)
-    local title=label(modal,"SAVE COMPONENT TO BANK",
+    local modalTitle=label(modal,"SAVE COMPONENT TO BANK",
         UDim2.fromOffset(342,24),UDim2.fromOffset(15,11),16)
-    title.ZIndex=43
+    modalTitle.ZIndex=43
     local input=create("TextBox",{
         Name="ComponentName",ZIndex=43,Text="",PlaceholderText="Component name",
         ClearTextOnFocus=false,Size=UDim2.fromOffset(340,39),
@@ -279,6 +293,10 @@ function Controller:MakeUI()
     self.BankModal=modal
     self.BankNameInput=input
     self.BankRegisterButton=registerButton
+    self.CatalogSearch=search
+    search:GetPropertyChangedSignal("Text"):Connect(function()
+        if self.CatalogOpen then self:RefreshCatalog() end
+    end)
     self.Crosshair = crosshair
     self.Numeric = NumericSizePanel.new(gui)
     self.MateChoice = MateChoicePanel.new(gui)
