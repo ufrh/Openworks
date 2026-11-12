@@ -342,7 +342,7 @@ function Controller:RefreshHUD()
             then (if self.Mode=="Build" then "Click to place meshed gear" else "Release to position gear")
                 .. " • automatic engagement in Simulate • Tab target • Alt free"
             elseif match.kind=="Hub"
-            then "Click to weld gear onto shaft • wheel insertion depth"
+            then "Click to weld pulley/gear onto shaft • wheel insertion depth"
             elseif match.kind=="BoltHole" then
                 (if self.Mode=="Build" then "Click to place bolt"
                     else "Release to fasten bolt")
@@ -1353,10 +1353,11 @@ function Controller:UpdatePreview()
                 hit.Position,hit.Normal)
         -- The selected logical origin, not a hidden physics root, becomes
         -- the placement grab point whenever the builder customized it.
-        local originPose=FitSolver.SurfacePose(self.Preview,cf.Rotation,hit.Position)
-        if originPose then cf=originPose end
         local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+        local originPose=if not alt then FitSolver.SurfacePose(
+            self.Preview,cf.Rotation,hit.Position) else nil
+        if originPose then cf=originPose end
         self.Preview:PivotTo(cf)
         if not alt and self.Pending~="Copy"
             and self.Pending~="ComponentCopy" then
