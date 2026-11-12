@@ -360,7 +360,7 @@ function Layered:CreatePreview()
             item.CanQuery = false
             item.Anchored = true
             item.Transparency = if item:GetAttribute("GearPivotOnly")==true
-                then 1 else 0.48
+                then 1 else 0.65
             item.LocalTransparencyModifier = 0
             item.Color = Color3.fromRGB(86, 188, 210)
             item.CastShadow = false
@@ -370,6 +370,7 @@ function Layered:CreatePreview()
     ghost.WorldPivot = align.Shaft:GetPivot()
     ghost.Parent = workspace
     align.Preview = ghost
+    if self.Parent.Feedback then self.Parent.Feedback:SetGhost(ghost,true) end
     align.StartGhostPivot = ghost:GetPivot()
     self:UpdateAlignPreview()
 end
@@ -437,6 +438,9 @@ function Layered:UpdateAlignPreview()
                 align.Preview,ignore,nil,nil,MultiFit.AllowMap(fitted))
         end
         PreviewFeedback.Paint(align.Preview, align.Valid)
+        if self.Parent.Feedback then
+            self.Parent.Feedback:SetGhostValid(align.Valid)
+        end
         align.TargetPose = goal
         align.VisualPose = visual
         align.Preview:PivotTo(visual)
@@ -694,6 +698,7 @@ function Layered:Click()
 end
 
 function Layered:CancelAlignment()
+    if self.Parent.Feedback then self.Parent.Feedback:SetGhost(nil,true) end
     local align = self.Alignment
     if align and align.Preview then align.Preview:Destroy() end
     self.Alignment = nil
