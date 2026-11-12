@@ -27,6 +27,24 @@ function Features.Describe(model)
         Bounds=model.PrimaryPart.Size,
     }
 end
+-- Every fit intent is classified HERE before the specialized,
+-- geometry-aware clearance/mesh solvers determine an exact legal pose.
+-- A custom pivot is a deliberate fallback, not a replacement for a bore.
+function Features.Pair(a,b)
+    local left,right=Features.Describe(a),Features.Describe(b)
+    if not left or not right then return nil end
+    if (left.Hub and right.ShaftAxis)
+        or (left.ShaftAxis and right.Hub) then
+        return "Hub"
+    end
+    if (left.ShaftAxis and right.OpeningAxis)
+        or (left.OpeningAxis and right.ShaftAxis) then
+        return "Bore"
+    end
+    if left.Gear and right.Gear then return "Gear" end
+    return nil
+end
+
 function Features.Component(members)
     local anchor=Origin.ComponentAnchor(members)
     if not anchor then return nil end
