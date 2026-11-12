@@ -237,6 +237,22 @@ end
 
 function Panel:FindNode(key)
     if not key or not self.Snapshot then return nil end
+    if key:sub(1,16)=="whole-component:" then
+        local cid=key:sub(17)
+        local members={}
+        for _,model in ipairs(self.Snapshot.models) do
+            if model:GetAttribute("ComponentId")==cid then
+                table.insert(members,model)
+            end
+        end
+        if #members>0 then
+            return {kind="component",key=key,componentId=cid,
+                id=cid,name="Component "..cid:sub(1,8).." (all)",
+                members=members,totalMembers=#members,
+                partialComponent=false,wholeComponent=true}
+        end
+        return nil
+    end
     for _,a in ipairs(self.Snapshot.assemblies) do
         if a.key==key then return a end
         for _,c in ipairs(a.children) do
@@ -257,14 +273,21 @@ function Panel:OnConstructionSelection()
     local built=self.Build
     local node
     if built.SelectedComponentId then
+        local cid=built.SelectedComponentId
         for _,a in ipairs(self.Snapshot and self.Snapshot.assemblies or {}) do
             for _,c in ipairs(a.children) do
-                if c.kind=="component"
-                    and c.componentId==built.SelectedComponentId then
+                if c.kind=="component" and c.componentId==cid
+                    and not c.partialComponent then
                     node=c break
                 end
             end
             if node then break end
+        end
+        if not node then
+            -- The world editor selected a FULL component whose primitives
+            -- cross assembly boundaries. Do not silently narrow it to the
+            -- first assembly's partial component entry.
+            node=self:FindNode("whole-component:"..cid)
         end
     elseif built.Selected and own(built.Selected) then
         node=self:NodeForModel(built.Selected)
@@ -291,7 +314,7 @@ function Panel:Select(node,propagate)
     if self.Feedback then
         self.Feedback:Clear("explorer-selection")
         if node and (self.Tools.PrimaryId~="Build"
-            or self.Tools.SubtoolId~="Edit") then
+            or self.Tools.SubtoolId~="Edit" or node.partialComponent) then
             local members={}
             local activeRoot
             if simulating() then
@@ -344,7 +367,14 @@ function Panel:Select(node,propagate)
         if node.kind=="primitive" then
             self.Build:SetSelection(node.model)
         elseif node.kind=="component" then
-            self.Build:SetComponentSelection(node.componentId,node.members)
+            if node.partialComponent then
+                -- A partial assembly slice is READ-ONLY as a component
+                -- selection. The Build editor's component actions operate
+                -- on the entire ComponentId, so do not select a fragment.
+                self.Build:SetSelection(nil)
+            else
+                self.Build:SetComponentSelection(node.componentId,node.members)
+            end
         end
         self.ApplyingSelection=false
     end
@@ -640,7 +670,11 @@ function Panel:Geometry(node)
     if type(assembly)=="string" and assembly~="" then
         self:Value("Assembly",assembly)
     end
-    self:Appearance(node)
+    if node.partialComponent then
+        self:Value("Scope","Partial component · select individual primitives to edit")
+    else
+        self:Appearance(node)
+    end
     -- A part can participate in many independent relationships. Show the
     -- actual saved relation endpoints, never inferred parent/child joints.
     local included={}
