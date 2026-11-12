@@ -2521,13 +2521,31 @@ function Controller:FinishDirectDrag()
     end
 end
 
--- Alt+Up/Down always moves on world Y. Alt+Left/Right follows the
--- camera's dominant horizontal right direction. Shift makes either
--- direction fine-grained. Server validates and commits atomically.
-function Controller:VerticalNudge(key)
+-- High-priority input capture must answer immediately. Do not yield
+-- the native ContextActionService callback on InvokeServer.
+function Controller:CanNudge()
     local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-    if not alt or self.Tools.ActiveId~="Build" then return false end
+    return alt and self.Tools.ActiveId=="Build" and self.Mode=="Edit"
+        and not self.Busy and not self.Pending and not self.ScaleMode
+        and not self.CatalogOpen and not self.PendingMateChoice
+        and not self.PivotSetting and not self.DirectDragActive
+        and not self.LockedAlignment
+        and not (self.BankModal and self.BankModal.Visible)
+        and not (self.Numeric and self.Numeric.Active)
+        and not (self.MaterialPicker and self.MaterialPicker.Visible)
+        and not (self.Layered and self.Layered.Alignment)
+        and not (self.Assembly and self.Assembly:IsEditingJoint())
+        and not UserInputService:GetFocusedTextBox()
+        and player:GetAttribute("OPENWORKS_Simulating")~=true
+        and (self.SelectedComponentId~=nil or self.Selected~=nil
+            or #self.SelectedParts>1)
+end
+
+-- Alt+Up/Down moves on world Y; Alt+Left/Right tracks camera horizontal.
+-- Shift provides fine increments; server owns collision and history.
+function Controller:VerticalNudge(key)
+    if not self:CanNudge() then return false end
     local axis,direction
     if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then
         -- Height never depends on camera orientation, even without Shift.
@@ -2543,17 +2561,6 @@ function Controller:VerticalNudge(key)
         end
         if key==Enum.KeyCode.Left then direction=-direction end
     end
-    if self.Mode~="Edit" or self.Busy or self.Pending or self.ScaleMode
-        or self.CatalogOpen or self.PendingMateChoice or self.PivotSetting
-        or self.DirectDragActive or self.LockedAlignment
-        or (self.BankModal and self.BankModal.Visible)
-        or (self.Numeric and self.Numeric.Active)
-        or (self.MaterialPicker and self.MaterialPicker.Visible)
-        or (self.Layered and self.Layered.Alignment)
-        or (self.Assembly and self.Assembly:IsEditingJoint())
-        or UserInputService:GetFocusedTextBox()
-        or player:GetAttribute("OPENWORKS_Simulating")==true then return false end
-
     local scope,id,ids
     local selected=self.SelectedParts
     if self.SelectedComponentId then
@@ -2789,9 +2796,10 @@ function Controller:Start()
             if state~=Enum.UserInputState.Begin then
                 return Enum.ContextActionResult.Pass
             end
-            if self:VerticalNudge(key) then
+            if self:CanNudge() then
                 self.VerticalHeld=key
                 self.VerticalElapsed=0
+                task.spawn(function() self:VerticalNudge(key) end)
                 return Enum.ContextActionResult.Sink
             end
             return Enum.ContextActionResult.Pass
