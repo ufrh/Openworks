@@ -1189,8 +1189,21 @@ local function handle(player, payload)
             return {ok=false,message="Use Assembly Editor to create or edit assemblies"}
         end
     elseif componentAction or alignmentAction or smartAction then
-        if (componentAction or smartAction) and not hasEquippedTool(player,"Build") then
+        if componentAction and not hasEquippedTool(player,"Build") then
             return {ok=false,message="Use Build to modify construction"}
+        end
+        if smartAction and not hasEquippedTool(player,"Build") then
+            -- Mechanics/Connect may invoke ONLY a validated Bore fit-only
+            -- or Hub-to-shaft mount. Other smart placement, gears and racks
+            -- remain Build-only, and ALL mechanical geometry validation in
+            -- MechanicalService:SmartMate still applies unchanged.
+            local mode=payload.mateKind
+            local kind=payload.relationKind
+            local approved=(mode=="Bore" and kind=="FreeFit")
+                or (mode=="Hub" and (kind=="Rotation" or kind=="Rigid"))
+            if not approved or not hasEquippedTool(player,"Mechanics") then
+                return {ok=false,message="Use Build for automatic placement"}
+            end
         end
         if alignmentAction and not hasEquippedTool(player,"Build")
             and not hasEquippedTool(player,"Mechanics") then
