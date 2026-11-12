@@ -100,6 +100,7 @@ function Controller.new(tools)
         Mode = nil,
         WeldFirst = nil,
         BeltFirst = nil,
+        BeltPreloadPercent = 1.5,
         ManualActive = false,
         Stage = "Housing",
         KindIndex = 1,
@@ -190,10 +191,11 @@ function Controller:RefreshHUD()
 
     if self.Mode=="Belt" then
         self.Header.Text="OPENWORKS / BELT"
-        self.Detail.Text=if self.BeltFirst
-            then "Select the second pulley • shafts must be independently mounted"
-            else "Select a pulley rigidly fitted onto a shaft"
-        self.Help.Text="Click two pulleys • Esc clears selection"
+        self.Detail.Text=(if self.BeltFirst
+            then "Select second pulley • independently mounted shafts"
+            else "Select a shaft-mounted pulley")
+            ..string.format(" • preload %.1f%%",self.BeltPreloadPercent)
+        self.Help.Text="Click pair: fit • Shift+click second: remove • [ ] preload • Esc"
         if self.LastMessage and os.clock()<self.MessageUntil then
             self.Detail.Text=self.LastMessage
         end
@@ -550,9 +552,12 @@ function Controller:BeltClick()
         return
     end
     local first=self.BeltFirst
-    local ok=self:Request({action="CreateBelt",
+    local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    local ok=self:Request({action=if shift then "RemoveBelt" else "CreateBelt",
         sourceId=first:GetAttribute("InstanceId"),
-        targetId=picked:GetAttribute("InstanceId")})
+        targetId=picked:GetAttribute("InstanceId"),
+        preloadPercent=self.BeltPreloadPercent})
     if ok then self:Reset() end
 end
 
@@ -916,8 +921,12 @@ function Controller:Start()
         if self.Mode=="Belt" then
             if key==Enum.KeyCode.Escape then
                 self.BeltFirst=nil
-                self:RefreshHUD()
+            elseif key==Enum.KeyCode.LeftBracket then
+                self.BeltPreloadPercent=math.max(0,self.BeltPreloadPercent-0.5)
+            elseif key==Enum.KeyCode.RightBracket then
+                self.BeltPreloadPercent=math.min(8,self.BeltPreloadPercent+0.5)
             end
+            self:RefreshHUD()
             return
         end
         if self.Construction and
