@@ -1,0 +1,33 @@
+# UI v2 × shaft-centric mechanics integration
+
+**Canonical development branch:** `feature/ui-reorganization-v2`. This integration uses the **UI v2 tool palette, contextual editor and three original native tools** as its baseline, not the older feature branch's UI. Its source files intentionally retain all UI v2 Rack/RackGuide templates and rack controls.
+
+## User-facing workflows
+- **Build > Place > B**: Search grouped precompiled primitives, or **My Components** for saved reusable blueprints. Template IDs remain immutable for plot compatibility.
+- **Build > Edit**: Alt+↑/↓ moves selected geometry vertically; Alt+←/→ uses camera-relative horizontal motion. Shift+Alt+arrows moves in fine 0.05-stud increments. Supports independent primitives, deep-selected grouped members, multiple independent primitives, and complete components. Normal steps are 0.25 studs; moves are validated and undoable together.
+- **Build > Edit**: Select a registered component then press **Shift+B**, or right-click and choose **Save to My Components**, to name and persist the component. Stored blueprints retain internal mechanical relationships, appearance, selected fitting origins, primitive geometry and rigid component metadata. The Component Bank is separately keyed per player and is bounded to 16 entries / 64 primitives per entry.
+- **Build > Edit**: Press **O** to choose an authored fitting origin on the selected primitive/component (Q/E chooses face/edge/corner positioning). Press **Shift+O** to reset. The right-click contextual editor also has Set/Reset fitting origin actions. These modify fitting metadata only, not the native physics pivot.
+- **Mechanics > Connect**: Connect a gear or pulley to a shaft using the **single rigid/welded hub** option. Two pulleys can be linked using **Friction belt between pulleys**. Physical rotation is governed by shaft bearings, hinges and motor settings, not a free-spinning gear or independent hub mode.
+- **Assembly & Simulation**: Pure shaft/gear/belt assemblies use bidirectional shaft-centric torque transmission under native Roblox constraints. A rack-containing assembly delegates to the preserved UI v2 guided rack solver, including its Q/E rack control.
+
+## Architecture and compatibility
+- `GearTransmission`: Models meshing gear pairs as torque acting on connected shaft groups; compound gears welded to the same shaft share angular velocity, and backdrive is bidirectional. Gear-to-gear mesh is computed from actual pitch/axis overlap, rather than creating an authored gear joint.
+- `BeltTransmission` + `BeltVisual`: Stores explicit pulley-pulley belt connections and models slip/tension with runtime torque and a presentation-only belt visual. Requires compatible pulley geometry and installed shafts.
+- `RackSimulationService`: UI v2's original rack/pinion simulation, retained as a rack-specific engine. `SimulationService` switches to it whenever an assembly contains a rack. **Known limitation**: a single assembly combining a guided rack and friction belts currently uses the rack solver; friction belt dynamics in that same mixed assembly are not simulated through the new torque engine. Do not treat mixed rack/belt trains as verified.
+- `FitOrigin`, `FitSolver`, `FitFeatureRegistry`: Preserve authored fitting origins, feature pairing, mouse-target alignment and clearance rules, shared by client preview and authoritative server changes.
+- `ComponentBankService` + `ComponentBankCodec`: Separate DataStore, deterministic bounded payload and atomic reconstruction/rollback of internal relationships. Placing a blueprint marks the *plot* dirty for autosave, while just listing/saving bank entries does not.
+- The UI v2 contextual editor owns the live relationship and appearance dialogs. Do not reinstate the older `MateChoicePanel`, `MaterialPickerController`, `ContextKeybinds` or extra native Build/Edit tools.
+
+## Roblox Studio acceptance tests (required before merge)
+1. Pull `feature/ui-reorganization-v2` and reconnect Rojo. Stop and restart **Play** to reload ModuleScripts; confirm only **Build**, **Mechanics**, and **Assembly & Simulation** are provisioned, and the left tool palette/contextual editor still renders.
+2. In Build/Place, verify the searchable grouped catalog uses readable names and that the actual template ID stays unchanged. Place, resize, save/reload and undo a shaft, bore, beveled gear and rack.
+3. In Build/Edit, test Alt+arrow normal/fine nudges for an ungrouped primitive, a single member inside a registered component, a Shift-multiselection and an entire component. Confirm server collision rejection restores the exact pose and Ctrl+Z/Redo is atomic.
+4. Build a gear welded to a shaft through both mating directions. Run a rigid pair and compound multiple-gear shaft; rotate an output shaft to verify backdrive. Test a grounded bearing housing, an ungrounded shaft, and a stalled shaft under conflicting motors.
+5. Fit two different solid bevel gear types (45° and 90°) and ensure they remain single solid tooth geometry, not stacked primitives. Check multi-gear, multi-hole shaft insertion and mouse-aimed axial hub placement.
+6. Create two pulley-to-shaft welds, connect the pulleys in Mechanics > Connect, then simulate forward/reverse belt influence. Unlink the belt, undo/redo it and verify plot reload. The belt preview must not add collidable physical segments.
+7. Create a rack, guide and pinion. Run a registered rack assembly; verify guide bounds and Q/E controls. **Separately** try a combined rack+gear+belt assembly and record the intentional rack-solver belt limitation rather than treating it as a passing test.
+8. Register a grouped component with several primitives, custom pivots, two physical relationships, paint, and a motor/bearing. Save it to My Components, leave and rejoin, place twice. Verify IDs are unique, internal joints are reconstructed once, outer joints are not duplicated, Delete/Undo works and plot autosave restores both instances.
+9. Confirm Component Bank UI name and search fields remain clickable under first-person pointer capture; dismiss with Escape without placing anything. Test empty bank, quota limits, DataStore API disabled, two clients and saved entries from earlier sessions.
+10. Set an origin on a plate face/corner and a matching origin on another component. Verify ghost magnetism and snapped placement; reset and test ordinary bore fitting continues to work without false welds. Rejoin and check pivot persistence.
+
+GitHub source contract tests and Luau parsing do **not** execute Roblox physics, server DataStores, native Tool input, or Studio UI rendering. Those require manual Studio validation.
