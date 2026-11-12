@@ -346,6 +346,11 @@ function Properties:Show(open)
     self.Open=open
     if not self.Gui then return end
     self.Gui.Enabled=open
+    if self.ActionRow then
+        -- Running and grounding belong to the Simulation subtool. Joint
+        -- authoring in Mechanics/Configure may never trigger them.
+        self.ActionRow.Visible=self.Controller.Tools.PrimaryId=="AssemblySimulation"
+    end
     if self.WorldSurface then
         self.WorldSurface.Visible=true
         self.WorldSurface.Modal=true
@@ -446,6 +451,7 @@ function Properties:Start()
         Name="PropertyActions",
         Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,ZIndex=4,
     })
+    self.ActionRow=actions
     create("UIListLayout",actions,{
         FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,8),
     })
