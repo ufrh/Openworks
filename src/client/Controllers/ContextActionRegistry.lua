@@ -47,7 +47,8 @@ function Actions.List(node,tools,simulating,assemblyStage)
     elseif node.kind=="assembly" then
         add("select","Select assembly","Inspect only registered assembly members")
         if primary=="AssemblySimulation" then
-            if subtool=="AssemblyEditor" and not simulating then
+            if subtool=="AssemblyEditor" and not simulating
+                and assemblyStage~="Selecting" then
                 add("edit-members","Edit members","Open the existing assembly membership workflow")
                 add("rename","Rename","Edit the assembly's registered name")
             elseif subtool=="Simulation" then
@@ -67,7 +68,7 @@ function Actions.List(node,tools,simulating,assemblyStage)
         add("select","Select unassigned","Inspect primitives without a registered assembly")
     end
     if primary=="AssemblySimulation" and subtool=="AssemblyEditor"
-        and not simulating then
+        and not simulating and assemblyStage~="Selecting" then
         add("new-assembly","New assembly","Create a named assembly","N")
     end
     return result
