@@ -340,6 +340,7 @@ function Controller:RefreshCatalog()
     local searching=search~=""
     local order=0
     local matches=0
+    local visibleItems=0
     local function advance()
         order+=1
         return order
@@ -445,7 +446,7 @@ function Controller:RefreshCatalog()
             "No primitives found. Generate and save the Studio library.",
             UDim2.new(1,-8,0,54),UDim2.fromOffset(0,0),13,MUTED)
         missing.LayoutOrder=advance()
-    elseif searching and matches==0 then
+    elseif searching and matches==0 and visibleItems==0 then
         local empty=label(self.List,"No parts match “"..search.."”",
             UDim2.new(1,-8,0,42),UDim2.fromOffset(0,0),13,MUTED)
         empty.LayoutOrder=advance()
@@ -1218,6 +1219,8 @@ function Controller:RebuildPreview()
         source = self.Selected
     elseif self.Pending == "Copy" and self.Selected then
         source = self.Selected
+    elseif self.Mode=="Build" and self.CurrentBank then
+        source=ComponentBankPreview.Create(self.CurrentBank)
     elseif self.Mode == "Build" and self.CurrentId then
         local entry = Registry.Get(self.CurrentId)
         source = entry and entry.Model
@@ -1227,6 +1230,7 @@ function Controller:RebuildPreview()
     local ghost = if source.Name == "OPENWORKS_ComponentGhost" then source else source:Clone()
     ghost.Name = "OPENWORKS_Ghost"
     local combined=source.Name=="OPENWORKS_ComponentGhost"
+    ghost:SetAttribute("FitPivotScope",if combined then "Component" else "Primitive")
     -- A component ghost is ONE presentation. Per-member transparent parts
     -- multiply shadow/shading through overlaps, so make their color solid
     -- and use one top-level Highlight for the complete assembled shape.
@@ -1245,7 +1249,7 @@ function Controller:RebuildPreview()
             item.Reflectance=0
             item.Material=Enum.Material.SmoothPlastic
             item.Transparency=if item:GetAttribute("GearPivotOnly")==true
-                then 1 else 0.65
+                then 1 else (if combined then 0 else 0.65)
             item.LocalTransparencyModifier=0
             item.Color=BLUE
             if item:IsA("PartOperation") then item.UsePartColor=true end
@@ -1603,10 +1607,16 @@ function Controller:UpdatePreview()
                 hit.Position,hit.Normal)
         local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+        local originPose=if not alt then FitSolver.SurfacePose(
+            self.Preview,cf.Rotation,hit.Position) else nil
+        if originPose then cf=originPose end
         self.Preview:PivotTo(cf)
         if not alt and self.Pending~="Copy"
             and self.Pending~="ComponentCopy" then
             match=self:RecognizeAttachment(cf,hit)
+            if self.CurrentBank and match and match.kind~="Pivot" then
+                match=nil
+            end
         end
     end
     self.SmartMatch=match
@@ -1743,7 +1753,29 @@ function Controller:Request(payload)
     return true, result
 end
 
+function Controller:PlaceSavedComponent()
+    if not self.CurrentBank or not self.PreviewCF or not self.PreviewValid then
+        self:Message(self.PreviewReason or "Move the saved component to a valid blue placement")
+        return
+    end
+    local _,result=self:BankRequest({
+        action="PlaceComponentBank",
+        bankId=self.CurrentBank.id,
+        origin=self.PreviewCF,
+    })
+    if result then
+        self:ClearSmartMatch()
+        self.PreviewVisualPose=nil
+        self.LastPreviewCheck=0
+        self:Message(result.message)
+    end
+end
+
 function Controller:Place(chosenKind)
+    if self.Mode=="Build" and self.CurrentBank then
+        self:PlaceSavedComponent()
+        return
+    end
     if not self.PreviewCF or not self.CurrentId or not self.CurrentSize then return end
     if not self.PreviewValid then
         self:Message("Red preview: construction intersects existing geometry")
