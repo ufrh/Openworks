@@ -1763,13 +1763,6 @@ function Mechanical:PoseShaft(player, request)
     if not d.nearPlayer(player, target:GetPivot().Position) then
         return false, "Opening out of range"
     end
-    local minOffset,maxOffset=Alignment.OffsetBounds(source,target)
-    if not minOffset or offset<minOffset or offset>maxOffset then
-        return false,string.format(
-            "Insertion must stay between %.1f and %.1f U",
-            minOffset or 0,maxOffset or 0
-        )
-    end
     local relation
     for _, current in ipairs(self.Folder:GetChildren()) do
         if current:GetAttribute("OwnerUserId") == player.UserId
@@ -1785,6 +1778,30 @@ function Mechanical:PoseShaft(player, request)
     if not relation and source:GetAttribute("AlignedOpeningId")
         ~= request.targetId then
         return false, "Align or connect the shaft first"
+    end
+    local linear=relation and (relation:GetAttribute("Kind")=="Slider"
+        or relation:GetAttribute("Kind")=="Cylindrical")
+    local minOffset,maxOffset=if linear
+        then Alignment.OffsetBounds(source,target)
+        else Alignment.InsertionBounds(source,target)
+    if not minOffset or offset<minOffset or offset>maxOffset then
+        return false,string.format(
+            "Insertion must stay between %.1f and %.1f U",
+            minOffset or 0,maxOffset or 0)
+    end
+    -- Physical hinges may include several separately built bores.
+    -- Collect every authored contact so moving the pin cannot silently
+    -- pull it out of another connected hinge lug.
+    local authoredOpenings={}
+    for _,edge in ipairs(self.Folder:GetChildren()) do
+        if edge:GetAttribute("OwnerUserId")==player.UserId
+            and edge:GetAttribute("SourceId")==request.sourceId
+            and (edge:GetAttribute("Kind")=="Bearing"
+                or edge:GetAttribute("Kind")=="Slider"
+                or edge:GetAttribute("Kind")=="Cylindrical") then
+            local hole=d.findOwned(player,edge:GetAttribute("TargetId"))
+            if hole then table.insert(authoredOpenings,hole) end
+        end
     end
     local componentId = source:GetAttribute("ComponentId")
     local members = if componentId then d.components:Members(player,componentId)
@@ -1825,10 +1842,28 @@ function Mechanical:PoseShaft(player, request)
         for i,restore in ipairs(members) do d.applyState(restore,before[i]) end
         return false,why or "Shaft must remain inside housing"
     end
-    for _, member in ipairs(members) do
-        if d.intersectsConstructed(member, ignored, target, request.sourceId) then
-            for i, restore in ipairs(members) do d.applyState(restore,before[i]) end
-            return false, "Pose interferes with the opening or another member"
+    for _,hole in ipairs(authoredOpenings) do
+        if not MultiFit.Check(source,hole) then
+            for i,restore in ipairs(members) do d.applyState(restore,before[i]) end
+            return false,"Insertion would pull the pin out of another connected hole"
+        end
+    end
+    local all={}
+    for _,candidate in ipairs(d.folder:GetChildren()) do
+        if candidate:IsA("Model")
+            and candidate:GetAttribute("OwnerUserId")==player.UserId
+            and not ignored[candidate] then table.insert(all,candidate) end
+    end
+    local stations=MultiFit.StationarySet({source},target,all)
+    local candidates=MultiFit.Find({source},stations)
+    local verified=candidates and MultiFit.Unique(candidates,
+        request.sourceId,request.targetId) or {}
+    local fitMap=MultiFit.AllowMap(verified)
+    for _,member in ipairs(members) do
+        if d.intersectsConstructed(member,ignored,target,
+            request.sourceId,fitMap) then
+            for i,restore in ipairs(members) do d.applyState(restore,before[i]) end
+            return false,"Pose interferes with a hinge lug or another solid"
         end
     end
     if relation then
@@ -1996,8 +2031,27 @@ function Mechanical:Fit(player, request)
         return false, "Align or connect this shaft to the opening first"
     end
 
-    local maxDiameter, why = Bore.MaxShaftDiameter(source, target)
-    if not maxDiameter then return false, why end
+    -- A fitted pin must respect the SMALLEST of all its through-bores,
+    -- not only the hole chosen when opening the micro-fit controls.
+    local all={}
+    for _,candidate in ipairs(d.folder:GetChildren()) do
+        if candidate:IsA("Model")
+            and candidate:GetAttribute("OwnerUserId")==player.UserId
+            and candidate~=source then table.insert(all,candidate) end
+    end
+    local stations=MultiFit.StationarySet({source},target,all)
+    local matched,why=MultiFit.Find({source},stations)
+    local contacts=matched and MultiFit.Unique(matched,
+        request.sourceId,request.targetId) or {}
+    if not MultiFit.Contains(contacts,request.sourceId,request.targetId) then
+        return false,why or "Primary shaft/hole fit has come apart"
+    end
+    local maxDiameter=math.huge
+    for _,pair in ipairs(contacts) do
+        local cap,reason=Bore.MaxShaftDiameter(source,pair.hole)
+        if not cap then return false,reason end
+        maxDiameter=math.min(maxDiameter,cap)
+    end
 
     local current = source.PrimaryPart.Size
     local stepU = 0.05
@@ -2025,12 +2079,23 @@ function Mechanical:Fit(player, request)
     if not valid then return false, reason end
 
     d.applyState(source, proposed)
-    local fits, fitReason = Bore.ShaftFits(source, target)
-    if not fits or d.intersectsConstructed(
-        source, source, target, source:GetAttribute("InstanceId")
+    local fits,fitReason=Bore.ShaftFits(source,target)
+    local stillEngaged=true
+    local approved={}
+    for _,pair in ipairs(contacts) do
+        local verified=MultiFit.Check(source,pair.hole)
+        if not verified then
+            stillEngaged=false
+            break
+        end
+        table.insert(approved,verified)
+    end
+    local fitMap=MultiFit.AllowMap(approved)
+    if not fits or not stillEngaged or d.intersectsConstructed(
+        source,source,target,request.sourceId,fitMap
     ) then
-        d.applyState(source, before)
-        return false, fitReason or "Shaft interferes with another solid"
+        d.applyState(source,before)
+        return false,fitReason or "Shaft must fit every connected opening"
     end
 
     local crankBefore,crankAfter,crankReason=
@@ -2052,11 +2117,11 @@ function Mechanical:Fit(player, request)
     else
         d.commitRecord(player, before, after,true)
     end
-    return true, string.format(
-        "Shaft %.2f U diameter • %.2f U clearance",
-        nextDiameter / d.Grid.Unit,
-        math.max(0, (maxDiameter - nextDiameter) / d.Grid.Unit)
-    )
+    return true,string.format(
+        "Shaft %.2f U diameter • %.2f U clearance • %d fitted hole(s)",
+        nextDiameter/d.Grid.Unit,
+        math.max(0,(maxDiameter-nextDiameter)/d.Grid.Unit),
+        #contacts)
 end
 
 function Mechanical:Remove(player, request)
