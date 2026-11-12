@@ -195,7 +195,7 @@ function Controller:RefreshHUD()
             then "Select second pulley • independently mounted shafts"
             else "Select a shaft-mounted pulley")
             ..string.format(" • preload %.1f%%",self.BeltPreloadPercent)
-        self.Help.Text="Click pair: fit • Shift+click second: remove • [ ] preload • Esc"
+        self.Help.Text="Click pair: fit • Shift+click second: remove • [ ] preload • Enter"
         if self.LastMessage and os.clock()<self.MessageUntil then
             self.Detail.Text=self.LastMessage
         end
@@ -206,7 +206,7 @@ function Controller:RefreshHUD()
         self.Detail.Text=if self.WeldFirst
             then "Choose touching surfaces or an inserted shaft in a drilled block"
             else "Choose the first solid to weld"
-        self.Help.Text="Click both solids • Esc cancels selection"
+        self.Help.Text="Click both solids • Enter cancels selection"
         if self.LastMessage and os.clock()<self.MessageUntil then
             self.Detail.Text=self.LastMessage
         end
@@ -239,7 +239,7 @@ function Controller:RefreshHUD()
     if self.Stage == "GearFirst" then
         self.Header.Text = "OPENWORKS / GEAR TRANSMISSION"
         self.Detail.Text = "Choose the first gear"
-        self.Help.Text = "Click first gear • K/Esc cancel"
+        self.Help.Text = "Click first gear • K/Enter cancel"
     elseif self.Stage == "GearSecond" then
         self.Header.Text = "OPENWORKS / GEAR TRANSMISSION"
         self.Detail.Text = "Choose the mating gear"
@@ -250,9 +250,9 @@ function Controller:RefreshHUD()
         self.Detail.Text=if self.Stage=="PairFirst"
             then "Choose first mechanical part" else "Choose second physical part"
         self.Help.Text=if self.PairKind=="CrankCoupling"
-            then "Choose hand crank, then the shaft END • rigid coupling • Esc cancel"
+            then "Choose hand crank, then the shaft END • rigid coupling • Enter cancel"
             elseif self.PairKind=="Spring"
-            then "Select any two components • spring force only • Esc cancel"
+            then "Select any two components • spring force only • Enter cancel"
             elseif self.PairKind=="Bolt"
             then "Choose two aligned holes • physical bolt inserted"
             else "Choose two touching surfaces • permanent weld"
@@ -266,17 +266,17 @@ function Controller:RefreshHUD()
                 self.Joint:GetAttribute("Stiffness") or 120,
                 self.Joint:GetAttribute("Damping") or 14,
                 (self.Joint:GetAttribute("FreeLength") or 0.5)/Grid.Unit)
-            self.Help.Text="[ ] strength • Shift+[ ] damping • -/= rest length • Esc"
+            self.Help.Text="[ ] strength • Shift+[ ] damping • -/= rest length • Enter"
         else
             self.Detail.Text = tostring(low) .. " — " .. tostring(high)
-            self.Help.Text = "U toggle limits • [ ] adjust travel • Esc close"
+            self.Help.Text = "U toggle limits • [ ] adjust travel • Enter close"
         end
     elseif self.Stage == "Housing" then
         self.Detail.Text = "Choose the housing or opening"
-        self.Help.Text = "Click opening • R relationship • Esc close"
+        self.Help.Text = "Click opening • R relationship • Enter close"
     elseif self.Stage == "Source" then
         self.Detail.Text = "Choose the shaft or source component"
-        self.Help.Text = "Click shaft/component • P simulate aimed mechanism • Esc reset"
+        self.Help.Text = "Click shaft/component • P simulate aimed mechanism • Enter reset"
     elseif self.Stage == "Fit" then
         local u = if self.Source and self.Source.PrimaryPart then
             self.Source.PrimaryPart.Size.Y / Grid.Unit else 0
@@ -877,6 +877,8 @@ function Controller:CycleType()
 end
 
 function Controller:OnModeChanged(mode)
+    -- The native Build tool now owns every former Edit relationship action.
+    if mode=="Build" then mode="Edit" end
     if self.Mode~=mode then self:Reset() end
     self.Mode=mode
     self.Active=mode=="Edit" or mode=="Simulate" or mode=="Weld"
@@ -915,11 +917,11 @@ function Controller:Start()
         if not self.Active or UserInputService:GetFocusedTextBox() then return end
         local key=input.KeyCode
         if self.Mode=="Weld" then
-            if key==Enum.KeyCode.Escape then self.WeldFirst=nil self:RefreshHUD() end
+            if key==Enum.KeyCode.Return then self.WeldFirst=nil self:RefreshHUD() end
             return
         end
         if self.Mode=="Belt" then
-            if key==Enum.KeyCode.Escape then
+            if key==Enum.KeyCode.Return then
                 self.BeltFirst=nil
             elseif key==Enum.KeyCode.LeftBracket then
                 self.BeltPreloadPercent=math.max(0,self.BeltPreloadPercent-0.5)
@@ -951,7 +953,7 @@ function Controller:Start()
             return
         end
 
-        -- All mechanical authoring now lives in Edit. Only explicit
+        -- All mechanical authoring now lives in unified Build. Only explicit
         -- K/J/H interactions capture clicks; ordinary selection and drag
         -- continue to belong to ConstructionController.
         if self.Mode~="Edit" or processed then return end
@@ -971,14 +973,13 @@ function Controller:Start()
         if key==Enum.KeyCode.K then self:ToggleGearMode() return end
         -- Tune joints only with the mouse-driven Simulate properties GUI.
         if key==Enum.KeyCode.H then self:StartManualJoint() return end
-        if shift and (key==Enum.KeyCode.Delete
-            or key==Enum.KeyCode.Backspace) then
+        if shift and (key==Enum.KeyCode.Backspace) then
             self:DeleteRelationship()
             return
         end
         if not self.ManualActive then return end
 
-        if key==Enum.KeyCode.Escape then self:Reset()
+        if key==Enum.KeyCode.Return then self:Reset()
         elseif key==Enum.KeyCode.R and self.Stage~="JointSettings" then
             self:CycleType()
         elseif key==Enum.KeyCode.LeftBracket or key==Enum.KeyCode.RightBracket then
