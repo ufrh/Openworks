@@ -237,7 +237,17 @@ function Controller:MakeUI()
 
     local registerButton=button(catalog,"REGISTER SELECTED COMPONENT",
         UDim2.new(1,-24,0,30),UDim2.new(0,12,1,-39))
-    registerButton.Activated:Connect(function() self:OpenBankSave() end)
+    registerButton.Activated:Connect(function()
+        if self.Mode=="Build" then
+            -- Place has no selection; hand off to the UI v2 Edit subtool
+            -- rather than opening an impossible save prompt.
+            self:ShowCatalog(false)
+            self.Tools:SetSubtool("Edit")
+            self:Message("Select a registered component, then Shift+B to save")
+        else
+            self:OpenBankSave()
+        end
+    end)
 
     local modal=rounded(create("Frame",{
         Name="OPENWORKS_BankSave",Visible=false,ZIndex=42,
