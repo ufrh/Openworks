@@ -82,7 +82,7 @@ Run after changing the shared geometry code, construction services, tool dispatc
 - [ ] All gear-containing rigid groups are anchored, noncolliding and driven only through scripted kinematics, including attached shafts and cranks. Native bearings and internal weld constraints must NOT apply forces to the geared groups; other non-geared bodies still receive normal Roblox physics. Verify ratio direction, speed, cycle lockouts, grounding, independent groups and that visible tooth phase, backdriving and torque conservation still require further modeling.
 
 ## UI and persistence
-- [ ] Left-side passive Simulate panel and controls list visible, right inspector opens on click, Esc closes it; ordinary mouse remains first-person locked.
+- [ ] Left subtool shortcut column and separate contextual Controls panel are visible during Simulation; the unified right inspector opens for authored assemblies. F2/Escape manages cursor focus without breaking camera lock.
 - [ ] Assembly naming, plot saving, properties, numeric editor and mate selection unlock cursor only while modal is open, then restore lock.
 - [ ] F6 still manually saves/loads. After successfully loaded construction edits, autosave writes roughly every 120 seconds. Idle no-op periods must write nothing. Materials, paints, assemblies, grounding, joints and part geometry all round-trip; Undo history remains volatile.
 - [ ] Continue building rapidly for 3+ minutes. Repeated edits do not postpone autosave indefinitely; every saved timestamp reflects an actual completed write.
@@ -222,15 +222,15 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 ## UI v2 Phase 3 — shared Explorer / Properties (Studio Play required)
 
 - [ ] On join/respawn exactly one `OPENWORKS_UnifiedExplorerProperties` panel exists. Search, expand/collapse, Objects/Connections switch and selected object name all update without leaking UI rows or events.
-- [ ] Tab unlocks the cursor, Escape/Tab restores locked first-person freecam. In the dock, clicking controls must **not** also trigger native `Tool.Activated` placement, welding, selection, or dragging. Mouse look and WASD movement stop immediately while the dock is interactive.
+- [ ] F2 unlocks the cursor, Escape/F2 restores locked first-person freecam. Tab also works where it is not reserved for Edit depth/Build fitting. In the dock, clicking controls must **not** also trigger native `Tool.Activated` placement, welding, selection, or dragging. Mouse look and WASD movement stop immediately while the dock is interactive.
 - [ ] Right-click an authored part from locked world view and choose a context action; right-click on empty space or during modal editing must not show an unrelated action. Context choices vary correctly by primary/subtool, joint and running state.
 - [ ] World Build/Edit selection mirrors into Explorer and click-selection from Explorer highlights exactly the same authored primitive/component. In Mechanics/Configure, selecting a connected part reveals the true relationship list. Simulation inspection raycasts cloned moving parts and maps back to stable authored IDs.
 - [ ] A named assembly containing only part of an editor component shows **exactly those actual members** under its assembly. The remaining component primitives appear where their AssemblyId actually belongs; no false implicit weld or inherited membership.
 - [ ] Build/Paint inline Properties apply Steel/Aluminum/Rubber/Plastic/Wood/Concrete as physical materials and Factory/Matte/Satin/Gloss/Metallic/Chrome/Brushed/Pearl plus custom HEX as appearance; no density/friction changes from paint and no unexpected changes outside actual component scope. Reload verifies persistence.
 - [ ] Mechanics/Configure inline Properties update Spring stiffness/damping/rest length, rotational and slider limits, and Bearing motor enabled/key/speed/torque/acceleration using existing validated server actions. Invalid values are rejected and running simulation denies edits.
 - [ ] Assembly Editor can rename an assembly without modifying its member IDs, edit members from Explorer, and confirm or discard the draft. Simulate exactly the registered set from the panel, then stop/pause/reset. Ground/free only while stopped.
-- [ ] Tooltips appear only when hovering controls and disappear when leaving/destroying/rebuilding rows; the giant persistent context-keybind HUD and legacy instruction panels do not cover the workspace. Existing numeric sizing, plot save/load, relationship choice and assembly naming modals still function.
-- [ ] Verify camera/cursor ownership across Tab, catalog, numeric sizing, old fallback dialogs, plot save/load, respawn and a held crank. Check FPS and memory with 100+ objects and 50+ relations. **NOT RUN is not a pass.**
+- [ ] Tooltips appear only on hover; a compact left **Subtools** column and separate tool-specific **Controls** panel remain visible. The former oversized instructional HUD and legacy panels do not cover the workspace. Existing numeric sizing, plot save/load, relationship choice and assembly naming modals still function.
+- [ ] Verify camera/cursor ownership across F2, contextual Tab, catalog, numeric sizing, plot save/load, respawn and a held crank. Check FPS and memory with 100+ objects and 50+ relations. **NOT RUN is not a pass.**
 
 ## UI v2 Phase 4 — Unified Connect workflow (Studio Play required)
 
@@ -270,7 +270,7 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 
 ## UI v2 Phase 6 — final cleanup and compatibility gates (Studio Play required)
 
-- [ ] Sync `feature/ui-reorganization-v2`, restart Play and check `UI-V2-PHASE6-CLEANUP`. Exactly one unified Explorer/Properties dock; no legacy ContextKeybinds/MaterialPicker/MateChoice/RelationshipProperties modules or ScreenGuis, no duplicated Assembly/Mechanics HUDs. Check full Tool hotbar and every subtool.
+- [ ] Sync `feature/ui-reorganization-v2`, restart Play and check `UI-V2-LEFT-KEYBINDS`. Exactly one unified Explorer/Properties dock; no legacy ContextKeybinds/MaterialPicker/MateChoice/RelationshipProperties modules or ScreenGuis, no duplicated Assembly/Mechanics HUDs. Check full Tool hotbar and every subtool.
 - [ ] Startup UI order: select a primitive immediately after join; no nil remote/controller/Gui errors. Switch native tools/subtools rapidly; all active HUD states, ghost highlights and input focus remain owned by the unified dock.
 - [ ] Press Build/Paint M to modify material and HEX/finish, restore Factory and undo. Verify no separate standalone material window is constructed; changes preserve physical material vs cosmetic paint separation and persist through save/reload.
 - [ ] Manual **Edit > L > Align** must use the same connection picker as Build auto shaft/gear fit and Mechanics two-part Connect. Exercise depth/roll adjustments, cancel, rejection, reverse fit, two-hole pin and successful physical joint creation. No hidden second modal or duplicate server write.
@@ -281,3 +281,16 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 - [ ] Run all six saved-build fixtures and complete [UI v2 regression matrix](UI_V2_REGRESSION_MATRIX.md) and this file on a **disposable plot**. Record Roblox Studio Output, FPS and actual observed results. Source CI green is not a Studio pass.
 
 **Phase 6 verification:** Python source contracts and StyLua 2.1.0 `--verify --syntax luau src` parser/AST verification run in GitHub Actions. Runtime Studio/physics/CSG/persistence/multiplayer acceptance remains **NOT RUN**.
+
+## UI v2 Left Sidebar — Subtools and Keybinds (Studio Play required)
+
+- [ ] Equip each native tool. Confirm there are **two separate compact panels** on the left, below the F6 Plot button: SUBTOOLS above and tool-specific CONTROLS below. The current native tool label is correct and the active subtool is highlighted.
+- [ ] For **Build**, subtool rows show Place **B**, Edit **E**, Resize **V**, Paint **M**. For **Mechanics**, Connect **C**, Configure **E**. For **Assembly & Simulation**, Assembly Editor **E**, Simulation **Y**. Labels derive from the actual shared SubtoolDefinitions keys.
+- [ ] Press each subtool key in a valid idle state: highlight follows the selected mode, no extra action fires from that same keypress, and the controls panel immediately changes. F2 unlocks the pointer; clicking a subtool row changes the real subtool and returns focus to the workspace without activating native Tool clicks behind UI.
+- [ ] Edit: Tab still cycles selection depth without simultaneously unlocking the Explorer. Build Place: Tab still cycles auto-fit targets when available. **F2 unlocks the cursor** outside protected fit and modal states; Escape or F2 restores freecam. Ordinary Tab remains usable as a pointer toggle in compatible modes.
+- [ ] Tool-specific Controls displays compact shortcuts for Build/Place (catalog, rotate, placement), Edit (move/duplicate/delete/group/align), Resize (handles/numeric), Paint (Properties), Mechanics/Connect (two participants), Mechanics/Configure, Assembly Editor, and Simulation.
+- [ ] Begin a Build smart shaft fit, manual L alignment and Mechanics two-part fit: controls swap to matching Wheel/Q/E/[ ] insertion and roll controls. Cancel and confirm; idle keybinds return without stale or duplicated UI.
+- [ ] Create an assembly draft and run/stop/pause Simulation: keybinds update with draft status and running/paused state, including N/Enter/Esc, Alt+arrow movement, P/O/U/I, crank/rack and motor instructions. During simulation, the Assembly Editor subtool is visibly unavailable and switching is rejected.
+- [ ] Test 720p, 1080p and 1440p windows, F6 plot modal, 100+ objects, respawn and repeated subtool changes. Left controls should not obstruct the right dock, drift offscreen, create duplicate PlayerGui owners or rebuild every frame. Compare runtime FPS and inspect Output for errors.
+
+**Status:** Source/StyLua verification only; actual Studio GUI, cursor and layout testing is NOT RUN.
