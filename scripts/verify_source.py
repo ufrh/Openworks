@@ -586,7 +586,7 @@ def main() -> int:
           'local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"' in layered
           and 'mateKind="Hub"' in layered
           and 'relationKind=choice' in layered
-          and 'end,1,isGear)' in layered)
+          and 'end,selected.FittedCount or 1,isGear)' in layered)
     check("Simulation uses gear center axis for physical hinge",
           'JointFrames.ForOpening(edge.target)' in simulation
           and 'local explicit = axisOverride(model)' in read("src/shared/Construction/AlignmentMath.lua")
@@ -598,6 +598,46 @@ def main() -> int:
               not in alignment_math
           and 'function Alignment.RelativeTravelBounds(' in alignment_math
           and 'return low-authored,high-authored' in alignment_math)
+    multi_fit=read("src/shared/Construction/MultiFitMath.lua")
+    smart_place=read("src/shared/Construction/SmartPlacement.lua")
+    align_service=read("src/server/Runtime/AlignmentService.lua")
+    check("Long hinge shafts use real segment overlap, not center-only bounds",
+          'function Alignment.InsertionBounds(shaft,opening)' in alignment_math
+          and 'local requiredOverlap=' in alignment_math
+          and 'Alignment.InsertionBounds(shaft,target)' in alignment_math
+          and 'Alignment.InsertionBounds(fixedShaft,opening)' in alignment_math
+          and 'Alignment.InsertionBounds(shaft,opening)' in multi_fit
+          and 'Alignment.InsertionBounds(shaft,opening)' in smart_place)
+    check("One shaft can pierce several ungrouped owned bore models",
+          'function Fit.StationarySet(movingMembers,primary,all,delta,ignored)' in multi_fit
+          and 'and Fit.Check(shafts[1],candidate,delta)' in multi_fit
+          and 'and not usedStationary[pair.stationaryId]' in multi_fit
+          and 'and not usedMoving[pair.movingId]' in multi_fit
+          and 'MultiFit.StationarySet(members,target,' in mechanical
+          and 'MultiFit.StationarySet(members,target,' in smart_place)
+    check("Manual L selects empty bore centers and validates all penetrations",
+          'function Layered:AimedOpening(excluded)' in layered
+          and 'target=self:AimedOpening(excluded) or target' in layered
+          and 'MultiFit.StationarySet(' in layered
+          and 'MultiFit.AllowMap(fitted)' in layered
+          and 'mateKind="Bore"' in layered
+          and 'selected.FittedCount or 1' in layered)
+    check("Preview and server share individual physical clearance exemptions",
+          'MultiFit.AllowMap(matches)' in selection
+          and 'MultiFit.AllowMap(fitPairs)' in mechanical
+          and 'MultiFit.StationarySet(moving,match.target,' in selection
+          and 'MultiFit.StationarySet(members,target,' in mechanical
+          and 'MultiFit.AllowMap(selected)' in align_service)
+    check("Snug fit, pose and length edits preserve all engaged holes",
+          'Shaft must fit every connected opening' in mechanical
+          and 'MultiFit.Check(source,pair.hole)' in mechanical
+          and 'MultiFit.Check(source,hole)' in mechanical
+          and 'MultiFit.StationarySet({model},opening,all)' in service
+          and 'Alignment.InsertionBounds(source,target)' in mechanical)
+    check("Linear guide stop remains strict for multi-hole fit",
+          'if typeName=="Slider" or typeName=="Cylindrical" then' in mechanical
+          and 'Alignment.OffsetBounds(pair.shaft,pair.hole)' in mechanical
+          and 'Choose Rotation Only for a long hinge pin' in mechanical)
     check("Simulation constrains legacy out-of-bounds shafts without aborting",
           'Alignment.RelativeTravelBounds(' in simulation
           and 'local legacyOutside=lower>0 or upper<0' in simulation
@@ -633,7 +673,10 @@ def main() -> int:
           'self:OpenMateChoice("Build")' in selection
           and 'self:OpenMateChoice("Edit")' in selection
           and 'parent.MateChoice:Show' in layered
-          and 'action=if choice=="FreeFit" then "Align" else "CreateRelation"' in layered)
+          and 'action="SmartMate"' in layered
+          and 'mateKind="Bore"' in layered
+          and 'position=exact.Position' in layered
+          and 'orientation=exact.Rotation' in layered)
     check("Relationship modal cannot duplicate world clicks",
           'if self.PendingMateChoice or (self.Numeric and self.Numeric.Active) then return end' in selection
           and 'self.IgnoreClickUntil=os.clock()+0.22' in selection

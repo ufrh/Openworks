@@ -177,6 +177,10 @@ function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
                 and candidate:GetAttribute("OwnerUserId")
                     ==primary:GetAttribute("OwnerUserId")
                 and Alignment.TargetAxis(candidate)
+                -- Gear hubs require an explicit Rotation/Rigid choice;
+                -- inserting a pin through hinge lugs must not silently
+                -- mount every nearby drivetrain gear as a bearing.
+                and type(candidate:GetAttribute("GearTeeth"))~="number"
                 and Fit.Check(shafts[1],candidate,delta) then
                 table.insert(result,candidate)
                 known[candidate]=true
