@@ -156,4 +156,77 @@ function WorldMotion.AnimateMove(models,direction:Vector3,seconds:number?)
         seconds or WorldMotion.Profile.NudgeSeconds)
 end
 
+-- After the server ACKs a drag, the blue preview may be one or two frames
+-- behind its exact saved CFrame. This short handoff bridges that remainder.
+-- The caller passes a disposable clone captured BEFORE CancelPending; the
+-- clone cannot collide, cannot be aimed at and is always destroyed here.
+function WorldMotion.SettlePreview(snapshot:Model?,goal:CFrame,
+    realModels,seconds:number?)
+    if not snapshot then return end
+    local from=snapshot:GetPivot()
+    local distance=(goal.Position-from.Position).Magnitude
+    local direction=from.LookVector:Dot(goal.LookVector)
+        +from.UpVector:Dot(goal.UpVector)
+    local parts=0
+    for _,item in ipairs(snapshot:GetDescendants()) do
+        if item:IsA("BasePart") then
+            parts+=1
+            item.Anchored=true
+            item.CanCollide=false
+            item.CanTouch=false
+            item.CanQuery=false
+            item.CastShadow=false
+        elseif item:IsA("BillboardGui") or item:IsA("SelectionBox") then
+            item:Destroy()
+        end
+    end
+    if parts>MAX_ANIMATED_PARTS
+        or distance>WorldMotion.Profile.TeleportDistance
+        or (distance<0.012 and direction>1.99997) then
+        snapshot:Destroy()
+        return
+    end
+    WorldMotion.Cancel(realModels)
+    local originals={}
+    for _,model in ipairs(realModels or {}) do
+        for _,part in ipairs(model:GetDescendants()) do
+            if part:IsA("BasePart") then
+                table.insert(originals,{
+                    part=part,previous=part.LocalTransparencyModifier,
+                })
+                part.LocalTransparencyModifier=1
+            end
+        end
+    end
+    snapshot.Name="OPENWORKS_CommitHandoff"
+    snapshot:SetAttribute("OPENWORKS_PresentationOnly",true)
+    snapshot.Parent=workspace
+    local connection
+    local finished=false
+    local function cleanup()
+        if finished then return end
+        finished=true
+        if connection then connection:Disconnect() connection=nil end
+        if snapshot.Parent then snapshot:Destroy() end
+        for _,item in ipairs(originals) do
+            if item.part.Parent then
+                item.part.LocalTransparencyModifier=item.previous
+            end
+        end
+        for _,model in ipairs(realModels or {}) do
+            if running[model]==cleanup then running[model]=nil end
+        end
+    end
+    for _,model in ipairs(realModels or {}) do running[model]=cleanup end
+    local start=os.clock()
+    local duration=seconds or 0.10
+    connection=RunService.RenderStepped:Connect(function()
+        local t=math.clamp((os.clock()-start)/duration,0,1)
+        if snapshot.Parent then
+            snapshot:PivotTo(from:Lerp(goal,WorldMotion.Ease(t)))
+        end
+        if t>=1 then cleanup() end
+    end)
+end
+
 return table.freeze(WorldMotion)
