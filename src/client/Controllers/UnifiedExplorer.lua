@@ -1237,7 +1237,8 @@ function Panel:RenderProperties()
 end
 
 function Panel:ActionsFor(node)
-    return Actions.List(node,self.Tools,simulating(),self.AssemblyTool.Stage)
+    return Actions.List(node,self.Tools,simulating(),
+        self.AssemblyTool.Stage,self.Mechanics.SimAssemblyId)
 end
 
 function Panel:OpenMenu(node,position)
