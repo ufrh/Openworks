@@ -226,6 +226,10 @@ function Tool:Draw()
 end
 
 function Tool:Refresh()
+    if self.UnifiedExplorer then
+        self.UnifiedExplorer:OnAssemblyDraftChanged()
+        return
+    end
     if not self.Panel then return end
     self.Panel.Visible=self.Mode=="Assembly" and self.UnifiedExplorer==nil
     self.Crosshair.Visible=self.Mode=="Assembly" and self.Stage~="Naming"
@@ -283,7 +287,7 @@ function Tool:OpenName(rename)
 end
 
 function Tool:CloseName(cancel)
-    self.Modal.Visible=false
+    if self.Modal then self.Modal.Visible=false end
     player:SetAttribute("OPENWORKS_AssemblyNaming",false)
     if not player:GetAttribute("OPENWORKS_PropertiesOpen")
         and not player:GetAttribute("OPENWORKS_ExplorerOpen")
@@ -298,7 +302,7 @@ function Tool:CloseName(cancel)
 end
 
 function Tool:AcceptName()
-    if not self.Modal.Visible then return end
+    if not self.Modal or not self.Modal.Visible then return end
     local name=self.NameInput.Text:match("^%s*(.-)%s*$")
     if not name or #name==0 or #name>48 or name:find("[%c]") then
         self:Tell("Enter a name between 1 and 48 characters")
@@ -672,7 +676,7 @@ function Tool:Tick()
 end
 
 function Tool:Start()
-    self:Draw()
+    if not self.UnifiedExplorer then self:Draw() end
     self.Mode=self.Tools.ActiveId
     self:Refresh()
     table.insert(self.Connections,self.Tools.Changed.Event:Connect(function(mode)
