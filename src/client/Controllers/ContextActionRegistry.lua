@@ -30,6 +30,9 @@ function Actions.List(node,tools,simulating,assemblyStage)
             end
         elseif primary=="Mechanics" then
             if not simulating then
+                if subtool=="Connect" and node.kind=="primitive" then
+                    add("connect","Connect","Choose a second physical part and then a compatible connection")
+                end
                 add("connections","Connections","Inspect actual mechanical relationships for this object")
             end
         elseif primary=="AssemblySimulation" and not simulating then
