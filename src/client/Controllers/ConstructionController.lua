@@ -478,9 +478,11 @@ end
 
 function Controller:HighlightSmartTarget(match)
     if not self.Feedback then return end
-    self.Feedback:Clear("snap")
     local target=match and match.target
-    if not target or not target.Parent then return end
+    if not target or not target.Parent then
+        self.Feedback:Clear("snap")
+        return
+    end
     local group=target:GetAttribute("ComponentId")
     local models={target}
     if type(group)=="string" and group~="" then
@@ -1013,6 +1015,14 @@ function Controller:UpdateHover()
     local component=target:GetAttribute("ComponentId")
     if type(component)=="string" and component~="" then
         models=self:ComponentMembers(component)
+        local anchor=ComponentGeometry.CentralPrimitive(models)
+        if anchor then
+            local ordered={anchor}
+            for _,member in ipairs(models) do
+                if member~=anchor then table.insert(ordered,member) end
+            end
+            models=ordered
+        end
     end
     self.Feedback:Set("hover","target",models,"snap",#models>1)
 end
@@ -1022,8 +1032,13 @@ function Controller:RefreshSelectionHighlights()
     self.Feedback:Clear("selection")
     if self.Mode~="Edit" and self.Mode~="Inspect" then return end
     if self.SelectedComponentId and #self.SelectedParts>0 then
-        -- One oriented box for an editor component.
-        self.Feedback:Set("selection","component",self.SelectedParts,"selection",true)
+        -- Orient component bounds from the actual editor group anchor.
+        local ordered={}
+        if self.GroupAnchor then table.insert(ordered,self.GroupAnchor) end
+        for _,member in ipairs(self.SelectedParts) do
+            if member~=self.GroupAnchor then table.insert(ordered,member) end
+        end
+        self.Feedback:Set("selection","component",ordered,"selection",true)
     else
         -- Separate boxes for independent multi-selection.
         for i,model in ipairs(self.SelectedParts) do
