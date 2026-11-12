@@ -164,7 +164,8 @@ def main() -> int:
           and all(('id="'+kind+'"') in connection_catalog or
                   ('add("'+kind+'")') in connection_catalog for kind in (
                      'Cylindrical','Slider','Bearing','FreeFit','Weld',
-                     'Spring','Bolt','CrankCoupling','Rotation','Rigid'))
+                     'Spring','CrankCoupling','Rotation','Rigid'))
+          and 'add("Bolt")' not in connection_catalog
           and 'if not hub then add("Weld") end' in connection_catalog)
     check("Build auto fit and Mechanics pairs use the SAME contextual picker",
           'self.UnifiedExplorer:ChooseFit(' in build_connect
@@ -183,7 +184,7 @@ def main() -> int:
               'action="SmartMate",mateKind="Hub",relationKind=kind',
               'action="CreateSpring"',
               'action="CoupleHandCrank"',
-              'action=if kind=="Weld" then "CreateWeld" else "CreateBolt"',
+              'action="CreateWeld"',
           ))
           and 'self.Mechanics:PickConnectPart(node.model)' in unified_panel)
     check("Mechanics does not reintroduce F/H/Shift+J standalone connect modes",
@@ -344,10 +345,8 @@ def main() -> int:
     simulation = read("src/server/Runtime/SimulationService.lua")
     persistence = read("src/server/Runtime/PlotPersistence.lua")
     tool_ui = read("src/client/Controllers/AssemblyToolController.lua")
-    ctx = read("src/client/Controllers/ContextKeybinds.lua")
     world = read("src/client/Controllers/WorldVisuals.lua")
     selection = read("src/client/Controllers/ConstructionController.lua")
-    inspector = read("src/client/Controllers/RelationshipProperties.lua")
     crank = read("src/client/Controllers/HandCrankController.lua")
     client_entry = read("src/client/init.client.lua")
 
@@ -402,7 +401,6 @@ def main() -> int:
           and 'Enum.KeyCode.PageUp' not in assembly_tool)
     paint=read("src/shared/Construction/PaintCatalog.lua")
     materials=read("src/shared/Construction/MaterialCatalog.lua")
-    material_ui=read("src/client/Controllers/MaterialPickerController.lua")
     assembly_client=read("src/client/Controllers/AssemblyController.lua")
     mechanical=read("src/server/Runtime/MechanicalService.lua")
     check("No free-floating joint editor or arbitrary-joint server actions",
@@ -414,7 +412,6 @@ def main() -> int:
           and 'JointFrameMath' not in mechanical
           and 'kind=="AxisHinge"' not in simulation)
     motor_client=read("src/client/Controllers/MotorControlController.lua")
-    properties=read("src/client/Controllers/RelationshipProperties.lua")
     check("Key-driven motor requires a real shaft-in-hole Bearing",
           'function Mechanical:TuneBearingMotor(' in mechanical
           and 'joint:GetAttribute("Kind")~="Bearing"' in mechanical
@@ -423,7 +420,7 @@ def main() -> int:
           and 'and edge.relation:GetAttribute("MotorEnabled")==true' in simulation
           and 'joint:GetAttribute("Kind")=="Bearing"' in motor_client
           and 'joint:GetAttribute("MotorEnabled")==true' in motor_client
-          and 'action="TuneBearingMotor"' in properties
+          and 'action="TuneBearingMotor"' in unified_panel
           and 'action=="TuneBearingMotor"' in service)
     check("Bearing motor is saved, undoable, live-editable and fail-safe",
           'motorEnabled=relation:GetAttribute("MotorEnabled")==true' in mechanical
@@ -442,12 +439,9 @@ def main() -> int:
           'skipped+=1' in persistence
           and 'retired arbitrary-axis joint(s)' in persistence)
     check("Motor settings are edited only on physical bearings",
-          'function Properties:ApplyMotor()' in
-              read("src/client/Controllers/RelationshipProperties.lua")
-          and 'action="TuneBearingMotor"' in
-              read("src/client/Controllers/RelationshipProperties.lua")
-          and 'motorEnabled=self.MotorOn' in
-              read("src/client/Controllers/RelationshipProperties.lua")
+          'function Panel:RelationshipProperties(node)' in unified_panel
+          and 'action="TuneBearingMotor"' in unified_panel
+          and 'motorEnabled=self.Flags.Motor' in unified_panel
           and 'function Mechanical:TuneBearingMotor(' in mechanical
           and 'MotorEnabled' in mechanical
           and 'kind=="Bearing"' in simulation
@@ -468,7 +462,7 @@ def main() -> int:
           and 'PaintCatalog.NormalizeHex(payload.paintColorHex)' in service
           and 'members=components:Members(player,id)' in service
           and 'commitBatch(player,before,after)' in service
-          and 'action="SetPaint"' in material_ui)
+          and 'action="SetPaint"' in unified_panel)
     check("Paint and engineering materials have separate physics and appearance",
           'MaterialCatalog.Apply(model,if MaterialCatalog.IsValid' in service
           and 'PaintCatalog.Apply(model,if PaintCatalog.IsValidFinish' in service
@@ -482,14 +476,13 @@ def main() -> int:
           and 'paintFinish=record.paintFinish or "Factory"' in persistence
           and 'paintHex=snap.paintColorHex' in persistence
           and 'result.steps = table.clone(data.steps)' in component)
-    check("Paint studio supports custom hexadecimal, swatches and factory reset",
-          'Name="OPENWORKS_Materials"' in material_ui
-          and 'function Picker:ApplyPaint(reset)' in material_ui
-          and 'self.HexBox.Text="#"..self.ColorHex' in material_ui
-          and 'Paint.Palette()' in material_ui
-          and 'action="SetMaterial"' in material_ui
-          and 'paintFinish=finish' in material_ui
-          and 'self:ApplyPaint(true)' in material_ui)
+    check("Unified paint supports HEX, swatches and factory reset",
+          'function Panel:Appearance(node)' in unified_panel
+          and 'Paint.NormalizeHex(' in unified_panel
+          and 'Paint.Palette()' in unified_panel
+          and 'action="SetMaterial"' in unified_panel
+          and 'paintFinish=finish' in unified_panel
+          and 'paintFinish="Factory"' in unified_panel)
     check("Assembly server authorization",
           'hasEquippedTool(player,"AssemblySimulation")' in service
           and 'action=="CreateAssembly"' in service
@@ -656,13 +649,13 @@ def main() -> int:
           and "self.Remote:FireServer(self.ActiveId,0,true,false)" in crank
           and "UserInputService:IsMouseButtonPressed(" in crank)
     crank_math=read("src/shared/Construction/HandCrankMath.lua")
-    mates=read("src/client/Controllers/MateChoicePanel.lua")
     check("Hand crank fitted size survives undo/load",
           "HandCrankMath.ApplySize(model,data.size)" in service
           and "HandCrankMath.ValidSize" in persistence
           and "HandCrankMath.ShaftSize(source,target)" in mechanical)
     check("Gear hub choice creates only physical hinge or weld",
-          'local HUB_TYPES={"Rotation","Rigid"}' in mates
+          '{id="Rotation",label=LABELS.Rotation}' in connection_catalog
+          and '{id="Rigid",label=LABELS.Rigid}' in connection_catalog
           and 'request.relationKind=="Rotation" then "Bearing" else "Weld"' in mechanical
           and 'kind=="Hub" then "Rotation"' in read("src/shared/Construction/SmartPlacement.lua"))
     gear_clearance=read("src/shared/Construction/BoreClearance.lua")
@@ -944,17 +937,16 @@ def main() -> int:
           'Bore.ShaftFits(shaft,hole)' in mechanical
           and 'string.find(name,"drilledblock",1,true)' in mechanical)
     layered=read("src/client/Controllers/LayeredEditingController.lua")
-    check("Relationship picker uses clickable modal, never numeric choices",
-          'Name="OPENWORKS_RelationshipPicker"' in mates
-          and 'Modal=true' in mates
-          and 'button.Activated:Connect' in mates
-          and 'Enum.KeyCode.Escape' in mates
-          and 'self:Choose((index-1)%4+1)' not in mates
-          and 'BLOCKED_KEYS' in mates)
+    check("Relationship picker is the single contextual mouse interface",
+          'Name="UnifiedConnectionChoice"' in unified_panel
+          and 'function Panel:ChooseConnection(options,callback,heading)' in unified_panel
+          and 'self:CloseConnectionChoice(true)' in unified_panel
+          and 'item=button(holder,choice.label' in unified_panel
+          and 'Name="OPENWORKS_RelationshipPicker"' not in unified_panel)
     check("Build/Edit plus manual L align all use same popup",
           'self:OpenMateChoice("Build")' in selection
           and 'self:OpenMateChoice("Edit")' in selection
-          and 'parent.MateChoice:Show' in layered
+          and 'parent.UnifiedExplorer:ChooseFit(' in layered
           and 'action="SmartMate"' in layered
           and 'mateKind="Bore"' in layered
           and 'position=exact.Position' in layered
@@ -1043,9 +1035,11 @@ def main() -> int:
           'self.Feedback:Clear("assembly")' in tool_ui
           and 'Name="OPENWORKS_UIV2_Feedback"' in feedback
           and 'function Feedback:Destroy()' in feedback)
-    check("Selection and inspector visuals are client Workspace-owned",
-          'Name="OPENWORKS_LocalSelectionVisuals"' in selection
-          and 'Name="OPENWORKS_LocalInspectorSelection"' in inspector)
+    check("Selection and inspection visuals use the single client Workspace manager",
+          'Name="OPENWORKS_UIV2_Feedback"' in feedback
+          and 'self.Feedback:Set("selection"' in selection
+          and 'self.Feedback:Set("explorer-selection"' in unified_panel
+          and 'Name="OPENWORKS_LocalInspectorSelection"' not in unified_panel)
     check("UI v2 mechanical guides use line/sphere adornments, not Parts",
           'Instance.new("Part")' not in world
           and '"LineHandleAdornment"' in world
@@ -1202,9 +1196,11 @@ def main() -> int:
     check("Client entry starts Assembly controller",
           "AssemblyToolController.new(tools)" in client_entry
           and "assemblyToolController:Start()" in client_entry)
-    check("Current Assembly keybinds (no retired Ctrl+G)",
-          'elseif tool=="Assembly" then' in ctx
-          and "Register whole connected assembly" not in ctx)
+    check("Current Assembly keybinds use the active controller (no retired Ctrl+G)",
+          'if key==Enum.KeyCode.N then' in assembly_tool
+          and 'self:Confirm()' in assembly_tool
+          and 'self:Cancel()' in assembly_tool
+          and 'Enum.KeyCode.G' not in assembly_tool)
     check("Current docs and regressions documented",
           (ROOT / "docs/ARCHITECTURE.md").is_file()
           and (ROOT / "docs/QA_REGRESSION.md").is_file()
