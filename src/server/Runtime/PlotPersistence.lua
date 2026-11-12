@@ -10,6 +10,7 @@ local shared=game:GetService("ReplicatedStorage")
 local HandCrankMath=require(shared:WaitForChild("HandCrankMath"))
 local PaintCatalog=require(shared:WaitForChild("PaintCatalog"))
 local Config=require(shared:WaitForChild("BuildConfig"))
+local FitOrigin=require(shared:WaitForChild("FitOrigin"))
 
 local Persistence={}
 Persistence.__index=Persistence
@@ -170,6 +171,10 @@ function Persistence:Encode(player)
                 rotation=rotation(snap.orientation),
                 component=snap.componentId,
                 anchor=snap.componentAnchorId,
+                fitPivot=if FitOrigin.Valid(snap.fitPivotLocal)
+                    then vec3(snap.fitPivotLocal) else nil,
+                componentFitPivot=if FitOrigin.Valid(snap.componentFitPivotLocal)
+                    then vec3(snap.componentFitPivotLocal) else nil,
                 assemblyPrecision=snap.assemblyPrecision,
                 resizePrecision=snap.resizePrecision,
                 freePosition=snap.freePosition,
@@ -251,9 +256,16 @@ function Persistence:Decode(player,document)
         local pos=readVec3(record.pos)
         local size=readVec3(record.size)
         local cf=readRotation(record.rotation)
+        local pivot=if record.fitPivot~=nil
+            then readVec3(record.fitPivot) else nil
+        local componentPivot=if record.componentFitPivot~=nil
+            then readVec3(record.componentFitPivot) else nil
         if not entry or not pos or not size
             or (record.rotation~=nil and not cf)
-            or not d.grid.ValidSteps(record.steps) then
+            or not d.grid.ValidSteps(record.steps)
+            or (record.fitPivot~=nil and not FitOrigin.Valid(pivot))
+            or (record.componentFitPivot~=nil
+                and not FitOrigin.Valid(componentPivot)) then
             return nil,"Invalid saved template, size, position or orientation"
         end
         pos+=plot.origin
@@ -274,6 +286,7 @@ function Persistence:Decode(player,document)
             instanceId=record.id,templateId=record.template,
             position=pos,size=size,steps=record.steps,orientation=cf,
             componentId=record.component,componentAnchorId=record.anchor,
+            fitPivotLocal=pivot,componentFitPivotLocal=componentPivot,
             assemblyPrecision=record.assemblyPrecision==true,
             resizePrecision=record.resizePrecision==true,
             freePosition=record.freePosition==true,
