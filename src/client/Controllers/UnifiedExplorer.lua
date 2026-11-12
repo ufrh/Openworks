@@ -96,6 +96,7 @@ function Panel.new(tools,build,mechanics,assemblyTool,feedback)
         ConnectionChoiceOpen=false,ChoiceCallback=nil,ChoiceWasFocused=false,
         MenuRestoreFocus=false,StatusUntil=0,LastScan=0,
         Busy=false,Started=false,
+        DraftSignature="",SessionSignature="",Telemetry=nil,TelemetrySeed=nil,
     },Panel)
 end
 
@@ -136,8 +137,7 @@ function Panel:Focus(value)
         self.Crosshair.Visible=not self.Focused and not self.MenuOpen
             and not self.ConnectionChoiceOpen
             and (self.Tools.PrimaryId=="Mechanics"
-                or (self.Tools.PrimaryId=="AssemblySimulation"
-                    and self.Tools.SubtoolId=="Simulation"))
+                or self.Tools.PrimaryId=="AssemblySimulation")
     end
     -- Keep Build's legacy crosshair and catalog pointer state synchronized
     -- when this shared panel or a connection picker claims cursor focus.
@@ -251,6 +251,18 @@ function Panel:MakeUI()
             self:CloseMenu()
             self:Focus(not self.Focused)
         end)
+    self.NewAssemblyButton=button(main,"+ NEW",UDim2.new(1,-133,0,8),
+        UDim2.fromOffset(60,26),function()
+            if self.Tools.PrimaryId=="AssemblySimulation"
+                and self.Tools.SubtoolId=="AssemblyEditor"
+                and not simulating() then
+                self.AssemblyTool:BeginNew()
+                self:Focus(true)
+                self:FocusAssemblyName()
+            end
+        end)
+    self.NewAssemblyButton.Visible=false
+    self:Hint(self.NewAssemblyButton,"Create and name an assembly in Properties")
     self:Hint(self.FocusButton,"Tab · Unlock the cursor to inspect and edit the workspace")
     self.TabObjects=button(main,"OBJECTS",UDim2.fromOffset(10,43),
         UDim2.new(0.5,-15,0,27),function()
