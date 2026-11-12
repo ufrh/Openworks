@@ -822,7 +822,8 @@ def main() -> int:
           'Name="OPENWORKS_RelationshipPicker"' in mates
           and 'Modal=true' in mates
           and 'button.Activated:Connect' in mates
-          and 'Enum.KeyCode.Escape' in mates
+          and 'Enum.KeyCode.Return' in mates
+          and 'Enum.KeyCode.Escape' not in mates
           and 'self:Choose((index-1)%4+1)' not in mates
           and 'BLOCKED_KEYS' in mates)
     check("Build/Edit plus manual L align all use same popup",
