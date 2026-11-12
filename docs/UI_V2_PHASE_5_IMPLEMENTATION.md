@@ -15,7 +15,7 @@ One existing **Assembly & Simulation** native tool, with two subtools and a shar
 - Clicking a primitive from the dock lets the user toggle precisely **that primitive**; clicking a full editor component can toggle its entire real primitive membership. Ordinary world click keeps the existing component behavior; Alt+click continues to target one primitive.
 - Partial component slices belonging to other registered assemblies are never silently expanded into full membership. The established ownership checks reject adding an object from another assembly.
 - Selecting an existing assembly enters its saved membership editor; editing its name and membership commits through the existing `UpdateAssembly` action, with the exact member IDs. New assemblies use existing `CreateAssembly` and preserve all authored IDs.
-- Confirm, Cancel, Ctrl+Z/Y and Alt+arrow whole-assembly movement keep their validated server paths. Starting a new draft or opening another assembly while a draft is already open is rejected until it is saved/discarded.
+- Confirm, Cancel, Ctrl+Z/Y and Alt+arrow whole-assembly movement keep their validated server paths. Starting a new draft or opening another assembly while a draft is already open is rejected until it is saved/discarded. **Temporarily switching tools/subtools preserves the uncommitted local draft** and its name/member IDs; it does not add those members to saved simulation scope until an explicit Confirm.
 
 ### Simulation (Y)
 
