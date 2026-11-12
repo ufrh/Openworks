@@ -27,6 +27,7 @@ local FitOrigin = require(construction:WaitForChild("FitOrigin"))
 local FitSolver = require(construction:WaitForChild("FitSolver"))
 local FitPivotHandle = require(script.Parent:WaitForChild("FitPivotHandle"))
 local FitPivotSnap = require(script.Parent:WaitForChild("FitPivotSnap"))
+local ComponentBankPreview=require(script.Parent:WaitForChild("ComponentBankPreview"))
 local MultiFit = require(construction:WaitForChild("MultiFitMath"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local BoreClearance = require(construction:WaitForChild("BoreClearance"))
@@ -130,6 +131,10 @@ function Controller.new(tools)
         SmartBoreKind = "Cylindrical",
         SmartLastScan = 0,
         CatalogOpen = false,
+        CurrentBank=nil,
+        BankModal=nil,
+        BankEntries={},
+        BankConfirmRemove=nil,
         ScaleMode = false,
         NumericPrecision = false,
         Numeric = nil,
@@ -202,13 +207,13 @@ function Controller:MakeUI()
     local close = button(catalog, "×  CLOSE", UDim2.fromOffset(90, 29), UDim2.fromOffset(226, 10))
     close.Activated:Connect(function() self:ShowCatalog(false) end)
 
-    label(catalog, "Select a Studio-precompiled primitive", UDim2.fromOffset(300, 24),
+    label(catalog, "Place primitives or saved custom components", UDim2.fromOffset(300, 24),
         UDim2.fromOffset(13, 40), 12, MUTED)
 
     local list = create("ScrollingFrame", {
         Name = "Items",
         Position = UDim2.fromOffset(12, 71),
-        Size = UDim2.new(1, -24, 1, -84),
+        Size = UDim2.new(1, -24, 1, -130),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 5,
@@ -216,6 +221,38 @@ function Controller:MakeUI()
         CanvasSize = UDim2.fromOffset(0, 0),
     }, catalog)
     create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+    local registerButton=button(catalog,"REGISTER SELECTED COMPONENT",
+        UDim2.new(1,-24,0,30),UDim2.new(0,12,1,-39))
+    registerButton.Activated:Connect(function() self:OpenBankSave() end)
+
+    local modal=rounded(create("Frame",{
+        Name="OPENWORKS_BankSave",Visible=false,ZIndex=42,
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.fromScale(0.5,0.43),Size=UDim2.fromOffset(370,172),
+        BackgroundColor3=DARK,BorderSizePixel=0,
+    },gui),10)
+    local title=label(modal,"SAVE COMPONENT TO BANK",
+        UDim2.fromOffset(342,24),UDim2.fromOffset(15,11),16)
+    title.ZIndex=43
+    local input=create("TextBox",{
+        Name="ComponentName",ZIndex=43,Text="",PlaceholderText="Component name",
+        ClearTextOnFocus=false,Size=UDim2.fromOffset(340,39),
+        Position=UDim2.fromOffset(15,45),BackgroundColor3=PANEL,
+        TextColor3=TEXT,PlaceholderColor3=MUTED,
+        TextSize=14,Font=Enum.Font.GothamMedium,BorderSizePixel=0,
+    },modal)
+    rounded(input,7)
+    local save=button(modal,"SAVE COMPONENT",
+        UDim2.fromOffset(164,37),UDim2.fromOffset(15,105))
+    local cancel=button(modal,"CANCEL",
+        UDim2.fromOffset(164,37),UDim2.fromOffset(191,105))
+    save.ZIndex=43
+    cancel.ZIndex=43
+    save.Activated:Connect(function() self:ConfirmBankSave() end)
+    cancel.Activated:Connect(function() self:CloseBankSave() end)
+    input.FocusLost:Connect(function(enter)
+        if enter and modal.Visible then self:ConfirmBankSave() end
+    end)
 
     -- The primitive catalog alone unlocks the mouse. Resizing always uses
     -- the center crosshair with a locked first-person pointer.
@@ -239,6 +276,9 @@ function Controller:MakeUI()
     self.Catalog = catalog
     self.List = list
     self.Unlock = unlock
+    self.BankModal=modal
+    self.BankNameInput=input
+    self.BankRegisterButton=registerButton
     self.Crosshair = crosshair
     self.Numeric = NumericSizePanel.new(gui)
     self.MateChoice = MateChoicePanel.new(gui)
