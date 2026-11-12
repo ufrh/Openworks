@@ -387,12 +387,17 @@ function Panel:Scan(force)
         local member=self.Selected.members and self.Selected.members[1]
         self.Selected=self:NodeForModel(member,true)
     elseif self.Selected and self.Selected.kind=="assembly" then
+        local found=nil
         for _,node in ipairs(self.Snapshot.assemblies) do
             if node.kind=="assembly" and node.id==self.Selected.id then
-                self.Selected=node
-                break
+                found=node break
             end
         end
+        self.Selected=found
+    end
+    if not self.Selected then
+        if self.Feedback then self.Feedback:Clear("context-selection") end
+        if self.ContextOpen then self:CloseContext() end
     end
 end
 
@@ -476,7 +481,10 @@ function Panel:SelectWorldAtCenter()
     params.FilterDescendantsInstances={root}
     params.IgnoreWater=true
     local hit=workspace:Raycast(ray.Origin,ray.Direction*Grid.MaxDistance,params)
-    if not hit then return nil end
+    if not hit then
+        self:Select(nil,false)
+        return nil
+    end
     local model=hit.Instance
     while model and model.Parent~=root do model=model.Parent end
     if not own(model) then return nil end
@@ -1005,6 +1013,29 @@ function Panel:RenderRelation(node)
             end)
     else
         self:Value("Settings","No configurable parameters")
+    end
+    -- Keep non-editable relationship metadata available in the same
+    -- contextual inspector, including gear and rigid coupling attributes.
+    -- A property is only offered for editing if an existing server action
+    -- validates that field; arbitrary attributes are never written.
+    self:Section("Other relationship properties")
+    local attributes=rel:GetAttributes()
+    local names={}
+    for name in pairs(attributes) do
+        if name~="OwnerUserId" and name~="RelationId"
+            and name~="SourceId" and name~="TargetId"
+            and name~="SecondTargetId" and name~="Kind" then
+            table.insert(names,name)
+        end
+    end
+    table.sort(names)
+    for _,name in ipairs(names) do
+        local value=attributes[name]
+        if typeof(value)=="Vector3" then
+            value=string.format("%.2f / %.2f / %.2f",
+                value.X,value.Y,value.Z)
+        else value=tostring(value) end
+        self:Value(name,value)
     end
     self:ActionButton(
         if self.Removing==node.id then "CONFIRM REMOVE RELATIONSHIP"
