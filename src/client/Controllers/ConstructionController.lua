@@ -224,7 +224,7 @@ function Controller:MakeUI()
         Size=UDim2.new(1,-24,0,34),BorderSizePixel=0,
     },catalog)
     rounded(search,7)
-    local pad=create("UIPadding",{
+    create("UIPadding",{
         PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,10),
     },search)
     local list = create("ScrollingFrame", {
