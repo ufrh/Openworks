@@ -294,3 +294,18 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 - [ ] Test 720p, 1080p and 1440p windows, F6 plot modal, 100+ objects, respawn and repeated subtool changes. Left controls should not obstruct the right dock, drift offscreen, create duplicate PlayerGui owners or rebuild every frame. Compare runtime FPS and inspect Output for errors.
 
 **Status:** Source/StyLua verification only; actual Studio GUI, cursor and layout testing is NOT RUN.
+
+## Context-first UI regression — current feature branch (Studio Play required)
+
+- [ ] In Build > Place, open the primitive library and confirm it sits right of the centered viewport without covering the left Subtools or Controls panels. Check 720p, 1080p and 1440p layouts.
+- [ ] Right-click an authored primitive or component. Only one `OPENWORKS_ContextEditor` GUI appears, near the pointer; no permanent Explorer hierarchy or Properties dock. Esc/F2 closes without stray pointer capture. Empty right-click clears context selection.
+- [ ] Build a component with three or more independent mechanical relationships involving separate member primitives. Right-click any member, choose the whole component context and confirm ALL real relationships appear, scrollable. Click each relation and Back within the SAME popup; no duplicate property window.
+- [ ] Tune bearing limits, spring stiffness/damping/free length and powered bearing motor parameters from the same context popup and press Confirm. Reopen and reload to verify changes. Invalid values must be server-rejected; simulation authoring must be refused.
+- [ ] Test right-click material/paint edits from Build, Mechanics and Assembly & Simulation; ownership, plot validity and server simulation guards remain authoritative. Physical material and cosmetic finish continue to save separately.
+- [ ] Press N under Assembly Editor: centered name popup, then SELECT PRIMITIVES, then world click/Alt-click. A compact top-center membership bar must show the name/count and Confirm/Cancel. Save/cancel, switch tools mid-draft and reload old assemblies without changes to saved format.
+- [ ] With no object selected, aim at multiple primitives and registered assemblies: **NO selection boxes**. Selecting one primitive shows only its aqua 12-edge bounds; a grouped component shows one oriented component box; explicit draft members appear purple; actively picked mechanical participants show orange/red and accepted flashes green. No always-on grounding or snap boxes.
+- [ ] Enter Resize with a selected primitive and drag each face. The selection box, resize ghost and wireframe must follow the CURRENT dimensions every render frame. Commit and cancel return the box to the real selected object without ghost remnants.
+- [ ] Right-click an empty area, delete the selected object, undo/redo, F2/plot modal, switch tools, respawn and reload. Verify cleanup of `OPENWORKS_UIV2_Feedback` sublayers and no stale `OPENWORKS_ContextEditor` modal state.
+- [ ] Replay [six saved-build fixtures](UI_V2_REGRESSION_MATRIX.md) on a disposable plot and repeat existing springs/bearings/gears/motors/assembly simulation tests. CI source/StyLua parsing success **does not** constitute an in-engine test pass.
+
+**Status:** Not yet run in Roblox Studio; `dev` remains untouched.
