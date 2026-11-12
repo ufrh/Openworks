@@ -162,7 +162,7 @@ function Feedback:FlashSuccess(models)
     end
 end
 
-function Feedback:Draw(entry,ignorePriority)
+function Feedback:Draw(entry,ignorePriority,priorityMap)
     local members=entry.Members
     local anchorModel=members[1]
     local anchor=if valid(anchorModel) then anchorModel.PrimaryPart else nil
@@ -171,22 +171,13 @@ function Feedback:Draw(entry,ignorePriority)
         return
     end
     local priority=PRIORITY[entry.Role] or 0
-    local visible=ignorePriority==true
-    if not visible then
-        visible=true
-        for _,layer in pairs(self.Layers) do
-            for _,other in pairs(layer) do
-                if other~=entry and (PRIORITY[other.Role] or 0)>priority then
-                    for _,subject in ipairs(members) do
-                        if table.find(other.Members,subject) then
-                            visible=false
-                            break
-                        end
-                    end
-                    if not visible then break end
-                end
+    local visible=true
+    if ignorePriority~=true and priorityMap then
+        for _,subject in ipairs(members) do
+            if (priorityMap[subject] or 0)>priority then
+                visible=false
+                break
             end
-            if not visible then break end
         end
     end
     if not visible then
@@ -232,14 +223,26 @@ function Feedback:Update()
     if now-self.LastUpdate<0.08 then return end
     self.LastUpdate=now
     self.Ghost:Update()
+    -- O(N) priority lookup instead of comparing every box to every other box.
+    -- Remove expired entries BEFORE building the suppression map.
+    local priorityMap={}
     for owner,layer in pairs(self.Layers) do
         for key,entry in pairs(layer) do
             if (entry.Expires and now>=entry.Expires)
                 or not valid(entry.Members[1]) then
                 self:Remove(owner,key)
             else
-                self:Draw(entry,false)
+                local priority=PRIORITY[entry.Role] or 0
+                for _,subject in ipairs(entry.Members) do
+                    priorityMap[subject]=math.max(
+                        priorityMap[subject] or 0,priority)
+                end
             end
+        end
+    end
+    for _,layer in pairs(self.Layers) do
+        for _,entry in pairs(layer) do
+            self:Draw(entry,false,priorityMap)
         end
     end
 end
