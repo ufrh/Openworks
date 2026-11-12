@@ -1,8 +1,7 @@
 --!strict
 -- Single source of truth for OPENWORKS native Tool instances and their order.
 local definitions = {
-    { Id = "Build", Tooltip = "Place primitives and construct geometry" },
-    { Id = "Edit", Tooltip = "Move, group, resize and author mechanical connections" },
+    { Id = "Build", Tooltip = "Place, select, move, fit, resize, paint and group geometry" },
     { Id = "Assembly", Tooltip = "Name assemblies and explicitly choose primitives or components" },
     { Id = "Simulate", Tooltip = "Simulate an authored assembly with native mechanical physics" },
     { Id = "Inspect", Tooltip = "Inspect, measure, and select obstructed components" },
