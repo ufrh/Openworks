@@ -9,6 +9,7 @@ Ghost.__index=Ghost
 
 local CYAN=Color3.fromRGB(67,207,224)
 local RED=Color3.fromRGB(246,79,86)
+local ORANGE=Color3.fromRGB(255,157,54)
 local MAX_EDGES=384
 local STEPS=16
 
@@ -78,7 +79,7 @@ function Ghost.new(parent)
     folder.Name="OPENWORKS_GeometryGhostEdges"
     folder.Parent=parent
     return setmetatable({
-        Folder=folder,Edges={},Model=nil,Valid=true,
+        Folder=folder,Edges={},Model=nil,Valid=true,Pending=false,
         LastRender=0,
     },Ghost)
 end
@@ -94,6 +95,10 @@ end
 
 function Ghost:SetValid(valid)
     self.Valid=valid~=false
+end
+
+function Ghost:SetPending(pending)
+    self.Pending=pending==true
 end
 
 function Ghost:Update()
@@ -120,7 +125,8 @@ function Ghost:Update()
             block(edgeData,part)
         end
     end
-    local color=if self.Valid then CYAN else RED
+    local color=if not self.Valid then RED
+        elseif self.Pending then ORANGE else CYAN
     for i,data in ipairs(edgeData) do
         local line=self.Edges[i]
         if not line then
