@@ -1659,6 +1659,67 @@ function Controller:ConfirmComponentPlacement()
     self:FinishPendingHandoff(handoff,goal,models,ok)
 end
 
+-- One editing interaction for all user-authored geometry. The cursor may
+-- land on ANY member of a component; the saved offset is on its fixed anchor.
+function Controller:EditFitPivot(reset)
+    local anchor=if self.SelectedComponentId then self.GroupAnchor else self.Selected
+    if not anchor or not anchor.Parent then
+        self:Message("Select a primitive or component first")
+        return
+    end
+    if reset then
+        self.PivotSetting=false
+        self:Request({
+            action="SetFitPivot",reset=true,
+            scope=if self.SelectedComponentId then "Component" else "Primitive",
+            id=if self.SelectedComponentId then self.SelectedComponentId
+                else anchor:GetAttribute("InstanceId"),
+        })
+        self:RefreshHUD()
+        return
+    end
+    self.PivotSetting=true
+    self:Message("Choose the alignment origin • aim at a selected surface and click")
+end
+
+function Controller:CommitFitPivot()
+    if not self.PivotSetting or self.Busy then return end
+    local camera=workspace.CurrentCamera
+    if not camera then return end
+    local members=if self.SelectedComponentId then self.SelectedParts
+        else (if self.Selected then {self.Selected} else {})
+    if #members==0 then self.PivotSetting=false return end
+    local ray=CameraAimRay.Ray(camera)
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Include
+    params.FilterDescendantsInstances=members
+    params.IgnoreWater=true
+    local hit=workspace:Raycast(ray.Origin,ray.Direction*Grid.MaxDistance,params)
+    if not hit then
+        self:Message("Look at a solid surface in the selected part or component")
+        return
+    end
+    local folder=workspace:FindFirstChild(Config.FolderName)
+    local selected=topBuiltModel(hit.Instance,folder)
+    if not selected or not table.find(members,selected) then
+        self:Message("Choose a surface belonging to the selected geometry")
+        return
+    end
+    local anchor=if self.SelectedComponentId then self.GroupAnchor else self.Selected
+    local succeeded=self:Request({
+        action="SetFitPivot",
+        scope=if self.SelectedComponentId then "Component" else "Primitive",
+        id=if self.SelectedComponentId then self.SelectedComponentId
+            else anchor:GetAttribute("InstanceId"),
+        hitId=selected:GetAttribute("InstanceId"),
+        position=hit.Position,
+    })
+    if succeeded then
+        self.PivotSetting=false
+        self:RefreshHUD()
+    end
+end
+
 function Controller:Activate(mode)
     if mode=="Edit" and self.PivotSetting then
         self:CommitFitPivot()
