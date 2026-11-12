@@ -2074,6 +2074,7 @@ function Controller:EndScale()
         self.Selected.PrimaryPart.LocalTransparencyModifier = 0
     end
 
+    if self.Feedback then self:RefreshSelectionHighlights() end
     self.ScaleCF=nil
     self.ScaleSize=nil
     self.ScaleVisualCF=nil
