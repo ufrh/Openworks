@@ -155,7 +155,8 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
         end
     end
     local fitActive=(primary=="Build" and
-        (stage=="SHAFT FIT" or stage=="ALIGNMENT" or stage=="SMART FIT"
+        (build.SmartMatch~=nil or stage=="SHAFT FIT"
+            or stage=="ALIGNMENT" or stage=="SMART FIT"
             or stage=="CHOOSE OPENING"))
         or (primary=="Mechanics" and
             (stage=="CONNECTION CHOICE" or stage=="INSERTION"
