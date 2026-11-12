@@ -1061,6 +1061,9 @@ local function setFitPivot(player,payload)
         members=if anchor then {anchor} else {}
     end
     if not anchor then return false,"Component anchor is unavailable" end
+    if not nearPlayer(player,anchor:GetPivot().Position) then
+        return false,"Move closer to the selected origin"
+    end
     local prior=snapshot(anchor)
     local localPoint=nil
     if payload.reset~=true then
