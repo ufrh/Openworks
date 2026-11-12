@@ -357,6 +357,9 @@ function Controller:Reset()
     self.WeldCandidate = nil
     self.WeldValid = true
     self.PairKind = nil
+    self.ConnectFirst=nil
+    self.ConnectSecond=nil
+    self.ConnectInvalid=false
     self.Joint = nil
     self.WeldFirst=nil
     self.ConnectFirst=nil
@@ -1126,10 +1129,8 @@ function Controller:Start()
                 if self.UnifiedExplorer then
                     self.UnifiedExplorer:SelectWorldAtCenter()
                 else self.Properties:InspectAtCenter() end
-            elseif self.WeldMode then
-                self:WeldClick()
-            elseif self.ManualActive then
-                self:Activate()
+            elseif self.Tools.SubtoolId=="Connect" then
+                self:ConnectClick()
             end
         end
     end))
@@ -1138,14 +1139,6 @@ function Controller:Start()
             or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
             or self.Tools:WasConsumed(input) then return end
         local key=input.KeyCode
-        if self.Mode=="Mechanics" and self.WeldMode then
-            if key==Enum.KeyCode.Escape or key==Enum.KeyCode.F then
-                self.WeldFirst=nil
-                self.WeldMode=false
-                self:StartManualJoint()
-            end
-            return
-        end
         if self.Construction and
             (self.Construction.PendingMateChoice
                 or (self.Construction.Numeric and self.Construction.Numeric.Active)) then
@@ -1175,43 +1168,19 @@ function Controller:Start()
             or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
         if control and (key==Enum.KeyCode.Z or key==Enum.KeyCode.Y) then
             self:Request({action=if key==Enum.KeyCode.Z then "Undo" else "Redo"})
-            if self.Tools.SubtoolId=="Connect" then self:StartManualJoint() end
+            if self.Tools.SubtoolId=="Connect" then self:StartConnect() end
             return
         end
         if self.Tools.SubtoolId~="Connect" then return end
-        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-        -- F enters the legacy validated two-solid weld workflow. W remains
-        -- the universal freecam forward key, so it cannot be a weld shortcut.
-        if key==Enum.KeyCode.F and not control then
-            self:Reset()
-            self.WeldMode=true
-            self:RefreshHUD()
-            return
-        end
-        -- Shift+J creates a real spring between authored components.
-        if key==Enum.KeyCode.J and shift then
-            self:StartPair("Spring")
-            return
-        end
-        if key==Enum.KeyCode.C and shift then
-            self:StartPair("CrankCoupling")
-            return
-        end
-        if key==Enum.KeyCode.K then self:ToggleGearMode() return end
-        -- Tune joints only with the mouse-driven Simulate properties GUI.
-        if key==Enum.KeyCode.H then self:StartManualJoint() return end
-        if shift and (key==Enum.KeyCode.Delete
-            or key==Enum.KeyCode.Backspace) then
-            self:DeleteRelationship()
+        -- Relationship kinds are chosen in one contextual picker after both
+        -- physical parts are selected. No separate F/H/K/Shift+J/Shift+C
+        -- connection modes or R cycle remain.
+        if key==Enum.KeyCode.Escape then
+            self:StartConnect()
             return
         end
         if not self.ManualActive then return end
-
-        if key==Enum.KeyCode.Escape then self:StartManualJoint()
-        elseif key==Enum.KeyCode.R and self.Stage~="JointSettings" then
-            self:CycleType()
-        elseif key==Enum.KeyCode.LeftBracket or key==Enum.KeyCode.RightBracket then
+        if key==Enum.KeyCode.LeftBracket or key==Enum.KeyCode.RightBracket then
             local delta=if key==Enum.KeyCode.RightBracket then 1 else -1
             if self.Stage=="Fit" then
                 self:AdjustFit(delta)
