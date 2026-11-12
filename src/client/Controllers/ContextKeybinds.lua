@@ -29,7 +29,7 @@ function Context:Lines()
     local c = self.Construction
     local a = self.Assembly
     local lines = {}
-    if not tool then return { "Choose a tool: 1–5" } end
+    if not tool then return { "Choose a tool from the Roblox hotbar" } end
     if c.PendingMateChoice then
         if c.SmartMatch and c.SmartMatch.kind=="Hub" then
             append(lines,"CLICK","Pulley/gear to shaft: automatic rigid weld")
@@ -43,33 +43,26 @@ function Context:Lines()
     if c.Numeric and c.Numeric.Active then
         append(lines,"X Y Z","Type dimensions in U")
         append(lines,"Enter","Apply precise size")
-        append(lines,"Esc","Cancel")
+        append(lines,"Enter","Cancel")
         return lines
     end
-    if tool=="Edit" and c.PivotSetting then
-        append(lines,"Crosshair","Look at a selected primitive or component face")
-        append(lines,"Click","Set its shared fitting / rotation origin")
-        append(lines,"Esc","Cancel pivot selection")
-        append(lines,"Shift+O","Reset pivot to default")
-        return lines
-    end
-    if tool=="Edit" and c.PivotSetting then
+    if tool=="Build" and c.PivotSetting then
         append(lines,"Click","Place origin on aimed selected surface")
         append(lines,"Q / E","Cycle cursor • face center • edge • corner")
         append(lines,"Shift+O","Reset primitive / component origin")
-        append(lines,"Esc","Cancel origin placement")
+        append(lines,"Enter","Cancel origin placement")
         return lines
     end
     if tool=="Weld" then
         append(lines,"Click","Select first solid, then second to weld")
-        append(lines,"Esc","Cancel weld selection")
+        append(lines,"Enter","Cancel weld selection")
         return lines
     end
     if tool=="Simulate" then
         local running=player:GetAttribute("OPENWORKS_Simulating")==true
         if player:GetAttribute("OPENWORKS_PropertiesOpen")==true then
             append(lines,"LMB","Pick relationship / edit settings")
-            append(lines,"Esc","Close inspector and lock pointer")
+            append(lines,"Enter","Close inspector and lock pointer")
             append(lines,"RMB hold","Look around while inspector open")
         elseif running then
             append(lines,"P","Stop registered assembly")
@@ -98,27 +91,28 @@ function Context:Lines()
 
     -- Only list actions possible IN THE CURRENT CONTEXT; submenus narrow
     -- rather than continuing to show the entire tool's shortcut catalog.
-    if tool == "Build" then
+    if tool == "Build" and c.Mode=="Build" then
         if c.ScaleMode then
             append(lines, "LMB hold", "Grab face")
             append(lines, "Move / Look", "Resize in 3D")
             append(lines, "Step", tostring(c.ScaleHandles.IncrementU) .. " U")
             append(lines, "Release", "Apply size")
             append(lines, "N", "Enter exact dimensions in U")
-            append(lines, "V / Esc", "Exit scale")
+            append(lines, "V / Enter", "Exit scale")
         elseif c.CatalogOpen then
             append(lines, "LMB", "Choose primitive")
-            append(lines, "B / Esc", "Close catalog")
+            append(lines, "B / Enter", "Close catalog")
         else
             append(lines, "LMB", "Place / multi-point fit")
             append(lines, "B / V / N", "Catalog / resize / exact U")
+            append(lines,"Enter","Return to selecting existing geometry")
             if c.SmartMatch then
                 append(lines, "Tab", "Next compatible target")
                 if c.SmartMatch.kind=="Bore" then
                     if c.LockedAlignment then
                         append(lines,"Wheel / Q E","Depth / roll (after alignment)")
                         append(lines,"Click","Finalize / choose passive joint")
-                        append(lines,"Esc","Re-align")
+                        append(lines,"Enter","Re-align")
                     else
                         append(lines,"Click","Choose relationship popup")
                     end
@@ -132,7 +126,7 @@ function Context:Lines()
                 append(lines, "R T Y", "Rotate axes")
             end
         end
-    elseif tool == "Edit" then
+    elseif tool == "Build" then
         if a.ManualActive then
             if a.Stage=="PairFirst" or a.Stage=="PairSecond" then
                 append(lines,"LMB",if a.Stage=="PairFirst"
@@ -147,17 +141,17 @@ function Context:Lines()
                 else
                     append(lines,"Valid","Touching solid faces")
                 end
-                append(lines,"Esc","Cancel")
+                append(lines,"Enter","Cancel")
             elseif a.Stage=="GearFirst" or a.Stage=="GearSecond" then
                 append(lines,"Click","Choose gear to mesh")
-                append(lines,"K / Esc","Cancel gear connection")
+                append(lines,"K / Enter","Cancel gear connection")
             elseif a.Stage=="JointSettings" then
                 append(lines,"Simulate","Use the relationship properties panel")
             else
                 append(lines,"Click","Housing then shaft")
                 append(lines,"R","Change relationship")
                 append(lines,"Wheel / Q E","Depth / rotation")
-                append(lines,"Esc","Exit manual relationship")
+                append(lines,"Enter","Exit manual relationship")
             end
         elseif c.ScaleMode then
             append(lines, "LMB hold", "Grab face")
@@ -165,7 +159,7 @@ function Context:Lines()
             append(lines, "Step", tostring(c.ScaleHandles.IncrementU) .. " U")
             append(lines, "Release", "Apply size")
             append(lines, "N", "Enter exact dimensions in U")
-            append(lines, "V / Esc", "Exit scale")
+            append(lines, "V / Enter", "Exit scale")
         elseif c.Layered and c.Layered.Alignment then
             local align = c.Layered.Alignment
             if align.Stage == "PickTarget" then
@@ -175,13 +169,13 @@ function Context:Lines()
                 append(lines, "Wheel / [ ]", "Shaft fit ±0.05 U")
                 append(lines, "Alt+wheel", "Change insertion depth")
                 append(lines, "Q / E", "Rotate shaft in bore")
-                append(lines, "LMB / Esc", "Finish fitting")
+                append(lines, "LMB / Enter", "Finish fitting")
             else
                 append(lines, "Wheel / [ ]", "Insertion depth")
                 append(lines, "Q / E", "Live shaft roll")
                 append(lines, "LMB", "Confirm when blue")
             end
-            append(lines, "L / Esc", "Cancel alignment")
+            append(lines, "L / Enter", "Cancel alignment")
         elseif c.Pending then
             append(lines, "Look / Walk", "Position preview")
             append(lines, "Release / Click", "Move / auto-attach")
@@ -191,7 +185,7 @@ function Context:Lines()
                     if c.LockedAlignment then
                         append(lines,"Wheel / Q E","Depth / roll (after alignment)")
                         append(lines,"Click","Finalize / choose passive joint")
-                        append(lines,"Esc","Re-align")
+                        append(lines,"Enter","Re-align")
                     else
                         append(lines,"Click","Choose relationship popup")
                     end
@@ -203,9 +197,10 @@ function Context:Lines()
             else
                 append(lines, "R T Y", "World-axis rotation")
             end
-            append(lines, "Esc", "Cancel")
+            append(lines, "Enter", "Cancel")
         else
             append(lines, "LMB", "Select editor group")
+            append(lines,"B","Choose primitive and enter placement")
             append(lines, "Double click", "Edit member inside component")
             append(lines, "Hold selected", "Drag to auto-align")
             append(lines,"O / Shift+O","Set face/vertex origin • reset to center")
@@ -230,7 +225,7 @@ function Context:Lines()
             append(lines,"Assembly tool","Name and select assembly members")
             append(lines, "C / U", "Combine / Ungroup")
             append(lines, "E", "Edit group interior")
-            append(lines, "F / Del", "Duplicate / Delete")
+            append(lines, "F / Backspace", "Duplicate / Delete")
             append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
         end
     elseif tool=="Assembly" then
@@ -244,7 +239,7 @@ function Context:Lines()
         append(lines,"Alt+Up/Down","Raise / lower assembly in world Y")
         append(lines,"Alt+Left/Right","Nudge assembly horizontally")
         append(lines,"Shift+Alt+Arrows","Fine nudge • 0.05 studs")
-        append(lines,"Esc","Cancel the draft")
+        append(lines,"Enter","Confirm or finish empty draft")
     elseif tool == "Inspect" then
         append(lines, "LMB", "Inspect")
         append(lines, "Tab", "Cycle depth")
