@@ -11,6 +11,8 @@ local ComponentGeometry = require(
         :WaitForChild("Construction")
         :WaitForChild("ComponentGeometry")
 )
+local FitOrigin = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("FitOrigin"))
 local RotationMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("RotationMath"))
 
@@ -81,6 +83,7 @@ function ComponentService:Group(player, payload)
         table.insert(before, self.D.snapshot(model))
         model:SetAttribute("ComponentId", componentId)
         model:SetAttribute("ComponentAnchorId", anchorId)
+        model:SetAttribute("ComponentFitPivotLocal",nil)
         table.insert(after, self.D.snapshot(model))
     end
 
@@ -101,6 +104,7 @@ function ComponentService:Ungroup(player, payload)
     for _, model in ipairs(members) do
         model:SetAttribute("ComponentId", nil)
         model:SetAttribute("ComponentAnchorId", nil)
+        model:SetAttribute("ComponentFitPivotLocal",nil)
         table.insert(after, self.D.snapshot(model))
     end
     self.D.commitMetadata(player, before, after)
@@ -139,8 +143,8 @@ function ComponentService:Plan(player, payload)
         end
     end
     if not anchor then return nil, nil, "Invalid component anchor" end
-    if anchor ~= ComponentGeometry.CentralPrimitive(members) then
-        return nil, nil, "Component center changed; reselect the component"
+    if anchor ~= FitOrigin.ComponentAnchor(members) then
+        return nil, nil, "Component alignment anchor changed; reselect it"
     end
 
     local anchorState = d.snapshot(anchor)
