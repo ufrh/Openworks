@@ -84,6 +84,58 @@ def main() -> int:
         and 'hasEquippedTool(player,"Simulate")' not in read("src/server/Runtime/ConstructionService.lua"),
     )
 
+    explorer_data = read("src/client/Controllers/ExplorerData.lua")
+    unified_panel = read("src/client/Controllers/UnifiedExplorer.lua")
+    context_actions = read("src/client/Controllers/ContextActionRegistry.lua")
+    client_entry = read("src/client/init.client.lua")
+    construction_ui = read("src/client/Controllers/ConstructionController.lua")
+    mechanical_ui = read("src/client/Controllers/AssemblyController.lua")
+    assembly_ui = read("src/client/Controllers/AssemblyToolController.lua")
+    camera_ui = read("src/client/Controllers/CameraController.lua")
+    check("UI v2 Phase 3 has a single docked Explorer/Properties owner",
+          'UnifiedExplorer.new(tools,' in client_entry
+          and 'unifiedExplorer:Start()' in client_entry
+          and 'Name="OPENWORKS_UnifiedExplorerProperties"' in unified_panel
+          and 'function Panel:RenderTree()' in unified_panel
+          and 'function Panel:RenderProperties()' in unified_panel)
+    check("Explorer reflects actual named assemblies and partial components",
+          'model:GetAttribute("AssemblyId")' in explorer_data
+          and 'model:GetAttribute("ComponentId")' in explorer_data
+          and 'group.components[cid]' in explorer_data
+          and 'relation:GetAttribute("SourceId")' in explorer_data
+          and 'model:GetAttribute("OwnerUserId")==player.UserId' in explorer_data)
+    check("Unified selection synchronizes World and Explorer, including simulation",
+          'function Panel:SelectWorldAtCenter()' in unified_panel
+          and 'function Panel:OnConstructionSelection()' in unified_panel
+          and 'self.UnifiedExplorer:OnConstructionSelection()' in construction_ui
+          and 'self.UnifiedExplorer:SelectWorldAtCenter()' in mechanical_ui
+          and 'self.UnifiedExplorer:NodeForModel(model)' in assembly_ui
+          and 'Simulation_' in unified_panel)
+    check("Inline Properties reuse validated mechanical and paint APIs",
+          all(key in unified_panel for key in (
+              'action="SetPaint"', 'action="SetMaterial"',
+              'action="TuneSpring"', 'action="AdjustJoint"',
+              'action="TuneBearingMotor"', 'action="UpdateAssembly"',
+              'action="SetGrounded"', 'action="RemoveRelation"',
+          )))
+    check("Context actions are filtered by equipped tool and simulation state",
+          'function Actions.List(node,tools,simulating,assemblyStage)' in context_actions
+          and 'function Panel:OpenMenu(node,position)' in unified_panel
+          and 'function Panel:RunAction(action,node)' in unified_panel
+          and 'if not allowed then' in unified_panel
+          and 'OPENWORKS_ExplorerOpen' in native_tool_controller)
+    check("Explorer pointer focus blocks unintended native world actions",
+          'OPENWORKS_ExplorerOpen' in camera_ui
+          and 'OPENWORKS_ExplorerOpen' in construction_ui
+          and 'OPENWORKS_ExplorerOpen' in mechanical_ui
+          and 'OPENWORKS_ExplorerOpen' in assembly_ui
+          and 'and player:GetAttribute("OPENWORKS_ExplorerOpen")~=true' in native_tool_controller)
+    check("Legacy instructional keybind HUD is not started in Phase 3",
+          'contextKeybinds:Start()' not in client_entry
+          and 'self.StatusFrame.Visible=self.UnifiedExplorer==nil' in construction_ui
+          and 'self.Panel.Visible=self.Mode=="Assembly" and self.UnifiedExplorer==nil' in assembly_ui
+          and 'self.Gui.Enabled = self.Active and self.UnifiedExplorer==nil' in mechanical_ui)
+
     rokit = read("rokit.toml")
     aftman = read("aftman.toml")
     for name in ("rojo", "stylua", "selene"):
