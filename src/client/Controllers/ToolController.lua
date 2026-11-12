@@ -77,6 +77,11 @@ end
 function ToolController:SetSubtool(id)
     if not self.PrimaryId or not self:GetSubtool(id) then return false end
     if id==self.SubtoolId then return false end
+    if self.PrimaryId=="AssemblySimulation"
+        and id=="AssemblyEditor"
+        and player:GetAttribute("OPENWORKS_Simulating")==true then
+        return false -- Keep physics controls reachable during simulation.
+    end
     local previousMode=self.ActiveId
     local previousPrimary=self.PrimaryId
     local previousSubtool=self.SubtoolId
