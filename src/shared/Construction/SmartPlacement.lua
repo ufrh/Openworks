@@ -10,6 +10,7 @@ local Grid = require(script.Parent:WaitForChild("GridMath"))
 local MultiFit = require(script.Parent:WaitForChild("MultiFitMath"))
 local FitOrigin = require(script.Parent:WaitForChild("FitOrigin"))
 local FitSolver = require(script.Parent:WaitForChild("FitSolver"))
+local FitFeatures = require(script.Parent:WaitForChild("FitFeatureRegistry"))
 local Smart = {}
 Smart.SnapDistance = 2.0 -- unchanged for general hole/gear-to-gear snapping
 Smart.HubSnapRadius = 0.34 -- studs from the REAL bore/shaft axis, not gear bounds
@@ -550,6 +551,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 -- another member of its OWN already-rigid component.
                 continue
             end
+            local pairing=FitFeatures.Pair(source,target)
             local rayError=aimDistance(aimRay,target:GetPivot().Position)
             local shaftMouseDepth,shaftMouseError
             if isOpening and Alignment.IsShaft(target) then
@@ -567,8 +569,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     cf=(pose*source:GetPivot():Inverse())*ghost:GetPivot()
                     score=if aimed then rayError+0.04 else dist
                 end
-            elseif (isHub and Alignment.IsShaft(target))
-                or (isShaft and hub(target)) then
+            elseif pairing=="Hub" then
                 -- A broad aim on the rim or tooth must never magnetize
                 -- into the hub. Only a tight ray near the actual gear bore
                 -- (or a visibly aimed shaft segment) can override proximity.
@@ -607,7 +608,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     score=if hubAimed then boreAim*0.25+0.015
                         else dist+0.2
                 end
-            elseif isOpening and Alignment.IsShaft(target) then
+            elseif pairing=="Bore" and isOpening then
                 local plan,u,r,dist=reverseSocketPlan(
                     members,source,target,aimed,
                     shaftMouseDepth,shaftMouseError
@@ -620,7 +621,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     score=if aimed then math.min(dist,rayError+0.12) else dist
                     approach=source:GetPivot().Position
                 end
-            elseif isShaft and Alignment.TargetAxis(target) then
+            elseif pairing=="Bore" and isShaft then
                 local plan,u,r,dist=socketPlan(members,source,target,aimed)
                 if plan then
                     kind="Bore"
@@ -629,7 +630,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     roll=r
                     score=if aimed then math.min(dist,rayError+0.12) else dist
                 end
-            elseif isGear and gear(target) then
+            elseif pairing=="Gear" and isGear then
                 local directAim=aimedModel==target
                 approach=source:GetPivot().Position
                 local bevelKind=GearMath.Kind(source)
