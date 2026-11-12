@@ -37,13 +37,12 @@ function Context:Lines()
             append(lines,"CLICK","Choose rotation, slide, bearing or fit")
             append(lines,"ADJUST","Set shaft depth/roll before selecting")
         end
-        append(lines,"ESC","Cancel • numeric hotbar disabled")
+        append(lines,"Click","Confirm mate • cancel with panel Close")
         return lines
     end
     if c.Numeric and c.Numeric.Active then
         append(lines,"X Y Z","Type dimensions in U")
         append(lines,"Enter","Apply precise size")
-        append(lines,"Enter","Cancel")
         return lines
     end
     if tool=="Build" and c.PivotSetting then
