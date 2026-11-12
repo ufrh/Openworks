@@ -6,6 +6,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ContextActionService=game:GetService("ContextActionService")
 local CameraAimRay=require(script.Parent:WaitForChild("CameraAimRay"))
 local UserInputService = game:GetService("UserInputService")
 
@@ -2261,17 +2262,40 @@ end
 -- Alt+Up/Down always moves on world Y. Alt+Left/Right follows the
 -- camera's dominant horizontal right direction. Shift makes either
 -- direction fine-grained. Server validates and commits atomically.
-function Controller:VerticalNudge(key)
+function Controller:CanNudge()
     local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-    if not alt then return end
+    return alt and self.Tools.PrimaryId=="Build" and self.Tools.SubtoolId=="Edit" and self.Mode=="Edit"
+        and not self.Busy and not self.Pending and not self.ScaleMode
+        and not self.CatalogOpen and not self.PendingMateChoice
+        and player:GetAttribute("OPENWORKS_CursorUIOpen")~=true
+        and player:GetAttribute("OPENWORKS_ExplorerOpen")~=true
+        and player:GetAttribute("OPENWORKS_PropertiesOpen")~=true
+        and player:GetAttribute("OPENWORKS_PlotMenuOpen")~=true
+        and not self.PivotSetting and not self.DirectDragActive
+        and not self.LockedAlignment
+        and not (self.BankModal and self.BankModal.Visible)
+        and not (self.Numeric and self.Numeric.Active)
+        and not (self.MaterialPicker and self.MaterialPicker.Visible)
+        and not (self.Layered and self.Layered.Alignment)
+        and not (self.Assembly and self.Assembly:IsEditingJoint())
+        and not UserInputService:GetFocusedTextBox()
+        and player:GetAttribute("OPENWORKS_Simulating")~=true
+        and (self.SelectedComponentId~=nil or self.Selected~=nil
+            or #self.SelectedParts>1)
+end
+
+-- Alt+Up/Down moves on world Y; Alt+Left/Right tracks camera horizontal.
+-- Shift provides fine increments; server owns collision and history.
+function Controller:VerticalNudge(key)
+    if not self:CanNudge() then return false end
     local axis,direction
     if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then
         -- Height never depends on camera orientation, even without Shift.
         axis,direction="Y",(if key==Enum.KeyCode.Up then 1 else -1)
     else
         local camera=workspace.CurrentCamera
-        if not camera then return end
+        if not camera then return false end
         local v=camera.CFrame.RightVector
         if math.abs(v.X)>=math.abs(v.Z) then
             axis,direction="X",(if v.X>=0 then 1 else -1)
@@ -2280,32 +2304,45 @@ function Controller:VerticalNudge(key)
         end
         if key==Enum.KeyCode.Left then direction=-direction end
     end
-    if self.Mode~="Edit" or self.Busy or self.Pending or self.ScaleMode
-        or self.CatalogOpen or self.PendingMateChoice
-        or player:GetAttribute("OPENWORKS_Simulating")==true then return end
-    local scope,id
+    local scope,id,ids
+    local selected=self.SelectedParts
     if self.SelectedComponentId then
         scope,id="Component",self.SelectedComponentId
+    elseif #selected>1 then
+        -- Shift-selected independent primitives are moved together, without
+        -- silently grouping them or moving any unselected construction.
+        scope,ids="Primitives",{}
+        for _,model in ipairs(selected) do
+            if not model or not model.Parent or model:GetAttribute("ComponentId") then
+                self:Message("Multi-nudge only supports independent primitives")
+                return false
+            end
+            table.insert(ids,model:GetAttribute("InstanceId"))
+        end
     elseif self.Selected then
+        -- Deep-selected members keep their ComponentId, but move alone.
         scope,id="Primitive",self.Selected:GetAttribute("InstanceId")
     end
-    if not id then
+    if not scope or (scope~="Primitives" and not id) then
         self:Message("Select a primitive or component to nudge")
-        return
+        return false
     end
     local fine=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-    local affected=if scope=="Component" then self.SelectedParts
-        else if self.Selected then {self.Selected} else {}
+    local affected=if scope=="Component" or scope=="Primitives"
+        then selected else {self.Selected}
     local amount=(if fine then 0.05 else 0.25)*direction
     local displacement=if axis=="X" then Vector3.new(amount,0,0)
         elseif axis=="Y" then Vector3.new(0,amount,0)
         else Vector3.new(0,0,amount)
     local stop=WorldMotion.AnimateMove(affected,displacement)
-    local succeeded=self:Request({action="VerticalMove",scope=scope,id=id,
-        axis=axis,direction=direction,fine=fine})
+    local succeeded=self:Request({
+        action="VerticalMove",scope=scope,id=id,ids=ids,
+        axis=axis,direction=direction,fine=fine,
+    })
     if not succeeded then stop() end
     self:RefreshHUD()
+    return true
 end
 
 function Controller:OnInput(input, processed)
@@ -2399,14 +2436,8 @@ function Controller:OnInput(input, processed)
         return
     end
 
-    local altHeld=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
-        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-    if self.Mode=="Edit" and not self.Pending and altHeld
-        and (key==Enum.KeyCode.Up or key==Enum.KeyCode.Down
-            or key==Enum.KeyCode.Left or key==Enum.KeyCode.Right) then
-        self:VerticalNudge(key)
-        return
-    end
+    -- High-priority ContextActionService capture owns Alt+arrow nudging.
+    -- Ordinary Roblox arrows still pass through without Build selection.
 
     if key == Enum.KeyCode.B and self.Mode == "Build" then
         self:ShowCatalog(not self.CatalogOpen)
@@ -2461,22 +2492,38 @@ function Controller:Start()
     table.insert(self.Connections, self.Tools.Activated.Event:Connect(function(mode)
         self:Activate(mode)
     end))
+    -- Capture Alt+arrows before Roblox's camera consumes them, but return
+    -- immediately: all server validation runs in a spawned request.
+    ContextActionService:BindActionAtPriority(
+        "OPENWORKS_BuildNudge",
+        function(_,state,input)
+            local key=input.KeyCode
+            if state==Enum.UserInputState.End
+                or state==Enum.UserInputState.Cancel then
+                if self.VerticalHeld==key then self.VerticalHeld=nil end
+                return Enum.ContextActionResult.Pass
+            end
+            if state~=Enum.UserInputState.Begin then
+                return Enum.ContextActionResult.Pass
+            end
+            if self:CanNudge() then
+                self.VerticalHeld=key
+                self.VerticalElapsed=0
+                task.spawn(function() self:VerticalNudge(key) end)
+                return Enum.ContextActionResult.Sink
+            end
+            return Enum.ContextActionResult.Pass
+        end,
+        false,
+        Enum.ContextActionPriority.High.Value+150,
+        Enum.KeyCode.Up,Enum.KeyCode.Down,
+        Enum.KeyCode.Left,Enum.KeyCode.Right
+    )
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             self:BeginDirectDrag()
         end
         self:OnInput(input, processed)
-        if not processed
-            and (input.KeyCode==Enum.KeyCode.Up
-                or input.KeyCode==Enum.KeyCode.Down
-                or input.KeyCode==Enum.KeyCode.Left
-                or input.KeyCode==Enum.KeyCode.Right)
-            and self.Mode=="Edit"
-            and (UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
-                or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)) then
-            self.VerticalHeld=input.KeyCode
-            self.VerticalElapsed=0
-        end
     end))
     table.insert(self.Connections, UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -2603,6 +2650,7 @@ function Controller:Destroy()
     self:EndScale()
     if self.Layered then self.Layered:Destroy() end
     RunService:UnbindFromRenderStep("OPENWORKS_CursorUnlock")
+    ContextActionService:UnbindAction("OPENWORKS_BuildNudge")
     if self.ScaleHandles then self.ScaleHandles:Destroy() end
     self:CancelPending()
     self:ClearPreview()
