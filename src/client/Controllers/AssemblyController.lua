@@ -683,32 +683,35 @@ function Controller:CommitConnect(kind,first,second)
     end
 end
 
-function Controller:ConnectClick()
+function Controller:PickConnectPart(part)
     if self:IsSimulating() or self.Busy then return end
-    if self.Stage=="Preview" or self.Stage=="Fit" then
-        self:Activate() -- Existing tested shaft pose/fit commit path.
-        if self.Stage=="Housing" and self.ManualActive then
-            self:StartConnect()
-        end
-        return
-    end
+    if self.Stage=="Preview" or self.Stage=="Fit" then return end
+    if not part or not part.Parent
+        or part:GetAttribute("OwnerUserId")~=player.UserId
+        or type(part:GetAttribute("InstanceId"))~="string" then return end
     if not self.ManualActive then self:StartConnect() end
     if self.Stage=="Choice" then return end
     if self.Stage=="ChooseFirst" or not self.ConnectFirst then
-        local first=self:Pick()
-        if not first then return end
-        self.ConnectFirst=first
+        self.ConnectFirst=part
         self.ConnectSecond=nil
         self.Stage="ChooseSecond"
+        if self.UnifiedExplorer then
+            self.UnifiedExplorer:Select(
+                self.UnifiedExplorer:NodeForModel(part),false)
+        end
         self:RefreshHUD()
         return
     end
-    local second=self:Pick({[self.ConnectFirst]=true})
-    if not second or second==self.ConnectFirst then return end
+    if part==self.ConnectFirst then return end
     local first=self.ConnectFirst
+    local second=part
     self.ConnectSecond=second
     self.ConnectInvalid=false
     self.Stage="Choice"
+    if self.UnifiedExplorer then
+        self.UnifiedExplorer:Select(
+            self.UnifiedExplorer:NodeForModel(part),false)
+    end
     self:RefreshHUD()
     local shown=self.UnifiedExplorer and
         self.UnifiedExplorer:ChoosePair(first,second,function(kind)
@@ -720,6 +723,20 @@ function Controller:ConnectClick()
         self:Message("Connection picker is unavailable")
         self:RefreshHUD()
     end
+end
+
+function Controller:ConnectClick()
+    if self:IsSimulating() or self.Busy then return end
+    if self.Stage=="Preview" or self.Stage=="Fit" then
+        self:Activate() -- Existing validated shaft fitting and fine snugging.
+        if self.Stage=="Housing" and not self.ManualActive then
+            self:StartConnect()
+        end
+        return
+    end
+    local exclude=if self.ConnectFirst then {[self.ConnectFirst]=true}
+        else nil
+    self:PickConnectPart(self:Pick(exclude))
 end
 
 -- Distinct authoring actions remain in Edit, but no extra native tool
