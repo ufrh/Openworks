@@ -99,6 +99,7 @@ function Controller.new(tools)
         Active = false,
         Mode = nil,
         WeldFirst = nil,
+        BeltFirst = nil,
         ManualActive = false,
         Stage = "Housing",
         KindIndex = 1,
@@ -175,9 +176,9 @@ end
 function Controller:RefreshHUD()
     if not self.Gui then return end
     self.Gui.Enabled = self.Active
-        and (self.Mode=="Simulate" or self.Mode=="Weld" or self.ManualActive)
+        and (self.Mode=="Simulate" or self.Mode=="Weld" or self.Mode=="Belt" or self.ManualActive)
     self.HUDPanel.Visible=self.Mode=="Simulate"
-        or self.Mode=="Weld" or self.ManualActive
+        or self.Mode=="Weld" or self.Mode=="Belt" or self.ManualActive
     self.HUDPanel.AnchorPoint=Vector2.new(0,0)
     self.HUDPanel.Position=if self.Mode=="Simulate"
         then UDim2.fromOffset(16,64)
@@ -187,6 +188,17 @@ function Controller:RefreshHUD()
         else UDim2.fromOffset(380,116)
     if not self.Gui.Enabled then return end
 
+    if self.Mode=="Belt" then
+        self.Header.Text="OPENWORKS / BELT"
+        self.Detail.Text=if self.BeltFirst
+            then "Select the second pulley • shafts must be independently mounted"
+            else "Select a pulley rigidly fitted onto a shaft"
+        self.Help.Text="Click two pulleys • Esc clears selection"
+        if self.LastMessage and os.clock()<self.MessageUntil then
+            self.Detail.Text=self.LastMessage
+        end
+        return
+    end
     if self.Mode=="Weld" then
         self.Header.Text="OPENWORKS / WELD"
         self.Detail.Text=if self.WeldFirst
@@ -325,6 +337,7 @@ function Controller:Reset()
     self.PairKind = nil
     self.Joint = nil
     self.WeldFirst=nil
+    self.BeltFirst=nil
     self:RefreshHUD()
 end
 
@@ -518,6 +531,29 @@ function Controller:StartPair(kind)
     self.PairKind=kind
     self.Stage="PairFirst"
     self:RefreshHUD()
+end
+
+function Controller:BeltClick()
+    local picked=self:Pick()
+    if not picked or picked:GetAttribute("PrimitiveFamily")~="Pulley" then
+        self:Message("Aim directly at one of the Transmission pulleys")
+        return
+    end
+    if not self.BeltFirst then
+        self.BeltFirst=picked
+        self:Message("First pulley selected • click the second pulley")
+        self:RefreshHUD()
+        return
+    end
+    if self.BeltFirst==picked then
+        self:Message("Choose a different pulley")
+        return
+    end
+    local first=self.BeltFirst
+    local ok=self:Request({action="CreateBelt",
+        sourceId=first:GetAttribute("InstanceId"),
+        targetId=picked:GetAttribute("InstanceId")})
+    if ok then self:Reset() end
 end
 
 function Controller:WeldClick()
@@ -839,6 +875,7 @@ function Controller:OnModeChanged(mode)
     if self.Mode~=mode then self:Reset() end
     self.Mode=mode
     self.Active=mode=="Edit" or mode=="Simulate" or mode=="Weld"
+        or mode=="Belt"
     if self.Properties then self.Properties:Show(false) end
     self:RefreshHUD()
 end
@@ -865,6 +902,8 @@ function Controller:Start()
             self.Properties:InspectAtCenter()
         elseif mode=="Weld" then
             self:WeldClick()
+        elseif mode=="Belt" then
+            self:BeltClick()
         end
     end))
     table.insert(self.Connections,UserInputService.InputBegan:Connect(function(input,processed)
@@ -872,6 +911,13 @@ function Controller:Start()
         local key=input.KeyCode
         if self.Mode=="Weld" then
             if key==Enum.KeyCode.Escape then self.WeldFirst=nil self:RefreshHUD() end
+            return
+        end
+        if self.Mode=="Belt" then
+            if key==Enum.KeyCode.Escape then
+                self.BeltFirst=nil
+                self:RefreshHUD()
+            end
             return
         end
         if self.Construction and
