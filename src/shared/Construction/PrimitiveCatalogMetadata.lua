@@ -18,9 +18,6 @@ local RANK={}
 for i,name in ipairs(ORDER) do RANK[name]=i end
 Catalog.Categories=table.freeze(ORDER)
 
-local function starts(s,p)
-    return string.sub(s,1,#p)==p
-end
 local function numberLabel(num)
     local n=tonumber(num)
     return if n then tostring(n) else num
@@ -136,6 +133,12 @@ local function readable(id,model)
 end
 function Catalog.Describe(id,sourceFolder,model)
     local category=familyFor(id,sourceFolder,model)
+    -- Optional per-template overrides for future Studio-authored families.
+    -- Only known categories are allowed so nothing vanishes from the UI.
+    local customGroup=model:GetAttribute("CatalogGroup")
+    if type(customGroup)=="string" and RANK[customGroup] then
+        category=customGroup
+    end
     local custom=model:GetAttribute("CatalogName")
     local title=if type(custom)=="string" and #custom>0 and #custom<=80
         then custom else readable(id,model)
