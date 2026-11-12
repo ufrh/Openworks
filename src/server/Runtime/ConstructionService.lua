@@ -1159,8 +1159,9 @@ local function handle(player, payload)
     elseif simulation and simulation:IsRunning(player) then
         return { ok = false, message = "Stop simulation before changing construction" }
     elseif mechanicalAction then
-        if propertyAction then
-            -- Contextual right-click editing is available from any OPENWORKS
+        if propertyAction or action=="RemoveRelation" then
+            -- Contextual right-click editing and relationship removal are
+            -- available from any OPENWORKS
             -- native tool. Ownership, relation type, plot and simulation
             -- checks remain server-authoritative in MechanicalService.
             if not hasEquippedTool(player,"Mechanics")
