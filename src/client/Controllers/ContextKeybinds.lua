@@ -29,7 +29,7 @@ function Context:Lines()
     local c = self.Construction
     local a = self.Assembly
     local lines = {}
-    if not tool then return { "Choose a tool: 1–5" } end
+    if not tool then return { "Choose a tool: 1–3" } end
     if c.PendingMateChoice then
         if c.SmartMatch and c.SmartMatch.kind=="Hub" then
             append(lines,"CLICK","Gear mount: Rotation or Rigid")
@@ -70,7 +70,7 @@ function Context:Lines()
             append(lines,"P default","Ungrounded simulation • no Shift+P")
             append(lines,"G","Toggle aimed body grounding")
             append(lines,"Click","Inspect body / relationships")
-            append(lines,"Assembly tool","Create and choose assembly members")
+            append(lines,"Assembly Editor","Create and choose assembly members")
         end
         append(lines,"Purple","Assembly P will simulate")
         append(lines,"Green / Orange","Grounded / movable body fills")
@@ -207,17 +207,28 @@ function Context:Lines()
             append(lines, "R / T / Y", "World-axis rotation")
             append(lines, "L", "Manual align")
             append(lines,"Auto gear mesh","Engages by tooth pitch and spacing in Simulate")
-            append(lines,"H","Shaft-and-opening relationship")
-            append(lines,"Bearing motor","Simulate Properties > Rotation Only > Shaft Motor")
-            append(lines,"Shift+J","Spring between any two components")
-            append(lines,"Shift+C","Couple crank output to shaft end")
-            append(lines,"Weld tool","Manually join touching solids")
+            append(lines,"L","Precision shaft / opening alignment")
+            append(lines,"Mechanics","Connect joints, springs, shafts and welds")
             append(lines,"Build > Fasteners","Drag prefab bolts into real holes")
-            append(lines,"Assembly tool","Name and select assembly members")
+            append(lines,"Assembly & Simulation","Name and select assembly members")
             append(lines, "C / U", "Combine / Ungroup")
             append(lines, "E", "Edit group interior")
             append(lines, "F / Del", "Duplicate / Delete")
             append(lines, "Tab / X / I", "Depth / X-ray / Isolate")
+        end
+    elseif tool=="Mechanics" then
+        if self.Tools.SubtoolId=="Configure" then
+            append(lines,"LMB","Inspect an existing relationship")
+            append(lines,"Properties","Edit spring, limits and bearing motors")
+            append(lines,"C","Return to Connect")
+        else
+            append(lines,"LMB","Choose physical opening, then shaft")
+            append(lines,"F","Weld: choose two valid solids")
+            append(lines,"Shift+J","Spring: choose two components")
+            append(lines,"Shift+C","Couple hand crank to shaft")
+            append(lines,"H","Reset shaft/housing fitting")
+            append(lines,"Shift+Del","Remove a relationship")
+            append(lines,"E","Configure selected relationship")
         end
     elseif tool=="Assembly" then
         append(lines,"N","Create and name new assembly")
