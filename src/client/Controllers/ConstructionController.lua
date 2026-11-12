@@ -1074,6 +1074,18 @@ function Controller:SetSelection(model)
     self:RefreshSelectionHighlights()
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshHUD()
+    if model and self.Tools.PrimaryId == "Build"
+        and self.Tools.SubtoolId == "Resize"
+        and not self.ScaleMode then
+        task.defer(function()
+            if self.Started and self.Selected == model
+                and self.Tools.PrimaryId == "Build"
+                and self.Tools.SubtoolId == "Resize"
+                and not self.ScaleMode then
+                self:BeginScale()
+            end
+        end)
+    end
 end
 
 function Controller:ComponentMembers(componentId)
@@ -1174,9 +1186,12 @@ function Controller:OnModeChanged(mode)
     if self.Numeric then self.Numeric:Hide() end
     self:ShowCatalog(false)
     self:ClearPreview()
-    if mode ~= "Edit" and mode ~= "Inspect" then
+    if mode ~= "Edit" and mode ~= "Inspect"
+        and self.Tools.PrimaryId ~= "Build" then
         self.EditingComponentId = nil
         self:SetSelection(nil)
+    elseif mode == "Edit" then
+        self:RefreshSelectionHighlights()
     end
     if self.Layered then self.Layered:OnModeChanged(mode) end
     if player:GetAttribute("OPENWORKS_Simulating") == true then
@@ -1191,6 +1206,28 @@ function Controller:OnModeChanged(mode)
         else
             self:RebuildPreview()
         end
+    end
+    self:RefreshHUD()
+end
+
+-- Subtool-only changes can retain the same compatibility mode ("Edit").
+-- Apply the subtool lifecycle without reinitializing construction geometry.
+function Controller:OnSubtoolChanged(primary,subtool,_previous)
+    if primary ~= "Build" then
+        if self.MaterialPicker and self.MaterialPicker.Visible then
+            self.MaterialPicker:Close()
+        end
+        return
+    end
+    if subtool ~= "Resize" and self.ScaleMode then self:EndScale() end
+    if subtool ~= "Paint" and self.MaterialPicker
+        and self.MaterialPicker.Visible then
+        self.MaterialPicker:Close()
+    end
+    if subtool == "Resize" then
+        self:BeginScale()
+    elseif subtool == "Paint" and self.MaterialPicker then
+        self.MaterialPicker:Open()
     end
     self:RefreshHUD()
 end
@@ -2057,6 +2094,7 @@ end
 function Controller:BeginDirectDrag()
     if self.PendingMateChoice
         or (self.Assembly and self.Assembly:IsEditingJoint())
+        or self.Tools.PrimaryId ~= "Build" or self.Tools.SubtoolId ~= "Edit"
         or self.Mode ~= "Edit" or self.Pending
         or self.ScaleMode or self.CatalogOpen then return end
     local hit = self:CastCenter(false)
@@ -2179,6 +2217,7 @@ function Controller:VerticalNudge(key)
 end
 
 function Controller:OnInput(input, processed)
+    if self.Tools:WasConsumed(input) then return end
     if self.PendingMateChoice then return end
     if self.Numeric and self.Numeric.Active then
         if input.KeyCode==Enum.KeyCode.Escape then
@@ -2255,6 +2294,8 @@ function Controller:OnInput(input, processed)
         return
     end
     if self.ScaleMode or self.Mode == "Inspect" then return end
+    if self.Mode=="Edit" and self.Tools.PrimaryId=="Build"
+        and self.Tools.SubtoolId~="Edit" then return end
     if processed then return end
 
     local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
@@ -2325,6 +2366,10 @@ function Controller:Start()
     table.insert(self.Connections, self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
     end))
+    table.insert(self.Connections, self.Tools.SubtoolChanged.Event:Connect(
+        function(primary,subtool,previous)
+            self:OnSubtoolChanged(primary,subtool,previous)
+        end))
     table.insert(self.Connections, player:GetAttributeChangedSignal(
         "OPENWORKS_Simulating"):Connect(function()
             self:OnModeChanged(self.Tools.ActiveId)
@@ -2475,7 +2520,8 @@ function Controller:Start()
     end))
 
     self:OnModeChanged(self.Tools.ActiveId)
-    print("[OPENWORKS] Build/Edit controller ready; catalog = B")
+    self:OnSubtoolChanged(self.Tools.PrimaryId,self.Tools.SubtoolId,nil)
+    print("[OPENWORKS] Build geometry controller ready; subtool routing enabled")
 end
 
 function Controller:Destroy()
