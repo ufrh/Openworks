@@ -276,6 +276,7 @@ function Controller:RefreshPointer()
     -- Locked-mouse freecam uses center aiming unless a GUI explicitly
     -- needs cursor interaction. Scale and construction share center aim.
     local unlocked=self.CatalogOpen or self.PendingMateChoice~=nil
+        or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
     -- The click-only relationship picker owns its own full-screen modal
     -- surface; never show the catalog's invisible hitbox over the dialog.
     self.Unlock.Visible = self.CatalogOpen
@@ -640,7 +641,7 @@ function Controller:OpenMateChoice(mode)
     local chosenMatch=table.clone(match)
     local chosenPose=self.PreviewCF
     local chosenValid=self.PreviewValid
-    self.MateChoice:Show(function(kind)
+    local function onChoice(kind)
         local requestMode=self.PendingMateChoice
         self.PendingMateChoice=nil
         -- A UI click must not also activate the equipped Roblox build tool
@@ -666,7 +667,13 @@ function Controller:OpenMateChoice(mode)
         end
         self:RefreshPointer()
         self:RefreshHUD()
-    end, match.fittedCount or 1, match.kind=="Hub")
+    end
+    if not (self.UnifiedExplorer and self.UnifiedExplorer:ChooseFit(
+        match.kind,onChoice,match.fittedCount or 1)) then
+        -- Legacy menu is a fallback until the unified UI is Studio tested.
+        self.MateChoice:Show(onChoice,match.fittedCount or 1,
+            match.kind=="Hub")
+    end
     return true
 end
 
