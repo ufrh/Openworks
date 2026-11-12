@@ -27,9 +27,6 @@ local MultiFit = require(construction:WaitForChild("MultiFitMath"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local BoreClearance = require(construction:WaitForChild("BoreClearance"))
 local NumericSizePanel = require(script.Parent:WaitForChild("NumericSizePanel"))
-local MateChoicePanel = require(script.Parent:WaitForChild("MateChoicePanel"))
-local MaterialPickerController=require(script.Parent:WaitForChild("MaterialPickerController"))
-local ComponentOutline = require(script.Parent:WaitForChild("ComponentOutline"))
 local Theme = require(script.Parent:WaitForChild("StudioTheme"))
 
 local BLUE = Theme.Accent
@@ -126,7 +123,6 @@ function Controller.new(tools)
         ScaleMode = false,
         NumericPrecision = false,
         Numeric = nil,
-        MateChoice = nil,
         PendingMateChoice = nil,
         LockedAlignment = nil,
         Assembly = nil,
@@ -141,7 +137,6 @@ function Controller.new(tools)
         ScaleHandles = nil,
         DirectDragCandidate = nil,
         DirectDragActive = false,
-        ComponentOutline = nil,
         MoveShadowStates=nil,
         VerticalHeld=nil,VerticalElapsed=0,
         Layered = nil,
@@ -235,7 +230,6 @@ function Controller:MakeUI()
     self.Unlock = unlock
     self.Crosshair = crosshair
     self.Numeric = NumericSizePanel.new(gui)
-    self.MateChoice = MateChoicePanel.new(gui)
     self.ScaleHandles = ResizeGizmo.new(gui, function(cf, size)
         self:UpdateScalePreview(cf, size)
     end, function(cf, size, oldCF, oldSize)
@@ -670,9 +664,9 @@ function Controller:OpenMateChoice(mode)
     end
     if not (self.UnifiedExplorer and self.UnifiedExplorer:ChooseFit(
         match.kind,onChoice,match.fittedCount or 1)) then
-        -- Legacy menu is a fallback until the unified UI is Studio tested.
-        self.MateChoice:Show(onChoice,match.fittedCount or 1,
-            match.kind=="Hub")
+        -- No second hidden menu owner; this cancels safely if the shared
+        -- chooser is temporarily unavailable during initialization.
+        onChoice(nil)
     end
     return true
 end
@@ -1199,15 +1193,11 @@ end
 
 function Controller:OnModeChanged(mode)
     if self.Feedback then self.Feedback:Clear("hover") end
-    if mode~="Edit" and self.MaterialPicker then
-        self.MaterialPicker:Close()
-    end
     self.DirectDragCandidate = nil
     self.DirectDragActive = false
     self:EndScale()
     self:CancelPending()
     self.Mode = mode
-    if self.MateChoice then self.MateChoice:Hide() end
     self.PendingMateChoice=nil
     if self.Numeric then self.Numeric:Hide() end
     self:ShowCatalog(false)
@@ -1239,24 +1229,9 @@ end
 -- Subtool-only changes can retain the same compatibility mode ("Edit").
 -- Apply the subtool lifecycle without reinitializing construction geometry.
 function Controller:OnSubtoolChanged(primary,subtool,_previous)
-    if primary ~= "Build" then
-        if self.MaterialPicker and self.MaterialPicker.Visible then
-            self.MaterialPicker:Close()
-        end
-        return
-    end
-    if subtool ~= "Resize" and self.ScaleMode then self:EndScale() end
-    if subtool ~= "Paint" and self.MaterialPicker
-        and self.MaterialPicker.Visible then
-        self.MaterialPicker:Close()
-    end
-    if subtool == "Resize" then
-        self:BeginScale()
-    elseif subtool == "Paint" and self.MaterialPicker
-        and not self.UnifiedExplorer then
-        -- Standalone picker retained as an unverified fallback only.
-        self.MaterialPicker:Open()
-    end
+    if primary~="Build" then return end
+    if subtool~="Resize" and self.ScaleMode then self:EndScale() end
+    if subtool=="Resize" then self:BeginScale() end
     self:RefreshHUD()
 end
 
@@ -2345,13 +2320,9 @@ function Controller:OnInput(input, processed)
         if self.Pending then self:CancelPending() self:RefreshHUD() end
         return
     end
-    if self.MaterialPicker and self.MaterialPicker.Visible then
-        if key==Enum.KeyCode.Escape then self.MaterialPicker:Close() end
-        return
-    end
     if key==Enum.KeyCode.M and self.Mode=="Edit" and not processed then
         if self.UnifiedExplorer then self.UnifiedExplorer:Focus(true)
-        elseif self.MaterialPicker then self.MaterialPicker:Open() end
+        end
         return
     end
     if key == Enum.KeyCode.V and not processed then
@@ -2422,13 +2393,6 @@ function Controller:Start()
     if self.Started then return end
     self.Started = true
     self:MakeUI()
-    self.MaterialPicker=MaterialPickerController.new(self)
-    self.MaterialPicker:Start()
-    -- Local-only 3D visual instances belong to Workspace, not ScreenGui.
-    -- Keep a single owned container so reload/Destroy can't leak outlines.
-    self.SelectionWorldRoot=Instance.new("Folder")
-    self.SelectionWorldRoot.Name="OPENWORKS_LocalSelectionVisuals"
-    self.SelectionWorldRoot.Parent=workspace
     table.insert(self.Connections,Theme.Attach(self.Gui))
     self.Layered = LayeredEditingController.new(self)
     self.Layered:Start()
@@ -2492,7 +2456,6 @@ function Controller:Start()
         Enum.RenderPriority.Camera.Value + 2, function()
             local open=self.CatalogOpen or self.PendingMateChoice~=nil
                 or (self.Numeric and self.Numeric.Active)
-                or (self.MaterialPicker and self.MaterialPicker.Visible)
 
             if player:GetAttribute("OPENWORKS_CursorUIOpen")~=open then
                 player:SetAttribute("OPENWORKS_CursorUIOpen",open)
@@ -2586,14 +2549,11 @@ function Controller:Start()
 end
 
 function Controller:Destroy()
-    if self.MaterialPicker then self.MaterialPicker:Destroy() end
-    if self.MateChoice then self.MateChoice:Destroy() end
     if self.Numeric then self.Numeric:Destroy() end
     self:EndScale()
     if self.Layered then self.Layered:Destroy() end
     RunService:UnbindFromRenderStep("OPENWORKS_CursorUnlock")
     if self.ScaleHandles then self.ScaleHandles:Destroy() end
-    if self.ComponentOutline then self.ComponentOutline:Destroy() end
     self:CancelPending()
     self:ClearPreview()
     if self.SelectionHighlight then self.SelectionHighlight:Destroy() end
@@ -2602,7 +2562,6 @@ function Controller:Destroy()
     for _, connection in ipairs(self.Connections) do connection:Disconnect() end
     table.clear(self.Connections)
     if self.Gui then self.Gui:Destroy() end
-    if self.SelectionWorldRoot then self.SelectionWorldRoot:Destroy() end
 end
 
 return Controller
