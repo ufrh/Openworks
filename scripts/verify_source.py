@@ -341,7 +341,8 @@ def main() -> int:
     check("UI v2 uses one oriented twelve-edge selection renderer",
           'for i=1,12 do' in feedback
           and 'LineHandleAdornment' in feedback
-          and 'self.Feedback:Set("selection","component",self.SelectedParts,"selection",true)' in selection
+          and 'self.Feedback:Set("selection","component",ordered,"selection",true)' in selection
+          and 'if self.GroupAnchor then table.insert(ordered,self.GroupAnchor) end' in selection
           and 'self.Feedback:Set("selection",tostring(i),{model},"selection",false)' in selection
           and 'Instance.new("Highlight")' not in feedback)
     check("UI v2 assembly boxes use whole-selection and member semantics",
