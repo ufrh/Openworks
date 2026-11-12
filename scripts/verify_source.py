@@ -170,14 +170,42 @@ def main() -> int:
         s in assembly for s in ("function Service:Create(", "function Service:Update(",
                                "MAX_NAME=48", "MAX_MEMBERS=128")))
     assembly_tool=read("src/client/Controllers/AssemblyToolController.lua")
-    check("Cardinal X/Y/Z nudge is scoped to owned registered members",
+    check("Cardinal X/Y/Z nudges owned components, assemblies and primitives",
           'local function verticalMove(player,payload)' in service
           and 'selected=components:Members(player,id)' in service
           and 'selected=assemblies:Members(player,id)' in service
           and 'local model=findOwned(player,id)' in service
           and 'if axis~="X" and axis~="Y" and axis~="Z" then' in service
           and 'local delta=(if axis=="X" then Vector3.xAxis' in service
-          and 'if model and not model:GetAttribute("ComponentId") then' in service)
+          and 'if model then selected={model} end' in service)
+    check("Deep-selected component members nudge individually without ungrouping",
+          'elseif scope=="Primitive" then' in service
+          and '-- Deep-selecting a member inside a component' in service
+          and 'scope,id="Primitive",self.Selected:GetAttribute("InstanceId")' in selection
+          and 'self.EditingComponentId' in selection)
+    check("Multi-selected primitives nudge as one owner-checked transaction",
+          'if scope=="Primitives" then' in service
+          and 'if type(ids)~="table" or #ids<2 or #ids>128 then' in service
+          and 'or #primitiveId>64 or seen[primitiveId]' in service
+          and 'if not model or model:GetAttribute("ComponentId") then' in service
+          and 'scope,ids="Primitives",{}' in selection
+          and 'ids=ids,' in selection)
+    check("Build Alt+arrows override Roblox arrow consumption only when valid",
+          'ContextActionService:BindActionAtPriority(' in selection
+          and '"OPENWORKS_BuildNudge"' in selection
+          and 'Enum.ContextActionPriority.High.Value+150' in selection
+          and 'if self:VerticalNudge(key) then' in selection
+          and 'ContextActionService:UnbindAction("OPENWORKS_BuildNudge")' in selection)
+    check("Nudge preserves collision checks and atomic relationship-aware undo",
+          'intersectsConstructed(model,ignored)' in service
+          and 'applyState(model,before[i])' in service
+          and 'commitBatch(player,before,after)' in service
+          and 'mechanical:DisconnectMoved(player,before,after)' in service
+          and 'return true,"Moved "..tostring(#selected)' in service)
+    check("Former Edit-only actions are authorized with unified Build",
+          'elseif componentAction or alignmentAction or smartAction then' in service
+          and 'if not hasEquippedTool(player, "Build") then' in service
+          and 'hasEquippedTool(player, "Edit")' not in service)
     check("Vertical move is one validated atomic undoable transaction",
           'local ok,reason=validState(player,entry,nextState)' in service
           and 'intersectsConstructed(model,ignored)' in service
