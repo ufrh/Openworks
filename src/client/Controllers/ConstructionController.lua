@@ -1682,6 +1682,26 @@ function Controller:Request(payload)
     return true, result
 end
 
+function Controller:PlaceSavedComponent()
+    if not self.CurrentBank or not self.PreviewCF or not self.PreviewValid then
+        self:Message(self.PreviewReason or "Move the saved component to a blue valid placement")
+        return
+    end
+    local _,result=self:BankRequest({
+        action="PlaceComponentBank",
+        bankId=self.CurrentBank.id,
+        origin=self.PreviewCF,
+    })
+    if result then
+        -- Keep the bank ghost active to stamp as many independent copies
+        -- as desired. Enter returns to selection with no tool switch.
+        self:ClearSmartMatch()
+        self.PreviewVisualPose=nil
+        self.LastPreviewCheck=0
+        self:Message(result.message)
+    end
+end
+
 function Controller:Place(chosenKind)
     if self.Mode=="Build" and self.CurrentBank then
         self:PlaceSavedComponent()
@@ -2586,7 +2606,11 @@ function Controller:OnInput(input, processed)
     end
 
     if key == Enum.KeyCode.B and (self.Mode=="Build" or self.Mode=="Edit") then
-        self:ShowCatalog(not self.CatalogOpen)
+        if shiftHeld then
+            self:OpenBankSave()
+        else
+            self:ShowCatalog(not self.CatalogOpen)
+        end
         return
     end
     if self.CatalogOpen then return end
