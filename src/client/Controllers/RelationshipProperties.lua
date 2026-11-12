@@ -317,42 +317,6 @@ function Properties:Refresh()
             self.LimitsOn=not self.LimitsOn
             toggle.Text="LIMITS  /  "..(if self.LimitsOn then "ON" else "OFF")
         end)
-        if kind=="Bearing" then
-            -- This configures a motor on an EXISTING shaft and real bore.
-            -- No free-floating hinge or invisible joint is ever authored.
-            self.MotorOn=r:GetAttribute("MotorEnabled")==true
-            local motorToggle=button(self.Editor,
-                "SHAFT MOTOR  /  "..(if self.MotorOn then "ON" else "OFF"))
-            motorToggle.Activated:Connect(function()
-                self.MotorOn=not self.MotorOn
-                motorToggle.Text="SHAFT MOTOR  /  "..
-                    (if self.MotorOn then "ON" else "OFF")
-            end)
-            self:Field("Motor key",r:GetAttribute("MotorKey") or "F")
-            self:Field("Motor speed (rad/s)",r:GetAttribute("MotorSpeed") or 3)
-            self:Field("Motor torque",r:GetAttribute("MotorTorque") or 3000)
-            self:Field("Motor acceleration",r:GetAttribute("MotorAcceleration") or 40)
-            local applyMotor=button(self.Editor,"SAVE SHAFT MOTOR",34)
-            applyMotor.Activated:Connect(function()
-                local keyBox=self.Fields["Motor key"]
-                local key=keyBox and string.upper(keyBox.Text)
-                local speed=tonumber(self.Fields["Motor speed (rad/s)"].Text)
-                local torque=tonumber(self.Fields["Motor torque"].Text)
-                local accel=tonumber(self.Fields["Motor acceleration"].Text)
-                if not key or not speed or not torque or not accel then
-                    self.Status.Text="Enter valid motor key, speed, torque and acceleration"
-                    return
-                end
-                local _,response=self.Controller:Request({
-                    action="TuneBearingMotor",relationId=r:GetAttribute("RelationId"),
-                    motorEnabled=self.MotorOn,motorKey=key,
-                    motorSpeed=speed,motorTorque=torque,
-                    motorAcceleration=accel,
-                })
-                self.Status.Text=response and tostring(response.message)
-                    or "Could not save bearing motor"
-            end)
-        end
     else
         label(self.Editor,"Structural relationship • no editable parameters",50)
         return
@@ -361,6 +325,7 @@ function Properties:Refresh()
     apply.BackgroundColor3=Color3.fromRGB(32,102,115)
     apply.Activated:Connect(function() self:Apply() end)
     if kind=="Bearing" then
+        -- The motor binds to the already-authored shaft and bore.
         label(self.Editor,"MOTOR / PHYSICAL SHAFT BEARING",26)
         local motorToggle=button(self.Editor,
             "HOLD-KEY MOTOR  /  "..(if self.MotorOn then "ON" else "OFF"))
