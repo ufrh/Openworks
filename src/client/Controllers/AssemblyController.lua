@@ -1132,8 +1132,10 @@ function Controller:OnSubtoolChanged(primary,subtool,_previous)
 end
 
 function Controller:Start()
-    self.Gui, self.HUDPanel, self.Header, self.Detail, self.Help = createGui()
-    table.insert(self.Connections,Theme.Attach(self.Gui))
+    if not self.UnifiedExplorer then
+        self.Gui, self.HUDPanel, self.Header, self.Detail, self.Help = createGui()
+        table.insert(self.Connections,Theme.Attach(self.Gui))
+    end
     self.Remote = ReplicatedStorage:WaitForChild(Config.RequestName)
     self.HandCrank=HandCrankController.new(self)
     self.HandCrank:Start()
