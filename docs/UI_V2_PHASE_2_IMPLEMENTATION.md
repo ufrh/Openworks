@@ -36,7 +36,7 @@ No helper Parts are generated for bounding boxes or joint guidance. Collider/geo
 
 ## Migrated existing controllers
 
-- `ConstructionController`: selection, whole components, multiselection, hover, smart snap target and Build/resize ghosts.
+- `ConstructionController`: selection, whole components, multiselection, hover, smart snap target and Build/resize ghosts; forward/reverse Build/Edit smart-mates show orange pending geometry and flash real server-confirmed participants green, after a bounded replication lookup for new placements.
 - `LayeredEditingController`: manual bore target cue, and precision alignment preview.
 - `AssemblyController`: manual housing/shaft connections, Weld, Spring, crank coupling and mechanical fitting ghosts.
 - `AssemblyToolController`: purple whole assembly vs per-member states.
@@ -57,7 +57,7 @@ No helper Parts are generated for bounding boxes or joint guidance. Collider/geo
 - Multi-select unrelated primitives; each receives its own box. Select an existing grouped component; one local-oriented whole box.
 - Enter/exit Build Place, Edit, Resize, Paint and Mechanics; no stale outlines after cancel, delete or tool switch. Test 30/60/144 FPS and high part count.
 - Place a block, shaft/cylinder and a true CSG drilled part. Validate transparency, cyan/red strokes and the **documented CSG approximation**.
-- Begin Weld with F; click first, second, finalize. First orange, both orange, then green only if server accepted. Repeat invalid weld, Spring and crank coupling.
+- Begin Weld with F; click first, second, finalize. First orange, both orange, then green only if server accepted. Repeat invalid weld, Spring and crank coupling. Also snap a new shaft into an existing hole from Build and drag an existing gear onto a shaft from Edit: automatic fit target/ghost goes orange; after a real committed relationship, both authored participants briefly turn green.
 - Connect housing and shaft; red invalid preview, brief green success only after a real joint; test extra multi-hole bearings and fine shaft fitting.
 - Switch Assembly Editor/Simulation: purple outer assembly box vs purple member boxes, grounded green vs free blue. Verify actual assembly membership unchanged.
 - Check bearing, motor, slider, cylindrical and spring adornments; gear and rigid connections shouldn't draw phantom helper shapes.
