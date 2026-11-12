@@ -28,7 +28,7 @@ local function createTemplate(definition)
     end
 
     local tool = Instance.new("Tool")
-    tool.Name = definition.Id
+    tool.Name = definition.Name or definition.Id
     tool.ToolTip = definition.Tooltip
     tool.RequiresHandle = false
     tool.CanBeDropped = false
@@ -60,13 +60,18 @@ function Provisioner.Start()
     StarterPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
     -- Clean up legacy Assemble tool copies from the pre-named-Assembly
     -- workflow; native Assembly now occupies its own hotbar slot.
+    local legacyIds = {
+        Assemble=true,Edit=true,Assembly=true,
+        Simulate=true,Inspect=true,Weld=true,
+    }
     local function removeLegacy(container)
         if not container then return end
         for _, tool in ipairs(container:GetChildren()) do
-            if tool:IsA("Tool") and
-                (tool:GetAttribute("OpenworksToolId") == "Assemble"
-                or tool.Name == "Assemble") then
-                tool:Destroy()
+            if tool:IsA("Tool") then
+                local id=tool:GetAttribute("OpenworksToolId")
+                if legacyIds[id] or (id==nil and legacyIds[tool.Name]) then
+                    tool:Destroy()
+                end
             end
         end
     end
@@ -103,7 +108,7 @@ function Provisioner.Start()
         end)
     end
 
-    print("[OPENWORKS] StarterPack native tools provisioned: Build, Edit, Assembly, Simulate, Inspect, Weld")
+    print("[OPENWORKS] StarterPack native tools provisioned: Build, Mechanics, Assembly & Simulation")
 end
 
 return Provisioner
