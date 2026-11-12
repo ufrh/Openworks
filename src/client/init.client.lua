@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS client bootstrap: native tools, Forge, editor and simulation controllers.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.12.UI-V2-PHASE6-CLEANUP"
+local BUILD = "2026.11.12.UI-V2-LEFT-KEYBINDS"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -16,6 +16,7 @@ local ConstructionController = require(controllers:WaitForChild("ConstructionCon
 local AssemblyController = require(controllers:WaitForChild("AssemblyController"))
 local AssemblyToolController=require(controllers:WaitForChild("AssemblyToolController"))
 local UnifiedExplorer = require(controllers:WaitForChild("UnifiedExplorer"))
+local ToolPalette = require(controllers:WaitForChild("ToolPalette"))
 local WorldVisuals = require(controllers:WaitForChild("WorldVisuals"))
 local VisualFeedback = require(controllers:WaitForChild("VisualFeedback"))
 local PlotSaveController = require(controllers:WaitForChild("PlotSaveController"))
@@ -73,6 +74,11 @@ constructionController:Start()
 assemblyController:Start()
 assemblyToolController:Start()
 unifiedExplorer:Start()
+-- Left column uses the exact shared subtool KeyCodes, and tool-specific
+-- hints reflect the active controller state without extra HUD owners.
+local toolPalette=ToolPalette.new(tools,
+    constructionController,assemblyController,assemblyToolController)
+toolPalette:Start()
 -- One startup refresh ensures shared authored selection and status match.
 constructionController:RefreshHUD()
 assemblyController:RefreshHUD()
@@ -92,4 +98,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 phase 6 / unified UI cleanup and syntax contracts", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 / left subtool palette and contextual keybinds", BUILD, tostring(FORGE.Version)))
