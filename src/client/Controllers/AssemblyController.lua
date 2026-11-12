@@ -935,10 +935,14 @@ function Controller:Start()
             -- Hold LMB on the mechanism to drive a physically coupled crank;
             -- release stops it. Other clicks inspect the aimed body.
             if self.HandCrank and self.HandCrank:TryGrab() then return end
-            self.Properties:InspectAtCenter()
+            if self.UnifiedExplorer then
+                self.UnifiedExplorer:SelectWorldAtCenter()
+            else self.Properties:InspectAtCenter() end
         elseif mode=="Mechanics" then
             if self.Tools.SubtoolId=="Configure" then
-                self.Properties:InspectAtCenter()
+                if self.UnifiedExplorer then
+                    self.UnifiedExplorer:SelectWorldAtCenter()
+                else self.Properties:InspectAtCenter() end
             elseif self.WeldMode then
                 self:WeldClick()
             elseif self.ManualActive then
@@ -948,6 +952,7 @@ function Controller:Start()
     end))
     table.insert(self.Connections,UserInputService.InputBegan:Connect(function(input,processed)
         if not self.Active or UserInputService:GetFocusedTextBox()
+            or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
             or self.Tools:WasConsumed(input) then return end
         local key=input.KeyCode
         if self.Mode=="Mechanics" and self.WeldMode then
