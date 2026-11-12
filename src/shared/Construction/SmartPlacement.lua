@@ -530,6 +530,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
     local best,bestScore=nil,math.huge
     local matches={}
     local pivotAnchor=FitOrigin.ComponentAnchor(members)
+    local _,movingHasOrigin=FitOrigin.PreviewLocal(ghost)
     local descriptors={}
     local function describe(model)
         if not descriptors[model] then
@@ -572,7 +573,18 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
             local aimReach=math.clamp(target.PrimaryPart.Size.Magnitude*0.38,0.48,1.5)
             local aimed=rayError<=aimReach
             local kind,cf,offset,roll,score,approach
-            if HandCrankMath.IsCrank(source)
+            -- Explicit source+target origin matching represents intentional
+            -- alignment. Only when BOTH scopes have authored origins should
+            -- it outrank inferred bore/hub/gear snapping; collisions still
+            -- determine whether the resulting placement is legal.
+            local pivot=if pivotSource then FitSolver.PivotCandidate(
+                ghost,target,aimRay,aimedModel,allTargets or targets) else nil
+            if pivot and movingHasOrigin then
+                kind="Pivot"
+                cf=pivot.cf
+                approach=pivot.approach
+                score=pivot.score
+            elseif HandCrankMath.IsCrank(source)
                 and HandCrankMath.IsOutputShaft(target) then
                 local pose,dist=HandCrankMath.Snap(source,target)
                 if pose and (dist<Smart.SnapDistance+1.0 or aimed) then
@@ -700,7 +712,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 end
             end
             if not cf and pivotSource then
-                local pivot=FitSolver.PivotCandidate(
+                pivot=pivot or FitSolver.PivotCandidate(
                     ghost,target,aimRay,aimedModel,allTargets or targets)
                 if pivot then
                     kind="Pivot"
