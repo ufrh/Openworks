@@ -44,7 +44,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
         elseif sub=="Place" then
             stage="PLACE"
             put(rows,"Click","Place primitive")
-            put(rows,"B","Primitive catalog")
+            put(rows,"B","Parts and saved components")
             put(rows,"R / T / Y","Rotate axes")
             put(rows,"N","Exact dimensions")
             if smart then
@@ -68,8 +68,10 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
                 put(rows,"F / Ctrl+D","Duplicate")
                 put(rows,"R / T / Y","Rotate axes")
                 put(rows,"N","Exact dimensions")
-                put(rows,"Alt+Arrows","Nudge position")
-                put(rows,"Shift+Alt","Fine arrow nudge")
+                put(rows,"Alt+Arrows","Nudge primitives / groups")
+                put(rows,"Shift+Alt+Arrows","Fine nudge (0.05 studs)")
+                put(rows,"O / Shift+O","Set / reset fitting origin")
+                put(rows,"Shift+B","Save selected component to bank")
                 put(rows,"C / U","Group / ungroup")
                 put(rows,"L","Align shaft")
                 put(rows,"X / I","X-ray / isolate")
@@ -109,6 +111,8 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
                 put(rows,"Click",if state=="ChooseSecond" then
                     "Select second part" else "Select first part")
                 put(rows,"Esc","Reset selection")
+                put(rows,"Pulley + pulley","Choose friction belt")
+                put(rows,"Gear + shaft","Automatic rigid hub weld")
             end
         else
             stage="CONFIGURE"
