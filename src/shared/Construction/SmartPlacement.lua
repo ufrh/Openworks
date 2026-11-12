@@ -545,6 +545,9 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
         -- A custom origin is a first-class fit feature on ANY primitive,
         -- even on solid blocks, plates and custom CSG geometry.
         local pivotSource=source==pivotAnchor
+        if not isShaft and not isGear and not isOpening and not pivotSource then
+            continue
+        end
         for _,target in ipairs(targets) do
             if not target or not target.Parent or not target.PrimaryPart
                 or (ignored and ignored[target]) then continue end
@@ -833,6 +836,15 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
             local size=model.PrimaryPart.Size.Magnitude
             local isGear=gear(model)
             local hubRay=hubAimDistance(aimRay,model)
+            -- Explicit pivot targets may be far from the part center (e.g.
+            -- the corner of a long chassis beam). The camera must be able
+            -- to discover them without treating the center as the hitbox.
+            local originPosition=if FitOrigin.HasComponent(model)
+                then FitOrigin.World(model,"Component")
+                elseif FitOrigin.HasPrimitive(model)
+                then FitOrigin.World(model,"Primitive") else nil
+            local originAimed=originPosition
+                and aimDistance(aimRay,originPosition)<=0.42
             -- Do not use the large tooth bounds to pick a gear. Gears
             -- remain discoverable within a small central radius, even
             -- though their actual empty bores have no raycast hitbox.
@@ -870,7 +882,7 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
             -- target, even when the center pivot is non-queryable.
             local hitGear=isGear and movingGear
                 and aimedPart and aimedPart:IsDescendantOf(model)
-            if gearPlacement or hitGear
+            if gearPlacement or hitGear or originAimed
                 or (model:GetPivot().Position-reference).Magnitude<=range
                 or hubRay<=aimThreshold then
                 table.insert(targets,model)
