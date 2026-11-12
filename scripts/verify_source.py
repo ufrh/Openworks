@@ -49,7 +49,7 @@ def main() -> int:
     tool_ids = re.findall(r'\{\s*Id\s*=\s*"([^"]+)"', definitions)
     check(
         "Native tool inventory and order",
-        tool_ids == ["Build", "Edit", "Assembly", "Simulate", "Inspect", "Weld", "Belt"],
+        tool_ids == ["Build", "Assembly", "Simulate", "Inspect", "Weld", "Belt"],
         str(tool_ids),
     )
 
@@ -419,15 +419,15 @@ def main() -> int:
           and 'model:SetAttribute("ComponentFitPivotLocal",data.componentFitPivotLocal)' in service
           and 'fitPivotLocal=payload.fitPivotLocal' in service
           and 'FitOrigin.ComponentAnchor(members)' in components)
-    check("Both scopes get native Edit origin pickup, reset and visible handles",
+    check("Both scopes get unified Build origin pickup, reset and visible handles",
           'function Controller:EditFitPivot(reset)' in construction_ui
           and 'function Controller:CommitFitPivot()' in construction_ui
           and 'self:EditFitPivot(shiftHeld)' in construction_ui
           and 'FitSolver.SurfacePose(' in construction_ui
           and 'self.FitPivotHandle:UpdatePreview(self.Preview)' in construction_ui
           and 'Instance.new("SphereHandleAdornment")' in pivot_handle
-          and 'Set its shared fitting / rotation origin' in keybinds
-          and 'Reset pivot to default' in keybinds)
+          and 'Set origin' in keybinds
+          and 'Reset primitive / component origin' in keybinds)
     pivot_snap = read("src/client/Controllers/FitPivotSnap.lua")
     check("Universal pivot scope ignores nested decorative primitive models",
           'ghost:GetAttribute("FitPivotScope")~="Component"' in origin
@@ -448,6 +448,19 @@ def main() -> int:
     check("Pivot authoring and reset both enforce owner proximity",
           'if not nearPlayer(player,anchor:GetPivot().Position) then' in service
           and 'if not hitModel then' in service)
+    check("One Build tool combines creation and editing without separate Edit hotbar",
+          tool_ids == ["Build","Assembly","Simulate","Inspect","Weld","Belt"]
+          and 'if mode=="Build" then mode="Edit" end' in construction_ui
+          and 'function Controller:StopPlacement()' in construction_ui
+          and 'self:StopPlacement()' in construction_ui
+          and 'if mode=="Build" then mode="Edit" end' in assembly_client
+          and 'hasEquippedTool(player,"Edit")' not in service)
+    check("Enter ends temporary Build workflows and Backspace deletes geometry",
+          'key==Enum.KeyCode.Return or key==Enum.KeyCode.KeypadEnter' in construction_ui
+          and 'self.Mode == "Edit" and key == Enum.KeyCode.Backspace' in construction_ui
+          and 'Enum.KeyCode.Delete' not in construction_ui
+          and 'Enum.KeyCode.Escape' not in construction_ui
+          and 'Enum.KeyCode.Escape' not in assembly_client)
     check("World rotations use the authored origin on client and server",
           'FitOrigin.World(self.GroupAnchor,"Component")' in construction_ui
           and 'FitOrigin.World(self.Selected,"Primitive")' in construction_ui
