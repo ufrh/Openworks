@@ -426,7 +426,7 @@ def main() -> int:
           and 'FitSolver.SurfacePose(' in construction_ui
           and 'self.FitPivotHandle:UpdatePreview(self.Preview)' in construction_ui
           and 'Instance.new("SphereHandleAdornment")' in pivot_handle
-          and 'Set origin' in keybinds
+          and 'Place origin on aimed selected surface' in keybinds
           and 'Reset primitive / component origin' in keybinds)
     pivot_snap = read("src/client/Controllers/FitPivotSnap.lua")
     check("Universal pivot scope ignores nested decorative primitive models",
