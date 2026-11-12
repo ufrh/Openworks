@@ -18,6 +18,7 @@ function Controller:Active()
         and self.Assembly:IsSimulating()
         and player:GetAttribute("OPENWORKS_SimulationPaused")~=true
         and player:GetAttribute("OPENWORKS_PropertiesOpen")~=true
+        and player:GetAttribute("OPENWORKS_ExplorerOpen")~=true
         and not UIS:GetFocusedTextBox()
 end
 function Controller:HasMotorKey(key)
