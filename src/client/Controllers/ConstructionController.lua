@@ -298,7 +298,8 @@ end
 function Controller:ShowCatalog(visible)
     if visible and self.ScaleMode then self:EndScale() end
     local wasOpen = self.CatalogOpen
-    self.CatalogOpen = visible and self.Mode == "Build"
+    self.CatalogOpen = visible and (self.Mode=="Build" or self.Mode=="Edit")
+        and self.Tools.ActiveId=="Build"
     if wasOpen and not self.CatalogOpen then
         self.IgnoreClickUntil = os.clock() + 0.2
     end
@@ -2288,10 +2289,7 @@ end
 function Controller:OnInput(input, processed)
     if self.PendingMateChoice then return end
     if self.Numeric and self.Numeric.Active then
-        if input.KeyCode==Enum.KeyCode.Return then
-            self.Numeric:Hide()
-            self:EndScale()
-        end
+        -- The focused numeric dialog owns Enter-to-confirm.
         return
     end
     if player:GetAttribute("OPENWORKS_Simulating") == true then return end
@@ -2323,7 +2321,7 @@ function Controller:OnInput(input, processed)
         return
     end
     if self.Mode=="Edit" and shiftHeld
-        and (key==Enum.KeyCode.Delete or key==Enum.KeyCode.Backspace) then
+        and key==Enum.KeyCode.Backspace then
         -- Shift+Delete removes only the aimed relationship, handled by
         -- the integrated mechanical editor, never primitive geometry.
         return
@@ -2411,7 +2409,7 @@ function Controller:OnInput(input, processed)
         return
     end
 
-    if key == Enum.KeyCode.B and self.Mode == "Build" then
+    if key == Enum.KeyCode.B and (self.Mode=="Build" or self.Mode=="Edit") then
         self:ShowCatalog(not self.CatalogOpen)
         return
     end
