@@ -77,6 +77,7 @@ function Controller:TryPush(key)
         or not self.Assembly:IsSimulating()
         or player:GetAttribute("OPENWORKS_SimulationPaused")==true
         or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
+        or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
         or UserInputService:GetFocusedTextBox() then return false end
     local dir=if key==Enum.KeyCode.Q then -1
         elseif key==Enum.KeyCode.E then 1 else 0
@@ -132,6 +133,7 @@ function Controller:Start()
             or not self.Assembly:IsSimulating()
             or player:GetAttribute("OPENWORKS_SimulationPaused")==true
             or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
+            or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
             or not self.KeyCode
             or not UserInputService:IsKeyDown(self.KeyCode) then
             self:Release()
