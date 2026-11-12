@@ -13,5 +13,6 @@ Current controls live in the root [README](../README.md). Changes to engine beha
 - **[Phase 0 frozen baseline](UI_V2_PHASE_0_BASELINE.md)** — branch, baseline SHA, current six-tool system, source checks, legacy permissions, and unverified Studio gates.
 - **[UI v2 regression matrix](UI_V2_REGRESSION_MATRIX.md)** — six saved-machine fixtures, 22 UI acceptance tests, authorization migration map, and evidence checklist.
 - **[Phase 1 implementation and Studio smoke test](UI_V2_PHASE_1_IMPLEMENTATION.md)** — three-tool/eight-subtool routing, permissions, interim keybinds, CI status, and unverified runtime acceptance.
+- **[Phase 2 visualization implementation and known CSG limits](UI_V2_PHASE_2_IMPLEMENTATION.md)** — shared 12-edge outlines, connection confirmation, assembly feedback, ghost geometry strokes and Studio test cases.
 
 These documents are migration planning and source evidence only. The game still uses the original six-tool implementation until Phase 1 and subsequent phases are implemented and tested.
