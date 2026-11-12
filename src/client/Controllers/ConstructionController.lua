@@ -473,7 +473,10 @@ function Controller:ClearSmartMatch()
     self.SmartBoreKind="Cylindrical"
     self.LockedAlignment=nil
     self.SmartLastScan=0
-    if self.Feedback then self.Feedback:Clear("snap") end
+    if self.Feedback then
+        self.Feedback:Clear("snap")
+        self.Feedback:SetGhostPending(false)
+    end
 end
 
 function Controller:HighlightSmartTarget(match)
@@ -481,8 +484,12 @@ function Controller:HighlightSmartTarget(match)
     local target=match and match.target
     if not target or not target.Parent then
         self.Feedback:Clear("snap")
+        self.Feedback:SetGhostPending(false)
         return
     end
+    local mechanical=match.kind=="Bore" or match.kind=="Hub"
+        or match.kind=="BoltHole" or match.kind=="CrankCoupling"
+    self.Feedback:SetGhostPending(mechanical)
     local group=target:GetAttribute("ComponentId")
     local models={target}
     if type(group)=="string" and group~="" then
@@ -497,7 +504,8 @@ function Controller:HighlightSmartTarget(match)
             end
         end
     end
-    self.Feedback:Set("snap","target",models,"snap",#models>1)
+    self.Feedback:Set("snap","target",models,
+        if mechanical then "pending" else "snap",#models>1)
 end
 
 function Controller:UpdateFitIndicators(match)
@@ -725,7 +733,14 @@ function Controller:SmartDrop(chosenKind)
         -- that exact pivot avoids re-deriving the transform from a corner.
         groupPivot=if self.Pending=="ComponentMove" then self.PreviewCF else nil,
     })
-    if ok then self:CancelPending() self:RefreshHUD() end
+    if ok then
+        if self.Feedback and (match.kind=="Bore" or match.kind=="Hub"
+            or match.kind=="BoltHole" or match.kind=="CrankCoupling") then
+            self.Feedback:FlashSuccess({match.source,match.target})
+        end
+        self:CancelPending()
+        self:RefreshHUD()
+    end
     self:FinishPendingHandoff(handoff,goal,models,ok)
     return true
 end
@@ -1521,7 +1536,8 @@ function Controller:Place(chosenKind)
         self:OpenMateChoice("Build")
         return
     end
-    local success = self:Request({
+    local placedMate=self.SmartMatch
+    local success,reply = self:Request({
         action = "Place",
         templateId = self.CurrentId,
         materialId=if self.Pending=="Copy" and self.Selected
@@ -1557,6 +1573,23 @@ function Controller:Place(chosenKind)
         } else nil,
     })
     if success then
+        if self.Feedback and placedMate and self.Pending~="Copy"
+            and (placedMate.kind=="Bore" or placedMate.kind=="Hub"
+                or placedMate.kind=="BoltHole"
+                or placedMate.kind=="CrankCoupling") then
+            local participants={placedMate.target}
+            local built=workspace:FindFirstChild(Config.FolderName)
+            if built and reply and type(reply.instanceId)=="string" then
+                for _,model in ipairs(built:GetChildren()) do
+                    if model:IsA("Model")
+                        and model:GetAttribute("InstanceId")==reply.instanceId then
+                        table.insert(participants,model)
+                        break
+                    end
+                end
+            end
+            self.Feedback:FlashSuccess(participants)
+        end
         if self.Pending=="Copy" then
             self:CancelPending()
         else
