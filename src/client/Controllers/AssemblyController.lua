@@ -935,6 +935,12 @@ function Controller:Start()
             or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
         local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        if control and (key==Enum.KeyCode.Z or key==Enum.KeyCode.Y) then
+            self:Request({action=if key==Enum.KeyCode.Z then "Undo" else "Redo"})
+            self:Reset()
+            if self.Tools.SubtoolId=="Connect" then self:StartManualJoint() end
+            return
+        end
         -- F enters the legacy validated two-solid weld workflow. W remains
         -- the universal freecam forward key, so it cannot be a weld shortcut.
         if key==Enum.KeyCode.F and not control then
