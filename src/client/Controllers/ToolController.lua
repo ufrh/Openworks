@@ -111,6 +111,7 @@ function ToolController:HandleShortcut(input,processed)
         or player:GetAttribute("OPENWORKS_CursorUIOpen")==true
         or player:GetAttribute("OPENWORKS_PlotMenuOpen")==true
         or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
+        or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
         or player:GetAttribute("OPENWORKS_AssemblyNaming")==true then
         return
     end
