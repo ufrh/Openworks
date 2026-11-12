@@ -1840,7 +1840,9 @@ function Controller:Rotate(axis)
 
     if self.Mode == "Edit" and not self.Pending
         and self.SelectedComponentId and #self.SelectedParts > 0 then
-        local center = ComponentGeometry.Bounds(self.SelectedParts)
+        local center=if self.GroupAnchor and FitOrigin.HasComponent(self.GroupAnchor)
+            then FitOrigin.World(self.GroupAnchor,"Component")
+            else ComponentGeometry.Bounds(self.SelectedParts)
         local delta = center and RotationMath.Delta(axisName,1,center)
         if not delta then return end
         local stop=WorldMotion.AnimateTurn(
@@ -1854,8 +1856,10 @@ function Controller:Rotate(axis)
         if not ok then stop() end
         if ok then self.Steps=nextSteps end
     elseif self.Mode == "Edit" and not self.Pending and self.Selected then
-        local origin = self.Selected:GetPivot()
-        local delta = RotationMath.Delta(axisName,1,origin.Position)
+        local origin=if FitOrigin.HasPrimitive(self.Selected)
+            then FitOrigin.World(self.Selected,"Primitive")
+            else self.Selected:GetPivot().Position
+        local delta = RotationMath.Delta(axisName,1,origin)
         local stop=WorldMotion.AnimateTurn(
             {self.Selected},delta,WorldMotion.Profile.TurnSeconds)
         local ok=self:Request({
