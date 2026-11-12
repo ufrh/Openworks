@@ -319,7 +319,7 @@ function Controller:RefreshHUD()
     local current = self.CurrentId or "Choose a primitive"
     local size = self.CurrentSize
 
-    self.TitleLabel.Text = "OPENWORKS  /  " .. string.upper(mode)
+    self.TitleLabel.Text = "OPENWORKS / BUILD / " .. string.upper(self.Tools.SubtoolId or tostring(mode))
     if self.SmartMatch and not (self.Layered and self.Layered.Alignment)
         and (self.Mode == "Build" or self.Pending) then
         local match=self.SmartMatch
@@ -1682,7 +1682,7 @@ function Controller:ConfirmComponentPlacement()
 end
 
 function Controller:Activate(mode)
-    -- Tool 3 Simulate and Tool 4 Inspect never activate construction.
+    -- Only Build subtools activate construction geometry.
     if mode~="Build" and mode~="Edit" and mode~="Inspect" then return end
     if self.PendingMateChoice or (self.Numeric and self.Numeric.Active) then return end
     if mode=="Edit" and self.Assembly
