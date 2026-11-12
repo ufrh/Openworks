@@ -282,6 +282,22 @@ def main() -> int:
           and 'OPENWORKS_UnifiedExplorerProperties' in unified_panel
           and 'OPENWORKS_UIV2_Feedback' in visual_ui_v2)
 
+    check("Phase 6 starts the single dock before legacy UI creation",
+          client_entry.index("constructionController.UnifiedExplorer=unifiedExplorer")
+            < client_entry.index("constructionController:Start()")
+          and client_entry.index("assemblyController.UnifiedExplorer=unifiedExplorer")
+            < client_entry.index("assemblyController:Start()")
+          and client_entry.index("assemblyToolController.UnifiedExplorer=unifiedExplorer")
+            < client_entry.index("assemblyToolController:Start()")
+          and 'if not self.UnifiedExplorer then self:Draw() end' in assembly_ui
+          and 'if not self.UnifiedExplorer then' in mechanical_ui
+          and 'if self.Modal then self.Modal.Visible=false end' in assembly_ui)
+    check("Phase 6 syntax verification is in GitHub CI",
+          'parse-luau:' in read(".github/workflows/source-contracts.yml")
+          and 'stylua --verify --syntax luau src' in
+              read(".github/workflows/source-contracts.yml")
+          and 'version: "2.1.0"' in read(".github/workflows/source-contracts.yml"))
+
     rokit = read("rokit.toml")
     aftman = read("aftman.toml")
     for name in ("rojo", "stylua", "selene"):
