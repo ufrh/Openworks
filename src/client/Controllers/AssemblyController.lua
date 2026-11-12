@@ -315,6 +315,7 @@ end
 
 
 function Controller:ClearPreview()
+    if self.Feedback then self.Feedback:SetGhost(nil,true) end
     if self.PreviewModel then self.PreviewModel:Destroy() end
     self.PreviewModel = nil
     self.VisualPose = nil
@@ -408,7 +409,7 @@ function Controller:MakePreview()
                 part.CastShadow = false
                 part.LocalTransparencyModifier = 0
                 part.Transparency = if part:GetAttribute("GearPivotOnly")==true
-                    then 1 else 0.45
+                    then 1 else 0.65
                 part.Color = Color3.fromRGB(91, 201, 187)
             end
         end
@@ -416,6 +417,7 @@ function Controller:MakePreview()
     ghost.WorldPivot = self.Source:GetPivot()
     ghost.Parent = workspace
     self.PreviewModel = ghost
+    if self.Feedback then self.Feedback:SetGhost(ghost,true) end
     self.GhostStart = ghost:GetPivot()
     self.VisualPose = self.GhostStart
     self.TargetPose = self.GhostStart
@@ -448,6 +450,7 @@ function Controller:UpdatePreview()
             self.Housing
         )
         PreviewFeedback.Paint(self.PreviewModel, self.PreviewValid)
+        if self.Feedback then self.Feedback:SetGhostValid(self.PreviewValid) end
         self.TargetPose = goal
         self.VisualPose = visual
         self.PreviewModel:PivotTo(visual)
