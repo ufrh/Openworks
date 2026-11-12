@@ -337,6 +337,7 @@ def main() -> int:
               service.index('alignmentService = AlignmentService.new({')])
     feedback = read("src/client/Controllers/VisualFeedback.lua")
     ghost_edges = read("src/client/Controllers/GhostWireframe.lua")
+    alignment_editor = read("src/client/Controllers/AssemblyController.lua")
     check("UI v2 uses one oriented twelve-edge selection renderer",
           'for i=1,12 do' in feedback
           and 'LineHandleAdornment' in feedback
