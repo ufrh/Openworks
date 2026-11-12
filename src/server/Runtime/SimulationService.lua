@@ -119,8 +119,7 @@ function Simulation:IsRunning(player)
     return self.Sessions[player] ~= nil
 end
 
--- Gear groups receive purely deterministic CFrame rotation; other
--- crank-driven shafts can retain their bounded native AngularVelocity.
+-- Cranks act on welded shafts with torque-limited native actuators.
 -- Held LMB authorizes movement; packets are liveness only.
 function Simulation:StopCrank(session,id)
     local crank=session.Cranks and session.Cranks[id]
@@ -128,8 +127,7 @@ function Simulation:StopCrank(session,id)
     crank.Running=false
     crank.LastInput=0
     crank.NativeSpeed=0
-    -- Ordinary non-geared shafts keep their bounded native drive.
-    -- Kinematic geared shafts have NO native motor to stop.
+    -- The native drive is shared by geared and ungeared shafts.
     if crank.Drive then crank.Drive.Enabled=false end
     if crank.Model and crank.Model.Parent then
         crank.Model:SetAttribute("OPENWORKS_CrankRunning",false)
@@ -192,13 +190,9 @@ function Simulation:StepCranks(dt)
                 drive.AngularVelocity=crank.Axis*crank.NativeSpeed
             end
         end
-        -- Kinematic solver owns rotational gear/bevel groups AND
-        -- translating rack groups. Either a crank can drive a pinion
-        -- or a manually pushed rack can BACKDRIVE the same graph.
+        -- All power flows through native shaft/rack bodies. Each mesh
+        -- adds torques with no permanent input/output designation.
         if session.Gears and not session.Paused then
-            local active=session.ActiveCrankId
-            local crank=active and session.Cranks[active] or nil
-            local powered=crank and crank.Running
             local rackId=session.ActiveRackId
             local rackModel=rackId and session.Gears:RackModel(rackId) or nil
             if rackId and (not session.Gears:CanDriveRack(rackId)
@@ -209,22 +203,13 @@ function Simulation:StepCranks(dt)
                 self:StopRack(session)
                 rackId=nil
             end
-            local rackDriven=not powered and rackId~=nil
-            session.Gears:Step(dt,
-                if powered then crank.DrivenId
-                    elseif rackDriven then rackId else nil,
-                if powered then crank.Axis
-                    elseif rackDriven then session.Gears:RackAxis(rackId)
-                    else nil,
-                if powered then HandCrankMath.FixedAngularSpeed
-                    elseif rackDriven then session.RackDirection*RACK_MANUAL_SPEED
-                    else 0)
+            session.Gears:Step(dt,rackId,
+                if rackId then session.RackDirection*RACK_MANUAL_SPEED else 0)
         end
     end
 end
 
--- Begin is one hold-start request. For kinematic geared assemblies no
--- Roblox force or torque is applied; a server-owned speed input is used.
+-- One held input runs the native crank shaft motor.
 function Simulation:BeginCrank(player,request)
     local session=self.Sessions[player]
     if not session then return false,"Start simulation (P) before turning a crank" end
@@ -252,12 +237,6 @@ function Simulation:BeginCrank(player,request)
     if not root or not self.D.nearPlayer(player,crank.Root.Position) then
         return false,"Crank must remain on your own plot"
     end
-    -- If a different crank now backdrives this gear graph, reset the
-    -- previous input's coast to avoid a sudden gearbox direction jump.
-    if session.Gears and session.Gears.LastDrivenId
-        and session.Gears.LastDrivenId~=crank.DrivenId then
-        session.Gears:StopMotion()
-    end
     self:StopRack(session)
     for previousId in pairs(session.Cranks) do
         self:StopCrank(session,previousId)
@@ -265,10 +244,7 @@ function Simulation:BeginCrank(player,request)
     session.ActiveCrankId=id
     crank.Running=true
     crank.LastInput=os.clock()
-    -- A geared output is intentionally MOTOR-FREE; the kinematic
-    -- gearbox advances this same shaft and its connected gears during
-    -- StepCranks. Ungeared shafts retain their native torque-limited
-    -- AngularVelocity drive.
+    -- All cranks run their own torque-limited motor on the shaft.
     if crank.Drive then
         crank.NativeSpeed=0
         crank.Drive.AngularVelocity=Vector3.zero
@@ -278,9 +254,7 @@ function Simulation:BeginCrank(player,request)
     return true,"Hand crank running • release LMB to stop"
 end
 
--- Backdrive rack-and-pinion trains by holding an explicit linear
--- control on a physically guided rack. No arbitrary client force, speed
--- or WorldCFrame may reach the kinematic mechanism.
+-- A guided rack can backdrive its pinion through a bounded native drive.
 function Simulation:BeginRack(player,request)
     local session=self.Sessions[player]
     if not session then return false,"Start an assembly simulation first" end
@@ -354,8 +328,7 @@ end
 function Simulation:SetStatus(player,running,grounded)
     player:SetAttribute("OPENWORKS_Simulating",running)
     player:SetAttribute("OPENWORKS_Grounded",grounded~=false)
-    -- Native motion joints remain passive. Geared rigid bodies are
-    -- scripted/anchored; ordinary free shafts may use native crank torque.
+    -- No geared shaft is anchored unless the builder explicitly grounded it.
 end
 
 function Simulation:Graph(player, seed)
@@ -807,9 +780,7 @@ function Simulation:Start(player, payload)
             end
         end
 
-        -- Only standalone, ungeared crank shafts receive a native
-        -- AngularVelocity drive. Geared shafts have no motor, bearing
-        -- forces, collisions or physical joints; GearKinematics owns them.
+        -- HandCranks always drive the native shaft, even with mounted gears.
         for _,original in ipairs(graph.models) do
             if not HandCrankMath.IsCrank(original) then continue end
             local id=original:GetAttribute("InstanceId")
@@ -923,10 +894,7 @@ function Simulation:Start(player, payload)
             if groundedKey then session.GroundKeys[groundedKey]=true end
         end
 
-        -- Bearing housings support geared axles translationally without
-        -- applying any native Roblox hinge force to gear rotation. Loose
-        -- geared shafts instead fall as one scripted rigid body; a free
-        -- bearing-mounted gear follows the shaft's movement.
+        -- Native shaft bearings remain active; guides provide rack support.
         session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,
             created,player.Character,d.folder)
 
@@ -1139,8 +1107,8 @@ function Simulation:Info(player,payload)
     table.insert(lines, tostring(current) .. " direct relationships")
     if session then
         table.insert(lines,if session.Paused then "PAUSED"
-            elseif session.Gears and session.Gears:IsKinematic(id)
-                then "KINEMATIC TRANSMISSION" else "LIVE PHYSICS")
+            elseif session.Gears and session.Gears:IsGeared(id)
+                then "PHYSICAL SHAFT TRANSMISSION" else "LIVE PHYSICS")
         if session.Gears
             and (#session.Gears.Gears>0 or #session.Gears.Racks>0) then
             table.insert(lines,string.format(
@@ -1148,7 +1116,7 @@ function Simulation:Info(player,payload)
                 session.Gears.Contacts,#session.Gears.Gears,
                 #session.Gears.Racks))
         end
-        if session.Gears and session.Gears:IsKinematic(id) then
+        if session.Gears and session.Gears:IsGeared(id) then
             table.insert(lines,session.Gears:Explain(id))
         end
         if session.UnregisteredGears and session.UnregisteredGears>0 then
