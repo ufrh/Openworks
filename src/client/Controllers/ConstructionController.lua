@@ -23,6 +23,9 @@ local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEdit
 local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local RotationMath = require(construction:WaitForChild("RotationMath"))
 local SmartPlacement = require(construction:WaitForChild("SmartPlacement"))
+local FitOrigin = require(construction:WaitForChild("FitOrigin"))
+local FitSolver = require(construction:WaitForChild("FitSolver"))
+local FitPivotHandle = require(script.Parent:WaitForChild("FitPivotHandle"))
 local MultiFit = require(construction:WaitForChild("MultiFitMath"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local BoreClearance = require(construction:WaitForChild("BoreClearance"))
@@ -107,6 +110,8 @@ function Controller.new(tools)
         SelectedParts = {},
         SelectedComponentId = nil,
         EditingComponentId = nil,
+        PivotSetting = false,
+        FitPivotHandle = nil,
         SelectionHighlights = {},
         GroupAnchor = nil,
         Pending = nil, -- "Move", "Copy", or nil
@@ -378,6 +383,9 @@ function Controller:RefreshHUD()
                 dimensions.X / Grid.Unit, dimensions.Y / Grid.Unit,
                 dimensions.Z / Grid.Unit) else "")
         self.HelpLabel.Text = "Tab depth • Shift+Tab reverse • X X-ray • I isolate"
+    elseif self.PivotSetting then
+        self.DetailLabel.Text="FIT ORIGIN  /  aim at a surface on this selection"
+        self.HelpLabel.Text="Click set origin • Esc cancel • Shift+O reset"
     elseif self.ScaleMode then
         self.DetailLabel.Text = current .. (if self.ScaleSize then
             "  •  " .. string.format("%.2g × %.2g × %.2g U",
@@ -712,7 +720,7 @@ end
 
 function Controller:SmartDrop(chosenKind)
     local match=self.SmartMatch
-    if not match or not match.target.Parent
+    if not match or match.kind=="Pivot" or not match.target.Parent
         or self.Pending=="Copy" or self.Pending=="ComponentCopy" then
         return false
     end
@@ -1059,6 +1067,7 @@ function Controller:RefreshSelectionHighlights()
 end
 
 function Controller:SetSelection(model)
+    self.PivotSetting=false
     if self.Selected == model and not self.SelectedComponentId and #self.SelectedParts <= 1 then return end
     self:CancelPending()
     self.Selected = model
@@ -1091,6 +1100,7 @@ function Controller:ComponentMembers(componentId)
 end
 
 function Controller:SetComponentSelection(componentId, membersOverride)
+    self.PivotSetting=false
     self:CancelPending()
     self.Selected = nil
     self.SelectedComponentId = componentId
@@ -1101,7 +1111,7 @@ function Controller:SetComponentSelection(componentId, membersOverride)
     else
         -- Always grab the primitive nearest the component's geometric
         -- center, even when selection order or authored dimensions change.
-        self.GroupAnchor = ComponentGeometry.CentralPrimitive(self.SelectedParts)
+        self.GroupAnchor = FitOrigin.ComponentAnchor(self.SelectedParts)
         self.CurrentId = self.GroupAnchor:GetAttribute("TemplateId")
         self.CurrentSize = self.GroupAnchor.PrimaryPart.Size
         self.Steps = attributesSteps(self.GroupAnchor)
@@ -1160,6 +1170,7 @@ function Controller:CancelPending()
 end
 
 function Controller:OnModeChanged(mode)
+    self.PivotSetting=false
     if mode~="Edit" and self.MaterialPicker then
         self.MaterialPicker:Close()
     end
@@ -1337,6 +1348,10 @@ function Controller:UpdatePreview()
             self.Preview,proposed,hit.Position,hit.Normal,hit.Instance)
             else SurfacePlacement.SnapToSurface(self.Preview,proposed,
                 hit.Position,hit.Normal)
+        -- The selected logical origin, not a hidden physics root, becomes
+        -- the placement grab point whenever the builder customized it.
+        local originPose=FitSolver.SurfacePose(self.Preview,cf.Rotation,hit.Position)
+        if originPose then cf=originPose end
         local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
         self.Preview:PivotTo(cf)
@@ -1502,6 +1517,8 @@ function Controller:Place(chosenKind)
             then self.Selected:GetAttribute("PaintFinish") else nil,
         paintColorHex=if self.Pending=="Copy" and self.Selected
             then self.Selected:GetAttribute("PaintColorHex") else nil,
+        fitPivotLocal=if self.Pending=="Copy" and self.Selected
+            then self.Selected:GetAttribute("FitPivotLocal") else nil,
         position = self.PreviewCF.Position,
         steps = stepsCopy(self.Steps),
         size = self.CurrentSize,
@@ -1513,6 +1530,7 @@ function Controller:Place(chosenKind)
                 or self.SmartMatch.kind=="Hub")
             then self.PreviewCF.Rotation else nil,
         autoMate=if self.SmartMatch
+            and self.SmartMatch.kind~="Pivot"
             and (self.Pending~="Copy"
                 or self.SmartMatch.kind=="Gear") then {
             -- Gear-to-gear meshing only positions geometry on an F-copy.
@@ -1642,6 +1660,10 @@ function Controller:ConfirmComponentPlacement()
 end
 
 function Controller:Activate(mode)
+    if mode=="Edit" and self.PivotSetting then
+        self:CommitFitPivot()
+        return
+    end
     -- Tool 3 Simulate and Tool 4 Inspect never activate construction.
     if mode~="Build" and mode~="Edit" and mode~="Inspect" then return end
     if self.PendingMateChoice or (self.Numeric and self.Numeric.Active) then return end
@@ -2054,7 +2076,7 @@ end
 function Controller:BeginDirectDrag()
     if self.PendingMateChoice
         or (self.Assembly and self.Assembly:IsEditingJoint())
-        or self.Mode ~= "Edit" or self.Pending
+        or self.Mode ~= "Edit" or self.Pending or self.PivotSetting
         or self.ScaleMode or self.CatalogOpen then return end
     local hit = self:CastCenter(false)
     if not hit then return end
@@ -2190,6 +2212,18 @@ function Controller:OnInput(input, processed)
     if self.Assembly and self.Assembly:IsEditingJoint() then return end
     local shiftHeld=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    if self.PivotSetting then
+        if key==Enum.KeyCode.Escape then
+            self.PivotSetting=false
+            self:RefreshHUD()
+        end
+        return
+    end
+    if self.Mode=="Edit" and not processed and key==Enum.KeyCode.O
+        and not self.Pending and not self.ScaleMode then
+        self:EditFitPivot(shiftHeld)
+        return
+    end
     if self.Mode=="Edit" and shiftHeld
         and (key==Enum.KeyCode.Delete or key==Enum.KeyCode.Backspace) then
         -- Shift+Delete removes only the aimed relationship, handled by
@@ -2307,6 +2341,7 @@ end
 function Controller:Start()
     if self.Started then return end
     self.Started = true
+    self.FitPivotHandle=FitPivotHandle.new()
     self:MakeUI()
     self.MaterialPicker=MaterialPickerController.new(self)
     self.MaterialPicker:Start()
@@ -2460,6 +2495,17 @@ function Controller:Start()
         end
         if stale then self:SetSelection(nil) end
         self:UpdateDirectDrag()
+        if self.FitPivotHandle then
+            local originAnchor=if self.SelectedComponentId then self.GroupAnchor
+                else self.Selected
+            self.FitPivotHandle:Update(originAnchor,
+                if self.SelectedComponentId then "Component" else "Primitive",
+                self.Mode=="Edit" and not self.Pending and not self.ScaleMode
+                    and (self.PivotSetting or (originAnchor~=nil
+                        and (if self.SelectedComponentId
+                            then FitOrigin.HasComponent(originAnchor)
+                            else FitOrigin.HasPrimitive(originAnchor)))))
+        end
         if not self.PendingMateChoice
             and (self.Mode == "Build" or
                 (self.Mode == "Edit" and self.Pending)) then
@@ -2476,6 +2522,7 @@ function Controller:Start()
 end
 
 function Controller:Destroy()
+    if self.FitPivotHandle then self.FitPivotHandle:Destroy() end
     if self.MaterialPicker then self.MaterialPicker:Destroy() end
     if self.MateChoice then self.MateChoice:Destroy() end
     if self.Numeric then self.Numeric:Destroy() end
