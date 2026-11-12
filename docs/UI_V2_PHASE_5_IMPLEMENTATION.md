@@ -66,9 +66,9 @@ See also the [Phase 0 fixture matrix](UI_V2_REGRESSION_MATRIX.md) and [full QA r
 
 ## Known outstanding work
 
-- The feature is **not Studio-certified**. GitHub CI performs Python source contract assertions; it does not compile Luau or execute Roblox constraints.
-- Phase 6: remove unused legacy panels/controllers, fix integration bugs identified by Studio testing, full architecture and organization pass.
+- The feature is **not Studio-certified**. Phase 6 added StyLua parsing/AST verification in CI alongside Python source contracts; neither can execute Roblox constraints.
+- Phase 6 source cleanup is complete: unused parallel UI modules were deleted, duplicate runtime HUDs are no longer allocated and syntax parser verification is enabled. Studio runtime regression and physical benchmarks remain outstanding.
 - Phase 2: exact CSG triangle-edge and localized invalid-intersection red visualization remain incomplete.
-- Previous Phase 4 caveat: `ConstructionService` currently rejects manual `CreateBolt` with a message directing players to Build > Fasteners. The Phase 4 Connect menu can offer Bolt, but this path is **not functional** until a separately reviewed server-authorized integration; do not claim this specific option has passed. Existing Build Fasteners is the supported physical-bolt route.
+- Phase 6 removed the misleading manual Connect > Bolt menu option because `ConstructionService` rejects direct `CreateBolt`. Physical bolt construction remains supported through Build > Fasteners.
 
 **Phase 5 result:** unified source implementation complete; acceptance is pending direct Studio testing.
