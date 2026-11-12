@@ -530,6 +530,13 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
     local best,bestScore=nil,math.huge
     local matches={}
     local pivotAnchor=FitOrigin.ComponentAnchor(members)
+    local descriptors={}
+    local function describe(model)
+        if not descriptors[model] then
+            descriptors[model]=FitFeatures.Describe(model)
+        end
+        return descriptors[model]
+    end
     for _,source in ipairs(members) do
         local isShaft=Alignment.IsShaft(source)
         local isGear=gear(source)
@@ -551,7 +558,8 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 -- another member of its OWN already-rigid component.
                 continue
             end
-            local pairing=FitFeatures.Pair(source,target)
+            local pairing=FitFeatures.PairDescriptors(
+                describe(source),describe(target))
             local rayError=aimDistance(aimRay,target:GetPivot().Position)
             local shaftMouseDepth,shaftMouseError
             if isOpening and Alignment.IsShaft(target) then
