@@ -617,7 +617,7 @@ function Layered:ConfirmAlignment()
     local roll=align.RollDegrees
     local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"
     parent.PendingMateChoice="ManualAlign"
-    parent.MateChoice:Show(function(choice)
+    local function onChoice(choice)
         parent.PendingMateChoice=nil
         parent.IgnoreClickUntil=os.clock()+0.22
         if self.Alignment~=selected or selected.Stage~="Preview" then
@@ -667,7 +667,13 @@ function Layered:ConfirmAlignment()
         end
         parent:RefreshPointer()
         parent:RefreshHUD()
-    end,selected.FittedCount or 1,isGear)
+    end
+    if not (parent.UnifiedExplorer and parent.UnifiedExplorer:ChooseFit(
+        if isGear then "Hub" else "Bore",onChoice,
+        selected.FittedCount or 1)) then
+        -- Never silently open a second legacy modal.
+        onChoice(nil)
+    end
 end
 
 function Layered:Click()
