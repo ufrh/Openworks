@@ -32,7 +32,7 @@ function Context:Lines()
     if not tool then return { "Choose a tool: 1–5" } end
     if c.PendingMateChoice then
         if c.SmartMatch and c.SmartMatch.kind=="Hub" then
-            append(lines,"CLICK","Gear mount: Rotation or Rigid")
+            append(lines,"CLICK","Pulley/gear to shaft: automatic rigid weld")
         else
             append(lines,"CLICK","Choose rotation, slide, bearing or fit")
             append(lines,"ADJUST","Set shaft depth/roll before selecting")
@@ -116,7 +116,7 @@ function Context:Lines()
                         append(lines,"Click","Choose relationship popup")
                     end
                 elseif c.SmartMatch.kind=="Hub" then
-                    append(lines, "Click", "Choose Rotation / Rigid gear mount")
+                    append(lines, "Click", "Auto-weld pulley/gear to a real shaft")
                 elseif c.SmartMatch.kind=="BoltHole" then
                     append(lines, "Bolt", "Fasten holes reached by prefab")
                 end
