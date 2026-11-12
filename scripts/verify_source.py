@@ -1213,7 +1213,8 @@ def main() -> int:
           and 'self.PreviewVisualPose=WorldMotion.Step(' in selection
           and 'self.LastPreviewing=previewing' in selection
           and 'if previewing then self.Feedback:Clear("selection")' in selection
-          and 'if os.clock()-self.LastRender<0.08 then return end' in ghost_edges)
+          and 'if not isResizing and os.clock()-self.LastRender<0.08 then return end' in ghost_edges
+          and 'self.Model.Name=="OPENWORKS_ResizePreview"' in ghost_edges)
     check("Snapping scans moving geometry once per nearby-target pass",
           'local movingGearMembers={}' in smart_placement
           and 'for _,member in ipairs(Smart.Members(moving)) do' in smart_placement
