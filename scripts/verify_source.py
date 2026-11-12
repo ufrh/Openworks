@@ -252,6 +252,9 @@ def main() -> int:
             read("src/server/Runtime/ConstructionService.lua")
           and 'node.id==runningAssemblyId' in context_v2)
 
+    selection_ui_v2 = read("src/client/Controllers/ConstructionController.lua")
+    layered_ui_v2 = read("src/client/Controllers/LayeredEditingController.lua")
+    visual_ui_v2 = read("src/client/Controllers/VisualFeedback.lua")
     check("Phase 6 retired parallel UI modules are physically removed",
           all(not (ROOT / "src/client/Controllers" / module).exists()
               for module in (
@@ -260,11 +263,11 @@ def main() -> int:
                   "RelationshipProperties.lua",
               )))
     check("Phase 6 only the unified dock owns relationship and paint dialogs",
-          "MateChoicePanel" not in selection
-          and "MaterialPickerController" not in selection
-          and "ComponentOutline" not in selection
+          "MateChoicePanel" not in selection_ui_v2
+          and "MaterialPickerController" not in selection_ui_v2
+          and "ComponentOutline" not in selection_ui_v2
           and "RelationshipProperties" not in mechanical_ui
-          and 'parent.UnifiedExplorer:ChooseFit(' in layered
+          and 'parent.UnifiedExplorer:ChooseFit(' in layered_ui_v2
           and 'function Panel:Appearance(node)' in unified_panel
           and 'function Panel:RelationshipProperties(node)' in unified_panel
           and 'Name="UnifiedConnectionChoice"' in unified_panel)
@@ -274,7 +277,7 @@ def main() -> int:
           and 'action=="CreateBolt" then' in mechanic_authority
           and 'Use Build > Fasteners' in mechanic_authority)
     check("Phase 6 no dead selection world folder or parallel inspector owner",
-          'OPENWORKS_LocalSelectionVisuals' not in selection
+          'OPENWORKS_LocalSelectionVisuals' not in selection_ui_v2
           and 'OPENWORKS_LocalInspectorSelection' not in mechanical_ui
           and 'OPENWORKS_UnifiedExplorerProperties' in unified_panel
           and 'OPENWORKS_UIV2_Feedback' in feedback)
