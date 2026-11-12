@@ -1,6 +1,6 @@
 --!strict
 -- Mouse-first relationship choice, shown over the build world after a valid
--- shaft/hole or gear/shaft alignment. Number keys NEVER select relationships:
+-- shaft/hole alignment. Gear/shaft alignment welds automatically without UI.
 -- they belong to the native Tool hotbar and previously caused collisions.
 local ContextActionService=game:GetService("ContextActionService")
 local StarterGui=game:GetService("StarterGui")
@@ -12,16 +12,11 @@ Mate.__index=Mate
 
 -- Do not silently create a rigid weld for a hole/shaft fit.
 local TYPES={"Cylindrical","Slider","Bearing","FreeFit"}
-local HUB_TYPES={"Rotation","Rigid"}
 local BORE_LABELS={
     "ROTATE + SLIDE   •   Free axial and rotary motion",
     "SLIDE ONLY   •   Guided linear movement",
     "ROTATE ONLY   •   Bearing, no axial movement",
     "FIT ONLY   •   Placement without a physical joint",
-}
-local HUB_LABELS={
-    "ROTATION   •   Gear spins freely around shaft",
-    "RIGID   •   Gear is welded to shaft",
 }
 -- Keys are swallowed while the modal is open, NOT interpreted as options.
 -- Disabling the CoreGui alone does not reliably block the numeric Tool bar.
@@ -178,31 +173,25 @@ function Mate.new(_ownerGui)
     return self
 end
 
-function Mate:Show(callback,fitCount,gearMount)
+function Mate:Show(callback,fitCount)
     if self.Active then return end
     fitCount=math.max(1,math.floor(tonumber(fitCount) or 1))
-    self.Types=if gearMount then HUB_TYPES else TYPES
-    self.Heading.Text=if gearMount then "GEAR / SHAFT RELATIONSHIP"
-        elseif fitCount>1 then
-            "SHAFT / "..tostring(fitCount).." ALIGNED HOLES"
+    self.Types=TYPES
+    self.Heading.Text=if fitCount>1 then
+        "SHAFT / "..tostring(fitCount).." ALIGNED HOLES"
         else "SHAFT / HOLE RELATIONSHIP"
-    self.Detail.Text=if gearMount then
-        "Choose one physical gear mount."
-        elseif fitCount>1 then
-            "Choose motion for the aligned guide pattern."
+    self.Detail.Text=if fitCount>1 then
+        "Choose motion for the aligned guide pattern."
         else "Choose motion after the hole and shaft align."
 
-    local optionCount=if gearMount then 2 else 4
     for i,button in ipairs(self.Buttons) do
-        button.Visible=i<=optionCount
-        button.Text="  "..(if gearMount then HUB_LABELS[i] or ""
-            else BORE_LABELS[i])
+        button.Visible=true
+        button.Text="  "..BORE_LABELS[i]
     end
-    self.Adjust.Visible=not gearMount
-    self.Adjust.Position=UDim2.fromOffset(16,if gearMount then 180 else 284)
-    self.CancelButton.Position=UDim2.fromOffset(16,
-        if gearMount then 194 else 326)
-    self.Frame.Size=UDim2.fromOffset(372,if gearMount then 236 else 368)
+    self.Adjust.Visible=true
+    self.Adjust.Position=UDim2.fromOffset(16,284)
+    self.CancelButton.Position=UDim2.fromOffset(16,326)
+    self.Frame.Size=UDim2.fromOffset(372,368)
 
     self.Active=true
     self.Callback=callback
@@ -240,7 +229,7 @@ function Mate:Choose(index)
 end
 
 function Mate:ChooseAdjust()
-    if not self.Active or self.Types==HUB_TYPES then return end
+    if not self.Active then return end
     local callback=self.Callback
     self:Hide()
     if callback then callback("__Adjust") end
