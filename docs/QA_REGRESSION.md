@@ -3,8 +3,8 @@
 Run after changing the shared geometry code, construction services, tool dispatch, input controllers, simulation or persistence. **This is a manual acceptance list**, not a claim the tests have already passed. File a specific bug with Studio Output, build marker and reproduction if any case fails.
 
 ## Setup and startup
-- [ ] Sync `dev` in Rojo, restart Play, confirm current client/server marker and FORGE banner in Output.
-- [ ] Tool hotbar has Build, Edit, Assembly, Simulate, Inspect, Weld **once each** after first join and after respawn; no legacy Assemble tool or duplicate tool.
+- [ ] Sync `feature/ui-reorganization-v2` in Rojo (use `dev` only for comparison), restart Play, confirm current client/server marker and FORGE banner in Output.
+- [ ] Tool hotbar has exactly Build, Mechanics, Assembly & Simulation **once each** after join and respawn; no legacy six-tool entries or duplicates.
 - [ ] Studio empty plot reaches `Ready` when API access is enabled; if API unavailable, show `Error` (never permanent `Loading`). Building still works; saving stays disabled.
 - [ ] Player plots do not overlap; construction and remote actions cannot edit other players' models.
 
@@ -16,13 +16,13 @@ Run after changing the shared geometry code, construction services, tool dispatc
 - [ ] Edit one primitive inside a component without implicitly welding it; ungroup/recombine; undo and redo metadata does not recreate physics Parts or break mechanical references.
 
 ## Named assemblies
-- [ ] Equip Assembly, N, name dialog, Enter; selected components and individual primitives turn purple.
+- [ ] Equip Assembly & Simulation > Assembly Editor (E), N, name dialog, Enter; actual selected members receive purple per-primitive bounding boxes.
 - [ ] Click whole component to toggle **all** members; Alt+click one inside component to toggle just that primitive. Confirm with Enter; Esc leaves prior assembly unchanged.
-- [ ] Reopen a named assembly, rename using R, add/remove members, confirm. **Ctrl+Z/Ctrl+Y with Assembly equipped** restores names and membership in place; reloading a manual save preserves it.
+- [ ] Reopen a named assembly, rename using R, add/remove members, confirm. **Ctrl+Z/Ctrl+Y with Assembly Editor active** restores names and membership in place; reloading a manual save preserves it.
 - [ ] Deny mixed ownership, nonexistent IDs and attempts to add a primitive belonging to a second assembly. Reject empty assembly and more than 128 primitives.
-- [ ] Aim at any saved member with Simulate: every **actual registered member** highlights purple, including disconnected primitives and partial editor components. Highlight clears immediately on tool switch or starting sim; no stray purple outline.
+- [ ] Aim at any saved member in Simulation: the **exact registered assembly** receives one purple oriented outer bounding box, including disconnected primitives and partially included editor components. Member-edit state uses per-primitive purple boxes. All boxes clear immediately when appropriate.
 - [ ] If a mechanical joint crosses to an unregistered member, P refuses. Add that member explicitly in Assembly, P simulates exactly the registered set.
-- [ ] Selection/ghost/inspector Highlights remain visible and clear after delete, undo, plot reload and respawn.
+- [ ] Thin aqua selection/hover boxes, geometry-following ghost strokes, inspector outlines and transient orange/red/green connection boxes clear after delete, undo, plot reload and respawn; no leftover Highlights or shadow-casting helpers.
 
 ## Mechanical relationships and physics
 - [ ] Aim/place a shaft in a drilled hole, or a gear onto a shaft, using Build or Edit. A mouse-clickable relationship popup opens on the first valid fit (not keyboard-number selection); test every option by clicking the actual full-width button, including fast double-click prevention.
@@ -98,11 +98,11 @@ Run after changing the shared geometry code, construction services, tool dispatc
 Run `python scripts/verify_source.py` from the repository root. This is a static consistency check only; it cannot validate Luau syntax, input behavior or physics. Use the installed Rojo toolchain to perform `rojo build default.project.json --output builds/openworks.rbxlx` and then complete the actual Play tests above.
 
 - [ ] Component Group/Ungroup regression: select 2+ primitives and press C to create a component; no `ComponentService:87: attempt to call a nil value` error. U splits the group without losing original primitive IDs. Ctrl+Z/Ctrl+Y must undo/redo membership without destroying models or invalidating authored mechanical relationships.
-- [ ] Edit multiselect visuals: select multiple primitives (and also select an existing component). Each real primitive gets its OWN blue outline, with no shared rectangular bounding box spanning empty space. Deselecting, moving/copying previews and tool switching must clear or hide the old outlines correctly.
-- [ ] Assembly multiselect visuals: choose multiple primitives across multiple editor components. Each selected primitive has its own purple silhouette, no single shared group bounding box; hover and selection changes must not leave stale adornments.
+- [ ] Build/Edit multiselect: disconnected primitives each receive one thin aqua oriented 12-edge box; selecting a cohesive editor component yields ONE oriented whole-component box. No glow/fill or stale outlines after move, copy or tool switch.
+- [ ] Assembly membership: choose primitives across several components; every selected member receives an individual purple 12-edge box. Aim at the saved assembly outside member editing for ONE whole-assembly purple box. No duplicate purple silhouettes or stale adornments.
 
 - [ ] Freecam defaults ON from the first player spawn and stays Scriptable after death/respawn. It starts at a high oblique view of the player's assigned construction plot; WASD flies, Space rises, Ctrl descends, mouse always looks without RMB/MMB, Z/Shift+Z changes FOV. Movement ramps up smoothly and brakes quickly without elastic rebounds; the camera cannot escape assigned plot bounds.
-- [ ] Original Roblox character is invisible, unable to walk/jump/rotate and remains server-anchored at its plot start. Native Roblox Tool/Backpack hotbar still works; switching Build/Edit/Assembly/Simulate, selecting with crosshair, manipulating geometry, and opening the native-styled catalog/dialogs must not unlock or break freecam. Opening menus restores cursor access and immediately halts camera movement.
+- [ ] Original Roblox character is invisible, unable to walk/jump/rotate and remains server-anchored at its plot start. Native Roblox Tool/Backpack hotbar still works; switching Build/Mechanics/Assembly & Simulation, selecting with crosshair, manipulating geometry, and opening the native-styled catalog/dialogs must not unlock or break freecam. Opening menus restores cursor access and immediately halts camera movement.
 - [ ] Full-plot freecam editing: place and select parts on the far side of the user's own plot, transform grouped components/assemblies, and operate a crank/rack there. No false 'move closer' checks based on the stationary invisible avatar. Attempts to edit another player's plot or outside one's own plot remain server-rejected.
 - [ ] Start named Assembly simulation with P: no automatic grounding of aimed part. Holding Shift while pressing P must NOT change camera or simulation mode. Authored explicitly grounded housings/rack guides remain physically supported; a truly ungrounded gear/shaft should fall. G toggles selected support as before.
 
@@ -205,3 +205,16 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 - [ ] Place two shafts close together and move the crosshair from one to the other, aiming at distinct depths. A direct shaft hit must take priority over a stale preferred shaft and over center-distance scoring.
 - [ ] Test moving a gear (with a real hub bore) onto a long shaft. Its position should follow the aimed shaft segment too, while Hub Radius, fit clearance, and explicit Rigid/Rotation choice stay enforced.
 - [ ] Check that multi-hole fitted shafts, native bearings, rigid joints, undo/redo, autosave and simulation retain the exact selected insertion pose. Moving the hole on its own must not create an implicit weld.
+
+## UI v2 Phase 2 — shared visual feedback (Studio Play required)
+
+- [ ] In Build/Edit hover an unselected primitive and a grouped component: thin aqua exactly aligned oriented boxes, no Highlights, fills, shadows or extra padding.
+- [ ] Single primitive selection and multiselection use one 12-edge outline per independent primitive; whole component selection uses one component-local bound rather than separate member lines.
+- [ ] While placing, copying, and manual fitting, visible ghost geometry is 0.65 transparent, has geometry-following strokes and retains responsiveness while moving. Built-in Block/Cylinder/Ball edges must follow shape; CSG PartOperation currently falls back to oriented extents (known limitation), and must never claim to show nonexistent real mesh edges.
+- [ ] Aim an existing assembly: ONE purple whole-assembly bound. Select member-edit: individual purple member boxes. Switch tools and run simulation repeatedly; no leftover purple or hidden authored original highlights.
+- [ ] Select first Weld part -> orange box; select second -> second orange box; after an actual acknowledged server success -> both briefly green. A server rejection -> failed second red, first remains orange; no false green. Repeat Spring and CrankCoupling.
+- [ ] Manual housing/shaft relationship: orange first and second, second red for invalid collision/offset, and brief green after successful relation creation; no early success effect before server confirmation.
+- [ ] In Assembly & Simulation, grounded bodies show green bounding boxes, free bodies blue; purple assembly selection overrides these without duplicate renderer shapes. Kinematic gear bodies must use the authored grounding state, not their temporary scripted-anchored state.
+- [ ] Native relationships use blue bearing arcs with green origin dot; powered bearings use orange arc and tiny POW; Slider uses blue line, green limit dots and blue position dot; Cylindrical combines line and arc; Springs remain native and blue when supported; Weld/Gear/Bolt create no persistent extra guides.
+- [ ] Confirm removing objects, undo/redo, loading plots, switching tools, respawn and simulation create no leaked `OPENWORKS_UIV2_Feedback` owner children or stale adornments. Compare FPS at 30/60/144 and with many primitives.
+- [ ] Geometry-level localized red interference for arbitrary rotated CSG remains **not yet verified/implemented**; current red invalid-preview indication is conservative and not an exact intersection-edge visualization. Do not waive this if exact-local-intersection is an acceptance requirement.
