@@ -12,6 +12,7 @@ local ConnectionCatalog=require(script.Parent:WaitForChild("ConnectionCatalog"))
 local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 local construction=RS:WaitForChild("Openworks"):WaitForChild("Construction")
 local Config=require(construction:WaitForChild("BuildConfig"))
+local Registry=require(construction:WaitForChild("PrimitiveRegistry"))
 local Grid=require(construction:WaitForChild("GridMath"))
 local ComponentGeometry=require(construction:WaitForChild("ComponentGeometry"))
 local Materials=require(construction:WaitForChild("MaterialCatalog"))
@@ -413,8 +414,10 @@ function Panel:NodeForModel(model,preferComponent)
                 members=members}
         end
     end
+    local entry=Registry.Get(model:GetAttribute("TemplateId") or model.Name)
     return {kind="primitive",id=id,key="p:"..tostring(id),
-        name=model.Name,model=model,members={model},
+        name=if entry then entry.DisplayName else model.Name,
+        model=model,members={model},
         componentId=cid,assemblyId=model:GetAttribute("AssemblyId")}
 end
 
@@ -822,6 +825,38 @@ function Panel:ConfirmAppearance(node)
     self:Message("Appearance confirmed")
 end
 
+-- Context actions enter the existing UI v2 Build/Edit subtool. Never
+-- manufacture an old native Edit Tool or bypass server ownership checks.
+function Panel:BeginBuildOperation(node,action)
+    if self.Tools.PrimaryId~="Build" then
+        self:Message("Equip Build to edit or save this construction")
+        return
+    end
+    if simulating() then
+        self:Message("Stop simulation before editing construction")
+        return
+    end
+    if self.Tools.SubtoolId~="Edit" then
+        self.Tools:SetSubtool("Edit")
+    end
+    self:CloseContext()
+    if node.kind=="component" then
+        self.Build:SetComponentSelection(node.componentId,
+            self.Build:ComponentMembers(node.componentId))
+    elseif node.kind=="primitive" and own(node.model) then
+        self.Build:SetSelection(node.model)
+    else
+        return
+    end
+    if action=="save" then
+        self.Build:OpenBankSave()
+    elseif action=="pivot" then
+        self.Build:EditFitPivot(false)
+    elseif action=="reset-pivot" then
+        self.Build:EditFitPivot(true)
+    end
+end
+
 function Panel:RenderObject(node)
     local member=node.members and node.members[1]
     if not own(member) then self:Value("Selection","Unavailable") return end
@@ -848,6 +883,23 @@ function Panel:RenderObject(node)
             end)
     end
     if not simulating() then
+        if self.Tools.PrimaryId=="Build" then
+            self:Section("Reusable construction")
+            if node.kind=="component" then
+                self:ActionButton("Save to My Components",
+                    "Save all members and internal mechanical relationships in your Component Bank",function()
+                        self:BeginBuildOperation(node,"save")
+                    end)
+            end
+            self:ActionButton("Set fitting origin",
+                "Choose a face, edge, or corner for the selected part or component",function()
+                    self:BeginBuildOperation(node,"pivot")
+                end)
+            self:ActionButton("Reset fitting origin",
+                "Restore the default centered alignment origin",function()
+                    self:BeginBuildOperation(node,"reset-pivot")
+                end)
+        end
         self:Section("Appearance")
         self:Cycle("Material",Materials.List(),
             member:GetAttribute("ConstructionMaterial") or "Steel")
