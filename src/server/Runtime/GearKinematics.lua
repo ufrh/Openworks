@@ -8,6 +8,8 @@
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local GearMath=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
+local Alignment=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
 
 local Kinematics={}
 Kinematics.__index=Kinematics
@@ -75,13 +77,17 @@ function Kinematics.new(graph,copies)
         if key and clone then
             local group=groups[key]
             if not group then
-                group={Id=key,Models={},Gears={},Racks={},Axis=nil,
+                group={Id=key,Models={},Gears={},Racks={},Shafts={},Axis=nil,
                     TravelAxis=nil,Center=nil,Grounded=false,Supported=false,
-                    FallVelocity=0,Followers={},Links={}}
+                    FallVelocity=0,Followers={},Links={},
+                    RotationBlocked=false,AngleDegrees=0,AngleLimits={}}
                 groups[key]=group
             end
             table.insert(group.Models,clone)
             byId[id]=group
+            if Alignment.IsShaft(original) then
+                table.insert(group.Shafts,clone)
+            end
             if isGear(original) then
                 local entry={Group=group,Model=clone,
                     Teeth=original:GetAttribute("GearTeeth")}
@@ -224,6 +230,27 @@ function Kinematics:ConfigureSupport(graph,copies,groundKeys,sessionFolder,
         if not sg or not tg or sg==tg then continue end
         local isS=self.Kinematic[sg]==true
         local isT=self.Kinematic[tg]==true
+        -- A Slider forbids relative angular motion. A Bearing permits
+        -- rotation only within its configured angles. The gear solver
+        -- must honor these rules for the WELDED shaft, not just its gear.
+        if edge.kind=="Slider" then
+            if isS then sg.RotationBlocked=true end
+            if isT then tg.RotationBlocked=true end
+        elseif edge.kind=="Bearing"
+            and edge.relation:GetAttribute("LimitsEnabled")==true then
+            local rotating=if isS then sg elseif isT then tg else nil
+            if rotating and #rotating.Gears>0 then
+                local shaft=if isS then copies[sourceId] else copies[targetId]
+                local sign=if shaft and rotating.Axis
+                    and rotating.Axis:Dot(shaft:GetPivot().RightVector)<0
+                    then -1 else 1
+                table.insert(rotating.AngleLimits,{
+                    Lower=edge.relation:GetAttribute("LowerLimit") or -180,
+                    Upper=edge.relation:GetAttribute("UpperLimit") or 180,
+                    Sign=sign,
+                })
+            end
+        end
         if isS and groundKeys["p:"..tostring(targetId)] then
             sg.Supported=true
         end
@@ -473,6 +500,12 @@ function Kinematics:Explain(id)
     if not group or not self.Kinematic[group] then
         return "Not a gear-driven rigid body"
     end
+    if #group.Gears>0 and #group.Shafts==0 then
+        return "Fit and weld a shaft through the gear hub"
+    end
+    if group.RotationBlocked then
+        return "The connected slider forbids shaft rotation"
+    end
     if #group.Links>0 then
         return string.format("%d automatic gear mesh(es)",#group.Links)
     end
@@ -561,6 +594,26 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
             end
         end
     end
+    -- A gear mesh drives the target's rigidly WELDED shaft. Refuse a
+    -- whole train if any driven shaft cannot rotate; do not animate a
+    -- floating gear body or bypass a slider/bearing angular stop.
+    for group,velocity in pairs(speed) do
+        if #group.Gears>0 then
+            if #group.Shafts==0 or group.RotationBlocked then
+                stalled=true
+                break
+            end
+            local nextAngle=group.AngleDegrees+math.deg(velocity*step)
+            for _,limit in ipairs(group.AngleLimits) do
+                local angle=nextAngle*limit.Sign
+                if angle<limit.Lower-0.001 or angle>limit.Upper+0.001 then
+                    stalled=true
+                    break
+                end
+            end
+            if stalled then break end
+        end
+    end
     -- The guide's physical end stops limit the whole connected train,
     -- never allow a rack to leave the rail while its pinion keeps turning.
     for group,velocity in pairs(speed) do
@@ -600,6 +653,7 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
                         model:PivotTo(delta*model:GetPivot())
                     end
                 end
+                group.AngleDegrees+=math.deg(velocity*step)
             end
         end
     end
