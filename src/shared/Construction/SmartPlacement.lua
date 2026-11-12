@@ -8,6 +8,8 @@ local Bore = require(script.Parent:WaitForChild("BoreClearance"))
 local HandCrankMath = require(script.Parent:WaitForChild("HandCrankMath"))
 local Grid = require(script.Parent:WaitForChild("GridMath"))
 local MultiFit = require(script.Parent:WaitForChild("MultiFitMath"))
+local FitOrigin = require(script.Parent:WaitForChild("FitOrigin"))
+local FitSolver = require(script.Parent:WaitForChild("FitSolver"))
 local Smart = {}
 Smart.SnapDistance = 2.0 -- unchanged for general hole/gear-to-gear snapping
 Smart.HubSnapRadius = 0.34 -- studs from the REAL bore/shaft axis, not gear bounds
@@ -526,12 +528,15 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
     end
     local best,bestScore=nil,math.huge
     local matches={}
+    local pivotAnchor=FitOrigin.ComponentAnchor(members)
     for _,source in ipairs(members) do
         local isShaft=Alignment.IsShaft(source)
         local isGear=gear(source)
         local isHub=hub(source)
         local isOpening=Alignment.TargetAxis(source)~=nil
-        if not isShaft and not isGear and not isOpening then continue end
+        -- A custom origin is a first-class fit feature on ANY primitive,
+        -- even on solid blocks, plates and custom CSG geometry.
+        local pivotSource=source==pivotAnchor
         for _,target in ipairs(targets) do
             if not target or not target.Parent or not target.PrimaryPart
                 or (ignored and ignored[target]) then continue end
@@ -682,6 +687,16 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                         -math.max(0,meshes-1)*0.5
                 end
             end
+            if not cf and pivotSource then
+                local pivot=FitSolver.PivotCandidate(
+                    ghost,target,aimRay,aimedModel,allTargets or targets)
+                if pivot then
+                    kind="Pivot"
+                    cf=pivot.cf
+                    approach=pivot.approach
+                    score=pivot.score
+                end
+            end
             if cf and kind=="Bore" and #members>1 then
                 local delta=cf*ghost:GetPivot():Inverse()
                 local chosenTargets=MultiFit.StationarySet(
@@ -758,6 +773,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     relationKind=if kind=="Bore" then "Cylindrical"
                         elseif kind=="CrankCoupling" then "Weld"
                         elseif kind=="Hub" then "Weld"
+                        elseif kind=="Pivot" then "FitOnly"
                         else "Gear",
                     reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score,
