@@ -1160,8 +1160,13 @@ local function handle(player, payload)
         return { ok = false, message = "Stop simulation before changing construction" }
     elseif mechanicalAction then
         if propertyAction then
-            if not hasEquippedTool(player,"Mechanics") then
-                return {ok=false,message="Use Mechanics / Configure to edit relationships"}
+            -- Contextual right-click editing is available from any OPENWORKS
+            -- native tool. Ownership, relation type, plot and simulation
+            -- checks remain server-authoritative in MechanicalService.
+            if not hasEquippedTool(player,"Mechanics")
+                and not hasEquippedTool(player,"Build")
+                and not hasEquippedTool(player,"AssemblySimulation") then
+                return {ok=false,message="Equip an OPENWORKS tool to edit relationships"}
             end
         elseif action=="SetGrounded" then
             if not hasEquippedTool(player,"AssemblySimulation") then
@@ -1176,8 +1181,10 @@ local function handle(player, payload)
             return {ok=false,message="Use Mechanics to modify relationships"}
         end
     elseif materialAction then
-        if not hasEquippedTool(player,"Build") then
-            return {ok=false,message="Use Build / Paint to apply paint or materials"}
+        if not hasEquippedTool(player,"Build")
+            and not hasEquippedTool(player,"Mechanics")
+            and not hasEquippedTool(player,"AssemblySimulation") then
+            return {ok=false,message="Equip an OPENWORKS tool to edit appearance"}
         end
     elseif verticalAction then
         if (payload.scope=="Assembly" and not hasEquippedTool(player,"AssemblySimulation"))
