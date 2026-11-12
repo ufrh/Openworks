@@ -8,6 +8,7 @@
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local PhysicalHandles = require(script.Parent:WaitForChild("PhysicalHandles"))
+local WorldMotion=require(script.Parent:WaitForChild("WorldMotion"))
 
 local Grid = require(
     game:GetService("ReplicatedStorage"):WaitForChild("Openworks")
@@ -96,9 +97,11 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
         OnDragStarted = onDragStarted,
         Visual = PhysicalHandles.new("Scale"),
         Connections = {},
-        CFrame = CFrame.identity,
-        Size = Vector3.one,
-        Mode = "None",
+        CFrame=CFrame.identity,
+        Size=Vector3.one,
+        VisualCF=nil,
+        VisualSize=nil,
+        Mode="None",
         TemplateSize = Vector3.one,
         Active = false,
         Hovered = nil,
@@ -118,10 +121,10 @@ function Gizmo.new(gui, onChange, onCommit, onDragStarted)
             self:FinishDrag()
         end
     end))
-    table.insert(self.Connections, RunService.RenderStepped:Connect(function()
+    table.insert(self.Connections,RunService.RenderStepped:Connect(function(dt)
         if self.Active then
             if self.Drag then self:UpdateDrag() end
-            self:UpdateHandles()
+            self:UpdateHandles(dt)
         end
     end))
     return self
@@ -133,17 +136,21 @@ function Gizmo:Open(cf,size,mode,templateSize,incrementU,fineDiameter,numericPre
     self.FineDiameter=fineDiameter==true
     self.NumericPrecision=numericPrecision==true
     self.Active = true
-    self.CFrame = cf
-    self.Size = size
-    self.Mode = mode
+    self.CFrame=cf
+    self.Size=size
+    self.VisualCF=cf
+    self.VisualSize=size
+    self.Mode=mode
     self.TemplateSize = templateSize
     self:UpdateHandles()
 end
 
 function Gizmo:Close()
-    self.Active = false
-    self.Drag = nil
-    self.Hovered = nil
+    self.Active=false
+    self.Drag=nil
+    self.Hovered=nil
+    self.VisualCF=nil
+    self.VisualSize=nil
 
     for _, grip in ipairs(self.Visual.Grips) do
         grip.Highlight.Enabled = false
@@ -153,10 +160,19 @@ function Gizmo:Close()
     end
 end
 
-function Gizmo:UpdateHandles()
+function Gizmo:UpdateHandles(dt)
     if not self.Active then return end
-    self.Visual:Update(self.CFrame, self.Size, function(axis)
-        return canUse(self.Mode, axis)
+    -- Handles chase the SAME visual dimensions as the resize ghost.
+    -- Drag plane calculations continue using exact CFrame/Size below.
+    if dt then
+        self.VisualCF=WorldMotion.Step(self.VisualCF,
+            self.CFrame,dt,WorldMotion.Profile.Scale)
+        self.VisualSize=WorldMotion.StepSize(self.VisualSize,
+            self.Size,dt,WorldMotion.Profile.Scale)
+    end
+    self.Visual:Update(self.VisualCF or self.CFrame,
+        self.VisualSize or self.Size,function(axis)
+        return canUse(self.Mode,axis)
     end)
     self.Hovered = if self.Drag then self.Drag.Handle else self.Visual:Pick()
 end

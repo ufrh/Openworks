@@ -784,7 +784,8 @@ function Layered:Start()
         if align and align.Stage=="Preview"
             and align.Preview and align.TargetPose then
             align.VisualPose=WorldMotion.Step(
-                align.VisualPose,align.TargetPose,dt,17)
+                align.VisualPose,align.TargetPose,dt,
+                WorldMotion.Profile.Placement)
             align.Preview:PivotTo(align.VisualPose)
         end
         if align and (align.Stage=="Preview" or align.Stage=="Fit") then

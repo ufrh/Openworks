@@ -136,6 +136,8 @@ function Controller.new(tools)
         ScaleGhost = nil,
         ScaleCF = nil,
         ScaleSize = nil,
+        ScaleVisualCF = nil,
+        ScaleVisualSize = nil,
         ScaleHandles = nil,
         DirectDragCandidate = nil,
         DirectDragActive = false,
@@ -1232,7 +1234,8 @@ function Controller:UpdatePreview()
         local dt=if self.PreviewTime>0 then visualNow-self.PreviewTime else 0
         self.PreviewTime=visualNow
         self.PreviewVisualPose=WorldMotion.Step(
-            self.PreviewVisualPose,self.PreviewCF,dt,15)
+            self.PreviewVisualPose,self.PreviewCF,dt,
+            WorldMotion.Profile.Placement)
         self.Preview:PivotTo(self.PreviewVisualPose)
         return
     end
@@ -1420,8 +1423,8 @@ function Controller:UpdatePreview()
     local now = os.clock()
     local dt = if self.PreviewTime > 0 then now - self.PreviewTime else 0
     self.PreviewTime = now
-    self.PreviewVisualPose = WorldMotion.Step(
-        self.PreviewVisualPose, cf, dt, 15
+    self.PreviewVisualPose=WorldMotion.Step(
+        self.PreviewVisualPose,cf,dt,WorldMotion.Profile.Placement
     )
     self.Preview:PivotTo(self.PreviewVisualPose)
     self:UpdateFitIndicators(match)
@@ -1729,7 +1732,8 @@ function Controller:Rotate(axis)
         local center = ComponentGeometry.Bounds(self.SelectedParts)
         local delta = center and RotationMath.Delta(axisName,1,center)
         if not delta then return end
-        local stop = WorldMotion.AnimateTurn(self.SelectedParts,delta,0.24)
+        local stop=WorldMotion.AnimateTurn(
+            self.SelectedParts,delta,WorldMotion.Profile.TurnSeconds)
         local ok = self:Request({
             action="RotateComponent",
             componentId=self.SelectedComponentId,
@@ -1741,7 +1745,8 @@ function Controller:Rotate(axis)
     elseif self.Mode == "Edit" and not self.Pending and self.Selected then
         local origin = self.Selected:GetPivot()
         local delta = RotationMath.Delta(axisName,1,origin.Position)
-        local stop = WorldMotion.AnimateTurn({self.Selected},delta,0.22)
+        local stop=WorldMotion.AnimateTurn(
+            {self.Selected},delta,WorldMotion.Profile.TurnSeconds)
         local ok=self:Request({
             action="RotatePrimitiveWorld",
             instanceId=self.Selected:GetAttribute("InstanceId"),
@@ -1845,8 +1850,16 @@ function Controller:BeginScale()
 
     self.ScaleMode = true
     player:SetAttribute("OPENWORKS_ScaleActive",true)
-    self.ScaleCF = cf
-    self.ScaleSize = self.CurrentSize
+    self.ScaleCF=cf
+    self.ScaleSize=self.CurrentSize
+    self.ScaleVisualCF=cf
+    self.ScaleVisualSize=self.CurrentSize
+    -- Scale preview and neon grips share one visual-motion profile.
+    -- The size and pivot sent to the server remain exact, unsmoothed.
+    if self.Mode=="Build" and self.Preview and self.Preview.PrimaryPart then
+        self.Preview.PrimaryPart.Size=self.CurrentSize
+        self.Preview:PivotTo(cf)
+    end
 
     if self.Mode == "Edit" then
         local ghost = model:Clone()
@@ -1894,13 +1907,25 @@ function Controller:UpdateScalePreview(cf, size)
     self.ScaleSize = size
     self.CurrentSize = size
 
-    local ghost = if self.Mode == "Edit" then self.ScaleGhost else self.Preview
-    if ghost and ghost.PrimaryPart then
-        ghost.PrimaryPart.Size = size
-        ghost:PivotTo(cf)
-        if not ghost.Parent then ghost.Parent = workspace end
-    end
+    -- A cursor drag updates the EXACT target instantly. Only its visible
+    -- geometry eases toward it; this is never used for collision or saving.
+    local ghost=if self.Mode=="Edit" then self.ScaleGhost else self.Preview
+    if ghost and not ghost.Parent then ghost.Parent=workspace end
     self:RefreshHUD()
+end
+
+function Controller:AdvanceScalePreview(dt)
+    if not self.ScaleMode or not self.ScaleCF or not self.ScaleSize then
+        return
+    end
+    local ghost=if self.Mode=="Edit" then self.ScaleGhost else self.Preview
+    if not ghost or not ghost.PrimaryPart then return end
+    self.ScaleVisualCF=WorldMotion.Step(self.ScaleVisualCF,
+        self.ScaleCF,dt,WorldMotion.Profile.Scale)
+    self.ScaleVisualSize=WorldMotion.StepSize(self.ScaleVisualSize,
+        self.ScaleSize,dt,WorldMotion.Profile.Scale)
+    ghost.PrimaryPart.Size=self.ScaleVisualSize
+    ghost:PivotTo(self.ScaleVisualCF)
 end
 
 function Controller:CommitScale(cf, size, oldCF, oldSize)
@@ -1946,13 +1971,24 @@ function Controller:EndScale()
     if self.ScaleGhost then
         self.ScaleGhost:Destroy()
         self.ScaleGhost = nil
+    elseif self.Mode=="Build" and self.Preview and self.Preview.PrimaryPart
+        and self.ScaleCF and self.ScaleSize then
+        -- Complete the visual edit before returning to Build placement.
+        -- Stale eased geometry must never be submitted to the server.
+        self.Preview.PrimaryPart.Size=self.ScaleSize
+        self.Preview:PivotTo(self.ScaleCF)
+        self.PreviewCF=self.ScaleCF
+        self.PreviewVisualPose=self.ScaleCF
+        self.LastPreviewCheck=0
     end
     if self.Selected and self.Selected.PrimaryPart then
         self.Selected.PrimaryPart.LocalTransparencyModifier = 0
     end
 
-    self.ScaleCF = nil
-    self.ScaleSize = nil
+    self.ScaleCF=nil
+    self.ScaleSize=nil
+    self.ScaleVisualCF=nil
+    self.ScaleVisualSize=nil
     self.IgnoreClickUntil = os.clock() + 0.2
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshPointer()
@@ -2098,8 +2134,16 @@ function Controller:VerticalNudge(key)
     end
     local fine=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-    self:Request({action="VerticalMove",scope=scope,id=id,
+    local affected=if scope=="Component" then self.SelectedParts
+        else if self.Selected then {self.Selected} else {}
+    local amount=(if fine then 0.05 else 0.25)*direction
+    local displacement=if axis=="X" then Vector3.new(amount,0,0)
+        elseif axis=="Y" then Vector3.new(0,amount,0)
+        else Vector3.new(0,0,amount)
+    local stop=WorldMotion.AnimateMove(affected,displacement)
+    local succeeded=self:Request({action="VerticalMove",scope=scope,id=id,
         axis=axis,direction=direction,fine=fine})
+    if not succeeded then stop() end
     self:RefreshHUD()
 end
 
@@ -2355,7 +2399,8 @@ function Controller:Start()
         end)
     end))
 
-    table.insert(self.Connections, RunService.RenderStepped:Connect(function()
+    table.insert(self.Connections,RunService.RenderStepped:Connect(function(dt)
+        self:AdvanceScalePreview(dt)
         -- Only the LIVE ghost is outlined while moving/copying/alignment.
         -- Never leave a second stale selection boundary at the original
         -- component location behind the ghost.

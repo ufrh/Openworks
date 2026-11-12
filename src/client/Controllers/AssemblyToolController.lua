@@ -13,6 +13,7 @@ local Construction=RS:WaitForChild("Openworks"):WaitForChild("Construction")
 local Config=require(Construction:WaitForChild("BuildConfig"))
 local Grid=require(Construction:WaitForChild("GridMath"))
 local Theme=require(script.Parent:WaitForChild("StudioTheme"))
+local WorldMotion=require(script.Parent:WaitForChild("WorldMotion"))
 
 local player=Players.LocalPlayer
 local PURPLE=Color3.fromRGB(179,115,255)
@@ -444,6 +445,14 @@ function Tool:VerticalNudge(key)
     end
     local fine=UIS:IsKeyDown(Enum.KeyCode.LeftShift)
         or UIS:IsKeyDown(Enum.KeyCode.RightShift)
+    -- One animation for every real member of the named assembly.
+    -- No implicit weld/constraint and no per-frame server writes.
+    local members=self:OwnedAssembly(id)
+    local amount=(if fine then 0.05 else 0.25)*direction
+    local displacement=if axis=="X" then Vector3.new(amount,0,0)
+        elseif axis=="Y" then Vector3.new(0,amount,0)
+        else Vector3.new(0,0,amount)
+    local stop=WorldMotion.AnimateMove(members,displacement)
     self.Busy=true
     local remote=RS:WaitForChild(Config.RequestName)
     local ok,answer=pcall(function()
@@ -451,6 +460,7 @@ function Tool:VerticalNudge(key)
             id=id,axis=axis,direction=direction,fine=fine})
     end)
     self.Busy=false
+    if not ok or type(answer)~="table" or not answer.ok then stop() end
     self.PreviewCache=""
     if not ok or type(answer)~="table" or not answer.ok then
         self:Tell(if ok and type(answer)=="table"

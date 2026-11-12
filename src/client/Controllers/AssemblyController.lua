@@ -983,7 +983,8 @@ function Controller:Start()
             or self:IsSimulating() then return end
         if self.Stage=="Preview" and self.PreviewModel and self.TargetPose then
             self.VisualPose=WorldMotion.Step(
-                self.VisualPose,self.TargetPose,dt,17)
+                self.VisualPose,self.TargetPose,dt,
+                WorldMotion.Profile.Placement)
             self.PreviewModel:PivotTo(self.VisualPose)
         end
         if self.Stage=="Preview" or self.Stage=="Fit" then
