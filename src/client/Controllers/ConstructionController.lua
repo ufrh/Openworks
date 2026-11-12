@@ -1452,7 +1452,9 @@ function Controller:OnModeChanged(mode)
     if mode == "Build" then
         if not self.CurrentId or not Registry.Get(self.CurrentId) then
             local entries = Registry.List()
-            if #entries > 0 then self:SelectPrimitive(entries[1].Id) end
+            if #entries > 0 and not self.CurrentBank then
+                self:SelectPrimitive(entries[1].Id)
+            end
         else
             self:RebuildPreview()
         end
@@ -2069,7 +2071,8 @@ function Controller:Activate(mode)
         if self.ScaleHandles then self.ScaleHandles:BeginDrag() end
         return
     end
-    if self.CatalogOpen or self.Busy
+    if self.CatalogOpen or (self.BankModal and self.BankModal.Visible)
+        or self.PivotSetting or self.Busy
         or os.clock() < (self.IgnoreClickUntil or 0) then return end
 
     if self.Layered and self.Layered:Click() then return end
@@ -2868,6 +2871,7 @@ function Controller:Start()
         Enum.RenderPriority.Camera.Value + 2, function()
             local open=self.CatalogOpen or self.PendingMateChoice~=nil
                 or (self.Numeric and self.Numeric.Active)
+                or (self.BankModal and self.BankModal.Visible)
 
             if player:GetAttribute("OPENWORKS_CursorUIOpen")~=open then
                 player:SetAttribute("OPENWORKS_CursorUIOpen",open)
@@ -2883,6 +2887,7 @@ function Controller:Start()
                 or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
                 or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
                 or (self.Numeric and self.Numeric.Active)
+                or (self.BankModal and self.BankModal.Visible)
                 or self.PendingMateChoice then
                 UserInputService.MouseBehavior=Enum.MouseBehavior.Default
                 UserInputService.MouseIconEnabled=true
