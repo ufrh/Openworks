@@ -878,6 +878,9 @@ def main() -> int:
           and 'self:FinishPendingHandoff(handoff,goal,models,success)' in selection
           and 'self:FinishPendingHandoff(handoff,goal,models,ok)' in selection
           and 'function WorldMotion.SettlePreview(' in motion
+          and 'function WorldMotion.NeedsHandoff(' in motion
+          and 'WorldMotion.NeedsHandoff(self.Preview,self.PreviewCF)' in selection
+          and 'if count>MAX_ANIMATED_PARTS then return false end' in motion
           and 'snapshot:SetAttribute("OPENWORKS_PresentationOnly",true)' in motion
           and 'snapshot:Destroy()' in motion
           and 'part.LocalTransparencyModifier=item.previous' in motion

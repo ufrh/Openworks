@@ -696,7 +696,10 @@ function Controller:CapturePendingHandoff()
     local models=if self.Pending=="ComponentMove"
         then table.clone(self.SelectedParts)
         else if self.Selected then {self.Selected} else {}
-    if #models==0 then return nil end
+    if #models==0 or #models>48
+        or not WorldMotion.NeedsHandoff(self.Preview,self.PreviewCF) then
+        return nil
+    end
     return self.Preview:Clone(),self.PreviewCF,models
 end
 

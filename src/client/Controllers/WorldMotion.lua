@@ -215,6 +215,25 @@ function WorldMotion.AnimateShaftPose(models,shaft:Model,opening:Model,
         WorldMotion.Profile.NudgeSeconds)
 end
 
+function WorldMotion.NeedsHandoff(preview:Model?,goal:CFrame):boolean
+    if not preview then return false end
+    local from=preview:GetPivot()
+    local distance=(goal.Position-from.Position).Magnitude
+    if distance>WorldMotion.Profile.TeleportDistance then return false end
+    if distance<0.012 and from.LookVector:Dot(goal.LookVector)>0.999985
+        and from.UpVector:Dot(goal.UpVector)>0.999985 then
+        return false
+    end
+    local count=0
+    for _,part in ipairs(preview:GetDescendants()) do
+        if part:IsA("BasePart") then
+            count+=1
+            if count>MAX_ANIMATED_PARTS then return false end
+        end
+    end
+    return true
+end
+
 -- After the server ACKs a drag, the blue preview may be one or two frames
 -- behind its exact saved CFrame. This short handoff bridges that remainder.
 -- The caller passes a disposable clone captured BEFORE CancelPending; the
