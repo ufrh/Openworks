@@ -931,12 +931,13 @@ def main() -> int:
           and 'Smart.HubFits(candidate,target)' in service
           and 'local opening=if mode=="Hub" then' in mechanical
           and 'local fitted,why=Smart.HubFits(source,target)' in mechanical)
-    check("Manual L gear alignment chooses real Rotation or Rigid",
-          'local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"' in layered
+    check("Manual L gear and pulley mounts auto-weld without alternate hub mode",
+          'local isHub=type(align.Target:GetAttribute("GearTeeth"))=="number"' in layered
+          and 'or align.Target:GetAttribute("PrimitiveFamily")=="Pulley"' in layered
           and 'mateKind="Hub"' in layered
           and 'relationKind=choice' in layered
-          and 'parent.UnifiedExplorer:ChooseFit(' in layered
-          and 'selected.FittedCount or 1))' in layered)
+          and 'onChoice("Rigid")' in layered
+          and 'parent.UnifiedExplorer:ChooseFit(' in layered)
     check("Simulation uses gear center axis for physical hinge",
           'JointFrames.ForOpening(edge.target)' in simulation
           and 'local explicit = axisOverride(model)' in read("src/shared/Construction/AlignmentMath.lua")
@@ -1314,7 +1315,7 @@ def main() -> int:
     panel_v2=read("src/client/Controllers/ContextEditor.lua")
     check("UI v2 primitive catalog is grouped, searchable and ID-stable",
           'Id = model.Name' in registry
-          and 'DisplayName = details.DisplayName' in registry
+          and 'DisplayName=presentation.DisplayName' in registry
           and 'function Catalog.Describe(' in catalog_meta
           and 'self.CatalogSearch.Text' in selection
           and 'CatalogMetadata.Categories' in selection
@@ -1341,7 +1342,7 @@ def main() -> int:
           and 'self:CloseBankSave()' in selection)
     check("UI v2 authored origins persist through preview and native geometry",
           'function Origin.PreviewLocal(ghost)' in fit_origin
-          and 'function FitSolver.SurfacePose(' in fit_solver
+          and 'function Solver.SurfacePose(' in fit_solver
           and 'FitSolver.SurfacePose(' in selection
           and 'function Controller:EditFitPivot(reset)' in selection
           and 'action="SetFitPivot"' in selection
