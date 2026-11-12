@@ -18,12 +18,14 @@ The in-game plot is isolated per player. Published Studio DataStore tests requir
 
 | Tool | Purpose |
 |---|---|
-| **Build** | Primitive catalog, placement, snapping, hole/shaft fitting, resizing |
-| **Edit** | Select/transform geometry, combine or ungroup components, author mechanical relationships |
+| **Build** | **One construction tool:** select, move, duplicate, resize, group, paint, fit shafts/holes, author mechanical relationships, and place new primitives with **B** |
 | **Assembly** | Create named assemblies and explicitly choose their primitives/components |
 | **Simulate** | Preview the aimed assembly in **purple**; P runs physics only for registered members |
 | **Inspect** | Inspect or select obstructed geometry |
 | **Weld** | Make explicit rigid physical welds between valid solids |
+| **Belt** | Route friction belts between shaft-mounted pulleys |
+
+**Combined Build controls:** Click to select existing geometry. Press **B** to open the primitive catalog; choosing a primitive enters repeatable placement. **Enter** exits placement and returns to selection without switching tools. **G** moves a selection, **F** duplicates, **V** resizes, **O** edits its alignment origin, and **Backspace** deletes selected geometry (**Shift+Backspace** deletes an aimed relationship). Enter exits temporary fitting, resizing and inspector workflows; numeric values and named assemblies keep Enter-to-confirm. Escape is not used by OpenWorks.
 
 The following three ideas **must never be conflated**:
 
@@ -35,7 +37,7 @@ A **mechanical relationship** restricts or permits motion. A distinct **actuator
 
 ## Assembly workflow
 
-Equip **Assembly**. Press **N** and name it; click primitives or whole components to toggle inclusion; **Alt + click** selects one primitive inside a component; press **Enter** to commit. **Ctrl+Z / Ctrl+Y** undo and redo assembly membership changes without switching tools. Aim at an existing assembly member and click to edit membership; **R** renames. Assemblies can include disconnected objects, but a simulation is rejected when a real relationship crosses into an unregistered part. Press **Esc** to cancel the draft.
+Equip **Assembly**. Press **N** and name it; click primitives or whole components to toggle inclusion; **Alt + click** selects one primitive inside a component; press **Enter** to commit. **Ctrl+Z / Ctrl+Y** undo and redo assembly membership changes without switching tools. Aim at an existing assembly member and click to edit membership; **R** renames. Assemblies can include disconnected objects, but a simulation is rejected when a real relationship crosses into an unregistered part. Press **Enter** with an empty draft to exit without saving.
 
 Equip **Simulate** and aim at a member to preview the complete saved assembly in **purple**. **P** starts/stops the assembly; **Shift+P** starts free, **G** toggles grounding before simulation, **O** pauses, and **U** resets. Clicking a running part opens the mechanical Properties inspector. Hold LMB and move the locked mouse horizontally on a properly coupled hand crank to supply physical torque.
 
