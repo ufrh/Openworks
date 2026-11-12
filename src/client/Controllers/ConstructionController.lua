@@ -451,6 +451,7 @@ function Controller:SelectPrimitive(id)
 end
 
 function Controller:ClearPreview()
+    if self.Feedback then self.Feedback:SetGhost(nil,true) end
     if self.Preview then self.Preview:Destroy() end
     if self.FitIndicatorRoot then self.FitIndicatorRoot:Destroy() end
     self.FitIndicatorRoot=nil
@@ -981,6 +982,7 @@ function Controller:RebuildPreview()
     end
     ghost.Parent = workspace
     self.Preview = ghost
+    if self.Feedback then self.Feedback:SetGhost(ghost,true) end
     self.PreviewValid = true
     self.LastPreviewCheck = 0
     self.PreviewVisualPose = nil
@@ -1420,6 +1422,7 @@ function Controller:UpdatePreview()
             self:RefreshHUD()
         end
         PreviewFeedback.Paint(self.Preview,self.PreviewValid)
+        if self.Feedback then self.Feedback:SetGhostValid(self.PreviewValid) end
         if previousValid~=self.PreviewValid
             or previousReason~=self.PreviewReason then
             self:RefreshHUD()
