@@ -6,12 +6,14 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ContextActionService=game:GetService("ContextActionService")
 local CameraAimRay=require(script.Parent:WaitForChild("CameraAimRay"))
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("Construction")
 local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
+local CatalogMetadata=require(construction:WaitForChild("PrimitiveCatalogMetadata"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentGeometry = require(construction:WaitForChild("ComponentGeometry"))
@@ -23,6 +25,11 @@ local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEdit
 local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local RotationMath = require(construction:WaitForChild("RotationMath"))
 local SmartPlacement = require(construction:WaitForChild("SmartPlacement"))
+local FitOrigin = require(construction:WaitForChild("FitOrigin"))
+local FitSolver = require(construction:WaitForChild("FitSolver"))
+local FitPivotHandle = require(script.Parent:WaitForChild("FitPivotHandle"))
+local FitPivotSnap = require(script.Parent:WaitForChild("FitPivotSnap"))
+local ComponentBankPreview=require(script.Parent:WaitForChild("ComponentBankPreview"))
 local MultiFit = require(construction:WaitForChild("MultiFitMath"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local BoreClearance = require(construction:WaitForChild("BoreClearance"))
@@ -107,6 +114,9 @@ function Controller.new(tools)
         SelectedParts = {},
         SelectedComponentId = nil,
         EditingComponentId = nil,
+        PivotSetting = false,
+        PivotModeIndex=1,
+        FitPivotHandle = nil,
         SelectionHighlights = {},
         GroupAnchor = nil,
         Pending = nil, -- "Move", "Copy", or nil
@@ -123,6 +133,13 @@ function Controller.new(tools)
         SmartBoreKind = "Cylindrical",
         SmartLastScan = 0,
         CatalogOpen = false,
+        CurrentBank=nil,
+        BankModal=nil,
+        BankEntries={},
+        BankConfirmRemove=nil,
+        CatalogCollapsed={},
+        BankLoaded=false,
+        CurrentDisplayName=nil,
         ScaleMode = false,
         NumericPrecision = false,
         Numeric = nil,
@@ -191,17 +208,30 @@ function Controller:MakeUI()
         Visible = false,
     }, gui), 10)
 
-    label(catalog, "PRIMITIVES", UDim2.fromOffset(220, 30), UDim2.fromOffset(13, 9), 17)
+    label(catalog, "BUILD LIBRARY", UDim2.fromOffset(220, 30), UDim2.fromOffset(13, 9), 17)
     local close = button(catalog, "×  CLOSE", UDim2.fromOffset(90, 29), UDim2.fromOffset(226, 10))
     close.Activated:Connect(function() self:ShowCatalog(false) end)
 
-    label(catalog, "Select a Studio-precompiled primitive", UDim2.fromOffset(300, 24),
+    label(catalog, "Place primitives or saved custom components", UDim2.fromOffset(300, 24),
         UDim2.fromOffset(13, 40), 12, MUTED)
 
+    local search=create("TextBox",{
+        Name="Search",Text="",PlaceholderText="Search parts or components…",
+        ClearTextOnFocus=false,BackgroundColor3=PANEL,
+        TextColor3=TEXT,PlaceholderColor3=MUTED,
+        Font=Enum.Font.GothamMedium,TextSize=13,
+        TextXAlignment=Enum.TextXAlignment.Left,
+        Position=UDim2.fromOffset(12,72),
+        Size=UDim2.new(1,-24,0,34),BorderSizePixel=0,
+    },catalog)
+    rounded(search,7)
+    create("UIPadding",{
+        PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,10),
+    },search)
     local list = create("ScrollingFrame", {
         Name = "Items",
-        Position = UDim2.fromOffset(12, 71),
-        Size = UDim2.new(1, -24, 1, -84),
+        Position = UDim2.fromOffset(12,116),
+        Size = UDim2.new(1, -24, 1, -175),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 5,
@@ -209,6 +239,38 @@ function Controller:MakeUI()
         CanvasSize = UDim2.fromOffset(0, 0),
     }, catalog)
     create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+    local registerButton=button(catalog,"REGISTER SELECTED COMPONENT",
+        UDim2.new(1,-24,0,30),UDim2.new(0,12,1,-39))
+    registerButton.Activated:Connect(function() self:OpenBankSave() end)
+
+    local modal=rounded(create("Frame",{
+        Name="OPENWORKS_BankSave",Visible=false,ZIndex=42,
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.fromScale(0.5,0.43),Size=UDim2.fromOffset(370,172),
+        BackgroundColor3=DARK,BorderSizePixel=0,
+    },gui),10)
+    local modalTitle=label(modal,"SAVE COMPONENT TO BANK",
+        UDim2.fromOffset(342,24),UDim2.fromOffset(15,11),16)
+    modalTitle.ZIndex=43
+    local input=create("TextBox",{
+        Name="ComponentName",ZIndex=43,Text="",PlaceholderText="Component name",
+        ClearTextOnFocus=false,Size=UDim2.fromOffset(340,39),
+        Position=UDim2.fromOffset(15,45),BackgroundColor3=PANEL,
+        TextColor3=TEXT,PlaceholderColor3=MUTED,
+        TextSize=14,Font=Enum.Font.GothamMedium,BorderSizePixel=0,
+    },modal)
+    rounded(input,7)
+    local save=button(modal,"SAVE COMPONENT",
+        UDim2.fromOffset(164,37),UDim2.fromOffset(15,105))
+    local cancel=button(modal,"CANCEL",
+        UDim2.fromOffset(164,37),UDim2.fromOffset(191,105))
+    save.ZIndex=43
+    cancel.ZIndex=43
+    save.Activated:Connect(function() self:ConfirmBankSave() end)
+    cancel.Activated:Connect(function() self:CloseBankSave() end)
+    input.FocusLost:Connect(function(enter)
+        if enter and modal.Visible then self:ConfirmBankSave() end
+    end)
 
     -- The primitive catalog alone unlocks the mouse. Resizing always uses
     -- the center crosshair with a locked first-person pointer.
@@ -232,6 +294,13 @@ function Controller:MakeUI()
     self.Catalog = catalog
     self.List = list
     self.Unlock = unlock
+    self.BankModal=modal
+    self.BankNameInput=input
+    self.BankRegisterButton=registerButton
+    self.CatalogSearch=search
+    search:GetPropertyChangedSignal("Text"):Connect(function()
+        if self.CatalogOpen then self:RefreshCatalog() end
+    end)
     self.Crosshair = crosshair
     self.Numeric = NumericSizePanel.new(gui)
     self.MateChoice = MateChoicePanel.new(gui)
@@ -245,36 +314,209 @@ function Controller:MakeUI()
     end)
 end
 
+function Controller:BankRequest(payload)
+    local ok,result=pcall(function() return self.Remote:InvokeServer(payload) end)
+    if not ok or type(result)~="table" or not result.ok then
+        self:Message(if ok and type(result)=="table"
+            then tostring(result.message) else "Component bank unavailable")
+        return nil
+    end
+    return result.data,result
+end
+
+function Controller:RefreshBankEntries()
+    local data=self:BankRequest({action="ListComponentBank"})
+    self.BankEntries=if data and type(data.entries)=="table"
+        then data.entries else {}
+    self.BankLoaded=true
+end
+
 function Controller:RefreshCatalog()
-    for _, child in ipairs(self.List:GetChildren()) do
-        if child:IsA("TextButton") or child:IsA("TextLabel") then
-            child:Destroy()
+    if not self.List then return end
+    for _,child in ipairs(self.List:GetChildren()) do
+        if child:IsA("TextButton") or child:IsA("TextLabel")
+            or child:IsA("Frame") then child:Destroy() end
+    end
+    local search=if self.CatalogSearch
+        then self.CatalogSearch.Text:lower():match("^%s*(.-)%s*$")
+        else ""
+    local searching=search~=""
+    local order=0
+    local visibleItems=0
+    local function advance()
+        order+=1
+        return order
+    end
+    local function header(name,count)
+        local collapsed=self.CatalogCollapsed[name]==true
+        local h=button(self.List,
+            (if collapsed and not searching then "▸  " else "▾  ")
+                ..name:upper().."    "..tostring(count),
+            UDim2.new(1,-7,0,29))
+        h.LayoutOrder=advance()
+        h.TextColor3=Theme.Accent
+        h.TextXAlignment=Enum.TextXAlignment.Left
+        h.Activated:Connect(function()
+            if not searching then
+                self.CatalogCollapsed[name]=not collapsed
+                self:RefreshCatalog()
+            end
+        end)
+        return not collapsed or searching
+    end
+    local bank={}
+    for _,entry in ipairs(self.BankEntries) do
+        if not searching or (entry.name.." saved component bank")
+            :lower():find(search,1,true) then
+            table.insert(bank,entry)
         end
     end
+    if #bank>0 or not searching then
+        if header("My Components",#bank) then
+            if #bank==0 then
+                local empty=label(self.List,
+                    "Nothing saved yet  ·  Select a component, Shift+B",
+                    UDim2.new(1,-8,0,36),UDim2.fromOffset(0,0),12,MUTED)
+                empty.LayoutOrder=advance()
+            end
+            for _,entry in ipairs(bank) do
+                visibleItems+=1
+                local row=create("Frame",{
+                    Size=UDim2.new(1,-7,0,38),
+                    BackgroundTransparency=1,BorderSizePixel=0,
+                    LayoutOrder=advance(),
+                },self.List)
+                local use=button(row,entry.name.."  ·  "..tostring(entry.parts).." parts",
+                    UDim2.new(1,-44,1,0),UDim2.fromOffset(0,0))
+                use.TextXAlignment=Enum.TextXAlignment.Left
+                use.Activated:Connect(function()
+                    self:SelectBank(entry.id)
+                    self:ShowCatalog(false)
+                end)
+                local remove=button(row,
+                    if self.BankConfirmRemove==entry.id then "?" else "×",
+                    UDim2.fromOffset(38,38),UDim2.new(1,-38,0,0))
+                remove.Activated:Connect(function()
+                    if self.BankConfirmRemove~=entry.id then
+                        self.BankConfirmRemove=entry.id
+                        self:Message("Click ? again to remove "..entry.name.." from the bank")
+                        self:RefreshCatalog()
+                        return
+                    end
+                    self.BankConfirmRemove=nil
+                    local _,result=self:BankRequest({
+                        action="RemoveComponentBank",bankId=entry.id,
+                    })
+                    if result then
+                        self:RefreshBankEntries()
+                        self:RefreshCatalog()
+                    end
+                end)
+            end
+        end
+    end
+    local grouped={}
+    local entries=Registry.List()
+    for _,entry in ipairs(entries) do
+        if not searching or entry.SearchText:find(search,1,true) then
+            local group=entry.Category
+            if not grouped[group] then grouped[group]={} end
+            table.insert(grouped[group],entry)
+        end
+    end
+    for _,category in ipairs(CatalogMetadata.Categories) do
+        local group=grouped[category]
+        if group and #group>0 and header(category,#group) then
+            for _,entry in ipairs(group) do
+                visibleItems+=1
+                local b=button(self.List,entry.DisplayName,
+                    UDim2.new(1,-7,0,34))
+                b.LayoutOrder=advance()
+                b.TextXAlignment=Enum.TextXAlignment.Left
+                b.BackgroundColor3=if entry.Id==self.CurrentId
+                    and self.Mode=="Build" and not self.CurrentBank
+                    then Theme.Active else PANEL
+                b.Activated:Connect(function()
+                    self:SelectPrimitive(entry.Id)
+                    self:ShowCatalog(false)
+                end)
+            end
+        end
+    end
+    if #entries==0 then
+        local missing=label(self.List,
+            "No primitives found. Generate and save the Studio library.",
+            UDim2.new(1,-8,0,54),UDim2.fromOffset(0,0),13,MUTED)
+        missing.LayoutOrder=advance()
+    elseif searching and visibleItems==0 then
+        local empty=label(self.List,"No parts match “"..search.."”",
+            UDim2.new(1,-8,0,42),UDim2.fromOffset(0,0),13,MUTED)
+        empty.LayoutOrder=advance()
+    end
+end
 
-    local entries = Registry.List()
-    if #entries == 0 then
-        local missing = label(self.List, "No primitives found. Run the Studio generator and save the place.",
-            UDim2.new(1, -8, 0, 75), UDim2.fromOffset(0, 0), 13, MUTED)
-        missing.LayoutOrder = 1
+function Controller:CloseBankSave()
+    if self.BankModal then self.BankModal.Visible=false end
+    self:RefreshPointer()
+end
+
+function Controller:OpenBankSave()
+    if self.Tools.ActiveId~="Build" or self.Mode~="Edit"
+        or not self.SelectedComponentId or self.Pending or self.PivotSetting then
+        self:Message("Select a completed component in Build before registering")
         return
     end
+    self:ShowCatalog(false)
+    self.BankNameInput.Text=""
+    self.BankModal.Visible=true
+    self.BankNameInput:CaptureFocus()
+    self:RefreshPointer()
+end
 
-    for index, entry in ipairs(entries) do
-        local b = button(self.List, entry.Id, UDim2.new(1, -7, 0, 32))
-        b.LayoutOrder = index
-        b.BackgroundColor3 = if entry.Id == self.CurrentId then Theme.Active else PANEL
-        b.Activated:Connect(function()
-            self:SelectPrimitive(entry.Id)
-            self:ShowCatalog(false)
-        end)
+function Controller:ConfirmBankSave()
+    if not self.BankModal or not self.BankModal.Visible then return end
+    local name=self.BankNameInput.Text:match("^%s*(.-)%s*$")
+    if #name==0 then self:Message("Enter a component name") return end
+    local _,result=self:BankRequest({
+        action="RegisterComponentBank",
+        componentId=self.SelectedComponentId,name=name,
+    })
+    if not result then return end
+    self:CloseBankSave()
+    self:Message(result.message)
+end
+
+function Controller:SelectBank(id)
+    if self.Tools.ActiveId~="Build" then return end
+    local data=self:BankRequest({action="GetComponentBank",bankId=id})
+    if not data or type(data.parts)~="table" then return end
+    local test,anchor=ComponentBankPreview.Create(data)
+    if not test then
+        self:Message(tostring(anchor or "Blueprint geometry is unavailable"))
+        return
     end
+    local anchorSize=anchor.PrimaryPart.Size
+    test:Destroy()
+    if self.Assembly then self.Assembly:Reset() end
+    self:CancelPending()
+    self:SetSelection(nil)
+    self.Mode="Build"
+    if self.Layered then self.Layered:OnModeChanged("Build") end
+    self.CurrentBank=data
+    self.CurrentDisplayName=data.name
+    self.CurrentId=nil
+    self.CurrentSize=anchorSize
+    self.Steps={x=0,y=0,z=0}
+    self.NumericPrecision=false
+    self:RebuildPreview()
+    self:RefreshHUD()
 end
 
 function Controller:RefreshPointer()
     -- Locked-mouse freecam uses center aiming unless a GUI explicitly
     -- needs cursor interaction. Scale and construction share center aim.
-    local unlocked=self.CatalogOpen or self.PendingMateChoice~=nil
+    local unlocked=self.CatalogOpen or (self.BankModal and self.BankModal.Visible)
+        or self.PendingMateChoice~=nil
     -- The click-only relationship picker owns its own full-screen modal
     -- surface; never show the catalog's invisible hitbox over the dialog.
     self.Unlock.Visible = self.CatalogOpen
@@ -291,7 +533,8 @@ end
 function Controller:ShowCatalog(visible)
     if visible and self.ScaleMode then self:EndScale() end
     local wasOpen = self.CatalogOpen
-    self.CatalogOpen = visible and self.Mode == "Build"
+    self.CatalogOpen = visible and (self.Mode=="Build" or self.Mode=="Edit")
+        and self.Tools.ActiveId=="Build"
     if wasOpen and not self.CatalogOpen then
         self.IgnoreClickUntil = os.clock() + 0.2
     end
@@ -299,6 +542,7 @@ function Controller:ShowCatalog(visible)
     self:RefreshPointer()
 
     if self.CatalogOpen then
+        self:RefreshBankEntries()
         self:RefreshCatalog()
     end
     self:RefreshHUD()
@@ -310,21 +554,30 @@ function Controller:Message(text)
     self:RefreshHUD()
 end
 
+function Controller:DisplayName(model)
+    if not model then return "" end
+    local id=model:GetAttribute("TemplateId") or model.Name
+    local entry=Registry.Get(id)
+    return if entry then entry.DisplayName else model.Name
+end
+
 function Controller:RefreshHUD()
     if not self.Gui then return end
     self.Gui.Enabled = self.Mode == "Build" or self.Mode == "Edit" or self.Mode == "Inspect"
     if not self.Gui.Enabled then return end
 
     local mode = self.Mode
-    local current = self.CurrentId or "Choose a primitive"
+    local current = self.CurrentDisplayName
+        or self.CurrentId or "Choose a primitive"
     local size = self.CurrentSize
 
-    self.TitleLabel.Text = "OPENWORKS  /  " .. string.upper(mode)
+    self.TitleLabel.Text = "OPENWORKS  /  "
+        .. (if mode=="Build" or mode=="Edit" then "BUILD" else string.upper(mode))
     if self.SmartMatch and not (self.Layered and self.Layered.Alignment)
         and (self.Mode == "Build" or self.Pending) then
         local match=self.SmartMatch
         self.DetailLabel.Text=string.upper(match.relationKind)
-            .. " / "..tostring(match.target.Name)
+            .. " / "..self:DisplayName(match.target)
             .. (if match.kind=="Bore" and (match.fittedCount or 0)>1
                 then "  •  "..tostring(match.fittedCount).." points" else "")
         self.HelpLabel.Text=if match.kind=="Bore"
@@ -337,8 +590,7 @@ function Controller:RefreshHUD()
             then (if self.Mode=="Build" then "Click to place meshed gear" else "Release to position gear")
                 .. " • automatic engagement in Simulate • Tab target • Alt free"
             elseif match.kind=="Hub"
-            then "Click to choose Rotation or Rigid mount"
-                .. " • wheel insertion depth"
+            then "Click to weld pulley/gear onto shaft • wheel insertion depth"
             elseif match.kind=="BoltHole" then
                 (if self.Mode=="Build" then "Click to place bolt"
                     else "Release to fasten bolt")
@@ -349,7 +601,7 @@ function Controller:RefreshHUD()
         local alignment = self.Layered.Alignment
         if alignment.Stage == "PickTarget" then
             self.DetailLabel.Text = "ALIGN SHAFT  /  choose an opening"
-            self.HelpLabel.Text = "Aim at tube or drilled hole • click • Tab behind • Esc cancel"
+            self.HelpLabel.Text = "Aim at tube or drilled hole • click • Tab behind • Enter cancel"
         elseif alignment.Stage == "Fit" then
             local shaft = alignment.Shaft
             local diameter = if shaft and shaft.PrimaryPart
@@ -357,11 +609,11 @@ function Controller:RefreshHUD()
             self.DetailLabel.Text = string.format(
                 "SHAFT FIT  /  %.2f U diameter", diameter)
             self.HelpLabel.Text =
-                "Scroll 0.05 U to snug fit • click / Esc to finish"
+                "Scroll 0.05 U to snug fit • click / Enter to finish"
         else
             self.DetailLabel.Text = "INSERTION OFFSET  /  "
                 .. tostring(alignment.OffsetUnits) .. " U"
-            self.HelpLabel.Text = "Mouse wheel changes depth • click confirm • Esc cancel"
+            self.HelpLabel.Text = "Mouse wheel changes depth • click confirm • Enter cancel"
         end
     elseif self.Mode == "Inspect" then
         local target = self.Selected
@@ -374,11 +626,17 @@ function Controller:RefreshHUD()
         end
         self.DetailLabel.Text = (if self.SelectedComponentId then
             "Component / " .. tostring(#self.SelectedParts) .. " parts"
-            elseif target then target.Name else "Aim and click to inspect")
+            elseif target then self:DisplayName(target) else "Aim and click to inspect")
             .. (if dimensions then string.format("  /  %.1f × %.1f × %.1f U",
                 dimensions.X / Grid.Unit, dimensions.Y / Grid.Unit,
                 dimensions.Z / Grid.Unit) else "")
         self.HelpLabel.Text = "Tab depth • Shift+Tab reverse • X X-ray • I isolate"
+    elseif self.CatalogOpen then
+        self.DetailLabel.Text="BUILD LIBRARY / parts and saved components"
+        self.HelpLabel.Text="Search or expand groups • choose a part • Enter close"
+    elseif self.PivotSetting then
+        self.DetailLabel.Text="FIT ORIGIN / "..FitPivotSnap.Modes[self.PivotModeIndex]
+        self.HelpLabel.Text="Aim + click set • Q/E: cursor, face, edge, corner • Enter / Shift+O"
     elseif self.ScaleMode then
         self.DetailLabel.Text = current .. (if self.ScaleSize then
             "  •  " .. string.format("%.2g × %.2g × %.2g U",
@@ -394,32 +652,32 @@ function Controller:RefreshHUD()
     elseif mode == "Build" then
         self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
             size.X / Grid.Unit, size.Y / Grid.Unit, size.Z / Grid.Unit) else "")
-        self.HelpLabel.Text = if self.CatalogOpen then "Choose a primitive • B/Esc close"
-            else "B catalog • R/T/Y rotate • V grips • N precise U size"
+        self.HelpLabel.Text = if self.CatalogOpen then "Choose a primitive • B/Enter close"
+            else "Click place • R/T/Y rotate • V grips • N size • Enter select"
     elseif self.Pending == "Move" then
-        self.DetailLabel.Text = "MOVE  /  " .. (self.Selected and self.Selected.Name or "")
-        self.HelpLabel.Text = "Click to place  •  R/T/Y rotate  •  Esc cancel"
+        self.DetailLabel.Text = "MOVE  /  " .. self:DisplayName(self.Selected)
+        self.HelpLabel.Text = "Click to place  •  R/T/Y rotate  •  Enter cancel"
     elseif self.Pending == "Copy" then
         self.DetailLabel.Text = "DUPLICATE  /  " .. current
-        self.HelpLabel.Text = "Click to place copy  •  R/T/Y rotate  •  Esc cancel"
+        self.HelpLabel.Text = "Click to place copy  •  R/T/Y rotate  •  Enter cancel"
     elseif self.SelectedComponentId then
         self.DetailLabel.Text = (if self.Pending == "ComponentMove" then "MOVING COMPONENT"
             elseif self.Pending == "ComponentCopy" then "COPYING COMPONENT"
             else "Rigid component") .. "  /  " .. tostring(#self.SelectedParts) .. " primitives"
         self.HelpLabel.Text = if self.Pending then
-            "Aim and click to confirm  •  R/T/Y rotate  •  Esc cancel"
+            "Aim and click to confirm  •  R/T/Y rotate  •  Enter cancel"
             else "Double-click member to edit • G move • E interior • U ungroup"
     elseif #self.SelectedParts > 1 then
         self.DetailLabel.Text = tostring(#self.SelectedParts) .. " primitives selected"
         self.HelpLabel.Text = "C combine  •  Shift+click to change selection"
     elseif self.EditingComponentId then
-        self.DetailLabel.Text = (self.Selected and self.Selected.Name or "Editing component")
+        self.DetailLabel.Text = (if self.Selected then self:DisplayName(self.Selected) else "Editing component")
             .. "  /  component interior"
         self.HelpLabel.Text = "Click other members • V scale • E select whole component"
     else
         local target = self.Selected
-        self.DetailLabel.Text = if target then target.Name .. " / V grips • N exact U" else "Click a constructed piece"
-        self.HelpLabel.Text = "Tab depth • X X-ray • I isolate • L align • V scale"
+        self.DetailLabel.Text = if target then self:DisplayName(target) .. " / V grips • N exact U" else "Click a constructed piece"
+        self.HelpLabel.Text = "Click select • B add primitive • G move • V scale • O origin"
     end
 
     if self.Layered and self.Layered.Alignment
@@ -438,15 +696,34 @@ function Controller:RefreshHUD()
 end
 
 function Controller:SelectPrimitive(id)
+    if self.Tools.ActiveId~="Build" then return end
+    if self.Assembly then self.Assembly:Reset() end
+    self:CancelPending()
+    self:SetSelection(nil)
+    self.Mode="Build" -- placement context within the same native Build tool
+    if self.Layered then self.Layered:OnModeChanged("Build") end
     self.NumericPrecision=false
     local entry = Registry.Get(id)
     if not entry then return end
 
+    self.CurrentBank=nil
+    self.CurrentDisplayName=entry.DisplayName
     self.CurrentId = id
     self.CurrentSize = entry.Model.PrimaryPart.Size
     self.Steps = { x = 0, y = 0, z = 0 }
     self.Pending = nil
     self:RebuildPreview()
+    self:RefreshHUD()
+end
+
+function Controller:StopPlacement()
+    if self.Mode~="Build" then return end
+    self:ClearSmartMatch()
+    self:ClearPreview()
+    self.CurrentBank=nil
+    self.CurrentDisplayName=nil
+    self.Mode="Edit" -- selection context; never requires another hotbar tool
+    if self.Layered then self.Layered:OnModeChanged("Edit") end
     self:RefreshHUD()
 end
 
@@ -637,12 +914,12 @@ end
 
 function Controller:OpenMateChoice(mode)
     local match=self.SmartMatch
-    if not match or (match.kind~="Bore" and match.kind~="Hub")
+    if not match or match.kind~="Bore"
         or self.PendingMateChoice then
         return false
     end
-    -- One click on a valid hole/shaft or gear/shaft fit opens a mouse
-    -- picker. Bore users can still choose "Adjust depth / roll first",
+    -- A hole/shaft fit opens a motion picker. Gear hubs weld immediately.
+    -- Bore users can still choose "Adjust depth / roll first",
     -- then click once more to reopen this picker after adjustments.
     if match.kind=="Bore" and not self.LockedAlignment then
         if not self:BeginAlignmentPositioning() then return false end
@@ -682,7 +959,7 @@ function Controller:OpenMateChoice(mode)
         end
         self:RefreshPointer()
         self:RefreshHUD()
-    end, match.fittedCount or 1, match.kind=="Hub")
+    end, match.fittedCount or 1, false)
     return true
 end
 
@@ -713,7 +990,7 @@ end
 
 function Controller:SmartDrop(chosenKind)
     local match=self.SmartMatch
-    if not match or not match.target.Parent
+    if not match or match.kind=="Pivot" or not match.target.Parent
         or self.Pending=="Copy" or self.Pending=="ComponentCopy" then
         return false
     end
@@ -721,7 +998,7 @@ function Controller:SmartDrop(chosenKind)
         self:Message(self.PreviewReason or "Red snap: physical interference")
         return true
     end
-    if (match.kind=="Bore" or match.kind=="Hub") and not chosenKind then
+    if match.kind=="Bore" and not chosenKind then
         return self:OpenMateChoice("Edit")
     end
     -- A multi-primitive ghost pivots at its central anchor, but the
@@ -968,6 +1245,8 @@ function Controller:RebuildPreview()
         source = self.Selected
     elseif self.Pending == "Copy" and self.Selected then
         source = self.Selected
+    elseif self.Mode=="Build" and self.CurrentBank then
+        source=ComponentBankPreview.Create(self.CurrentBank)
     elseif self.Mode == "Build" and self.CurrentId then
         local entry = Registry.Get(self.CurrentId)
         source = entry and entry.Model
@@ -977,6 +1256,9 @@ function Controller:RebuildPreview()
     local ghost = if source.Name == "OPENWORKS_ComponentGhost" then source else source:Clone()
     ghost.Name = "OPENWORKS_Ghost"
     local combined=source.Name=="OPENWORKS_ComponentGhost"
+    -- Logical pivot scope is explicit: a primitive may contain nested
+    -- decorative models, but only a component ghost contains editable members.
+    ghost:SetAttribute("FitPivotScope",if combined then "Component" else "Primitive")
     -- A component ghost is ONE presentation. Per-member transparent parts
     -- multiply shadow/shading through overlaps, so make their color solid
     -- and use one top-level Highlight for the complete assembled shape.
@@ -1017,7 +1299,7 @@ function Controller:RebuildPreview()
         DepthMode=Enum.HighlightDepthMode.Occluded,
     },ghost)
 
-    if self.Mode=="Build" and self.CurrentId then
+    if self.Mode=="Build" and self.CurrentId and not self.CurrentBank then
         ghost:SetAttribute("TemplateId",self.CurrentId)
         ghost:SetAttribute("InstanceId","OPENWORKS_Preflight")
     end
@@ -1060,6 +1342,7 @@ function Controller:RefreshSelectionHighlights()
 end
 
 function Controller:SetSelection(model)
+    self.PivotSetting=false
     if self.Selected == model and not self.SelectedComponentId and #self.SelectedParts <= 1 then return end
     self:CancelPending()
     self.Selected = model
@@ -1092,6 +1375,7 @@ function Controller:ComponentMembers(componentId)
 end
 
 function Controller:SetComponentSelection(componentId, membersOverride)
+    self.PivotSetting=false
     self:CancelPending()
     self.Selected = nil
     self.SelectedComponentId = componentId
@@ -1102,7 +1386,7 @@ function Controller:SetComponentSelection(componentId, membersOverride)
     else
         -- Always grab the primitive nearest the component's geometric
         -- center, even when selection order or authored dimensions change.
-        self.GroupAnchor = ComponentGeometry.CentralPrimitive(self.SelectedParts)
+        self.GroupAnchor = FitOrigin.ComponentAnchor(self.SelectedParts)
         self.CurrentId = self.GroupAnchor:GetAttribute("TemplateId")
         self.CurrentSize = self.GroupAnchor.PrimaryPart.Size
         self.Steps = attributesSteps(self.GroupAnchor)
@@ -1161,6 +1445,10 @@ function Controller:CancelPending()
 end
 
 function Controller:OnModeChanged(mode)
+    -- Build is one equipped tool: selecting and creating are contextual.
+    -- Equipping it always starts in selection, not with an unwanted ghost.
+    if mode=="Build" then mode="Edit" end
+    self.PivotSetting=false
     if mode~="Edit" and self.MaterialPicker then
         self.MaterialPicker:Close()
     end
@@ -1168,6 +1456,8 @@ function Controller:OnModeChanged(mode)
     self.DirectDragActive = false
     self:EndScale()
     self:CancelPending()
+    self:CloseBankSave()
+    self.CurrentBank=nil
     self.Mode = mode
     if self.MateChoice then self.MateChoice:Hide() end
     self.PendingMateChoice=nil
@@ -1183,14 +1473,6 @@ function Controller:OnModeChanged(mode)
         self:ClearPreview()
         self:RefreshHUD()
         return
-    end
-    if mode == "Build" then
-        if not self.CurrentId or not Registry.Get(self.CurrentId) then
-            local entries = Registry.List()
-            if #entries > 0 then self:SelectPrimitive(entries[1].Id) end
-        else
-            self:RebuildPreview()
-        end
     end
     self:RefreshHUD()
 end
@@ -1338,12 +1620,23 @@ function Controller:UpdatePreview()
             self.Preview,proposed,hit.Position,hit.Normal,hit.Instance)
             else SurfacePlacement.SnapToSurface(self.Preview,proposed,
                 hit.Position,hit.Normal)
+        -- The selected logical origin, not a hidden physics root, becomes
+        -- the placement grab point whenever the builder customized it.
         local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+        local originPose=if not alt then FitSolver.SurfacePose(
+            self.Preview,cf.Rotation,hit.Position) else nil
+        if originPose then cf=originPose end
         self.Preview:PivotTo(cf)
         if not alt and self.Pending~="Copy"
             and self.Pending~="ComponentCopy" then
             match=self:RecognizeAttachment(cf,hit)
+            -- A bank blueprint has its OWN internal mechanical relations.
+            -- It can align two explicit pivots, but cannot silently attach
+            -- external shafts/bearings that the server will not author.
+            if self.CurrentBank and match and match.kind~="Pivot" then
+                match=nil
+            end
         end
     end
     self.SmartMatch=match
@@ -1479,7 +1772,31 @@ function Controller:Request(payload)
     return true, result
 end
 
+function Controller:PlaceSavedComponent()
+    if not self.CurrentBank or not self.PreviewCF or not self.PreviewValid then
+        self:Message(self.PreviewReason or "Move the saved component to a blue valid placement")
+        return
+    end
+    local _,result=self:BankRequest({
+        action="PlaceComponentBank",
+        bankId=self.CurrentBank.id,
+        origin=self.PreviewCF,
+    })
+    if result then
+        -- Keep the bank ghost active to stamp as many independent copies
+        -- as desired. Enter returns to selection with no tool switch.
+        self:ClearSmartMatch()
+        self.PreviewVisualPose=nil
+        self.LastPreviewCheck=0
+        self:Message(result.message)
+    end
+end
+
 function Controller:Place(chosenKind)
+    if self.Mode=="Build" and self.CurrentBank then
+        self:PlaceSavedComponent()
+        return
+    end
     if not self.PreviewCF or not self.CurrentId or not self.CurrentSize then return end
     if not self.PreviewValid then
         self:Message("Red preview: construction intersects existing geometry")
@@ -1489,7 +1806,7 @@ function Controller:Place(chosenKind)
     -- mechanical connection. Their placement may use geometric snap,
     -- but never auto-author a new bearing, weld, hub, or crank coupling.
     if self.Pending~="Copy" and self.SmartMatch
-        and (self.SmartMatch.kind=="Bore" or self.SmartMatch.kind=="Hub")
+        and self.SmartMatch.kind=="Bore"
         and not chosenKind then
         self:OpenMateChoice("Build")
         return
@@ -1503,6 +1820,8 @@ function Controller:Place(chosenKind)
             then self.Selected:GetAttribute("PaintFinish") else nil,
         paintColorHex=if self.Pending=="Copy" and self.Selected
             then self.Selected:GetAttribute("PaintColorHex") else nil,
+        fitPivotLocal=if self.Pending=="Copy" and self.Selected
+            then self.Selected:GetAttribute("FitPivotLocal") else nil,
         position = self.PreviewCF.Position,
         steps = stepsCopy(self.Steps),
         size = self.CurrentSize,
@@ -1514,12 +1833,11 @@ function Controller:Place(chosenKind)
                 or self.SmartMatch.kind=="Hub")
             then self.PreviewCF.Rotation else nil,
         autoMate=if self.SmartMatch
+            and self.SmartMatch.kind~="Pivot"
             and (self.Pending~="Copy"
-                or self.SmartMatch.kind=="Gear"
-                or self.SmartMatch.kind=="Rack"
-                or self.SmartMatch.kind=="Guide") then {
-            -- Gear/Rack/Guide snaps only position geometry. All physical
-            -- bearing/weld/mount relationships are omitted on an F-copy.
+                or self.SmartMatch.kind=="Gear") then {
+            -- Gear-to-gear meshing only positions geometry on an F-copy.
+            -- Gear/shaft welds are never copied implicitly.
             kind=self.SmartMatch.kind,
             targetId=self.SmartMatch.target:GetAttribute("InstanceId"),
             relationKind=chosenKind or self.SmartMatch.relationKind,
@@ -1644,7 +1962,78 @@ function Controller:ConfirmComponentPlacement()
     self:FinishPendingHandoff(handoff,goal,models,ok)
 end
 
+-- One editing interaction for all user-authored geometry. The cursor may
+-- land on ANY member of a component; the saved offset is on its fixed anchor.
+function Controller:EditFitPivot(reset)
+    local anchor=if self.SelectedComponentId then self.GroupAnchor else self.Selected
+    if not anchor or not anchor.Parent then
+        self:Message("Select a primitive or component first")
+        return
+    end
+    if reset then
+        self.PivotSetting=false
+        self:Request({
+            action="SetFitPivot",reset=true,
+            scope=if self.SelectedComponentId then "Component" else "Primitive",
+            id=if self.SelectedComponentId then self.SelectedComponentId
+                else anchor:GetAttribute("InstanceId"),
+        })
+        self:RefreshHUD()
+        return
+    end
+    self.PivotSetting=true
+    self.PivotModeIndex=1
+    self:Message("Choose the alignment origin • aim at a selected surface and click")
+end
+
+function Controller:PivotHit()
+    local camera=workspace.CurrentCamera
+    if not camera then return nil end
+    local members=if self.SelectedComponentId then self.SelectedParts
+        else (if self.Selected then {self.Selected} else {})
+    if #members==0 then return nil end
+    local ray=CameraAimRay.Ray(camera)
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Include
+    params.FilterDescendantsInstances=members
+    params.IgnoreWater=true
+    local hit=workspace:Raycast(ray.Origin,ray.Direction*Grid.MaxDistance,params)
+    if not hit then return nil end
+    local selected=topBuiltModel(hit.Instance,
+        workspace:FindFirstChild(Config.FolderName))
+    if not selected or not table.find(members,selected) then return nil end
+    return selected,FitPivotSnap.Point(hit.Instance,hit.Position,
+        FitPivotSnap.Modes[self.PivotModeIndex])
+end
+
+function Controller:CommitFitPivot()
+    if not self.PivotSetting or self.Busy then return end
+    local selected,position=self:PivotHit()
+    if not selected then
+        self:Message("Aim at a surface belonging to the selected construction")
+        return
+    end
+    local anchor=if self.SelectedComponentId then self.GroupAnchor else self.Selected
+    local succeeded=self:Request({
+        action="SetFitPivot",
+        scope=if self.SelectedComponentId then "Component" else "Primitive",
+        id=if self.SelectedComponentId then self.SelectedComponentId
+            else anchor:GetAttribute("InstanceId"),
+        hitId=selected:GetAttribute("InstanceId"),
+        position=position,
+    })
+    if succeeded then
+        self.PivotSetting=false
+        self:RefreshHUD()
+    end
+end
+
 function Controller:Activate(mode)
+    if mode=="Build" then mode=self.Mode end
+    if mode=="Edit" and self.PivotSetting then
+        self:CommitFitPivot()
+        return
+    end
     -- Tool 3 Simulate and Tool 4 Inspect never activate construction.
     if mode~="Build" and mode~="Edit" and mode~="Inspect" then return end
     if self.PendingMateChoice or (self.Numeric and self.Numeric.Active) then return end
@@ -1760,7 +2149,9 @@ function Controller:Rotate(axis)
 
     if self.Mode == "Edit" and not self.Pending
         and self.SelectedComponentId and #self.SelectedParts > 0 then
-        local center = ComponentGeometry.Bounds(self.SelectedParts)
+        local center=if self.GroupAnchor and FitOrigin.HasComponent(self.GroupAnchor)
+            then FitOrigin.World(self.GroupAnchor,"Component")
+            else ComponentGeometry.Bounds(self.SelectedParts)
         local delta = center and RotationMath.Delta(axisName,1,center)
         if not delta then return end
         local stop=WorldMotion.AnimateTurn(
@@ -1774,8 +2165,10 @@ function Controller:Rotate(axis)
         if not ok then stop() end
         if ok then self.Steps=nextSteps end
     elseif self.Mode == "Edit" and not self.Pending and self.Selected then
-        local origin = self.Selected:GetPivot()
-        local delta = RotationMath.Delta(axisName,1,origin.Position)
+        local origin=if FitOrigin.HasPrimitive(self.Selected)
+            then FitOrigin.World(self.Selected,"Primitive")
+            else self.Selected:GetPivot().Position
+        local delta = RotationMath.Delta(axisName,1,origin)
         local stop=WorldMotion.AnimateTurn(
             {self.Selected},delta,WorldMotion.Profile.TurnSeconds)
         local ok=self:Request({
@@ -1988,7 +2381,7 @@ function Controller:EndScale()
     if self.Numeric and self.Numeric.Active then self.Numeric:Hide() end
     if not self.ScaleMode then return end
 
-    -- Escape/V during an unfinished mouse drag cancels the tentative
+    -- Enterape/V during an unfinished mouse drag cancels the tentative
     -- dimensions rather than leaving the HUD showing an uncommitted size.
     local drag = self.ScaleHandles and self.ScaleHandles.Drag
     if drag then
@@ -2057,7 +2450,7 @@ end
 function Controller:BeginDirectDrag()
     if self.PendingMateChoice
         or (self.Assembly and self.Assembly:IsEditingJoint())
-        or self.Mode ~= "Edit" or self.Pending
+        or self.Mode ~= "Edit" or self.Pending or self.PivotSetting
         or self.ScaleMode or self.CatalogOpen then return end
     local hit = self:CastCenter(false)
     if not hit then return end
@@ -2128,20 +2521,38 @@ function Controller:FinishDirectDrag()
     end
 end
 
--- Alt+Up/Down always moves on world Y. Alt+Left/Right follows the
--- camera's dominant horizontal right direction. Shift makes either
--- direction fine-grained. Server validates and commits atomically.
-function Controller:VerticalNudge(key)
+-- High-priority input capture must answer immediately. Do not yield
+-- the native ContextActionService callback on InvokeServer.
+function Controller:CanNudge()
     local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-    if not alt then return end
+    return alt and self.Tools.ActiveId=="Build" and self.Mode=="Edit"
+        and not self.Busy and not self.Pending and not self.ScaleMode
+        and not self.CatalogOpen and not self.PendingMateChoice
+        and not self.PivotSetting and not self.DirectDragActive
+        and not self.LockedAlignment
+        and not (self.BankModal and self.BankModal.Visible)
+        and not (self.Numeric and self.Numeric.Active)
+        and not (self.MaterialPicker and self.MaterialPicker.Visible)
+        and not (self.Layered and self.Layered.Alignment)
+        and not (self.Assembly and self.Assembly:IsEditingJoint())
+        and not UserInputService:GetFocusedTextBox()
+        and player:GetAttribute("OPENWORKS_Simulating")~=true
+        and (self.SelectedComponentId~=nil or self.Selected~=nil
+            or #self.SelectedParts>1)
+end
+
+-- Alt+Up/Down moves on world Y; Alt+Left/Right tracks camera horizontal.
+-- Shift provides fine increments; server owns collision and history.
+function Controller:VerticalNudge(key)
+    if not self:CanNudge() then return false end
     local axis,direction
     if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then
         -- Height never depends on camera orientation, even without Shift.
         axis,direction="Y",(if key==Enum.KeyCode.Up then 1 else -1)
     else
         local camera=workspace.CurrentCamera
-        if not camera then return end
+        if not camera then return false end
         local v=camera.CFrame.RightVector
         if math.abs(v.X)>=math.abs(v.Z) then
             axis,direction="X",(if v.X>=0 then 1 else -1)
@@ -2150,41 +2561,52 @@ function Controller:VerticalNudge(key)
         end
         if key==Enum.KeyCode.Left then direction=-direction end
     end
-    if self.Mode~="Edit" or self.Busy or self.Pending or self.ScaleMode
-        or self.CatalogOpen or self.PendingMateChoice
-        or player:GetAttribute("OPENWORKS_Simulating")==true then return end
-    local scope,id
+    local scope,id,ids
+    local selected=self.SelectedParts
     if self.SelectedComponentId then
         scope,id="Component",self.SelectedComponentId
+    elseif #selected>1 then
+        -- Shift-selected independent primitives are moved together, without
+        -- silently grouping them or moving any unselected construction.
+        scope,ids="Primitives",{}
+        for _,model in ipairs(selected) do
+            if not model or not model.Parent or model:GetAttribute("ComponentId") then
+                self:Message("Multi-nudge only supports independent primitives")
+                return false
+            end
+            table.insert(ids,model:GetAttribute("InstanceId"))
+        end
     elseif self.Selected then
+        -- Deep-selected members keep their ComponentId, but move alone.
         scope,id="Primitive",self.Selected:GetAttribute("InstanceId")
     end
-    if not id then
+    if not scope or (scope~="Primitives" and not id) then
         self:Message("Select a primitive or component to nudge")
-        return
+        return false
     end
     local fine=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-    local affected=if scope=="Component" then self.SelectedParts
-        else if self.Selected then {self.Selected} else {}
+    local affected=if scope=="Component" or scope=="Primitives"
+        then selected else {self.Selected}
     local amount=(if fine then 0.05 else 0.25)*direction
     local displacement=if axis=="X" then Vector3.new(amount,0,0)
         elseif axis=="Y" then Vector3.new(0,amount,0)
         else Vector3.new(0,0,amount)
     local stop=WorldMotion.AnimateMove(affected,displacement)
-    local succeeded=self:Request({action="VerticalMove",scope=scope,id=id,
-        axis=axis,direction=direction,fine=fine})
+    local succeeded=self:Request({
+        action="VerticalMove",scope=scope,id=id,ids=ids,
+        axis=axis,direction=direction,fine=fine,
+    })
     if not succeeded then stop() end
     self:RefreshHUD()
+    return true
 end
 
 function Controller:OnInput(input, processed)
     if self.PendingMateChoice then return end
+    if self.BankModal and self.BankModal.Visible then return end
     if self.Numeric and self.Numeric.Active then
-        if input.KeyCode==Enum.KeyCode.Escape then
-            self.Numeric:Hide()
-            self:EndScale()
-        end
+        -- The focused numeric dialog owns Enter-to-confirm.
         return
     end
     if player:GetAttribute("OPENWORKS_Simulating") == true then return end
@@ -2193,8 +2615,30 @@ function Controller:OnInput(input, processed)
     if self.Assembly and self.Assembly:IsEditingJoint() then return end
     local shiftHeld=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    if self.PivotSetting then
+        if self.Mode=="Edit" and not processed and shiftHeld
+            and key==Enum.KeyCode.O then
+            self:EditFitPivot(true)
+            return
+        end
+        if key==Enum.KeyCode.Return then
+            self.PivotSetting=false
+            self:RefreshHUD()
+        elseif not processed and (key==Enum.KeyCode.Q or key==Enum.KeyCode.E) then
+            local delta=if key==Enum.KeyCode.E then 1 else -1
+            self.PivotModeIndex=(self.PivotModeIndex-1+delta
+                +#FitPivotSnap.Modes)%#FitPivotSnap.Modes+1
+            self:RefreshHUD()
+        end
+        return
+    end
+    if self.Mode=="Edit" and not processed and key==Enum.KeyCode.O
+        and not self.Pending and not self.ScaleMode then
+        self:EditFitPivot(shiftHeld)
+        return
+    end
     if self.Mode=="Edit" and shiftHeld
-        and (key==Enum.KeyCode.Delete or key==Enum.KeyCode.Backspace) then
+        and key==Enum.KeyCode.Backspace then
         -- Shift+Delete removes only the aimed relationship, handled by
         -- the integrated mechanical editor, never primitive geometry.
         return
@@ -2215,7 +2659,7 @@ function Controller:OnInput(input, processed)
         self.LastPreviewCheck=0
         return
     end
-    if self.LockedAlignment and key~=Enum.KeyCode.Escape then
+    if self.LockedAlignment and key~=Enum.KeyCode.Return then
         -- During the positioning stage, only wheel/Q/E, zoom and click
         -- can affect the fit. Don't mutate the component or open sizing.
         return
@@ -2225,20 +2669,26 @@ function Controller:OnInput(input, processed)
 
     if self.Layered and self.Layered:OnInput(input, processed) then return end
 
-    if key == Enum.KeyCode.Escape then
+    if key==Enum.KeyCode.Return or key==Enum.KeyCode.KeypadEnter then
+        -- Enter exits the current tool workflow. Numeric inputs and assembly
+        -- naming consume Enter themselves as confirmation.
         if self.LockedAlignment then
             self:ClearSmartMatch()
             self.LastPreviewCheck=0
-            self:RefreshHUD()
-            return
+        elseif self.ScaleMode then
+            self:EndScale()
+        elseif self.CatalogOpen then
+            self:ShowCatalog(false)
+        elseif self.Pending then
+            self:CancelPending()
+        elseif self.Mode=="Build" then
+            self:StopPlacement()
         end
-        if self.ScaleMode then self:EndScale() end
-        if self.CatalogOpen then self:ShowCatalog(false) end
-        if self.Pending then self:CancelPending() self:RefreshHUD() end
+        self:RefreshHUD()
         return
     end
     if self.MaterialPicker and self.MaterialPicker.Visible then
-        if key==Enum.KeyCode.Escape then self.MaterialPicker:Close() end
+        if key==Enum.KeyCode.Return then self.MaterialPicker:Close() end
         return
     end
     if key==Enum.KeyCode.M and self.Mode=="Edit" and not processed then
@@ -2267,17 +2717,15 @@ function Controller:OnInput(input, processed)
         return
     end
 
-    local altHeld=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
-        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-    if self.Mode=="Edit" and not self.Pending and altHeld
-        and (key==Enum.KeyCode.Up or key==Enum.KeyCode.Down
-            or key==Enum.KeyCode.Left or key==Enum.KeyCode.Right) then
-        self:VerticalNudge(key)
-        return
-    end
+    -- Alt+arrows are handled at high priority below. Roblox can consume
+    -- arrow-key input before InputBegan; avoid a second nudge here.
 
-    if key == Enum.KeyCode.B and self.Mode == "Build" then
-        self:ShowCatalog(not self.CatalogOpen)
+    if key == Enum.KeyCode.B and (self.Mode=="Build" or self.Mode=="Edit") then
+        if shiftHeld then
+            self:OpenBankSave()
+        else
+            self:ShowCatalog(not self.CatalogOpen)
+        end
         return
     end
     if self.CatalogOpen then return end
@@ -2302,7 +2750,7 @@ function Controller:OnInput(input, processed)
         self:StartMove(false)
     elseif self.Mode == "Edit" and key == Enum.KeyCode.F then
         self:StartMove(true)
-    elseif self.Mode == "Edit" and (key == Enum.KeyCode.Delete or key == Enum.KeyCode.Backspace) then
+    elseif self.Mode == "Edit" and key == Enum.KeyCode.Backspace then
         self:Delete()
     end
 end
@@ -2310,6 +2758,7 @@ end
 function Controller:Start()
     if self.Started then return end
     self.Started = true
+    self.FitPivotHandle=FitPivotHandle.new()
     self:MakeUI()
     self.MaterialPicker=MaterialPickerController.new(self)
     self.MaterialPicker:Start()
@@ -2332,22 +2781,39 @@ function Controller:Start()
     table.insert(self.Connections, self.Tools.Activated.Event:Connect(function(mode)
         self:Activate(mode)
     end))
+    -- The default Roblox camera can consume arrow keys before ordinary
+    -- UserInputService callbacks. Capture Alt+arrows only when Build can
+    -- genuinely nudge an authored selection; pass all other arrow presses.
+    ContextActionService:BindActionAtPriority(
+        "OPENWORKS_BuildNudge",
+        function(_,state,input)
+            local key=input.KeyCode
+            if state==Enum.UserInputState.End
+                or state==Enum.UserInputState.Cancel then
+                if self.VerticalHeld==key then self.VerticalHeld=nil end
+                return Enum.ContextActionResult.Pass
+            end
+            if state~=Enum.UserInputState.Begin then
+                return Enum.ContextActionResult.Pass
+            end
+            if self:CanNudge() then
+                self.VerticalHeld=key
+                self.VerticalElapsed=0
+                task.spawn(function() self:VerticalNudge(key) end)
+                return Enum.ContextActionResult.Sink
+            end
+            return Enum.ContextActionResult.Pass
+        end,
+        false,
+        Enum.ContextActionPriority.High.Value+150,
+        Enum.KeyCode.Up,Enum.KeyCode.Down,
+        Enum.KeyCode.Left,Enum.KeyCode.Right
+    )
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             self:BeginDirectDrag()
         end
         self:OnInput(input, processed)
-        if not processed
-            and (input.KeyCode==Enum.KeyCode.Up
-                or input.KeyCode==Enum.KeyCode.Down
-                or input.KeyCode==Enum.KeyCode.Left
-                or input.KeyCode==Enum.KeyCode.Right)
-            and self.Mode=="Edit"
-            and (UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
-                or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)) then
-            self.VerticalHeld=input.KeyCode
-            self.VerticalElapsed=0
-        end
     end))
     table.insert(self.Connections, UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -2378,6 +2844,7 @@ function Controller:Start()
             local open=self.CatalogOpen or self.PendingMateChoice~=nil
                 or (self.Numeric and self.Numeric.Active)
                 or (self.MaterialPicker and self.MaterialPicker.Visible)
+                or (self.BankModal and self.BankModal.Visible)
 
             if player:GetAttribute("OPENWORKS_CursorUIOpen")~=open then
                 player:SetAttribute("OPENWORKS_CursorUIOpen",open)
@@ -2463,6 +2930,30 @@ function Controller:Start()
         end
         if stale then self:SetSelection(nil) end
         self:UpdateDirectDrag()
+        if self.FitPivotHandle then
+            local originAnchor=if self.SelectedComponentId then self.GroupAnchor
+                else self.Selected
+            if self.PivotSetting then
+                local _,point=self:PivotHit()
+                if point then
+                    self.FitPivotHandle:UpdateCandidate(originAnchor,point,
+                        if self.SelectedComponentId then "Component" else "Primitive")
+                else
+                    self.FitPivotHandle:Update(originAnchor,
+                        if self.SelectedComponentId then "Component" else "Primitive",true)
+                end
+            elseif self.Pending and self.Preview then
+                self.FitPivotHandle:UpdatePreview(self.Preview)
+            else
+                self.FitPivotHandle:Update(originAnchor,
+                    if self.SelectedComponentId then "Component" else "Primitive",
+                    self.Mode=="Edit" and not self.ScaleMode
+                        and (self.PivotSetting or (originAnchor~=nil
+                            and (if self.SelectedComponentId
+                                then FitOrigin.HasComponent(originAnchor)
+                                else FitOrigin.HasPrimitive(originAnchor)))))
+            end
+        end
         if not self.PendingMateChoice
             and (self.Mode == "Build" or
                 (self.Mode == "Edit" and self.Pending)) then
@@ -2479,12 +2970,14 @@ function Controller:Start()
 end
 
 function Controller:Destroy()
+    if self.FitPivotHandle then self.FitPivotHandle:Destroy() end
     if self.MaterialPicker then self.MaterialPicker:Destroy() end
     if self.MateChoice then self.MateChoice:Destroy() end
     if self.Numeric then self.Numeric:Destroy() end
     self:EndScale()
     if self.Layered then self.Layered:Destroy() end
     RunService:UnbindFromRenderStep("OPENWORKS_CursorUnlock")
+    ContextActionService:UnbindAction("OPENWORKS_BuildNudge")
     if self.ScaleHandles then self.ScaleHandles:Destroy() end
     if self.ComponentOutline then self.ComponentOutline:Destroy() end
     self:CancelPending()

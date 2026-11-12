@@ -160,7 +160,7 @@ function Tool:Draw()
     -- keyboard hints, not mouse buttons that cannot be clicked.
     self.Shortcuts=make("TextLabel",panel,{
         Name="AssemblyToolShortcutStrip",
-        Text="N  NEW               Enter  CONFIRM          Esc  CANCEL",
+        Text="N  NEW               Enter  CONFIRM          Enter  FINISH",
         Position=UDim2.fromOffset(12,116),
         Size=UDim2.new(1,-24,0,27),
         BackgroundColor3=Theme.Panel,BorderSizePixel=0,
@@ -240,7 +240,7 @@ function Tool:Refresh()
     elseif self.Stage=="Naming" then
         self.Title.Text="ASSEMBLY / NAME"
         self.Status.Text="Enter the name to begin selecting"
-        self.Instruction.Text="Enter to continue • Esc cancels"
+        self.Instruction.Text="Enter to continue • use CANCEL to dismiss"
     else
         self.Title.Text="ASSEMBLY / EDITOR"
         self.Status.Text="N  /  Create named assembly"
@@ -635,9 +635,8 @@ function Tool:Start()
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
         if self.Tools.ActiveId~="Assembly" or self.Busy then return end
         if self.Stage=="Naming" then
-            if input.KeyCode==Enum.KeyCode.Escape then
-                self:CloseName(true)
-            end
+            -- TextBox FocusLost handles Enter-to-accept; CANCEL button
+            -- remains available while typing a new assembly name.
             return
         end
         if processed or UIS:GetFocusedTextBox() then return end
@@ -667,9 +666,11 @@ function Tool:Start()
             self:OpenName(true)
         elseif key==Enum.KeyCode.Return
             or key==Enum.KeyCode.KeypadEnter then
-            self:Confirm()
-        elseif key==Enum.KeyCode.Escape then
-            self:Cancel()
+            -- Enter saves a populated selection and exits an empty draft.
+            if self.Stage=="Selecting" then
+                if next(self.Selected) then self:Confirm()
+                else self:Cancel() end
+            end
         end
     end))
     table.insert(self.Connections,UIS.InputEnded:Connect(function(input)

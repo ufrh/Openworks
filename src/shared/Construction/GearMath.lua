@@ -5,16 +5,9 @@
 local GearMath={}
 local BEVEL_AXIS_TOLERANCE=0.025
 local BEVEL_APEX_TOLERANCE=0.085
-local RACK_POSITION_TOLERANCE=0.075
 
 function GearMath.Kind(model:Model?):string
     if not model then return "None" end
-    if type(model:GetAttribute("RackGuideLengthStuds"))=="number" then
-        return "RackGuide"
-    end
-    if type(model:GetAttribute("RackPitchStuds"))=="number" then
-        return "Rack"
-    end
     if type(model:GetAttribute("GearTeeth"))=="number" then
         local kind=model:GetAttribute("GearKind")
         if kind=="Bevel45" or kind=="Bevel90" then return kind end
@@ -71,87 +64,6 @@ function GearMath.AutoBevelStatus(a:Model,b:Model):(boolean,string,number)
     return true,tostring(shaftAngle).."-degree bevel mesh",proximity
 end
 
--- An unpowered, grounded rack guide constrains ONLY translation.
--- A guide must be at least as long as the toothed rack and share its
--- X/Up/slide orientation. Small clearance between rail and rack is
--- geometric, not simulated Roblox PrismaticConstraint force.
-function GearMath.AutoGuideStatus(a:Model,b:Model):(boolean,string,number)
-    local rack=if GearMath.Kind(a)=="Rack" then a else b
-    local guide=if rack==a then b else a
-    if GearMath.Kind(rack)~="Rack"
-        or GearMath.Kind(guide)~="RackGuide" then
-        return false,"Rack requires a matching stationary guide",math.huge
-    end
-    local rackLength=rack:GetAttribute("RackLengthStuds")
-    local guideLength=guide:GetAttribute("RackGuideLengthStuds")
-    if type(rackLength)~="number" or type(guideLength)~="number"
-        or rackLength>guideLength-0.25 then
-        return false,"Guide is too short for the rack",math.huge
-    end
-    local rf,gf=rack:GetPivot(),guide:GetPivot()
-    local alignment=1-rf.LookVector:Dot(gf.LookVector)
-    local difference=rf.Position-gf.Position
-    local x=math.abs(difference:Dot(gf.RightVector))
-    local y=math.abs(difference:Dot(gf.UpVector))
-    local travel=math.abs(difference:Dot(gf.LookVector))
-    local limit=(guideLength-rackLength)*0.5
-    local error=x+y+math.max(0,travel-limit)
-    if alignment>0.001 or rf.UpVector:Dot(gf.UpVector)<0.999 then
-        return false,"Rack and guide axes must match",error+1
-    end
-    if x>0.09 or y>0.10 then
-        return false,"Rack is outside guide lane",error
-    end
-    if travel>limit+0.03 then
-        return false,"Rack would slide beyond the guide",error
-    end
-    return true,"Rack in guide",error
-end
-
--- Rack gear teeth run along local Z, with tooth pitch surface at local
--- +Y offset. Pinion axis must match rack's local X. Rack travel is along
--- its LookVector, and v_rack = omega_pinion * pitchRadius * handedness.
-function GearMath.AutoRackStatus(a:Model,b:Model):(boolean,string,number)
-    local rack=if GearMath.Kind(a)=="Rack" then a else b
-    local pinion=if rack==a then b else a
-    if GearMath.Kind(pinion)~="Spur" then
-        return false,"Racks require a straight spur pinion",math.huge
-    end
-    if not rack.PrimaryPart or not pinion.PrimaryPart then
-        return false,"Rack or pinion has no geometry",math.huge
-    end
-    local pitch=rack:GetAttribute("RackPitchStuds")
-    local module=pinion:GetAttribute("GearModuleStuds")
-    local length=rack:GetAttribute("RackLengthStuds")
-    local pitchOffset=rack:GetAttribute("RackPitchOffsetStuds")
-    if type(pitch)~="number" or type(module)~="number"
-        or type(length)~="number" or type(pitchOffset)~="number"
-        or math.abs(pitch-module)>0.0001 then
-        return false,"Pinion and rack tooth pitches differ",math.huge
-    end
-    local rackCF,pinionCF=rack:GetPivot(),pinion:GetPivot()
-    local axisError=1-math.abs(rackCF.RightVector:Dot(pinionCF.RightVector))
-    local delta=pinionCF.Position-rackCF.Position
-    local radialError=math.abs(delta:Dot(rackCF.UpVector)
-        -(GearMath.PitchRadius(pinion)+pitchOffset))
-    local along=math.abs(delta:Dot(rackCF.LookVector))
-    local lateral=math.abs(delta:Dot(rackCF.RightVector))
-    local maxAlong=math.max(0,length*0.5-pitch*1.5)
-    local maxLateral=(rack.PrimaryPart.Size.X+pinion.PrimaryPart.Size.X)*0.5
-        -0.014
-    local proximity=radialError+math.max(0,along-maxAlong)
-        +math.max(0,lateral-maxLateral)
-    if axisError>0.001 then
-        return false,"Rack and pinion axes must be parallel",proximity+1
-    end
-    if radialError>RACK_POSITION_TOLERANCE then
-        return false,"Pinion pitch circle does not meet rack teeth",proximity
-    end
-    if along>maxAlong or lateral>=maxLateral then
-        return false,"Pinion lies beyond rack teeth or face width",proximity
-    end
-    return true,"Rack and pinion engaged",proximity
-end
 function GearMath.Meshable(a:Model,b:Model):(boolean,string?)
     if not a or not b or a==b then return false,"Choose two separate gears" end
     if GearMath.Kind(a)~="Spur" or GearMath.Kind(b)~="Spur" then
@@ -190,12 +102,6 @@ local MESH_PITCH_TOLERANCE=0.09
 function GearMath.AutoMeshStatus(a:Model,b:Model):(boolean,string,number)
     local kindA=GearMath.Kind(a)
     local kindB=GearMath.Kind(b)
-    if kindA=="RackGuide" or kindB=="RackGuide" then
-        return GearMath.AutoGuideStatus(a,b)
-    end
-    if kindA=="Rack" or kindB=="Rack" then
-        return GearMath.AutoRackStatus(a,b)
-    end
     if kindA=="Bevel45" or kindA=="Bevel90"
         or kindB=="Bevel45" or kindB=="Bevel90" then
         return GearMath.AutoBevelStatus(a,b)

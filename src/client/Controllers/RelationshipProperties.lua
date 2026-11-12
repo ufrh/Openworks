@@ -389,7 +389,9 @@ function Properties:Start()
     end)
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,_processed)
         if not self.Open then return end
-        if input.KeyCode==Enum.KeyCode.Escape then
+        if (input.KeyCode==Enum.KeyCode.Return
+            or input.KeyCode==Enum.KeyCode.KeypadEnter)
+            and not UIS:GetFocusedTextBox() then
             self:Show(false)
             return
         end
@@ -422,7 +424,7 @@ function Properties:Start()
     create("UIListLayout",panel,{Padding=UDim.new(0,8)})
     local title=label(panel,"PROPERTIES  /  OPENWORKS",25)
     title.TextColor3=WHITE
-    local close=button(panel,"×  Close Inspector  [Esc]",25)
+    local close=button(panel,"×  Close Inspector  [Enter]",25)
     close.Activated:Connect(function() self:Show(false) end)
     self.Heading=label(panel,"CLICK A PART IN THE WORLD",35)
     self.RelationList=create("ScrollingFrame",panel,{

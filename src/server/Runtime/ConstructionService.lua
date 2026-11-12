@@ -13,12 +13,15 @@ local Bore = require(construction:WaitForChild("BoreClearance"))
 local Alignment = require(construction:WaitForChild("AlignmentMath"))
 local MultiFit = require(construction:WaitForChild("MultiFitMath"))
 local Smart = require(construction:WaitForChild("SmartPlacement"))
+local FitOrigin = require(construction:WaitForChild("FitOrigin"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
+local ComponentBankService = require(script.Parent:WaitForChild("ComponentBankService"))
 local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
 local MechanicalService = require(script.Parent:WaitForChild("MechanicalService"))
 local SimulationService = require(script.Parent:WaitForChild("SimulationService"))
 local GearLibrary = require(script.Parent:WaitForChild("GearLibrary"))
+local PulleyLibrary = require(script.Parent:WaitForChild("PulleyLibrary"))
 local FastenerLibrary = require(script.Parent:WaitForChild("FastenerLibrary"))
 local HandCrankLibrary = require(script.Parent:WaitForChild("HandCrankLibrary"))
 local ShaftLibrary = require(script.Parent:WaitForChild("ShaftLibrary"))
@@ -39,6 +42,7 @@ local remote
 local histories = {}
 local lastRequest = {}
 local components
+local componentBank
 local alignmentService
 local mechanical
 local simulation
@@ -81,10 +85,9 @@ local function accessFor(player, action)
         -- Assembly edits commit the same safe metadata history as Edit.
         -- Allow undo/redo without equipping an unrelated construction tool.
         return hasEquippedTool(player,"Assembly")
-            or hasEquippedTool(player,"Edit")
             or hasEquippedTool(player,"Build")
     end
-    return hasEquippedTool(player,"Edit") or hasEquippedTool(player,"Build")
+    return hasEquippedTool(player,"Build")
 end
 
 local function nearPlayer(player, position)
@@ -121,6 +124,8 @@ local function snapshot(model)
         size = primary.Size,
         componentId = model:GetAttribute("ComponentId"),
         componentAnchorId = model:GetAttribute("ComponentAnchorId"),
+        fitPivotLocal=model:GetAttribute("FitPivotLocal"),
+        componentFitPivotLocal=model:GetAttribute("ComponentFitPivotLocal"),
         assemblyPrecision = model:GetAttribute("AssemblyPrecision") == true,
         resizePrecision = model:GetAttribute("ResizePrecision") == true,
         freePosition = model:GetAttribute("FreePosition") == true,
@@ -255,6 +260,11 @@ local function validState(player, entry, proposed)
         or typeof(proposed.size) ~= "Vector3" then
         return false, "Invalid construction state"
     end
+    if (proposed.fitPivotLocal~=nil and not FitOrigin.Valid(proposed.fitPivotLocal))
+        or (proposed.componentFitPivotLocal~=nil
+            and not FitOrigin.Valid(proposed.componentFitPivotLocal)) then
+        return false,"Invalid alignment origin"
+    end
     if not nearPlayer(player, proposed.position) then
         return false, "Target is outside your plot or too far away"
     end
@@ -299,6 +309,8 @@ local function applyState(model, data)
     model:SetAttribute("RotZ", data.steps.z)
     model:SetAttribute("ComponentId", data.componentId)
     model:SetAttribute("ComponentAnchorId", data.componentAnchorId)
+    model:SetAttribute("FitPivotLocal",data.fitPivotLocal)
+    model:SetAttribute("ComponentFitPivotLocal",data.componentFitPivotLocal)
     model:SetAttribute("AssemblyPrecision", data.assemblyPrecision == true)
     model:SetAttribute("ResizePrecision", data.resizePrecision == true
         or Grid.HasFractionalSize(data.size))
@@ -522,6 +534,7 @@ local function place(player, payload)
         paintFinish=if PaintCatalog.IsValidFinish(payload.paintFinish)
             then payload.paintFinish else "Factory",
         paintColorHex=PaintCatalog.NormalizeHex(payload.paintColorHex),
+        fitPivotLocal=payload.fitPivotLocal,
         orientation = if payload.autoMate
             and (payload.autoMate.kind=="BoltHole"
                 or payload.autoMate.kind=="Bore"
@@ -645,6 +658,8 @@ local function update(player, payload)
         materialId=model:GetAttribute("ConstructionMaterial") or "Steel",
         paintFinish=model:GetAttribute("PaintFinish") or "Factory",
         paintColorHex=model:GetAttribute("PaintColorHex"),
+        fitPivotLocal=model:GetAttribute("FitPivotLocal"),
+        componentFitPivotLocal=model:GetAttribute("ComponentFitPivotLocal"),
     }
     local before=snapshot(model)
     local crankCouplings=if Alignment.IsShaft(model)
@@ -771,8 +786,9 @@ local function rotatePrimitiveWorld(player,payload)
     if model:GetAttribute("ComponentId") then
         return false,"Rotate the complete body or enter component editing"
     end
-    local delta=RotationMath.Delta(payload.axis,payload.direction,
-        model:GetPivot().Position)
+    local center=if FitOrigin.HasPrimitive(model)
+        then FitOrigin.World(model,"Primitive") else model:GetPivot().Position
+    local delta=RotationMath.Delta(payload.axis,payload.direction,center)
     if not delta then return false,"Choose world X, Y or Z" end
     local before=snapshot(model)
     local wanted=delta*model:GetPivot()
@@ -897,20 +913,42 @@ local function verticalMove(player,payload)
     local selected={}
     local scope=payload.scope
     local id=payload.id
-    if type(id)~="string" or #id==0 or #id>64 then
-        return false,"Select an existing component or assembly"
-    end
-    if scope=="Component" then
-        selected=components:Members(player,id)
-    elseif scope=="Assembly" then
-        selected=assemblies:Members(player,id)
-    elseif scope=="Primitive" then
-        local model=findOwned(player,id)
-        if model and not model:GetAttribute("ComponentId") then
-            selected={model}
+    if scope=="Primitives" then
+        -- Multi-selected standalone primitives nudge together in ONE
+        -- transactional operation, not sequentially and not as a new group.
+        local ids=payload.ids
+        if type(ids)~="table" or #ids<2 or #ids>128 then
+            return false,"Select 2–128 distinct primitives"
+        end
+        local seen={}
+        for _,primitiveId in ipairs(ids) do
+            if type(primitiveId)~="string" or #primitiveId==0
+                or #primitiveId>64 or seen[primitiveId] then
+                return false,"Invalid or duplicate nudge selection"
+            end
+            seen[primitiveId]=true
+            local model=findOwned(player,primitiveId)
+            if not model or model:GetAttribute("ComponentId") then
+                return false,"Multi-nudge requires independent primitives"
+            end
+            table.insert(selected,model)
         end
     else
-        return false,"Invalid vertical movement scope"
+        if type(id)~="string" or #id==0 or #id>64 then
+            return false,"Select an existing primitive, component or assembly"
+        end
+        if scope=="Component" then
+            selected=components:Members(player,id)
+        elseif scope=="Assembly" then
+            selected=assemblies:Members(player,id)
+        elseif scope=="Primitive" then
+            -- Deep-selecting a member inside a component must nudge ONLY
+            -- that primitive. The component metadata remains intact.
+            local model=findOwned(player,id)
+            if model then selected={model} end
+        else
+            return false,"Invalid nudge selection scope"
+        end
     end
     if #selected==0 or #selected>128 then
         return false,"Selection unavailable or too large"
@@ -1027,6 +1065,78 @@ local function setPaint(player,payload)
         ..tostring(#members).." primitives"
 end
 
+-- A universal editable alignment origin exists for BOTH primitive and
+-- component selections. Never move the physics root or manufacture a joint.
+-- Validate that the selected point belongs to actual owned component geometry.
+local function setFitPivot(player,payload)
+    if type(payload)~="table" or (payload.scope~="Primitive"
+        and payload.scope~="Component") or type(payload.id)~="string"
+        or #payload.id>64 then
+        return false,"Select a primitive or component before editing its origin"
+    end
+    local members,anchor
+    if payload.scope=="Component" then
+        members=components:Members(player,payload.id)
+        if #members<2 then return false,"Select a registered component" end
+        anchor=FitOrigin.ComponentAnchor(members)
+    else
+        anchor=findOwned(player,payload.id)
+        members=if anchor then {anchor} else {}
+    end
+    if not anchor then return false,"Component anchor is unavailable" end
+    if not nearPlayer(player,anchor:GetPivot().Position) then
+        return false,"Move closer to the selected origin"
+    end
+    local prior=snapshot(anchor)
+    local localPoint=nil
+    if payload.reset~=true then
+        if typeof(payload.position)~="Vector3"
+            or not Grid.ValidPosition(payload.position)
+            or type(payload.hitId)~="string" then
+            return false,"Look at a surface on the selected construction"
+        end
+        local hitModel=nil
+        for _,member in ipairs(members) do
+            if member:GetAttribute("InstanceId")==payload.hitId then
+                hitModel=member
+                break
+            end
+        end
+        if not hitModel then
+            return false,"The pivot point must belong to the selection"
+        end
+        if not nearPlayer(player,payload.position) then
+            return false,"The pivot is outside the plot"
+        end
+        local inside=false
+        for _,part in ipairs(hitModel:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanQuery
+                and part:GetAttribute("GearPivotOnly")~=true then
+                local p=part.CFrame:PointToObjectSpace(payload.position)
+                local half=part.Size*0.5+Vector3.one*0.10
+                if math.abs(p.X)<=half.X and math.abs(p.Y)<=half.Y
+                    and math.abs(p.Z)<=half.Z then
+                    inside=true
+                    break
+                end
+            end
+        end
+        if not inside then
+            return false,"Choose a point on the selected physical surface"
+        end
+        localPoint=anchor:GetPivot():PointToObjectSpace(payload.position)
+        if not FitOrigin.Valid(localPoint) then
+            return false,"Pivot offset exceeds safe construction range"
+        end
+    end
+    local attribute=if payload.scope=="Component"
+        then "ComponentFitPivotLocal" else "FitPivotLocal"
+    anchor:SetAttribute(attribute,localPoint)
+    commitMetadata(player,{prior},{snapshot(anchor)})
+    return true,if payload.reset then "Alignment origin reset to default"
+        else "Alignment origin placed • move to align from that point"
+end
+
 local function restoreMetadata(player,record,undo)
     local states=if undo then record.before else record.after
     if type(states)~="table" then return false,"Invalid metadata history" end
@@ -1046,6 +1156,8 @@ local function restoreMetadata(player,record,undo)
         model:SetAttribute("AssemblyId",state.assemblyId)
         model:SetAttribute("AssemblyName",state.assemblyName)
         model:SetAttribute("Grounded",state.grounded==true)
+        model:SetAttribute("FitPivotLocal",state.fitPivotLocal)
+        model:SetAttribute("ComponentFitPivotLocal",state.componentFitPivotLocal)
     end
     return true
 end
@@ -1125,15 +1237,19 @@ local function handle(player, payload)
         or action == "CreateSpring" or action == "TuneSpring"
         or action == "CreateWeld" or action == "CreateBolt"
         or action == "CoupleHandCrank" or action == "TuneBearingMotor"
+        or action == "CreateBelt" or action == "RemoveBelt"
 
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
         or action=="TuneBearingMotor"
     local simulationAction = action == "StartSimulation"
         or action == "BeginCrank"
-        or action == "BeginRack"
         or action == "StopSimulation"
         or action == "PauseSimulation" or action == "ResetSimulation"
     local materialAction=action=="SetMaterial" or action=="SetPaint"
+    local fitOriginAction=action=="SetFitPivot"
+    local bankAction=action=="ListComponentBank" or action=="GetComponentBank"
+        or action=="RegisterComponentBank" or action=="PlaceComponentBank"
+        or action=="RemoveComponentBank"
     local verticalAction=action=="VerticalMove"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
@@ -1145,7 +1261,8 @@ local function handle(player, payload)
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
         and not componentAction and not smartAction and not assemblyAction
-        and not verticalAction and not materialAction
+        and not verticalAction and not materialAction and not fitOriginAction
+        and not bankAction
         and not alignmentAction and not mechanicalAction
         and not simulationAction then
         return { ok = false, message = "Unknown action" }
@@ -1170,36 +1287,48 @@ local function handle(player, payload)
             end
         elseif action=="SetGrounded" then
             if not hasEquippedTool(player,"Simulate")
-                and not hasEquippedTool(player,"Edit") then
-                return {ok=false,message="Equip Simulate to ground a body"}
+                and not hasEquippedTool(player,"Build") then
+                return {ok=false,message="Equip Simulate or Build to ground a body"}
+            end
+        elseif action=="CreateBelt" or action=="RemoveBelt" then
+            if not hasEquippedTool(player,"Belt") then
+                return {ok=false,message="Equip Belt to connect pulleys"}
             end
         elseif action=="CreateWeld" then
             if not hasEquippedTool(player,"Weld") then
                 return {ok=false,message="Equip Weld to designate a physical weld"}
             end
         elseif action~="GetMechanismInfo"
-            and not hasEquippedTool(player,"Edit") then
-            return {ok=false,message="Equip Edit to modify relationships"}
+            and not hasEquippedTool(player,"Build") then
+            return {ok=false,message="Equip Build to modify relationships"}
+        end
+    elseif bankAction then
+        if not hasEquippedTool(player,"Build") then
+            return {ok=false,message="Equip Build to use the component bank"}
+        end
+    elseif fitOriginAction then
+        if not hasEquippedTool(player,"Build") then
+            return {ok=false,message="Equip Build to set an alignment origin"}
         end
     elseif materialAction then
-        if not hasEquippedTool(player,"Edit") then
-            return {ok=false,message="Equip Edit to apply paint or materials"}
+        if not hasEquippedTool(player,"Build") then
+            return {ok=false,message="Equip Build to apply paint or materials"}
         end
     elseif verticalAction then
         if (payload.scope=="Assembly" and not hasEquippedTool(player,"Assembly"))
-            or (payload.scope~="Assembly" and not hasEquippedTool(player,"Edit")) then
-            return {ok=false,message="Equip Edit for components or Assembly for assemblies"}
+            or (payload.scope~="Assembly" and not hasEquippedTool(player,"Build")) then
+            return {ok=false,message="Equip Build for components or Assembly for assemblies"}
         end
     elseif assemblyAction then
         if not hasEquippedTool(player,"Assembly") then
             return {ok=false,message="Equip Assembly to create or edit assemblies"}
         end
     elseif componentAction or alignmentAction or smartAction then
-        if not hasEquippedTool(player, "Edit") then
-            return { ok = false, message = "Equip Edit to modify components" }
+        if not hasEquippedTool(player, "Build") then
+            return { ok = false, message = "Equip Build to modify components" }
         end
     elseif not accessFor(player, action) then
-        return { ok = false, message = "Equip Build or Edit" }
+        return { ok = false, message = "Equip Build" }
     end
 
     local now = os.clock()
@@ -1216,12 +1345,13 @@ local function handle(player, payload)
     local ok,result,extra,detail=pcall(function()
         if action == "StartSimulation" then return simulation:Start(player, payload) end
         if action == "BeginCrank" then return simulation:BeginCrank(player,payload) end
-        if action == "BeginRack" then return simulation:BeginRack(player,payload) end
         if action == "StopSimulation" then return simulation:Stop(player) end
         if action == "PauseSimulation" then return simulation:Pause(player) end
         if action == "ResetSimulation" then return simulation:Reset(player) end
+        if bankAction then return componentBank:Handle(player,action,payload) end
         if action == "Place" then return place(player, payload) end
         if action == "VerticalMove" then return verticalMove(player,payload) end
+        if action == "SetFitPivot" then return setFitPivot(player,payload) end
         if action == "SetMaterial" then return setMaterial(player,payload) end
         if action == "SetPaint" then return setPaint(player,payload) end
         if action == "Update" then return update(player, payload) end
@@ -1242,6 +1372,12 @@ local function handle(player, payload)
         if action == "CreateGearMesh" then return mechanical:CreateGearMesh(player, payload) end
         if action=="FastenBolt" then
             return mechanical:FastenBolt(player,payload,false)
+        end
+        if action=="CreateBelt" then
+            return mechanical:CreateBelt(player,payload)
+        end
+        if action=="RemoveBelt" then
+            return mechanical:RemoveBelt(player,payload)
         end
         if action=="CreateSpring" then
             return mechanical:CreateSpring(player,payload)
@@ -1286,12 +1422,13 @@ local function handle(player, payload)
         local relation=mechanical:OwnedRelation(player,payload.relationId)
         if relation then simulation:SyncRelationship(player,relation) end
     end
-    local metadataOnly=action=="CreateAssembly" or action=="UpdateAssembly"
+    local metadataOnly=bankAction or action=="SetFitPivot"
+        or action=="CreateAssembly" or action=="UpdateAssembly"
         or action=="Group" or action=="Ungroup"
         or action=="SetGrounded"
     -- Mark dirty BEFORE optional geometry rebuild: a rebuild error must
     -- not silently discard the already-committed edit from autosaving.
-    if result and persistence and not simulationAction
+    if result and persistence and not simulationAction and not bankAction
         and action~="GetMechanismInfo" then
         persistence:MarkDirty(player)
     end
@@ -1310,12 +1447,14 @@ local function handle(player, payload)
         componentId = if result and (action == "Group" or action == "DuplicateComponent")
             then extra else nil,
         assemblyId=if result and assemblyAction then detail else nil,
+        data=if result and bankAction then detail else nil,
     }
 end
 
 function Service.Start()
     plots=PlotService.new()
     GearLibrary.Ensure()
+    PulleyLibrary.Ensure()
     FastenerLibrary.Ensure()
     HandCrankLibrary.Ensure()
     ShaftLibrary.Ensure()
@@ -1384,6 +1523,14 @@ function Service.Start()
     -- a require cycle. Inject the constructed service afterward so F
     -- duplicates can snapshot/restore authored INTERNAL relationships.
     components.D.mechanical=mechanical
+    componentBank=ComponentBankService.new({
+        components=components,mechanical=mechanical,
+        folder=folder,Grid=Grid,Registry=Registry,Config=Config,
+        snapshot=snapshot,createFromTemplate=createFromTemplate,
+        ownedCount=ownedCount,validState=validState,applyState=applyState,
+        nearPlayer=nearPlayer,intersectsConstructed=intersectsConstructed,
+        commitAssembly=commitAssembly,commitBatch=commitBatch,
+    })
 
     assemblies=AssemblyService.new({
         folder=folder,
@@ -1471,17 +1618,9 @@ function Service.Start()
         simulation:InputCrank(player,crankId,speed,dragging,release)
     end)
 
-    local oldRackEvent=ReplicatedStorage:FindFirstChild("OPENWORKS_RackControl")
-    if oldRackEvent then oldRackEvent:Destroy() end
-    local rackEvent=Instance.new("RemoteEvent")
-    rackEvent.Name="OPENWORKS_RackControl"
-    rackEvent.Parent=ReplicatedStorage
-    rackEvent.OnServerEvent:Connect(function(player,rackId,direction,holding,release)
-        if not hasEquippedTool(player,"Simulate") then return end
-        if type(rackId)~="string" or #rackId>64 then return end
-        if direction~=-1 and direction~=1 then return end
-        simulation:InputRack(player,rackId,direction,holding,release)
-    end)
+    -- Remove rack remotes left by an older Studio hot-reload.
+    local obsoleteRack=ReplicatedStorage:FindFirstChild("OPENWORKS_RackControl")
+    if obsoleteRack then obsoleteRack:Destroy() end
 
     local oldMotor=ReplicatedStorage:FindFirstChild("OPENWORKS_MotorControl")
     if oldMotor then oldMotor:Destroy() end

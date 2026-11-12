@@ -246,7 +246,8 @@ function Picker:Start()
     label(self.MaterialPage,"Physical selection is independent from paint.",
         3,395,349,39,12)
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input)
-        if self.Visible and input.KeyCode==Enum.KeyCode.Escape then
+        if self.Visible and input.KeyCode==Enum.KeyCode.Return
+            and not UIS:GetFocusedTextBox() then
             self:Close()
         end
     end))
