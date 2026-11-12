@@ -461,6 +461,33 @@ def main() -> int:
           and 'model:SetAttribute("BevelShaftAngleDeg",shaftAngleDeg)' in transmission
           and 'for _,angle in ipairs({45,90}) do' in transmission
           and 'bevelTemplate(transmission,count,angle)' in transmission)
+    check("45/90-degree bevels are ONE precompiled tapered CSG solid",
+          'local GeometryService=game:GetService("GeometryService")' in transmission
+          and 'GeometryService:UnionAsync(hub,additions,options)' in transmission
+          and 'GeometryService:SubtractAsync(union,{cutter},options)' in transmission
+          and 'SplitApart=false' in transmission
+          and 'model:SetAttribute("GeometryVersion",3)' in transmission
+          and 'model:SetAttribute("UnifiedBevelSolid",true)' in transmission
+          and 'geometry.Name="BevelSolid"' in transmission
+          and 'geometry.Parent=model' in transmission
+          and 'scratch:Destroy()' in transmission
+          and 'model.PrimaryPart=pivot' in transmission
+          and 'pivot:SetAttribute("GearPivotOnly",true)' in transmission
+          and 'TaperRim_' not in transmission
+          and 'BevelTooth_' not in transmission)
+    check("Bevel root and teeth share one uninterrupted inclined cone",
+          'local axis=(Vector3.xAxis+radial*tanCone).Unit' in transmission
+          and 'local normal=(radial-Vector3.xAxis*tanCone).Unit' in transmission
+          and 'local widestRootRadius=rootRadius+' in transmission
+          and 'rootRadius-TOOTH_EMBED-0.012' in transmission
+          and 'ConicalRoot_' in transmission
+          and 'ConicalTooth_' in transmission
+          and 'for _,angle in ipairs({45,90}) do' in transmission)
+    check("Bevel CSG failure never creates a fake solid with filled-in bore",
+          'if not ok or type(unions)~="table" or #unions~=1' in transmission
+          and 'if not drilled or type(solids)~="table" or #solids~=1' in transmission
+          and 'model:Destroy()' in transmission
+          and 'if old then old:Destroy() end' in transmission)
     check("Bevel 45 and 90 geometry requires intersecting pitch-cone apexes",
           'function GearMath.AutoBevelStatus(' in gear_math
           and 'na~=nb' in gear_math

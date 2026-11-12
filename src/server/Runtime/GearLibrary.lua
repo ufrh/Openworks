@@ -115,11 +115,15 @@ local function bevelTemplate(transmission,count,shaftAngleDeg)
     -- Dense adjacent root ribs give one continuous sloped cone body,
     -- rather than three rows of flat tooth/disc shapes.
     local segments=math.max(36,count*2)
+    -- The cone gets wider at the large end. Segment tangential widths must
+    -- cover THAT circumference too, or hairline gaps appear between fins.
+    local widestRootRadius=rootRadius+
+        (THICKNESS*0.5+0.01)*tanCone
     for index=0,segments-1 do
         local angle=(index+0.5)*2*math.pi/segments
         rib("ConicalRoot_"..(index+1),angle,
             innerRadius,rootRadius,
-            (2*math.pi*rootRadius/segments)*1.22,
+            (2*math.pi*widestRootRadius/segments)*1.15,
             THICKNESS+0.012)
     end
     -- Each straight bevel tooth is a single inclined radial tooth across
