@@ -70,6 +70,13 @@ constructionController.UnifiedExplorer=unifiedExplorer
 assemblyController.UnifiedExplorer=unifiedExplorer
 assemblyToolController.UnifiedExplorer=unifiedExplorer
 unifiedExplorer:Start()
+-- Domain controllers started before the shared panel so they retain their
+-- existing networking/camera initialization. Refresh once now that the dock
+-- owns status/Properties; no legacy instruction HUD should linger on join.
+constructionController:RefreshHUD()
+assemblyController:RefreshHUD()
+assemblyToolController:Refresh()
+unifiedExplorer:OnConstructionSelection()
 
 local worldVisuals = WorldVisuals.new(feedback)
 worldVisuals:Start()
