@@ -6,6 +6,7 @@
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local Construction=ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("Construction")
 local Config=require(Construction:WaitForChild("BuildConfig"))
+local Registry=require(Construction:WaitForChild("PrimitiveRegistry"))
 
 local Data={}
 
@@ -67,7 +68,10 @@ function Data.Snapshot(player)
         local item={
             kind="primitive",id=idOf(model),model=model,
             key="p:"..tostring(idOf(model)),
-            name=model.Name,members={model},
+            name=(function()
+                local template=Registry.Get(model:GetAttribute("TemplateId") or model.Name)
+                return if template then template.DisplayName else model.Name
+            end)(),members={model},
             assemblyId=aid,componentId=cid,
         }
         if type(cid)=="string" and cid~="" then
