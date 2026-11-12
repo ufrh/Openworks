@@ -319,8 +319,8 @@ def main() -> int:
               read("src/client/Controllers/LayeredEditingController.lua"))
 
     check("Primitive library no longer overlaps left-side tool panels",
-          'AnchorPoint = Vector2.new(1,0.5)' in selection
-          and 'Position = UDim2.new(1,-22,0.5,0)' in selection
+          'AnchorPoint = Vector2.new(1,0.5)' in selection_ui_v2
+          and 'Position = UDim2.new(1,-22,0.5,0)' in selection_ui_v2
           and 'Name="OPENWORKS_ToolKeybinds"' in left_panel)
     check("Right-click component lists all mechanical relationships and one CONFIRM",
           'function Panel:RelevantRelations(node)' in unified_panel
