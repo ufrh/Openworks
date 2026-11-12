@@ -12,6 +12,7 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("Construction")
 local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
+local CatalogMetadata=require(construction:WaitForChild("PrimitiveCatalogMetadata"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentGeometry = require(construction:WaitForChild("ComponentGeometry"))
@@ -120,6 +121,8 @@ function Controller.new(tools)
         SmartBoreKind = "Cylindrical",
         SmartLastScan = 0,
         CatalogOpen = false,
+        CatalogCollapsed={},
+        CurrentDisplayName=nil,
         ScaleMode = false,
         NumericPrecision = false,
         Numeric = nil,
@@ -187,17 +190,30 @@ function Controller:MakeUI()
         Visible = false,
     }, gui), 10)
 
-    label(catalog, "PRIMITIVES", UDim2.fromOffset(220, 30), UDim2.fromOffset(13, 9), 17)
+    label(catalog, "BUILD LIBRARY", UDim2.fromOffset(220, 30), UDim2.fromOffset(13, 9), 17)
     local close = button(catalog, "×  CLOSE", UDim2.fromOffset(90, 29), UDim2.fromOffset(226, 10))
     close.Activated:Connect(function() self:ShowCatalog(false) end)
 
-    label(catalog, "Select a Studio-precompiled primitive", UDim2.fromOffset(300, 24),
+    label(catalog, "Search, browse and place construction parts", UDim2.fromOffset(300, 24),
         UDim2.fromOffset(13, 40), 12, MUTED)
 
+    local search=create("TextBox",{
+        Name="Search",Text="",PlaceholderText="Search parts…",
+        ClearTextOnFocus=false,BackgroundColor3=PANEL,
+        TextColor3=TEXT,PlaceholderColor3=MUTED,
+        Font=Enum.Font.GothamMedium,TextSize=13,
+        TextXAlignment=Enum.TextXAlignment.Left,
+        Position=UDim2.fromOffset(12,72),
+        Size=UDim2.new(1,-24,0,34),BorderSizePixel=0,
+    },catalog)
+    rounded(search,7)
+    create("UIPadding",{
+        PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,10),
+    },search)
     local list = create("ScrollingFrame", {
         Name = "Items",
-        Position = UDim2.fromOffset(12, 71),
-        Size = UDim2.new(1, -24, 1, -84),
+        Position = UDim2.fromOffset(12,116),
+        Size = UDim2.new(1, -24, 1, -129),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 5,
@@ -228,6 +244,10 @@ function Controller:MakeUI()
     self.HelpLabel = help
     self.Catalog = catalog
     self.List = list
+    self.CatalogSearch=search
+    search:GetPropertyChangedSignal("Text"):Connect(function()
+        if self.CatalogOpen then self:RefreshCatalog() end
+    end)
     self.Unlock = unlock
     self.Crosshair = crosshair
     self.Numeric = NumericSizePanel.new(gui)
@@ -242,28 +262,76 @@ function Controller:MakeUI()
 end
 
 function Controller:RefreshCatalog()
-    for _, child in ipairs(self.List:GetChildren()) do
-        if child:IsA("TextButton") or child:IsA("TextLabel") then
-            child:Destroy()
+    if not self.List then return end
+    for _,child in ipairs(self.List:GetChildren()) do
+        if child:IsA("TextButton") or child:IsA("TextLabel")
+            or child:IsA("Frame") then child:Destroy() end
+    end
+
+    local search=if self.CatalogSearch
+        then self.CatalogSearch.Text:lower():match("^%s*(.-)%s*$")
+        else ""
+    local searching=search~=""
+    local order=0
+    local matches=0
+    local function advance()
+        order+=1
+        return order
+    end
+    local function header(name,count)
+        local collapsed=self.CatalogCollapsed[name]==true
+        local h=button(self.List,
+            (if collapsed and not searching then "▸  " else "▾  ")
+                ..name:upper().."    "..tostring(count),
+            UDim2.new(1,-7,0,29))
+        h.LayoutOrder=advance()
+        h.TextColor3=Theme.Accent
+        h.TextXAlignment=Enum.TextXAlignment.Left
+        h.Activated:Connect(function()
+            if not searching then
+                self.CatalogCollapsed[name]=not collapsed
+                self:RefreshCatalog()
+            end
+        end)
+        return not collapsed or searching
+    end
+
+    local grouped={}
+    local entries=Registry.List()
+    for _,entry in ipairs(entries) do
+        if not searching or entry.SearchText:find(search,1,true) then
+            local group=entry.Category
+            if not grouped[group] then grouped[group]={} end
+            table.insert(grouped[group],entry)
+            matches+=1
         end
     end
-
-    local entries = Registry.List()
-    if #entries == 0 then
-        local missing = label(self.List, "No primitives found. Run the Studio generator and save the place.",
-            UDim2.new(1, -8, 0, 75), UDim2.fromOffset(0, 0), 13, MUTED)
-        missing.LayoutOrder = 1
-        return
+    for _,category in ipairs(CatalogMetadata.Categories) do
+        local group=grouped[category]
+        if group and #group>0 and header(category,#group) then
+            for _,entry in ipairs(group) do
+                local b=button(self.List,entry.DisplayName,
+                    UDim2.new(1,-7,0,34))
+                b.LayoutOrder=advance()
+                b.TextXAlignment=Enum.TextXAlignment.Left
+                b.BackgroundColor3=if entry.Id==self.CurrentId
+                    then Theme.Active else PANEL
+                b.Activated:Connect(function()
+                    self:SelectPrimitive(entry.Id)
+                    self:ShowCatalog(false)
+                end)
+            end
+        end
     end
-
-    for index, entry in ipairs(entries) do
-        local b = button(self.List, entry.Id, UDim2.new(1, -7, 0, 32))
-        b.LayoutOrder = index
-        b.BackgroundColor3 = if entry.Id == self.CurrentId then Theme.Active else PANEL
-        b.Activated:Connect(function()
-            self:SelectPrimitive(entry.Id)
-            self:ShowCatalog(false)
-        end)
+    if #entries==0 then
+        local missing=label(self.List,
+            "No primitives found. Generate and save the Studio library.",
+            UDim2.new(1,-8,0,54),UDim2.fromOffset(0,0),13,MUTED)
+        missing.LayoutOrder=advance()
+    elseif searching and matches==0 then
+        local empty=label(self.List,"No parts match “"..search.."”",
+            UDim2.new(1,-8,0,42),UDim2.fromOffset(0,0),13,MUTED)
+        empty.LayoutOrder=advance()
     end
 end
 
@@ -316,7 +384,7 @@ function Controller:RefreshHUD()
     if not self.Gui.Enabled then return end
 
     local mode = self.Mode
-    local current = self.CurrentId or "Choose a primitive"
+    local current = self.CurrentDisplayName or self.CurrentId or "Choose a primitive"
     local size = self.CurrentSize
 
     self.TitleLabel.Text = "OPENWORKS / BUILD / " .. string.upper(self.Tools.SubtoolId or tostring(mode))
@@ -443,6 +511,7 @@ function Controller:SelectPrimitive(id)
     if not entry then return end
 
     self.CurrentId = id
+    self.CurrentDisplayName=entry.DisplayName
     self.CurrentSize = entry.Model.PrimaryPart.Size
     self.Steps = { x = 0, y = 0, z = 0 }
     self.Pending = nil
