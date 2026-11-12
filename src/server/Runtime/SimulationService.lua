@@ -31,19 +31,12 @@ local MAX_COLLISION_PAIRS = 1200
 -- If the client disappears or drops its held-input stream, never leave a
 -- running motor behind. The client pulses every 0.1s during LMB hold.
 local CRANK_HOLD_TIMEOUT = 0.5
-local RACK_HOLD_TIMEOUT = 0.5
-local RACK_MANUAL_SPEED = 1.5 -- studs/s; server chooses direction and power
 
 -- Physical gear mesh torques act on real welded shaft assemblies.
 local GEAR_GROUP="OPENWORKS_MeshedGear"
-local RACK_GROUP="OPENWORKS_MeshedRack"
 local function configureTransmissionCollisions()
-    for _,name in ipairs({GEAR_GROUP,RACK_GROUP}) do
-        pcall(function() PhysicsService:RegisterCollisionGroup(name) end)
-    end
+    pcall(function() PhysicsService:RegisterCollisionGroup(GEAR_GROUP) end)
     PhysicsService:CollisionGroupSetCollidable(GEAR_GROUP,GEAR_GROUP,false)
-    PhysicsService:CollisionGroupSetCollidable(GEAR_GROUP,RACK_GROUP,false)
-    PhysicsService:CollisionGroupSetCollidable(RACK_GROUP,RACK_GROUP,false)
 end
 local function bodyKey(model)
     -- ComponentId is only an editor grouping; NEVER a physical joint.
@@ -135,12 +128,6 @@ function Simulation:StopCrank(session,id)
     if session.ActiveCrankId==id then session.ActiveCrankId=nil end
 end
 
-function Simulation:StopRack(session)
-    session.ActiveRackId=nil
-    session.RackLastInput=0
-    session.RackDirection=0
-end
-
 -- Only liveness/key state is accepted from the client. Speed and
 -- torque always come from saved, owner-verified relationship attributes.
 function Simulation:InputMotor(player,key,holding)
@@ -190,21 +177,9 @@ function Simulation:StepCranks(dt)
                 drive.AngularVelocity=crank.Axis*crank.NativeSpeed
             end
         end
-        -- All power flows through native shaft/rack bodies. Each mesh
-        -- adds torques with no permanent input/output designation.
+        -- Meshing transfers torque to both welded shaft assemblies.
         if session.Gears and not session.Paused then
-            local rackId=session.ActiveRackId
-            local rackModel=rackId and session.Gears:RackModel(rackId) or nil
-            if rackId and (not session.Gears:CanDriveRack(rackId)
-                or not rackModel or not rackModel.Parent
-                or not playerRoot
-                or not self.D.nearPlayer(owner,rackModel:GetPivot().Position)
-                or os.clock()-(session.RackLastInput or 0)>RACK_HOLD_TIMEOUT) then
-                self:StopRack(session)
-                rackId=nil
-            end
-            session.Gears:Step(dt,rackId,
-                if rackId then session.RackDirection*RACK_MANUAL_SPEED else 0)
+            session.Gears:Step(dt)
         end
     end
 end
@@ -237,7 +212,6 @@ function Simulation:BeginCrank(player,request)
     if not root or not self.D.nearPlayer(player,crank.Root.Position) then
         return false,"Crank must remain on your own plot"
     end
-    self:StopRack(session)
     for previousId in pairs(session.Cranks) do
         self:StopCrank(session,previousId)
     end
@@ -252,57 +226,6 @@ function Simulation:BeginCrank(player,request)
     end
     crank.Model:SetAttribute("OPENWORKS_CrankRunning",true)
     return true,"Hand crank running • release LMB to stop"
-end
-
--- A guided rack can backdrive its pinion through a bounded native drive.
-function Simulation:BeginRack(player,request)
-    local session=self.Sessions[player]
-    if not session then return false,"Start an assembly simulation first" end
-    if session.Paused or not session.Gears then
-        return false,"Resume simulation before moving a rack"
-    end
-    local id=type(request)=="table" and request.rackId or nil
-    local direction=type(request)=="table" and request.direction or nil
-    if type(id)~="string" or #id>64
-        or (direction~=-1 and direction~=1) then
-        return false,"Select a rack and choose a push direction"
-    end
-    if not session.Gears:CanDriveRack(id) then
-        return false,"Rack must be inside a grounded guide to slide"
-    end
-    local rack=session.Gears:RackModel(id)
-    local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    if not rack or not rack.Parent or not root
-        or not self.D.nearPlayer(player,rack:GetPivot().Position) then
-        return false,"Guided rack must remain on your own plot"
-    end
-    if session.ActiveRackId~=id
-        or session.RackDirection~=direction then
-        session.Gears:StopMotion()
-    end
-    for crankId in pairs(session.Cranks) do
-        self:StopCrank(session,crankId)
-    end
-    session.ActiveRackId=id
-    session.RackDirection=direction
-    session.RackLastInput=os.clock()
-    return true,"Rack push active • release Q/E to stop"
-end
-
-function Simulation:InputRack(player,id,direction,holding,release)
-    local session=self.Sessions[player]
-    if not session or session.ActiveRackId~=id then return end
-    if release==true or holding~=true then
-        self:StopRack(session)
-        return
-    end
-    if direction~=session.RackDirection
-        or not session.Gears or not session.Gears:CanDriveRack(id)
-        or session.Paused then
-        self:StopRack(session)
-        return
-    end
-    session.RackLastInput=os.clock()
 end
 
 -- The remote is a held-input watchdog, never a speed command. Client
@@ -517,8 +440,6 @@ function Simulation:Start(player, payload)
         ActiveRelations={},
         Cranks={},
         ActiveCrankId=nil,
-        ActiveRackId=nil,
-        RackDirection=0,RackLastInput=0,
         Gears=nil,
         Motors={},
         UnregisteredGears=unregisteredGears,
@@ -556,8 +477,6 @@ function Simulation:Start(player, payload)
                 part.CanTouch=false
                 if kind=="Spur" or kind=="Bevel45" or kind=="Bevel90" then
                     part.CollisionGroup=GEAR_GROUP
-                elseif kind=="Rack" then
-                    part.CollisionGroup=RACK_GROUP
                 end
             end
             copies[id] = clone
@@ -857,7 +776,7 @@ function Simulation:Start(player, payload)
         local explicitGround = {}
         -- Ungrounded-by-default means no IMPLICIT grounding of the
         -- aimed body. Player-authored Grounded supports always remain
-        -- grounded, so a deliberate bearing housing / rack guide works.
+        -- grounded, so a deliberate bearing housing works.
         for key, originals in pairs(graph.bodies) do
             if graph.included[key] then
                 for _, member in ipairs(originals) do
@@ -894,7 +813,7 @@ function Simulation:Start(player, payload)
             if groundedKey then session.GroundKeys[groundedKey]=true end
         end
 
-        -- Native shaft bearings remain active; guides provide rack support.
+        -- Native shaft bearings remain active and enforce rotational freedom.
         session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,
             created,player.Character,d.folder)
 
@@ -938,11 +857,9 @@ function Simulation:Start(player, payload)
         .. (if next(session.GroundKeys)
             then "green grounded / orange movable • P stop"
             else "free assembly • orange bodies • P stop")
-        .. (if session.Gears
-            and (#session.Gears.Gears>0 or #session.Gears.Racks>0) then
-            string.format(" • %d gears / %d racks / %d automatic contact(s)",
-                #session.Gears.Gears,#session.Gears.Racks,
-                session.Gears.Contacts) else "")
+        .. (if session.Gears and #session.Gears.Gears>0 then
+            string.format(" • %d gears / %d automatic contact(s)",
+                #session.Gears.Gears,session.Gears.Contacts) else "")
         .. (if unregisteredGears>0 then
             string.format(" • WARNING: %d nearby gear(s) NOT in assembly",
                 unregisteredGears) elseif session.Gears
@@ -1050,7 +967,6 @@ function Simulation:Pause(player)
     for crankId in pairs(session.Cranks) do
         self:StopCrank(session,crankId)
     end
-    self:StopRack(session)
     for _,motor in ipairs(session.Motors or {}) do
         motor.Held=false
         if motor.Constraint.Parent then motor.Constraint.AngularVelocity=0 end
@@ -1109,12 +1025,10 @@ function Simulation:Info(player,payload)
         table.insert(lines,if session.Paused then "PAUSED"
             elseif session.Gears and session.Gears:IsGeared(id)
                 then "PHYSICAL SHAFT TRANSMISSION" else "LIVE PHYSICS")
-        if session.Gears
-            and (#session.Gears.Gears>0 or #session.Gears.Racks>0) then
+        if session.Gears and #session.Gears.Gears>0 then
             table.insert(lines,string.format(
-                "%d transmission contact(s) • %d gears • %d racks",
-                session.Gears.Contacts,#session.Gears.Gears,
-                #session.Gears.Racks))
+                "%d transmission contact(s) • %d gears",
+                session.Gears.Contacts,#session.Gears.Gears))
         end
         if session.Gears and session.Gears:IsGeared(id) then
             table.insert(lines,session.Gears:Explain(id))
