@@ -149,7 +149,12 @@ function ToolController:BindTool(tool)
         if self.ActiveTool==tool then self:SetActive(nil) end
     end))
     table.insert(connections,tool.Activated:Connect(function()
-        if self.ActiveTool==tool then self.Activated:Fire(self.ActiveId) end
+        -- A click on docked UI must never also place/delete/select in world.
+        -- Roblox Tool.Activated does not include gameProcessedEvent.
+        if self.ActiveTool==tool
+            and player:GetAttribute("OPENWORKS_ExplorerOpen")~=true then
+            self.Activated:Fire(self.ActiveId)
+        end
     end))
     table.insert(connections,tool.Destroying:Connect(function()
         if self.ActiveTool==tool then self:SetActive(nil) end
