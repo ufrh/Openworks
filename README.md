@@ -1,12 +1,12 @@
 # OPENWORKS
 
-**OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The stable pre-UI-v2 implementation lives on `dev`. UI v2 Phase 1 is isolated on `feature/ui-reorganization-v2`. Both use **Rojo** and **FORGE/Reforge** and still require Roblox Studio validation.
+**OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The stable pre-UI-v2 implementation lives on `dev`. UI v2 Phases 1–3 are isolated on `feature/ui-reorganization-v2`. Both use **Rojo** and **FORGE/Reforge** and still require Roblox Studio validation.
 
 > **State:** Experimental. Do not assume a feature is Studio-verified merely because it is committed. See [current regression checks](docs/QA_REGRESSION.md) and [known limitations](docs/ARCHITECTURE.md#known-limitations).
 
 ## Start developing
 
-1. Check out `feature/ui-reorganization-v2` to test UI v2 Phase 1 (`dev` remains the fallback); install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
+1. Check out `feature/ui-reorganization-v2` to test UI v2 Phases 1–3 (`dev` remains the fallback); install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
 2. Run `START_OPENWORKS.bat` (Windows) or `scripts/start-dev.ps1` using PowerShell.
 3. Connect the Roblox Studio Rojo plugin to **localhost:34872**. The place ID and Rojo mapping are in `default.project.json`.
 4. The **Studio-generated primitive bank** must exist in `ReplicatedStorage` and be saved with the place. The server only backfills some dynamic prefab families. Restart **Play** after switching code because Roblox caches ModuleScripts.
@@ -33,7 +33,7 @@ The native Roblox hotbar now contains **exactly three** primary tools. Letter ke
 
 Build/Place still uses **B** to open the catalog when already active; Build/Edit still uses **E** for component interior editing when already active; Build/Resize uses **V** to toggle face handles when already active. A live fit reserves Q/E for shaft roll so E does not inadvertently switch subtools.
 
-Phase 2 now implements shared aqua/purple/orange/green/red wireframe feedback, visual ghost edges and minimal relationship adornments, replacing competing selection/grounding Highlights. **Exact triangle-edge CSG wireframes and localized CSG interference outlines remain unfinished**. Instructional HUDs and Properties are still temporary until later phases. See [Phase 2 notes](docs/UI_V2_PHASE_2_IMPLEMENTATION.md) and the [regression matrix](docs/UI_V2_REGRESSION_MATRIX.md).
+Phase 2 implements shared aqua/purple/orange/green/red wireframe feedback, geometry ghosts and minimal mechanical indicators. **Exact CSG triangle edges and localized CSG collision outlines remain unfinished.** Phase 3 adds a docked unified Explorer/Properties panel with real assembly/component membership, connection inspection, contextual actions, hover tooltips, and inline paint/material/joint/motor/assembly configuration. Press **Tab** to unlock the dock, or right-click an authored object for its context menu. Persistent legacy instruction HUDs are hidden; some modal editing components remain as fallbacks pending Studio testing. See [Phase 3 notes](docs/UI_V2_PHASE_3_IMPLEMENTATION.md), [Phase 2 notes](docs/UI_V2_PHASE_2_IMPLEMENTATION.md), and the [regression matrix](docs/UI_V2_REGRESSION_MATRIX.md).
 
 The following three ideas **must never be conflated**:
 
