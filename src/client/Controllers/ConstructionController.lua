@@ -357,7 +357,7 @@ function Controller:RefreshHUD()
         local alignment = self.Layered.Alignment
         if alignment.Stage == "PickTarget" then
             self.DetailLabel.Text = "ALIGN SHAFT  /  choose an opening"
-            self.HelpLabel.Text = "Aim at tube or drilled hole • click • Tab behind • Esc cancel"
+            self.HelpLabel.Text = "Aim at tube or drilled hole • click • Tab behind • Enter cancel"
         elseif alignment.Stage == "Fit" then
             local shaft = alignment.Shaft
             local diameter = if shaft and shaft.PrimaryPart
@@ -365,11 +365,11 @@ function Controller:RefreshHUD()
             self.DetailLabel.Text = string.format(
                 "SHAFT FIT  /  %.2f U diameter", diameter)
             self.HelpLabel.Text =
-                "Scroll 0.05 U to snug fit • click / Esc to finish"
+                "Scroll 0.05 U to snug fit • click / Enter to finish"
         else
             self.DetailLabel.Text = "INSERTION OFFSET  /  "
                 .. tostring(alignment.OffsetUnits) .. " U"
-            self.HelpLabel.Text = "Mouse wheel changes depth • click confirm • Esc cancel"
+            self.HelpLabel.Text = "Mouse wheel changes depth • click confirm • Enter cancel"
         end
     elseif self.Mode == "Inspect" then
         local target = self.Selected
@@ -387,9 +387,12 @@ function Controller:RefreshHUD()
                 dimensions.X / Grid.Unit, dimensions.Y / Grid.Unit,
                 dimensions.Z / Grid.Unit) else "")
         self.HelpLabel.Text = "Tab depth • Shift+Tab reverse • X X-ray • I isolate"
+    elseif self.CatalogOpen then
+        self.DetailLabel.Text="PRIMITIVES / choose a new construction part"
+        self.HelpLabel.Text="Click a catalog entry to place • B / Enter close"
     elseif self.PivotSetting then
         self.DetailLabel.Text="FIT ORIGIN / "..FitPivotSnap.Modes[self.PivotModeIndex]
-        self.HelpLabel.Text="Aim + click set • Q/E: cursor, face, edge, corner • Esc / Shift+O"
+        self.HelpLabel.Text="Aim + click set • Q/E: cursor, face, edge, corner • Enter / Shift+O"
     elseif self.ScaleMode then
         self.DetailLabel.Text = current .. (if self.ScaleSize then
             "  •  " .. string.format("%.2g × %.2g × %.2g U",
@@ -405,20 +408,20 @@ function Controller:RefreshHUD()
     elseif mode == "Build" then
         self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
             size.X / Grid.Unit, size.Y / Grid.Unit, size.Z / Grid.Unit) else "")
-        self.HelpLabel.Text = if self.CatalogOpen then "Choose a primitive • B/Esc close"
+        self.HelpLabel.Text = if self.CatalogOpen then "Choose a primitive • B/Enter close"
             else "Click place • R/T/Y rotate • V grips • N size • Enter select"
     elseif self.Pending == "Move" then
         self.DetailLabel.Text = "MOVE  /  " .. (self.Selected and self.Selected.Name or "")
-        self.HelpLabel.Text = "Click to place  •  R/T/Y rotate  •  Esc cancel"
+        self.HelpLabel.Text = "Click to place  •  R/T/Y rotate  •  Enter cancel"
     elseif self.Pending == "Copy" then
         self.DetailLabel.Text = "DUPLICATE  /  " .. current
-        self.HelpLabel.Text = "Click to place copy  •  R/T/Y rotate  •  Esc cancel"
+        self.HelpLabel.Text = "Click to place copy  •  R/T/Y rotate  •  Enter cancel"
     elseif self.SelectedComponentId then
         self.DetailLabel.Text = (if self.Pending == "ComponentMove" then "MOVING COMPONENT"
             elseif self.Pending == "ComponentCopy" then "COPYING COMPONENT"
             else "Rigid component") .. "  /  " .. tostring(#self.SelectedParts) .. " primitives"
         self.HelpLabel.Text = if self.Pending then
-            "Aim and click to confirm  •  R/T/Y rotate  •  Esc cancel"
+            "Aim and click to confirm  •  R/T/Y rotate  •  Enter cancel"
             else "Double-click member to edit • G move • E interior • U ungroup"
     elseif #self.SelectedParts > 1 then
         self.DetailLabel.Text = tostring(#self.SelectedParts) .. " primitives selected"
@@ -2096,7 +2099,7 @@ function Controller:EndScale()
     if self.Numeric and self.Numeric.Active then self.Numeric:Hide() end
     if not self.ScaleMode then return end
 
-    -- Escape/V during an unfinished mouse drag cancels the tentative
+    -- Enterape/V during an unfinished mouse drag cancels the tentative
     -- dimensions rather than leaving the HUD showing an uncommitted size.
     local drag = self.ScaleHandles and self.ScaleHandles.Drag
     if drag then
