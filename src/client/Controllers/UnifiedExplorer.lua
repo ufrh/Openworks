@@ -457,6 +457,7 @@ end
 
 function Panel:RenderTree()
     if not self.Tree or not self.Snapshot then return end
+    if self.Tooltip then self.Tooltip.Visible=false end
     clear(self.Tree)
     local search=self.Search.Text:lower()
     self.TabObjects.BackgroundColor3=if self.View=="Objects" then Theme.Active else Theme.Raised
@@ -649,6 +650,9 @@ end
 
 function Panel:Geometry(node)
     local model=node.model or node.members and node.members[1]
+    if node.kind=="component" and node.members and #node.members>0 then
+        model=ComponentGeometry.CentralPrimitive(node.members) or model
+    end
     if not model then return end
     self:Section("Geometry")
     self:Value("Object",node.name)
@@ -846,6 +850,7 @@ end
 
 function Panel:RenderProperties()
     if not self.Properties then return end
+    if self.Tooltip then self.Tooltip.Visible=false end
     clear(self.Properties)
     self.Fields={}
     self.Flags={}
