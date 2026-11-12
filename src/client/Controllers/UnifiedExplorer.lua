@@ -139,6 +139,9 @@ function Panel:Focus(value)
                 or (self.Tools.PrimaryId=="AssemblySimulation"
                     and self.Tools.SubtoolId=="Simulation"))
     end
+    -- Keep Build's legacy crosshair and catalog pointer state synchronized
+    -- when this shared panel or a connection picker claims cursor focus.
+    if self.Build and self.Build.Gui then self.Build:RefreshPointer() end
 end
 
 function Panel:CloseMenu()
