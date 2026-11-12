@@ -636,43 +636,18 @@ function Tool:Tick()
         self.LastMessage=nil
         self:Refresh()
     end
-    local mode=self.Mode
-    local id=""
+    -- Only explicit assembly draft members are selected. Merely pointing
+    -- at another registered assembly must never create a purple box.
     local members={}
-    if mode=="Assembly" and self.Stage=="Selecting" then
+    if self.Mode=="Assembly" and self.Stage=="Selecting" then
         for _,model in ipairs(ownedModels()) do
             if self.Selected[instanceId(model)] then
                 table.insert(members,model)
             end
         end
-    elseif mode=="Simulate"
-        and player:GetAttribute("OPENWORKS_Simulating")~=true then
-        local aim=self:Pick()
-        local chosen=aim and aim:GetAttribute("AssemblyId")
-        if type(chosen)=="string" and chosen~="" then
-            id=chosen
-            members=self:OwnedAssembly(chosen)
-        end
-    elseif mode=="Assembly" and self.Stage=="Idle" then
-        local aim=self:Pick()
-        local chosen=aim and aim:GetAttribute("AssemblyId")
-        if type(chosen)=="string" and chosen~="" then
-            id=chosen
-            members=self:OwnedAssembly(chosen)
-        end
     end
-
-    -- Hover preview belongs to the registered assembly, not the moving
-    -- individual seed primitive. In Simulate, fill suppression prevents
-    -- purple from fighting green/orange grounding Highlights.
-    if self.UnifiedExplorer and self.UnifiedExplorer.Selected
-        and self.UnifiedExplorer.Selected.kind=="assembly"
-        and self.UnifiedExplorer.Selected.id==id and self.Stage~="Selecting" then
-        self.Feedback:Clear("assembly")
-    else
-        self:ShowVisuals(members,PURPLE)
-    end
-    player:SetAttribute("OPENWORKS_HoverAssemblyId",id)
+    self:ShowVisuals(members,PURPLE)
+    player:SetAttribute("OPENWORKS_HoverAssemblyId","")
 end
 
 function Tool:Start()
