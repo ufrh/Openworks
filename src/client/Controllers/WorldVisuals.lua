@@ -223,37 +223,10 @@ function Visuals:Update()
         end
     end
 
-    -- A grounding visual is meaningful in assembly/simulation, not during
-    -- ordinary Build painting or precision placement.
-    local visibleGround=player:GetAttribute("OPENWORKS_PrimaryTool")
-        =="AssemblySimulation"
-    local nextIds={}
-    local count=0
-    if visibleGround and self.Feedback then
-        for id,model in pairs(models) do
-            if count>=MAX_BODIES then break end
-            count+=1
-            nextIds[id]=true
-            local grounded=model:GetAttribute("Grounded")==true
-            if simulating then
-                local constructed=workspace:FindFirstChild(Config.FolderName)
-                for _,original in ipairs(if constructed then constructed:GetChildren() else {}) do
-                    if original:GetAttribute("InstanceId")==id then
-                        grounded=original:GetAttribute("Grounded")==true
-                        break
-                    end
-                end
-            end
-            self.Feedback:Set("ground",id,{model},
-                if grounded then "grounded" else "free",false)
-        end
-    end
-    if self.Feedback then
-        for id in pairs(self.GroundIds) do
-            if not nextIds[id] then self.Feedback:Remove("ground",id) end
-        end
-    end
-    self.GroundIds=nextIds
+    -- Grounding remains authored physics state and editable context data.
+    -- It is never displayed as a permanent selection-like bounding box.
+    if self.Feedback then self.Feedback:Clear("ground") end
+    table.clear(self.GroundIds)
 
     local active={}
     if not simulating and authored then
