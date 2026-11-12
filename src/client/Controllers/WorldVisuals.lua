@@ -85,7 +85,9 @@ function Visuals:JointCue(id)
         cue.Arc[i]=create(folder,"LineHandleAdornment",
             "RotationArc_"..i,BLUE)
     end
-    cue.Pow=create(folder,"BillboardGui","MotorLabel")
+    -- BillboardGui with a world Adornee is reliably rendered from PlayerGui.
+    cue.Pow=create(player:WaitForChild("PlayerGui"),"BillboardGui",
+        "OPENWORKS_POW_"..id)
     cue.Pow.Size=UDim2.fromOffset(28,14)
     cue.Pow.AlwaysOnTop=false
     cue.Pow.Enabled=false
@@ -273,6 +275,7 @@ function Visuals:Update()
     for id,cue in pairs(self.Joints) do
         if not active[id] then
             cue.Root:Destroy()
+            cue.Pow:Destroy()
             self.Joints[id]=nil
         end
     end
@@ -289,7 +292,10 @@ end
 function Visuals:Destroy()
     for _,connection in ipairs(self.Connections) do connection:Disconnect() end
     if self.Feedback then self.Feedback:Clear("ground") end
-    for _,cue in pairs(self.Joints) do cue.Root:Destroy() end
+    for _,cue in pairs(self.Joints) do
+        cue.Root:Destroy()
+        cue.Pow:Destroy()
+    end
     self.Folder:Destroy()
 end
 
