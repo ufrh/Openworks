@@ -23,6 +23,10 @@ local function gear(model)
     return model and type(model:GetAttribute("GearTeeth")) == "number"
 end
 
+local function hub(model)
+    return gear(model) or (model and model:GetAttribute("PrimitiveFamily")=="Pulley")
+end
+
 function Smart.Members(ghost: Model)
     local members = {}
     if ghost.PrimaryPart then
@@ -191,11 +195,11 @@ end
 -- Gear bores are real open centers. Gear/shaft fits ALWAYS produce
 -- rigid physical welds; shaft bearings remain the sole rotation joints.
 function Smart.HubFits(source: Model, target: Model)
-    local gearBody=if gear(source) then source else if gear(target) then target else nil
+    local gearBody=if hub(source) then source else if hub(target) then target else nil
     local shaft=if Alignment.IsShaft(source) then source
         else if Alignment.IsShaft(target) then target else nil
     if not gearBody or not shaft or not shaft.PrimaryPart then
-        return false,"Hub requires one gear and one cylindrical shaft"
+        return false,"Hub requires a gear/pulley and a cylindrical shaft"
     end
     -- A gear hub is truly concentric, not merely somewhere within
     -- its clearance cavity. Keep a precise centered mount (including
@@ -206,7 +210,7 @@ function Smart.HubFits(source: Model, target: Model)
     local separation=gcf.Position-scf.Position
     local eccentricity=(separation-direction*separation:Dot(direction)).Magnitude
     if eccentricity>0.012 then
-        return false,"Gear hub must be centered on the shaft axis"
+        return false,"Pulley/gear hub must be centered on the shaft axis"
     end
     -- One authoritative clearance predicate for gears, tubes and holes.
     -- Also checks shaft diameter, coaxial orientation and engagement.
@@ -214,10 +218,10 @@ function Smart.HubFits(source: Model, target: Model)
 end
 
 function Smart.HubPose(source: Model, target: Model, near: Vector3)
-    if not ((gear(source) and Alignment.IsShaft(target))
-        or (Alignment.IsShaft(source) and gear(target))) then return nil end
+    if not ((hub(source) and Alignment.IsShaft(target))
+        or (Alignment.IsShaft(source) and hub(target))) then return nil end
     local shaft=if Alignment.IsShaft(source) then source else target
-    local gearBody=if gear(source) then source else target
+    local gearBody=if hub(source) then source else target
     local bore=gearBody:GetAttribute("BoreRadiusStuds")
     if type(bore)~="number" or bore<=0 then return nil end
     local diameter=math.max(shaft.PrimaryPart.Size.Y,shaft.PrimaryPart.Size.Z)
@@ -525,6 +529,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
     for _,source in ipairs(members) do
         local isShaft=Alignment.IsShaft(source)
         local isGear=gear(source)
+        local isHub=hub(source)
         local isOpening=Alignment.TargetAxis(source)~=nil
         if not isShaft and not isGear and not isOpening then continue end
         for _,target in ipairs(targets) do
@@ -557,8 +562,8 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     cf=(pose*source:GetPivot():Inverse())*ghost:GetPivot()
                     score=if aimed then rayError+0.04 else dist
                 end
-            elseif (isGear and Alignment.IsShaft(target))
-                or (isShaft and gear(target)) then
+            elseif (isHub and Alignment.IsShaft(target))
+                or (isShaft and hub(target)) then
                 -- A broad aim on the rim or tooth must never magnetize
                 -- into the hub. Only a tight ray near the actual gear bore
                 -- (or a visibly aimed shaft segment) can override proximity.
@@ -567,7 +572,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 local near=source:GetPivot().Position
                 if hubAimed then
                     local stationary=target:GetPivot()
-                    if isGear and Alignment.IsShaft(target) then
+                    if isHub and Alignment.IsShaft(target) then
                         -- Gears also have real bores: while dragging a
                         -- gear onto a long fixed shaft, preserve the
                         -- crosshair's axial location, not shaft midpoint.
