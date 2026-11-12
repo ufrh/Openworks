@@ -30,7 +30,8 @@ tools:Start()
 local constructionController = ConstructionController.new(tools)
 local assemblyController = AssemblyController.new(tools)
 local assemblyToolController=AssemblyToolController.new(tools)
--- Edit authors geometry/joints, Assembly names and chooses member sets,
+-- Build handles geometry creation, editing and joint authoring; Assembly
+-- names and chooses member sets,
 -- and Simulate exclusively runs registered assemblies.
 constructionController.Assembly = assemblyController
 assemblyController.Construction = constructionController
