@@ -109,12 +109,11 @@ def main() -> int:
     assembly_ui=read("src/client/Controllers/AssemblyController.lua")
     assembly_tool=read("src/client/Controllers/AssemblyToolController.lua")
     crank_ui=read("src/client/Controllers/HandCrankController.lua")
-    rack_ui=read("src/client/Controllers/RackControlController.lua")
-    check("Build/Edit/Assembly/Crank/Rack selection always uses center ray",
+    check("Build/Edit/Assembly/Crank selection always uses center ray",
           'camera:ViewportPointToRay(center.X,center.Y)' in aiming
           and 'ScreenPointToRay' not in aiming
           and all('CameraAimRay.Ray(camera)' in doc for doc in (
-              construction_ui,assembly_ui,assembly_tool,crank_ui,rack_ui)))
+              construction_ui,assembly_ui,assembly_tool,crank_ui)))
     check("Freecam smooths movement, braking and FOV without spring drift",
           'local ACCEL_RESPONSE=15' in camera
           and 'local BRAKE_RESPONSE=27' in camera
@@ -320,92 +319,68 @@ def main() -> int:
           and "if left~=right then" in simulation)
     check("No per-component completeness requirement",
           "An editor component has members outside this assembly" not in simulation)
-    gears=read("src/server/Runtime/GearKinematics.lua")
+    gears=read("src/server/Runtime/GearTransmission.lua")
     gear_math=read("src/shared/Construction/GearMath.lua")
-    check("Kinematic gears no longer receive native bearings or prefab joints",
-          'session.Gears=GearKinematics.new(graph,copies)' in simulation
-          and 'not session.Gears:IsKinematic(id)' in simulation
-          and 'session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))' in simulation
-          and 'session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId"))' in simulation
-          and 'part.Anchored=true' in simulation
-          and 'part.CanCollide=false' in simulation
-          and 'motor.Name="AuthoredGearRatioDrive"' not in simulation)
-    check("Automatic gear meshes are independent of K authoring",
+    check("Physical shaft transmission replaces kinematic gear animation",
+          'session.Gears=GearTransmission.new(graph,copies,runtime)' in simulation
+          and 'GearTransmission=require(' in simulation
+          and 'session.Gears:IsKinematic' not in simulation
+          and 'PivotTo(' not in gears
+          and 'Instance.new("Torque")' in gears)
+    check("Authored shaft welds and prefab teeth survive physics compilation",
+          'if part~=anchor then' in simulation
+          and 'weld.Name="PrefabInternalPart"' in simulation
+          and 'edge.kind=="Weld"' in simulation
+          and 'weld.Name = "FixedRelationship"' in simulation)
+    check("Automatic tooth contacts do not require authored gear edges",
           'GearMath.AutoMeshable(left.Model,right.Model)' in gears
-          and 'if left.Group==right.Group then continue end' in gears
           and 'function GearMath.AutoMeshable(' in gear_math
-          and 'if edge.kind~="Gear" then continue end' not in gears
-          and 'function Controller:ToggleGearMode()' in read(
-              "src/client/Controllers/AssemblyController.lua")
-          and 'Gears auto-mesh in simulation' in read(
-              "src/client/Controllers/AssemblyController.lua"))
-    check("Runtime gear engagement matches real face overlap, not editor center-plane limit",
+          and 'if edge.kind == "Gear" then' in simulation)
+    check("Runtime gear engagement matches real face overlap",
           'function GearMath.AutoMeshStatus(' in gear_math
           and 'MESH_PITCH_TOLERANCE=0.09' in gear_math
           and 'math.min(a.PrimaryPart.Size.X,b.PrimaryPart.Size.X)*0.07' in gear_math
-          and 'if axial>=faceLimit then' in gear_math
-          and 'if not GearMath.Meshable(a,b)' not in gear_math)
-    check("Third gear diagnostics expose failed pitch or axial overlap",
-          'self.Unmeshed={}' in gears
-          and 'GearMath.AutoMeshStatus(' in gears
-          and 'function Kinematics:Explain(id)' in gears
+          and 'if axial>=faceLimit then' in gear_math)
+    check("Unmeshed gear diagnostics identify pitch and axial errors",
+          'function Transmission:Explain(id)' in gears
+          and 'GearMath.AutoMeshStatus(entry.Model,other.Model)' in gears
           and 'session.Gears.Unmeshed[1].Reason' in simulation
           and 'session.Gears:Explain(id)' in simulation)
-    check("New unregistered gear cannot silently vanish from simulation",
+    check("Nearby unregistered gear is not silently included in a simulation",
           'local function countNearbyUnregisteredGears(' in simulation
-          and 'countNearbyUnregisteredGears(' in simulation
           and 'session.UnregisteredGears' in simulation
           and 'NOT in assembly' in simulation)
-    check("Obsolete explicit K edge does not force registered assembly expansion",
+    check("Legacy authored K edges do not join registered assemblies",
           'or kind == "Fixed" or kind == "Gear"' not in simulation
-          and 'or kind == "Cylindrical" or kind == "Fixed"' in simulation
           and 'if edge.kind == "Gear" then' in simulation)
-    check("Kinematic gear train respects tooth ratios and rigid grouping",
+    check("Multiple coaxial gears share a rigid shaft torque body",
           'edge.kind=="Weld" or edge.kind=="Fixed" or edge.kind=="Bolt"' in gears
-          and 'ratio=-left.Teeth/right.Teeth*orientation' in gears
+          and 'table.insert(group.Gears,entry)' in gears
+          and 'All gears welded to one shaft must be coaxial' in gears
+          and 'group.AxisSource=clone' in gears)
+    check("Gear torque, shaft ratio, and backdrive are reciprocal",
+          'ratio=-left.Teeth/right.Teeth*orientation' in gears
           and 'ratio=-left.Teeth/right.Teeth*signA*signB' in gears
-          and 'model:PivotTo(delta*model:GetPivot())' in gears
-          and 'local stalled=false' in gears
-          and 'if group.Grounded then stalled=true end' in gears)
-    check("Gear bodies are physics-free but remain selectable",
-          'model:SetAttribute("OPENWORKS_GearKinematic",true)' in gears
-          and 'part.CanQuery=part:GetAttribute("GearPivotOnly")~=true' in simulation
-          and 'session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,' in simulation
-          and 'not session.Gears:IsKinematic(id)' in simulation)
-    check("Crank powers kinematic gears without native motors",
-          'local kinematic=session.Gears:IsKinematic(drivenId)' in simulation
-          and 'if not kinematic then' in simulation
-          and 'session.Gears:Step(dt,' in simulation
-          and 'if crank.Drive then crank.Drive.Enabled=false end' in simulation
-          and 'crank.NativeSpeed+=(HandCrankMath.FixedAngularSpeed' in simulation)
-    check("Gear and rigid shaft fall as one kinematic body, no native gear forces",
-          'function Kinematics:Translate(dt)' in gears
-          and 'group.FallVelocity-workspace.Gravity*maxStep' in gears
-          and 'shiftGroup(group,Vector3.new(0,offset,0))' in gears
-          and 'part.Anchored=true' in simulation
-          and 'part.CanCollide=false' in simulation
-          and 'not session.Gears:IsKinematic(id)' in simulation)
-    check("Grounded bearing housing supports axle without native hinge forces",
-          'function Kinematics:ConfigureSupport(' in gears
-          and 'sg.Supported=true' in gears
-          and 'tg.Supported=true' in gears
-          and 'group.Supported then' in gears
-          and 'session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,' in simulation)
-    check("Free-spinning gear follows falling shaft position and tilt",
-          'tg.Followers' in gears
-          and 'shiftGroup(group,center-group.Center)' in gears
-          and 'local desiredAxis=shaft.RightVector.Unit*follower.AxisSign' in gears
-          and 'CFrame.fromAxisAngle(axis,math.acos(dot))' in gears)
-    check("Branched and reverse gear influence use one bidirectional graph",
-          'table.insert(a.Links,{Group=b,Ratio=ratio})' in gears
-          and 'table.insert(b.Links,{Group=a,Ratio=1/ratio})' in gears
-          and 'for _,edge in ipairs(group.Links) do' in gears
-          and 'for group,velocity in pairs(speed) do' in gears)
-    check("Scripted crank ramps up and coasts down while gears stay physics-free",
-          'CRANK_ACCEL_RESPONSE=9' in gears
-          and 'CRANK_RELEASE_RESPONSE=6' in gears
-          and 'self.CurrentSpeed+=(target-self.CurrentSpeed)*alpha' in gears
-          and 'local ROTATION_PERIOD=1/60' in gears
+          and 'a.Pending+=aa*(-ratio*effort)' in gears
+          and 'b.Pending+=ab*effort' in gears
+          and 'AssemblyAngularVelocity:Dot(aa)' in gears
+          and 'MAX_TOOTH_FORCE=80000' in gears)
+    check("Competing motors are torque limited and backdrivable",
+          'drive.MaxTorque=HandCrankMath.MaxTorque' in simulation
+          and 'constraint.MotorMaxTorque=math.clamp(' in simulation
+          and 'local effective=1/(1/ib+ratio^2/ia)' in gears
+          and 'PHASE_RECOVERY=6' in gears
+          and 'COUPLING_RESPONSE=14' in gears)
+    check("Meshed bodies use physical bearings and no implicit anchoring",
+          'part.Anchored=session.GroundKeys[key]==true' in simulation
+          and 'part.CollisionGroup=GEAR_GROUP' in simulation
+          and 'CollisionGroupSetCollidable(GEAR_GROUP,GEAR_GROUP,false)' in simulation
+          and 'session.Gears:IsGeared(id)' in simulation
+          and 'JointFrames.ForOpening(edge.target)' in simulation)
+    check("Native hand crank powers physical gear shafts",
+          'local drive=Instance.new("AngularVelocity")' in simulation
+          and 'if crank.Drive then' in simulation
+          and 'session.Gears:Step(dt)' in simulation
           and 'crank.NativeSpeed+=(HandCrankMath.FixedAngularSpeed' in simulation)
     check("Crank selectable through obstructing shaft / gear in single-crank assembly",
           'if Crank.IsCrank(node) then return node end' in crank
@@ -440,10 +415,12 @@ def main() -> int:
           "HandCrankMath.ApplySize(model,data.size)" in service
           and "HandCrankMath.ValidSize" in persistence
           and "HandCrankMath.ShaftSize(source,target)" in mechanical)
-    check("Gear hub choice creates only physical hinge or weld",
-          'local HUB_TYPES={"Rotation","Rigid"}' in mates
-          and 'request.relationKind=="Rotation" then "Bearing" else "Weld"' in mechanical
-          and 'kind=="Hub" then "Rotation"' in read("src/shared/Construction/SmartPlacement.lua"))
+    check("Gear hubs always weld to shafts without a separate choice",
+          'local HUB_TYPES=' not in mates
+          and 'elseif mode=="Hub" then "Weld"' in mechanical
+          and 'spec.kind="Weld"' in mechanical
+          and 'elseif kind=="Hub" then "Weld"' in read(
+              "src/shared/Construction/SmartPlacement.lua"))
     gear_clearance=read("src/shared/Construction/BoreClearance.lua")
     smart_placement=read("src/shared/Construction/SmartPlacement.lua")
     preview=read("src/shared/Construction/PreviewFeedback.lua")
@@ -470,7 +447,6 @@ def main() -> int:
           and 'local pose,dist,meshes=Smart.MultiGearPose(' in smart_placement
           and 'math.max(0,meshes-1)*0.5' in smart_placement)
     transmission=read("src/server/Runtime/GearLibrary.lua")
-    rack_client=read("src/client/Controllers/RackControlController.lua")
     check("45/90-degree bevel catalog contains actual tapered tooth-ring geometry",
           'function bevelTemplate(' in transmission
           and 'local halfCone=math.rad(shaftAngleDeg*0.5)' in transmission
@@ -513,35 +489,23 @@ def main() -> int:
           and 'GearMath.Kind(target)==bevelKind' in smart_placement
           and 'kind=="Bevel45" or kind=="Bevel90"' in gears
           and 'BevelConeDeg") or 22.5' in gear_math)
-    check("Rack and guide parts are available as generated templates",
-          'function rackTemplate(' in transmission
-          and 'function rackGuideTemplate(' in transmission
-          and 'model:SetAttribute("RackPitchStuds",MODULE)' in transmission
-          and 'model:SetAttribute("RackGuideLengthStuds",length)' in transmission)
-    check("Rack and guide placement uses physical contact, no implicit joint",
-          'function Smart.RackPose(' in smart_placement
-          and 'function Smart.GuidePose(' in smart_placement
-          and 'GearMath.AutoGuideStatus(' in gear_math
-          and 'mode=="Rack" or mode=="Guide"' in mechanical
-          and 'd.commitAssembly(player,before,after,nil,false)' in mechanical)
-    check("Rack pinion graph conserves reciprocal angular-linear ratio",
-          'for _,rack in ipairs(self.Racks) do' in gears
-          and 'GearMath.PitchRadius(pinion.Model)*signed' in gears
-          and 'table.insert(b.Links,{Group=a,Ratio=1/ratio})' in gears
-          and 'shiftGroup(group,group.TravelAxis*velocity*step)' in gears)
-    check("Rack translation requires physical grounded guide and end limits",
-          'groundKeys["p:"..tostring(id)]' in gears
-          and 'group.Guide={' in gears
-          and 'nextPosition=travel+velocity*step' in gears
-          and 'if math.abs(nextPosition)>maxTravel+0.001 then' in gears)
-    check("Held Q/E backdrives rack without arbitrary client speed or torque",
-          'action="BeginRack"' in rack_client
-          and 'Enum.KeyCode.Q' in rack_client
-          and 'Enum.KeyCode.E' in rack_client
-          and 'function Simulation:BeginRack(' in simulation
-          and 'function Simulation:InputRack(' in simulation
-          and 'local RACK_MANUAL_SPEED = 1.5' in simulation
-          and 'OPENWORKS_RackControl' in service)
+    check("Rack-and-pinion shortcut has no templates, controller or solver",
+          'function rackTemplate(' not in transmission
+          and 'function rackGuideTemplate(' not in transmission
+          and 'function Smart.RackPose(' not in smart_placement
+          and 'function Smart.GuidePose(' not in smart_placement
+          and 'AutoRackStatus' not in gear_math
+          and 'function Transmission:CanDriveRack' not in gears
+          and 'function Simulation:BeginRack(' not in simulation
+          and 'function Simulation:InputRack(' not in simulation
+          and 'RackControlController.new(self)' not in assembly_ui
+          and 'action == "BeginRack"' not in service
+          and 'simulation:InputRack(' not in service
+          and not (ROOT / "src/client/Controllers/RackControlController.lua").exists()
+          and not (ROOT / "src/server/Runtime/GearKinematics.lua").exists())
+    check("Old rack catalog prefabs are actively removed",
+          'child.Name:match("^Rack_")' in transmission
+          and 'child.Name:match("^RackGuide_")' in transmission)
     check("Component duplication gives new IDs and preserves internal alignments",
           'idMap[part.instanceId] = HttpService:GenerateGUID(false)' in component
           and 'newState.instanceId = idMap[desired.instanceId]' in component
@@ -580,8 +544,8 @@ def main() -> int:
           'model:SetAttribute("InstanceId", instanceId or HttpService:GenerateGUID(false))' in service
           and 'self.Pending~="Copy"' in selection
           and 'self.SmartMatch.kind=="Gear"' in selection
-          and 'self.SmartMatch.kind=="Rack"' in selection
-          and 'self.SmartMatch.kind=="Guide"' in selection)
+          and 'self.SmartMatch.kind=="Rack"' not in selection
+          and 'self.SmartMatch.kind=="Guide"' not in selection)
     check("Oversized cylinders and wheel-like rollers never auto-snap into holes",
           'function Bore.CanInsert(source,target)' in gear_clearance
           and 'shaftDiameter>=openingDiameter-2*TOL' in gear_clearance
@@ -597,11 +561,11 @@ def main() -> int:
           and 'local fullScan=switchedGear' in selection
           and 'preview,hit and hit.Instance' in selection
           and 'ray,allTargets,aimedModel' in selection
-          and 'if kind=="Gear" or kind=="Rack"' in smart_placement)
+          and 'if kind=="Gear" then 0.08 else 1.5' in smart_placement)
     check("Gear placement authors geometry, not legacy mechanical mesh joints",
-          'if mode=="Gear" or mode=="Rack" or mode=="Guide" then' in mechanical
+          'if mode=="Gear" then' in mechanical
           and 'd.commitAssembly(player,before,after,nil,false)' in mechanical
-          and 'mode~="Gear" and mode~="Rack" and mode~="Guide"' in mechanical
+          and 'mode~="Gear" and typeName~="FreeFit"' in mechanical
           and 'GearMath.AutoMeshStatus(source,target)' in mechanical)
     check("Preview, server and simulation agree on physical gear engagement",
           'GearMath.AutoMeshable(movingModel,target)' in preview
@@ -625,11 +589,11 @@ def main() -> int:
           and 'Smart.HubFits(candidate,target)' in service
           and 'local opening=if mode=="Hub" then' in mechanical
           and 'local fitted,why=Smart.HubFits(source,target)' in mechanical)
-    check("Manual L gear alignment chooses real Rotation or Rigid",
+    check("Manual L gear alignment creates automatic rigid welds",
           'local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"' in layered
           and 'mateKind="Hub"' in layered
           and 'relationKind=choice' in layered
-          and 'end,selected.FittedCount or 1,isGear)' in layered)
+          and 'applyChoice("Weld")' in layered)
     check("Simulation uses gear center axis for physical hinge",
           'JointFrames.ForOpening(edge.target)' in simulation
           and 'local explicit = axisOverride(model)' in read("src/shared/Construction/AlignmentMath.lua")
