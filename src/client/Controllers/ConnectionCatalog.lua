@@ -72,7 +72,9 @@ function Catalog.Pair(first,second)
         add("Bolt")
     end
     if not crank then
-        add("Weld")
+        -- A hub's Rigid mount already creates its validated physical Weld.
+        -- Do not expose two separate UI names for the same connection.
+        if not hub then add("Weld") end
         add("Spring")
     end
     return options
