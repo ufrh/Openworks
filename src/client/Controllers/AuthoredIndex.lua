@@ -23,6 +23,11 @@ local function sortNames(items)
 end
 
 function Data.Snapshot(player)
+    -- Resolve all template labels once per index rebuild, not once per part.
+    local templateNames={}
+    for _,entry in ipairs(Registry.List()) do
+        templateNames[entry.Id]=entry.DisplayName
+    end
     local root=workspace:FindFirstChild(Config.FolderName)
     local byId={}
     local models={}
@@ -68,10 +73,8 @@ function Data.Snapshot(player)
         local item={
             kind="primitive",id=idOf(model),model=model,
             key="p:"..tostring(idOf(model)),
-            name=(function()
-                local template=Registry.Get(model:GetAttribute("TemplateId") or model.Name)
-                return if template then template.DisplayName else model.Name
-            end)(),members={model},
+            name=templateNames[model:GetAttribute("TemplateId") or model.Name]
+                or model.Name,members={model},
             assemblyId=aid,componentId=cid,
         }
         if type(cid)=="string" and cid~="" then
