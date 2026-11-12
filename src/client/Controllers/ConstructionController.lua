@@ -179,7 +179,8 @@ function Controller:MakeUI()
         Name = "PrimitiveCatalog",
         ZIndex = 10,
         Size = UDim2.fromOffset(330, 470),
-        Position = UDim2.fromOffset(18, 70),
+        AnchorPoint = Vector2.new(1,0.5),
+        Position = UDim2.new(1,-22,0.5,0),
         BackgroundColor3 = DARK,
         BackgroundTransparency = 0.025,
         BorderSizePixel = 0,
@@ -503,8 +504,9 @@ function Controller:HighlightSmartTarget(match)
             end
         end
     end
-    self.Feedback:Set("snap","target",models,
-        if mechanical then "pending" else "snap",#models>1)
+    -- Smart-fit target cues use the ghost's pending/collision color only.
+    -- No target selection rectangle is created on passive acquisition.
+    self.Feedback:Clear("snap")
 end
 
 function Controller:UpdateFitIndicators(match)
@@ -1020,6 +1022,14 @@ function Controller:RebuildPreview()
 end
 
 function Controller:UpdateHover()
+    if not self.Feedback then return end
+    -- Hover is intentionally visual-free. An outline denotes an explicit
+    -- selection, not simply an object passing under the crosshair.
+    self.Feedback:Clear("hover")
+    return
+end
+
+function Controller:_LegacyHoverDisabled()
     if not self.Feedback then return end
     local now=os.clock()
     if now-(self.LastHoverTick or 0)<0.11 then return end
@@ -1985,7 +1995,11 @@ function Controller:BeginScale()
         end
         ghost.Parent = workspace
         self.ScaleGhost = ghost
-        if self.Feedback then self.Feedback:SetGhost(ghost,true) end
+        if self.Feedback then
+            self.Feedback:SetGhost(ghost,true)
+            self.Feedback:Clear("selection")
+            self.Feedback:Set("selection","resize",{ghost},"selection",false)
+        end
         model.PrimaryPart.LocalTransparencyModifier = 1
     end
 
@@ -2029,11 +2043,11 @@ function Controller:AdvanceScalePreview(dt)
     end
     local ghost=if self.Mode=="Edit" then self.ScaleGhost else self.Preview
     if not ghost or not ghost.PrimaryPart then return end
-    self.ScaleVisualCF=WorldMotion.Step(self.ScaleVisualCF,
-        self.ScaleCF,dt,WorldMotion.Profile.Scale)
-    self.ScaleVisualSize=WorldMotion.StepSize(self.ScaleVisualSize,
-        self.ScaleSize,dt,WorldMotion.Profile.Scale)
-    ghost.PrimaryPart.Size=self.ScaleVisualSize
+    -- Resize preview matches the actual handle values immediately. The
+    -- selection box is re-evaluated from this precise size every frame.
+    self.ScaleVisualCF=self.ScaleCF
+    self.ScaleVisualSize=self.ScaleSize
+    ghost.PrimaryPart.Size=self.ScaleSize
     ghost:PivotTo(self.ScaleVisualCF)
 end
 
