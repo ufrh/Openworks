@@ -15,8 +15,8 @@ local BoltMath=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("BoltMath"))
 
 local Feedback = {}
-Feedback.ValidColor = Color3.fromRGB(83, 176, 241)
-Feedback.InvalidColor = Color3.fromRGB(241, 83, 93)
+Feedback.ValidColor = Color3.fromRGB(67, 207, 224)
+Feedback.InvalidColor = Color3.fromRGB(246, 79, 86)
 
 local overlap = OverlapParams.new()
 overlap.FilterType = Enum.RaycastFilterType.Include
@@ -101,14 +101,7 @@ function Feedback.Paint(ghost: Model?, valid: boolean)
         if object:IsA("BasePart") then
             object.Color = color
             if object:IsA("PartOperation") then object.UsePartColor = true end
-        elseif object:IsA("Highlight") then
-            object.FillColor = color
-            object.OutlineColor = color
-            -- A component ghost has exactly ONE model-wide Highlight.
-            -- Preserve that outer silhouette through validity updates;
-            -- never outline the individual member primitives.
-            object.OutlineTransparency=if object.Name=="OPENWORKS_UnifiedGhost"
-                then 0.08 else 1
+
         end
     end
 end
