@@ -128,6 +128,24 @@ function Mechanical:Restore(player, spec)
         return false, "Relationship parts were deleted"
     end
 
+    -- A gear hub has only ONE mechanical meaning: a rigid shaft mount.
+    -- Normalize saved free-spinning hub relationships as they are restored.
+    local gear=if type(target:GetAttribute("GearTeeth"))=="number"
+        and Alignment.IsShaft(source) then target
+        elseif type(source:GetAttribute("GearTeeth"))=="number"
+            and Alignment.IsShaft(target) then source else nil
+    if gear then
+        if spec.kind=="Bearing" then
+            spec=table.clone(spec)
+            spec.kind="Weld"
+        elseif spec.kind~="Weld" then
+            return false,"A gear is always welded to its fitted shaft"
+        end
+        local shaft=if gear==source then target else source
+        local valid,why=Smart.HubFits(shaft,gear)
+        if not valid then return false,why or "Gear hub is not aligned" end
+    end
+
     local folder = Instance.new("Folder")
     folder.Name = "Relationship_" .. spec.relationId
     folder:SetAttribute("RelationId", spec.relationId)
@@ -555,9 +573,12 @@ function Mechanical:SmartMate(player, request, newSource)
     end
 
     local mode=request.mateKind
-    if mode=="Hub" and request.relationKind~="Rotation"
-        and request.relationKind~="Rigid" then
-        return false,"Choose Rotation or Rigid for a gear/shaft mount"
+    -- Never expose a bearing/free-spin mode for gear-to-shaft fitting.
+    -- Every successful hub mate creates a real WeldConstraint.
+    if mode=="Hub" and request.relationKind~=nil
+        and request.relationKind~="Rigid"
+        and request.relationKind~="Weld" then
+        return false,"Gears can only be welded to shafts"
     end
     if mode=="Surface" then
         return false,"Touching parts are never welded automatically. Use Weld."
@@ -576,11 +597,10 @@ function Mechanical:SmartMate(player, request, newSource)
     local typeName=if mode=="Bore" then (request.relationKind or "Cylindrical")
         elseif mode=="Gear" or mode=="Rack"
             or mode=="Guide" then mode
-        elseif mode=="Hub" then
-            (if request.relationKind=="Rotation" then "Bearing" else "Weld")
+        elseif mode=="Hub" then "Weld"
         else "Fixed"
-    -- Gear/shaft mounts become explicit Hinge or Weld physics links,
-    -- never a component grouping or an implicit fixed connection.
+    -- Gear/shaft mounts are explicit weld relationships, not grouping
+    -- or a free-spinning bearing choice.
     if mode=="Bore" and typeName~="Bearing"
         and typeName~="Slider" and typeName~="Cylindrical"
         and typeName~="FreeFit" then
@@ -815,6 +835,46 @@ function Mechanical:SmartMate(player, request, newSource)
 
     local fitPairs=nil
     local fitMap=nil
+    local hubPairs=nil
+    if mode=="Hub" then
+        -- A single long shaft may already pass through MULTIPLE gear bores.
+        -- Weld every verified concentric, overlapping hub in ONE undo step.
+        -- Scan the final server-validated pose, never preview-only targets.
+        hubPairs={}
+        fitMap={}
+        local seen={}
+        local function includeGear(candidate)
+            if not candidate or seen[candidate]
+                or type(candidate:GetAttribute("GearTeeth"))~="number"
+                or candidate:GetAttribute("OwnerUserId")~=player.UserId then
+                return
+            end
+            if not Smart.HubFits(shaft,candidate) then return end
+            seen[candidate]=true
+            table.insert(hubPairs,{shaft=shaft,gear=candidate})
+            -- A shaft inside a checked bore is an intentional overlap,
+            -- not permission to intersect arbitrary other solids.
+            local moving=if excluded[shaft] then shaft else candidate
+            local fixed=if moving==shaft then candidate else shaft
+            fitMap[moving]=fitMap[moving] or {}
+            fitMap[moving][fixed]=true
+        end
+        if excluded[shaft] then
+            for _,candidate in ipairs(d.folder:GetChildren()) do
+                if candidate:IsA("Model") and not excluded[candidate] then
+                    includeGear(candidate)
+                end
+            end
+        else
+            for _,member in ipairs(members) do
+                includeGear(member)
+            end
+        end
+        if not seen[opening] then
+            restoreMoving()
+            return false,"The selected gear hub is no longer on the shaft"
+        end
+    end
     if mode=="Bore" then
         local all={}
         for _,candidate in ipairs(d.folder:GetChildren()) do
@@ -961,7 +1021,20 @@ function Mechanical:SmartMate(player, request, newSource)
     local desiredSpecs={}
     local fitSetId=if mode=="Bore" and #fitPairs>1
         then HttpService:GenerateGUID(false) else nil
-    if mode=="Bore" then
+    if mode=="Hub" then
+        for _,pair in ipairs(hubPairs) do
+            table.insert(desiredSpecs,{
+                relationId=HttpService:GenerateGUID(false),
+                ownerUserId=player.UserId,
+                kind="Weld",
+                sourceId=pair.shaft:GetAttribute("InstanceId"),
+                targetId=pair.gear:GetAttribute("InstanceId"),
+                componentId=pair.shaft:GetAttribute("ComponentId"),
+                offsetUnits=0,
+                rollDegrees=0,
+            })
+        end
+    elseif mode=="Bore" then
         -- Every independently fitted hole/shaft pair gets its OWN real
         -- native relationship. One master slider with cosmetic dots made
         -- the other three guide rods ineffective in simulation.
@@ -1080,8 +1153,8 @@ function Mechanical:SmartMate(player, request, newSource)
         string.format("%d physical shaft/hole %s connections fitted",
             #desiredSpecs,typeName)
         elseif mode=="Hub" then
-            (if typeName=="Bearing" then "Gear mounted • rotation only"
-                else "Gear mounted • rigidly welded to shaft")
+            string.format("%d gear hub(s) rigidly welded to shaft",
+                #desiredSpecs)
         else typeName.." connected"
 end
 
