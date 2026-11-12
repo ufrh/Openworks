@@ -14,6 +14,11 @@ local Smart = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SmartPlacement"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
+local FitFeatures = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("FitFeatureRegistry"))
+local BeltMath = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("BeltMath"))
+local BeltVisual = require(script.Parent:WaitForChild("BeltVisual"))
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
 local ComponentGeometry = require(ReplicatedStorage:WaitForChild("Openworks")
@@ -33,6 +38,7 @@ local function relationValid(kind)
     return kind == "Bearing" or kind == "Slider"
         or kind == "Cylindrical" or kind == "Fixed" or kind == "Gear"
         or kind == "Spring" or kind == "Weld" or kind == "Bolt"
+        or kind == "Belt"
 end
 
 function Mechanical.new(deps)
@@ -78,6 +84,7 @@ function Mechanical:Snapshot(relation)
         upperLimit = relation:GetAttribute("UpperLimit"),
         limitsEnabled = relation:GetAttribute("LimitsEnabled") == true,
         gearRatio = relation:GetAttribute("GearRatio"),
+        beltRestLength = relation:GetAttribute("BeltRestLength"),
         springMode = relation:GetAttribute("SpringMode"),
         stiffness = relation:GetAttribute("Stiffness"),
         damping = relation:GetAttribute("Damping"),
@@ -127,6 +134,23 @@ function Mechanical:Restore(player, spec)
     if not source or not target or source == target then
         return false, "Relationship parts were deleted"
     end
+    -- Upgrade legacy free-spinning gear hubs during plot restore. Every
+    -- gear/shaft interface is now a rigid weld, regardless of save version.
+    if spec.kind=="Bearing" and type(target:GetAttribute("GearTeeth"))=="number"
+        and Alignment.IsShaft(source) then
+        spec=table.clone(spec)
+        spec.kind="Weld"
+    end
+    -- Saved and freshly authored gear/shaft welds obey the same geometry
+    -- preflight. A weld never teleports a gear or accepts an offset bore.
+    if spec.kind=="Weld" and
+        (type(source:GetAttribute("GearTeeth"))=="number"
+            or type(target:GetAttribute("GearTeeth"))=="number"
+            or BeltMath.IsPulley(source) or BeltMath.IsPulley(target))
+        and (Alignment.IsShaft(source) or Alignment.IsShaft(target)) then
+        local fitted,reason=Smart.HubFits(source,target)
+        if not fitted then return false,reason or "Gear hub is not fitted" end
+    end
 
     local folder = Instance.new("Folder")
     folder.Name = "Relationship_" .. spec.relationId
@@ -142,6 +166,7 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("UpperLimit", spec.upperLimit)
     folder:SetAttribute("LimitsEnabled", spec.limitsEnabled == true)
     folder:SetAttribute("GearRatio", spec.gearRatio)
+    folder:SetAttribute("BeltRestLength",spec.beltRestLength)
     folder:SetAttribute("SpringMode",spec.springMode)
     folder:SetAttribute("Stiffness",spec.stiffness)
     folder:SetAttribute("Damping",spec.damping)
@@ -166,7 +191,22 @@ function Mechanical:Restore(player, spec)
         return false, "Missing relationship geometry"
     end
 
-    if spec.kind == "Gear" then
+    if spec.kind=="Belt" then
+        local path,why=BeltMath.Path(source,target)
+        if not path then
+            folder:Destroy()
+            return false,why or "Belt geometry is invalid"
+        end
+        local length=spec.beltRestLength
+        if type(length)~="number" or length~=length or length<=0
+            or length>300 or length>path.Length*1.3
+            or length<path.Length*0.7 then
+            folder:Destroy()
+            return false,"Belt length is outside valid tension range"
+        end
+        local visual=BeltVisual.new(folder)
+        visual:Update(path)
+    elseif spec.kind == "Gear" then
         if not source:GetAttribute("GearTeeth")
             or not target:GetAttribute("GearTeeth") then
             folder:Destroy()
@@ -555,9 +595,9 @@ function Mechanical:SmartMate(player, request, newSource)
     end
 
     local mode=request.mateKind
-    if mode=="Hub" and request.relationKind~="Rotation"
+    if mode=="Hub" and request.relationKind~="Weld"
         and request.relationKind~="Rigid" then
-        return false,"Choose Rotation or Rigid for a gear/shaft mount"
+        return false,"Gear and pulley hubs always weld to shafts"
     end
     if mode=="Surface" then
         return false,"Touching parts are never welded automatically. Use Weld."
@@ -566,21 +606,25 @@ function Mechanical:SmartMate(player, request, newSource)
         and mode~="Guide" and mode~="Hub" and mode~="Surface" then
         return false,"Unsupported attachment"
     end
+    if (mode=="Bore" or mode=="Hub" or mode=="Gear")
+        and FitFeatures.Pair(source,target)~=mode then
+        return false,"These parts do not expose compatible fitting features"
+    end
     local reverse=mode=="Bore" and request.reverse==true
     local shaft=if mode=="Hub" then
         (if Alignment.IsShaft(source) then source else target)
         else (if reverse then target else source)
     local opening=if mode=="Hub" then
-        (if source:GetAttribute("GearTeeth") then source else target)
+        (if source:GetAttribute("GearTeeth") or BeltMath.IsPulley(source)
+            then source else target)
         else (if reverse then source else target)
     local typeName=if mode=="Bore" then (request.relationKind or "Cylindrical")
         elseif mode=="Gear" or mode=="Rack"
             or mode=="Guide" then mode
-        elseif mode=="Hub" then
-            (if request.relationKind=="Rotation" then "Bearing" else "Weld")
+        elseif mode=="Hub" then "Weld"
         else "Fixed"
-    -- Gear/shaft mounts become explicit Hinge or Weld physics links,
-    -- never a component grouping or an implicit fixed connection.
+    -- Gear/shaft mounts ALWAYS create explicit WeldConstraints.
+    -- Shaft/housing bearings alone determine rotational freedom.
     if mode=="Bore" and typeName~="Bearing"
         and typeName~="Slider" and typeName~="Cylindrical"
         and typeName~="FreeFit" then
@@ -815,6 +859,49 @@ function Mechanical:SmartMate(player, request, newSource)
 
     local fitPairs=nil
     local fitMap=nil
+    local hubGears=nil
+    if mode=="Hub" then
+        -- One long shaft may pass through and weld several distinct gears.
+        -- Do not stop at the first valid hub, but only attach a gear if its
+        -- actual bore overlaps the finite shaft and passes full clearance.
+        hubGears={opening}
+        if Alignment.IsShaft(source) then
+            local shaftCF=shaft:GetPivot()
+            local axis=shaftCF.RightVector.Unit
+            local seen={[opening]=true}
+            local shaftHalf=shaft.PrimaryPart.Size.X*0.5
+            for _,candidate in ipairs(d.folder:GetChildren()) do
+                if candidate:IsA("Model") and candidate~=shaft
+                    and candidate.PrimaryPart
+                    and candidate:GetAttribute("OwnerUserId")==player.UserId
+                    and (type(candidate:GetAttribute("GearTeeth"))=="number"
+                        or BeltMath.IsPulley(candidate))
+                    and not excluded[candidate] and not seen[candidate] then
+                    local delta=candidate:GetPivot().Position-shaftCF.Position
+                    local axial=math.abs(delta:Dot(axis))
+                    local radial=(delta-axis*delta:Dot(axis)).Magnitude
+                    local reach=shaftHalf+candidate.PrimaryPart.Size.X*0.5
+                    if axial<reach-0.002 and radial<0.035 then
+                        local fits,why=Smart.HubFits(shaft,candidate)
+                        if not fits then
+                            restoreMoving()
+                            return false,why or "Another hub cannot fit this shaft"
+                        end
+                        seen[candidate]=true
+                        table.insert(hubGears,candidate)
+                    end
+                end
+            end
+        end
+        fitMap={[shaft]={}}
+        for _,gear in ipairs(hubGears) do
+            fitMap[shaft][gear]=true
+            -- The moving object may be the gear rather than the shaft.
+            -- Collision authorization must work in BOTH mount directions.
+            fitMap[gear]=fitMap[gear] or {}
+            fitMap[gear][shaft]=true
+        end
+    end
     if mode=="Bore" then
         local all={}
         for _,candidate in ipairs(d.folder:GetChildren()) do
@@ -905,20 +992,18 @@ function Mechanical:SmartMate(player, request, newSource)
     end
 
     if mode=="Gear" or mode=="Rack" or mode=="Guide" then
-        -- The simulation discovers gear and rack contact from PHYSICAL tooth
-        -- spacing. Placing a gear must never silently create a legacy K
-        -- relationship (which could later interfere with assemblies).
-        -- Commit only the relocated construction; undo/redo stays atomic.
+        -- Tooth contact and rack guides are placement operations, never
+        -- permanent input/output relationships.
         local after={}
         for _,member in ipairs(members) do
             table.insert(after,d.snapshot(member))
         end
         d.commitAssembly(player,before,after,nil,false)
-        return true,if mode=="Rack"
-            then "Rack and pinion engaged • automatic transmission in simulation"
-            elseif mode=="Guide"
-            then "Rack positioned in guide • ground guide housing for support"
-            else "Gear positioned at pitch geometry • automatic mesh in simulation"
+        return true,if mode=="Rack" then
+            "Rack and pinion engaged • automatic transmission in simulation"
+            elseif mode=="Guide" then
+            "Rack positioned in guide • ground guide housing for support"
+            else "Gear positioned at pitch geometry • automatic shaft mesh in simulation"
     end
 
     -- The fixed shaft in reverse alignment stays at its exact authored pose,
@@ -987,22 +1072,30 @@ function Mechanical:SmartMate(player, request, newSource)
             }
             table.insert(desiredSpecs,candidateSpec)
         end
+    elseif mode=="Hub" then
+        for _,gear in ipairs(hubGears) do
+            table.insert(desiredSpecs,{
+                relationId=HttpService:GenerateGUID(false),
+                ownerUserId=player.UserId,
+                kind="Weld",
+                sourceId=shaft:GetAttribute("InstanceId"),
+                targetId=gear:GetAttribute("InstanceId"),
+                componentId=shaft:GetAttribute("ComponentId"),
+                offsetUnits=(gear:GetPivot().Position-shaft:GetPivot().Position)
+                    :Dot(shaft:GetPivot().RightVector)/0.25,
+                rollDegrees=0,
+            })
+        end
     else
         table.insert(desiredSpecs,{
             relationId=HttpService:GenerateGUID(false),
             ownerUserId=player.UserId,
             kind=typeName,
-            sourceId=if mode=="Hub"
-                then shaft:GetAttribute("InstanceId") else request.sourceId,
-            targetId=if mode=="Hub"
-                then opening:GetAttribute("InstanceId") else request.targetId,
-            componentId=if mode=="Hub" then shaft:GetAttribute("ComponentId")
-                else movingComponent,
+            sourceId=request.sourceId,
+            targetId=request.targetId,
+            componentId=movingComponent,
             offsetUnits=offset,
             rollDegrees=roll,
-            gearRatio=if mode=="Gear"
-                then -(source:GetAttribute("GearTeeth")
-                    /target:GetAttribute("GearTeeth")) else nil,
         })
     end
 
@@ -1021,7 +1114,7 @@ function Mechanical:SmartMate(player, request, newSource)
         local key=candidate.sourceId..":"..candidate.targetId
         local prior=existingByPair[key]
         if prior then
-            if prior:GetAttribute("Kind")~=typeName then
+            if prior:GetAttribute("Kind")~=candidate.kind then
                 if reverse then d.applyState(shaft,fixedShaftBefore) end
                 restoreMoving()
                 return false,"An existing relationship has a different motion type"
@@ -1080,8 +1173,7 @@ function Mechanical:SmartMate(player, request, newSource)
         string.format("%d physical shaft/hole %s connections fitted",
             #desiredSpecs,typeName)
         elseif mode=="Hub" then
-            (if typeName=="Bearing" then "Gear mounted • rotation only"
-                else "Gear mounted • rigidly welded to shaft")
+            string.format("%d pulley/gear hub(s) rigidly welded to shaft",#hubGears)
         else typeName.." connected"
 end
 
@@ -1118,6 +1210,107 @@ local function validEndpoints(self,player,request)
         end
     end
     return source,target
+end
+
+-- Author a complete friction belt as one saved relationship.
+-- Neither motor power nor shaft mounting is generated by this action.
+function Mechanical:CreateBelt(player,request)
+    if type(request)~="table" or type(request.sourceId)~="string"
+        or type(request.targetId)~="string" then
+        return false,"Click two belt pulleys"
+    end
+    local source=self.D.findOwned(player,request.sourceId)
+    local target=self.D.findOwned(player,request.targetId)
+    if not source or not target or source==target
+        or not self.D.nearPlayer(player,source:GetPivot().Position)
+        or not self.D.nearPlayer(player,target:GetPivot().Position) then
+        return false,"Select two different pulleys within your plot"
+    end
+    local path,reason=BeltMath.Path(source,target)
+    if not path then return false,reason end
+    if self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
+        return false,"Relationship limit reached"
+    end
+    local function mounted(pulley)
+        local pid=pulley:GetAttribute("InstanceId")
+        for _,relation in ipairs(self.Folder:GetChildren()) do
+            if relation:GetAttribute("OwnerUserId")==player.UserId
+                and (relation:GetAttribute("Kind")=="Weld"
+                    or relation:GetAttribute("Kind")=="Fixed") then
+                local otherId=if relation:GetAttribute("SourceId")==pid
+                    then relation:GetAttribute("TargetId")
+                    elseif relation:GetAttribute("TargetId")==pid
+                    then relation:GetAttribute("SourceId") else nil
+                local other=otherId and self.D.findOwned(player,otherId)
+                if other and Alignment.IsShaft(other)
+                    and Smart.HubFits(pulley,other) then
+                    return otherId
+                end
+            end
+        end
+        return nil
+    end
+    local mountA,mountB=mounted(source),mounted(target)
+    if not mountA or not mountB then
+        return false,"Fit and weld each pulley onto a real shaft first"
+    end
+    if mountA==mountB then
+        return false,"A belt must connect two independent shafts"
+    end
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("Kind")=="Belt"
+            and relation:GetAttribute("OwnerUserId")==player.UserId then
+            local a,b=relation:GetAttribute("SourceId"),relation:GetAttribute("TargetId")
+            if (a==request.sourceId and b==request.targetId)
+                or (a==request.targetId and b==request.sourceId) then
+                return false,"These pulleys already share a belt"
+            end
+        end
+    end
+    -- Preload is explicit, never inferred from a client-sent world length.
+    -- A zero-preload loop is slack and cannot transmit torque until stretched.
+    local preload=if request.preloadPercent==nil then 1.5
+        else request.preloadPercent
+    if type(preload)~="number" or preload~=preload or preload<0
+        or preload>8 or math.abs(preload*2-math.round(preload*2))>0.0001 then
+        return false,"Belt preload must be 0–8% in 0.5% steps"
+    end
+    local spec={
+        relationId=HttpService:GenerateGUID(false),kind="Belt",
+        ownerUserId=player.UserId,sourceId=request.sourceId,
+        targetId=request.targetId,beltRestLength=path.Length*(1-preload*0.01),
+    }
+    local ok,why=self:Restore(player,spec)
+    if not ok then return false,why end
+    self.D.commitAssembly(player,{},{},spec)
+    return true,string.format(
+        "Belt fitted • %.2f U circumference • %.1f%% preload",path.Length/0.25,preload)
+end
+
+-- Explicit pair removal prevents Shift+Delete from accidentally removing
+-- the pulley-to-shaft Weld instead of the desired belt.
+function Mechanical:RemoveBelt(player,request)
+    if type(request)~="table"
+        or type(request.sourceId)~="string"
+        or type(request.targetId)~="string" then
+        return false,"Select two belt pulleys"
+    end
+    if not self.D.findOwned(player,request.sourceId)
+        or not self.D.findOwned(player,request.targetId) then
+        return false,"Both pulleys must belong to your plot"
+    end
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId")==player.UserId
+            and relation:GetAttribute("Kind")=="Belt" then
+            local a,b=relation:GetAttribute("SourceId"),
+                relation:GetAttribute("TargetId")
+            if (a==request.sourceId and b==request.targetId)
+                or (a==request.targetId and b==request.sourceId) then
+                return self:Remove(player,{relationId=relation:GetAttribute("RelationId")})
+            end
+        end
+    end
+    return false,"These pulleys have no belt to remove"
 end
 
 function Mechanical:CreateSpring(player,request)
@@ -2214,6 +2407,13 @@ function Mechanical:DisconnectMoved(player,beforeStates,afterStates,exemptRelati
                 table.insert(ids,id)
             end
         end
+        -- A belt may change its tension as a pulley moves; unlike a rigid
+        -- joint, a valid re-routed belt must survive independent movement.
+        if relation:GetAttribute("Kind")=="Belt" then
+            local a=self.D.findOwned(player,relation:GetAttribute("SourceId"))
+            local b=self.D.findOwned(player,relation:GetAttribute("TargetId"))
+            if a and b and BeltMath.Path(a,b) then continue end
+        end
         local changed=false
         local common=nil
         local keep=true
@@ -2260,6 +2460,49 @@ function Mechanical:DisconnectMoved(player,beforeStates,afterStates,exemptRelati
                         afterById[spec.sourceId]=updated
                     end
                 end
+            end
+        end
+    end
+    -- Belt endpoints can remain perfectly coplanar even after a moved shaft
+    -- DISCONNECTS from its pulley. Validate again AFTER all rigid joints
+    -- have been detached. Otherwise a visually intact but unpowered belt
+    -- could poison a saved mechanism or make simulation compilation fail.
+    local function mountedShaft(pulley)
+        if not pulley then return nil end
+        local pulleyId=pulley:GetAttribute("InstanceId")
+        for _,rel in ipairs(self.Folder:GetChildren()) do
+            if rel:GetAttribute("OwnerUserId")==player.UserId
+                and (rel:GetAttribute("Kind")=="Weld"
+                    or rel:GetAttribute("Kind")=="Fixed") then
+                local a,b=rel:GetAttribute("SourceId"),rel:GetAttribute("TargetId")
+                local otherId=if a==pulleyId then b
+                    elseif b==pulleyId then a else nil
+                local shaft=otherId and self.D.findOwned(player,otherId)
+                if shaft and Alignment.IsShaft(shaft)
+                    and Smart.HubFits(pulley,shaft) then
+                    return otherId
+                end
+            end
+        end
+        return nil
+    end
+    for _,rel in ipairs(self.Folder:GetChildren()) do
+        if rel:IsA("Folder") and rel:GetAttribute("Kind")=="Belt"
+            and rel:GetAttribute("OwnerUserId")==player.UserId
+            and not (exemptRelations and exemptRelations[rel:GetAttribute("RelationId")]) then
+            local a=self.D.findOwned(player,rel:GetAttribute("SourceId"))
+            local b=self.D.findOwned(player,rel:GetAttribute("TargetId"))
+            local path=a and b and BeltMath.Path(a,b)
+            local rest=rel:GetAttribute("BeltRestLength")
+            local ma=mountedShaft(a)
+            local mb=mountedShaft(b)
+            local valid=path and type(rest)=="number" and rest>0
+                and rest<=300 and rest<=path.Length*1.3
+                and rest>=path.Length*0.7
+                and ma~=nil and mb~=nil and ma~=mb
+            if not valid then
+                table.insert(disconnected,self:Snapshot(rel))
+                self:DestroyRelation(rel)
             end
         end
     end
@@ -2386,6 +2629,8 @@ function Mechanical:RebuildRelations()
                 ) then
                     self:DestroyRelation(relation)
                     self:Restore(player, spec)
+                elseif spec.kind=="Belt" then
+                    BeltVisual.Refresh(relation,BeltMath.Path(source,target))
                 elseif relation:FindFirstChildOfClass("WeldConstraint") then
                     local weld = relation:FindFirstChildOfClass("WeldConstraint")
                     weld.Part0 = target.PrimaryPart
