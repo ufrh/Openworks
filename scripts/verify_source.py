@@ -49,8 +49,39 @@ def main() -> int:
     tool_ids = re.findall(r'\{\s*Id\s*=\s*"([^"]+)"', definitions)
     check(
         "Native tool inventory and order",
-        tool_ids == ["Build", "Edit", "Assembly", "Simulate", "Inspect", "Weld"],
+        tool_ids == ["Build", "Mechanics", "AssemblySimulation"],
         str(tool_ids),
+    )
+
+    subtool_definitions = read("src/shared/Construction/SubtoolDefinitions.lua")
+    native_tool_controller = read("src/client/Controllers/ToolController.lua")
+    check(
+        "UI v2 exactly eight subtools across three primary tools",
+        all(name in subtool_definitions for name in (
+            'Default="Place"', 'Default="Connect"', 'Default="AssemblyEditor"',
+            'Id="Place"', 'Id="Edit"', 'Id="Resize"', 'Id="Paint"',
+            'Id="Connect"', 'Id="Configure"',
+            'Id="AssemblyEditor"', 'Id="Simulation"',
+        ))
+        and len(re.findall(r'\\{Id="(?:Place|Edit|Resize|Paint|Connect|Configure|AssemblyEditor|Simulation)"',
+                           subtool_definitions)) == 8,
+    )
+    check(
+        "UI v2 subtool state and shortcut guards are active",
+        'SubtoolChanged' in native_tool_controller
+        and 'SetSubtool' in native_tool_controller
+        and 'WasConsumed' in native_tool_controller
+        and 'SetShortcutGuard' in read("src/client/init.client.lua"),
+    )
+    check(
+        "UI v2 server native tool access migrated",
+        all(t in read("src/server/Runtime/ConstructionService.lua") for t in (
+            'hasEquippedTool(player,"Build")',
+            'hasEquippedTool(player,"Mechanics")',
+            'hasEquippedTool(player,"AssemblySimulation")',
+        ))
+        and 'hasEquippedTool(player,"Weld")' not in read("src/server/Runtime/ConstructionService.lua")
+        and 'hasEquippedTool(player,"Simulate")' not in read("src/server/Runtime/ConstructionService.lua"),
     )
 
     rokit = read("rokit.toml")
@@ -184,7 +215,7 @@ def main() -> int:
           and 'intersectsConstructed(model,ignored)' in service
           and 'applyState(model,before[i])' in service
           and 'commitBatch(player,before,after)' in service
-          and 'if (payload.scope=="Assembly" and not hasEquippedTool(player,"Assembly"))' in service)
+          and 'if (payload.scope=="Assembly" and not hasEquippedTool(player,"AssemblySimulation"))' in service)
     check("Alt+Up/Down always moves world Y and Left/Right uses camera right",
           'function Controller:VerticalNudge(key)' in selection
           and 'if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then' in selection
@@ -293,7 +324,7 @@ def main() -> int:
           and 'paintFinish=finish' in material_ui
           and 'self:ApplyPaint(true)' in material_ui)
     check("Assembly server authorization",
-          'hasEquippedTool(player,"Assembly")' in service
+          'hasEquippedTool(player,"AssemblySimulation")' in service
           and 'action=="CreateAssembly"' in service
           and 'action=="UpdateAssembly"' in service)
     check("Removed old automatic registration API",
@@ -748,7 +779,7 @@ def main() -> int:
           and "local function restoreMetadata" in service
           and 'if record.kind == "Metadata" then' in service)
     check("Assembly tool can directly undo and redo",
-          'hasEquippedTool(player,"Assembly")' in service
+          'hasEquippedTool(player,"AssemblySimulation")' in service
           and "self:History(false)" in tool_ui
           and "self:History(true)" in tool_ui)
     check("Assembly metadata history does not recreate geometry",
