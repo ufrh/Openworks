@@ -292,30 +292,144 @@ function Controller:MakeUI()
     end)
 end
 
+function Controller:BankRequest(payload)
+    local ok,result=pcall(function() return self.Remote:InvokeServer(payload) end)
+    if not ok or type(result)~="table" or not result.ok then
+        self:Message(if ok and type(result)=="table"
+            then tostring(result.message) else "Component bank unavailable")
+        return nil
+    end
+    return result.data,result
+end
+
 function Controller:RefreshCatalog()
-    for _, child in ipairs(self.List:GetChildren()) do
-        if child:IsA("TextButton") or child:IsA("TextLabel") then
-            child:Destroy()
-        end
+    for _,child in ipairs(self.List:GetChildren()) do
+        if child:IsA("TextButton") or child:IsA("TextLabel")
+            or child:IsA("Frame") then child:Destroy() end
     end
-
-    local entries = Registry.List()
-    if #entries == 0 then
-        local missing = label(self.List, "No primitives found. Run the Studio generator and save the place.",
-            UDim2.new(1, -8, 0, 75), UDim2.fromOffset(0, 0), 13, MUTED)
-        missing.LayoutOrder = 1
-        return
+    local order=0
+    local function header(name)
+        order+=1
+        local h=label(self.List,name,UDim2.new(1,-8,0,26),
+            UDim2.fromOffset(0,0),13,Theme.Accent)
+        h.LayoutOrder=order
     end
-
-    for index, entry in ipairs(entries) do
-        local b = button(self.List, entry.Id, UDim2.new(1, -7, 0, 32))
-        b.LayoutOrder = index
-        b.BackgroundColor3 = if entry.Id == self.CurrentId then Theme.Active else PANEL
+    header("MY COMPONENT BANK")
+    local data=self:BankRequest({action="ListComponentBank"})
+    self.BankEntries=if data and type(data.entries)=="table"
+        then data.entries else {}
+    if #self.BankEntries==0 then
+        order+=1
+        local empty=label(self.List,"No saved components yet • select a component, Shift+B",
+            UDim2.new(1,-8,0,36),UDim2.fromOffset(0,0),12,MUTED)
+        empty.LayoutOrder=order
+    end
+    for _,entry in ipairs(self.BankEntries) do
+        order+=1
+        local row=create("Frame",{
+            Size=UDim2.new(1,-7,0,38),BackgroundTransparency=1,
+            BorderSizePixel=0,LayoutOrder=order,
+        },self.List)
+        local use=button(row,entry.name.."  •  "..tostring(entry.parts).." parts",
+            UDim2.new(1,-44,1,0),UDim2.fromOffset(0,0))
+        use.TextXAlignment=Enum.TextXAlignment.Left
+        use.Activated:Connect(function()
+            self:SelectBank(entry.id)
+            self:ShowCatalog(false)
+        end)
+        local remove=button(row,if self.BankConfirmRemove==entry.id
+            then "?" else "×",UDim2.fromOffset(38,38),
+            UDim2.new(1,-38,0,0))
+        remove.Activated:Connect(function()
+            if self.BankConfirmRemove~=entry.id then
+                self.BankConfirmRemove=entry.id
+                self:Message("Click ? again to remove "..entry.name.." from the bank")
+                self:RefreshCatalog()
+                return
+            end
+            self.BankConfirmRemove=nil
+            local _,result=self:BankRequest({
+                action="RemoveComponentBank",bankId=entry.id,
+            })
+            if result then self:RefreshCatalog() end
+        end)
+    end
+    header("PRIMITIVES")
+    local entries=Registry.List()
+    if #entries==0 then
+        order+=1
+        local missing=label(self.List,"No primitives found. Generate and save the Studio library.",
+            UDim2.new(1,-8,0,56),UDim2.fromOffset(0,0),13,MUTED)
+        missing.LayoutOrder=order
+    end
+    for _,entry in ipairs(entries) do
+        order+=1
+        local b=button(self.List,entry.Id,UDim2.new(1,-7,0,32))
+        b.LayoutOrder=order
+        b.BackgroundColor3=if entry.Id==self.CurrentId
+            and self.Mode=="Build" and not self.CurrentBank
+            then Theme.Active else PANEL
         b.Activated:Connect(function()
             self:SelectPrimitive(entry.Id)
             self:ShowCatalog(false)
         end)
     end
+end
+
+function Controller:CloseBankSave()
+    if self.BankModal then self.BankModal.Visible=false end
+    self:RefreshPointer()
+end
+
+function Controller:OpenBankSave()
+    if self.Tools.ActiveId~="Build" or self.Mode~="Edit"
+        or not self.SelectedComponentId or self.Pending or self.PivotSetting then
+        self:Message("Select a completed component in Build before registering")
+        return
+    end
+    self:ShowCatalog(false)
+    self.BankNameInput.Text=""
+    self.BankModal.Visible=true
+    self.BankNameInput:CaptureFocus()
+    self:RefreshPointer()
+end
+
+function Controller:ConfirmBankSave()
+    if not self.BankModal or not self.BankModal.Visible then return end
+    local name=self.BankNameInput.Text:match("^%s*(.-)%s*$")
+    if #name==0 then self:Message("Enter a component name") return end
+    local _,result=self:BankRequest({
+        action="RegisterComponentBank",
+        componentId=self.SelectedComponentId,name=name,
+    })
+    if not result then return end
+    self:CloseBankSave()
+    self:Message(result.message)
+end
+
+function Controller:SelectBank(id)
+    if self.Tools.ActiveId~="Build" then return end
+    local data=self:BankRequest({action="GetComponentBank",bankId=id})
+    if not data or type(data.parts)~="table" then return end
+    local test,anchor=ComponentBankPreview.Create(data)
+    if not test then
+        self:Message(tostring(anchor or "Blueprint geometry is unavailable"))
+        return
+    end
+    local anchorSize=anchor.PrimaryPart.Size
+    test:Destroy()
+    if self.Assembly then self.Assembly:Reset() end
+    self:CancelPending()
+    self:SetSelection(nil)
+    self.Mode="Build"
+    if self.Layered then self.Layered:OnModeChanged("Build") end
+    self.CurrentBank=data
+    self.CurrentId=nil
+    self.CurrentSize=anchorSize
+    self.Steps={x=0,y=0,z=0}
+    self.NumericPrecision=false
+    self:RebuildPreview()
+    self:RefreshHUD()
 end
 
 function Controller:RefreshPointer()
