@@ -1,12 +1,12 @@
 # OPENWORKS
 
-**OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The stable pre-UI-v2 implementation lives on `dev`. UI v2 Phases 1–4 are isolated on `feature/ui-reorganization-v2`. Both use **Rojo** and **FORGE/Reforge** and still require Roblox Studio validation.
+**OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The stable pre-UI-v2 implementation lives on `dev`. UI v2 Phases 1–5 are isolated on `feature/ui-reorganization-v2`. Both use **Rojo** and **FORGE/Reforge** and still require Roblox Studio validation.
 
 > **State:** Experimental. Do not assume a feature is Studio-verified merely because it is committed. See [current regression checks](docs/QA_REGRESSION.md) and [known limitations](docs/ARCHITECTURE.md#known-limitations).
 
 ## Start developing
 
-1. Check out `feature/ui-reorganization-v2` to test UI v2 Phases 1–4 (`dev` remains the fallback); install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
+1. Check out `feature/ui-reorganization-v2` to test UI v2 Phases 1–5 (`dev` remains the fallback); install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
 2. Run `START_OPENWORKS.bat` (Windows) or `scripts/start-dev.ps1` using PowerShell.
 3. Connect the Roblox Studio Rojo plugin to **localhost:34872**. The place ID and Rojo mapping are in `default.project.json`.
 4. The **Studio-generated primitive bank** must exist in `ReplicatedStorage` and be saved with the place. The server only backfills some dynamic prefab families. Restart **Play** after switching code because Roblox caches ModuleScripts.
@@ -35,7 +35,7 @@ Use the Explorer or right-click menu to select the first connection participant,
 
 Build/Place still uses **B** to open the catalog when already active; Build/Edit still uses **E** for component interior editing when already active; Build/Resize uses **V** to toggle face handles when already active. A live fit reserves Q/E for shaft roll so E does not inadvertently switch subtools.
 
-Phase 2 implements shared aqua/purple/orange/green/red wireframe feedback, geometry ghosts and minimal mechanical indicators. **Exact CSG triangle edges and localized CSG collision outlines remain unfinished.** Phase 3 adds a docked unified Explorer/Properties panel with real assembly/component membership, connection inspection, contextual actions, hover tooltips, and inline paint/material/joint/motor/assembly configuration. Press **Tab** to unlock the dock, or right-click an authored object for its context menu. Persistent legacy instruction HUDs are hidden; some modal editing components remain as fallbacks pending Studio testing. See [Phase 4 notes](docs/UI_V2_PHASE_4_IMPLEMENTATION.md), [Phase 3 notes](docs/UI_V2_PHASE_3_IMPLEMENTATION.md), and the [regression matrix](docs/UI_V2_REGRESSION_MATRIX.md).
+Phase 2 implements shared aqua/purple/orange/green/red wireframe feedback, geometry ghosts and minimal mechanical indicators. **Exact CSG triangle edges and localized CSG collision outlines remain unfinished.** Phase 3 adds a docked unified Explorer/Properties panel with real assembly/component membership, connection inspection, contextual actions, hover tooltips, and inline paint/material/joint/motor/assembly configuration. Press **Tab** to unlock the dock, or right-click an authored object for its context menu. Persistent legacy instruction HUDs are hidden; some modal editing components remain as fallbacks pending Studio testing. See [Phase 5 notes](docs/UI_V2_PHASE_5_IMPLEMENTATION.md), [Phase 4 notes](docs/UI_V2_PHASE_4_IMPLEMENTATION.md), and the [regression matrix](docs/UI_V2_REGRESSION_MATRIX.md).
 
 The following three ideas **must never be conflated**:
 
@@ -45,11 +45,13 @@ The following three ideas **must never be conflated**:
 
 A **mechanical relationship** restricts or permits motion. A distinct **actuator** creates powered motion (the current hand crank supplies capped manual torque). The gear system remains a passive, work-in-progress physical transmission.
 
-## Assembly workflow
+## Assembly workflow — Phase 5
 
-Equip **Assembly & Simulation**, select the **Assembly Editor** subtool (**E**). Press **N** and name it; click primitives or whole components to toggle inclusion; **Alt + click** selects one primitive inside a component; press **Enter** to commit. **Ctrl+Z / Ctrl+Y** undo and redo assembly membership changes without switching tools. Aim at an existing assembly member and click to edit membership; **R** renames. Assemblies can include disconnected objects, but a simulation is rejected when a real relationship crosses into an unregistered part. Press **Esc** to cancel the draft.
+Equip **Assembly & Simulation > Assembly Editor (E)**. Choose **+ NEW** or press **N** to begin a **local assembly draft**, then edit its name in the unified Properties panel. Select primitives or whole components in the world; Alt+click targets an individual primitive within a component. From Explorer, use the Add/Remove membership action for individual primitives, or choose the full editor component. The dock displays member count and **Create/Save / Discard** even with no other object selected. Press **Enter** to confirm or **Esc** to discard. Temporary tool switches preserve the uncommitted draft without changing saved assembly membership. Ctrl+Z/Y still undo/redo server history, and Alt+arrows move a saved assembly.
 
-In **Assembly & Simulation**, press **Y** for the **Simulation** subtool and aim at a registered member to preview its complete assembly in **purple**. **P** starts/stops it with the authored grounding state, **G** toggles grounding before simulation, **O** pauses, and **U** resets. Clicking a running part opens Properties. Hold LMB on a correctly coupled hand crank to drive it at the server-controlled rate; release to stop. Shift+P is no longer a separate simulation mode.
+Click an existing assembly or its member to edit membership; Properties also supports renaming without changing its other members. Unrelated component grouping is **never** a hidden physical weld. An assembly can include disconnected primitives, but simulation rejects true relationships that cross outside its explicit registered member set.
+
+Switch to **Simulation (Y)**. Select an assembly in the Explorer and press **Run assembly**, or aim at its member and press **P**. The same Properties panel provides **Stop, Pause/Resume, Reset and Inspect mechanism**, with **P/O/U/I** keyboard equivalents. **G** toggles authored grounding before simulation, including from the selected primitive's Properties. During a running simulation, switching to Assembly Editor is blocked; switching to another primary tool still leaves a global Stop available in the dock. Holding LMB operates a valid hand crank; Q/E drive eligible racks, and configured motor keys drive powered bearings. Opening the dock releases held actuator input; no new motion resumes until another deliberate hold.
 
 ## Where code lives
 
