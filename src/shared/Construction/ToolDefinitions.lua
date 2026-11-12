@@ -7,6 +7,7 @@ local definitions = {
     { Id = "Simulate", Tooltip = "Simulate an authored assembly with native mechanical physics" },
     { Id = "Inspect", Tooltip = "Inspect, measure, and select obstructed components" },
     { Id = "Weld", Tooltip = "Weld touching solids or a fitted drilled block and shaft rigidly" },
+    { Id = "Belt", Tooltip = "Connect two shaft-mounted pulleys with a tensioned friction belt" },
 }
 
 for _, definition in ipairs(definitions) do
