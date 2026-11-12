@@ -24,7 +24,7 @@ You can choose participants by:
 | Shaft + bore | Fit Only | Existing `SmartMate` with `mateKind=Bore`, `relationKind=FreeFit`, no joint |
 | Any two eligible physically touching solids, or validated shaft in drilled bore | Rigid Weld | Existing `CreateWeld`; touching/contact and relationship conflict validation remain |
 | Two compatible bodies | Spring | Existing `CreateSpring` |
-| Two eligible coaxial openings | Fitted Bolt | Existing `CreateBolt`, which inserts a physically sized bolt prefab if possible |
+| Two eligible coaxial openings | Physical bolt | **Build > Fasteners** is the supported route. Direct Connect > Bolt was removed in Phase 6 because the current server explicitly rejects manual `CreateBolt` |
 | Hand crank + real shaft | Crank Coupling | Existing `CoupleHandCrank` |
 | Gear/hub + shaft | Independent Rotation | Existing `SmartMate` Hub with `relationKind=Rotation` |
 | Gear/hub + shaft | Rigid Mount | Existing `SmartMate` Hub with `relationKind=Rigid` |
@@ -39,7 +39,7 @@ Build placement and Edit drag-to-fit keep their existing snapping/multi-hole fit
 - Bore: Cylindrical, Slider, Bearing, Fit Only, Adjust depth/roll.
 - Gear-to-shaft hub: Rotation or Rigid.
 - Reverse shaft-to-hole and multi-hole fitTargets continue through existing construction logic.
-- The legacy `MateChoicePanel` is retained as a disabled fallback for missing UI initialization; no duplicate picker is normally displayed.
+- Phase 6 removed the retired `MateChoicePanel`; Build/Edit and manual L alignment now use the unified connection picker exclusively. If the shared UI is unavailable the operation safely cancels.
 
 The authoritative server allows Mechanics to call SmartMate **only** for `Bore/FreeFit` and `Hub/Rotation|Rigid`; full smart gear/rack placement and other Build-only construction operations remain restricted to Build.
 
@@ -59,11 +59,11 @@ Legacy controller methods that are no longer reachable from player-facing keybin
 
 1. Run the new [Phase 4 regression](QA_REGRESSION.md#ui-v2-phase-4--unified-connect-workflow-studio-play-required) and all Phase 0 saved-machine fixtures [FIX-01–FIX-06](UI_V2_REGRESSION_MATRIX.md).
 2. Confirm direct world first/second selection, Explorer row first/second selection and context-menu first selection produce identical authored mechanical results and visual state.
-3. Check valid and invalid Weld, Bolt, Spring and CrankCoupling pairs with real geometry. Confirm both orange before selection and green only on accepted server response; invalid second remains red.
+3. Check valid and invalid Weld, Spring and CrankCoupling pairs with real geometry. Separately test physical bolts through Build > Fasteners. Confirm both orange before selection and green only on accepted server response; invalid second remains red.
 4. Fit a shaft into one hole and at least two aligned bores, in both directions; confirm exact depth, roll, mechanical limits, and post-fit snugging. Try all four bore picker choices in Build and Mechanics.
 5. Mount a gear on a shaft as independent bearing and rigid welded gear; verify gear-to-gear meshing remains automatic and all ratio/rotation/backdrive behavior unchanged.
 6. Check clicking any contextual menu never mutates geometry behind the UI, that Esc restores first-person mouse and that switching tools clears orange/red selections.
 7. Confirm no unauthorized remote invocation through the Mechanics-only SmartMate allowlist, and no cross-player or active simulation authoring.
 8. Reopen existing saved plots, validate all memberships/materials/relationships/identifiers, autosave, Ctrl+Z/Y, reset and replay in Simulation.
 
-**Not yet completed:** Studio Play, in-engine Luau compilation and physical timing/performance benchmarks. Phase 2 exact CSG mesh-edge and localized CSG interference rendering remain separate outstanding work.
+**Not yet completed:** Studio Play, live Roblox Luau execution and physical timing/performance benchmarks. Phase 6 added a CI Luau parser gate, but it cannot execute Roblox APIs. Phase 2 exact CSG mesh-edge and localized CSG interference rendering remain separate outstanding work.
