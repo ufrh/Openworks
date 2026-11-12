@@ -224,7 +224,7 @@ end
 
 function Tool:Refresh()
     if not self.Panel then return end
-    self.Panel.Visible=self.Mode=="Assembly"
+    self.Panel.Visible=self.Mode=="Assembly" and self.UnifiedExplorer==nil
     self.Crosshair.Visible=self.Mode=="Assembly" and self.Stage~="Naming"
     if self.Mode~="Assembly" then return end
     local count=0
