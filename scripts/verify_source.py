@@ -671,7 +671,7 @@ def main() -> int:
           and 'AutoSaveEnabled = true' in config
           and 'AutoSaveIntervalSeconds = 120' in config
           and 'function Persistence:Save(player,mode)' in persistence
-          and 'sameCloudRevision(cloud,expected,document)' in persistence
+          and 'sameCloudRevision(cloud,expected,document,uncertain)' in persistence
           and 'self.KnownCloudRevision[player]=if document==nil then false' in persistence)
     check("Autosave only follows successful building edits, never failed load",
           'persistence:MarkDirty(player)' in service
@@ -693,6 +693,11 @@ def main() -> int:
           and 'OPENWORKS_AutoSavePending' in plot_ui
           and 'LAST SAVED  /' in plot_ui
           and 'Autosave pending' in plot_ui)
+    check("Unknown DataStore write outcomes retain safe same-session lineage",
+          'self.UncertainWriteIds[player]=possible' in persistence
+          and 'uncertain[cloud.writeId]' in persistence
+          and 'self.UncertainWriteIds[player]=nil' in persistence
+          and 'self:MarkSaved(player,document,mode)' in persistence)
     check("Cloud conflict blocks overwrite; failures retain dirty state",
           'if conflict or saved==nil then' in persistence
           and 'self.Ready[player]=false' in persistence

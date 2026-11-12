@@ -1271,13 +1271,15 @@ local function handle(player, payload)
     local metadataOnly=action=="CreateAssembly" or action=="UpdateAssembly"
         or action=="Group" or action=="Ungroup"
         or action=="SetGrounded"
-    if result and mechanical and not simulationAction
-        and action~="GetMechanismInfo" and not metadataOnly then
-        mechanical:RebuildRelations()
-    end
+    -- Mark dirty BEFORE optional geometry rebuild: a rebuild error must
+    -- not silently discard the already-committed edit from autosaving.
     if result and persistence and not simulationAction
         and action~="GetMechanismInfo" then
         persistence:MarkDirty(player)
+    end
+    if result and mechanical and not simulationAction
+        and action~="GetMechanismInfo" and not metadataOnly then
+        mechanical:RebuildRelations()
     end
     local message = tostring(extra or "")
     if result and action == "Place" then message = "Placed" end

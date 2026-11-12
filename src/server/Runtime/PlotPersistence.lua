@@ -70,6 +70,7 @@ function Persistence.new(deps)
         LastWriteAt={},
         LastWrittenDocument={},
         KnownCloudRevision={},
+        UncertainWriteIds={},
         Dirty={},
         DirtySince={},
         LastAttemptAt={},
@@ -105,6 +106,7 @@ function Persistence:MarkSaved(player,document,mode)
         id=document.writeId,
         savedAt=document.savedAt,
     }
+    self.UncertainWriteIds[player]=nil
     player:SetAttribute("OPENWORKS_AutoSavePending",false)
     player:SetAttribute("OPENWORKS_LastSavedAt",document.savedAt or 0)
     player:SetAttribute("OPENWORKS_LastSaveMode",mode)
@@ -431,6 +433,7 @@ function Persistence:Load(player)
             id=document.writeId,
             savedAt=document.savedAt,
         }
+        self.UncertainWriteIds[player]=nil
         self.LastWriteAt[player]=os.clock()
         self.LastWrittenDocument[player]=document
         self.Dirty[player]=false
@@ -454,10 +457,18 @@ end
 
 -- A newer writer must never be silently overwritten. New saves carry a
 -- writeId; legacy manual saves compare their savedAt timestamp on migration.
-local function sameCloudRevision(cloud,expected,attempt)
-    if type(cloud)=="table" and cloud.writeId==attempt.writeId then
-        -- Idempotent on UpdateAsync internal retries.
-        return true
+local function sameCloudRevision(cloud,expected,attempt,uncertain)
+    if type(cloud)=="table" then
+        if cloud.writeId==attempt.writeId then
+            -- Idempotent on UpdateAsync internal retries.
+            return true
+        end
+        if type(cloud.writeId)=="string" and uncertain
+            and uncertain[cloud.writeId] then
+            -- The backend may have saved a prior request even if Roblox
+            -- returned an error. This is still our own save lineage.
+            return true
+        end
     end
     if expected==false then return cloud==nil end
     if type(expected)~="table" or type(cloud)~="table" then return false end
@@ -493,12 +504,13 @@ function Persistence:Save(player,mode)
     document.writeId=HttpService:GenerateGUID(false)
     document.saveMode=mode
     local expected=self.KnownCloudRevision[player]
+    local uncertain=self.UncertainWriteIds[player]
     self:Status(player,"Saving",if mode=="Auto"
         then "Autosaving construction" else "Saving construction")
     local conflict=false
     local ok,saved=pcall(function()
         return self.Store:UpdateAsync(self:Key(player),function(cloud)
-            if not sameCloudRevision(cloud,expected,document) then
+            if not sameCloudRevision(cloud,expected,document,uncertain) then
                 conflict=true
                 return nil
             end
@@ -507,6 +519,12 @@ function Persistence:Save(player,mode)
     end)
     self.Busy[player]=nil
     if not ok then
+        -- A failed request can have succeeded at the backend. Authorize
+        -- subsequent retries to recognize THIS specific attempted writeId
+        -- without ever accepting an unrelated server's write.
+        local possible=self.UncertainWriteIds[player] or {}
+        possible[document.writeId]=true
+        self.UncertainWriteIds[player]=possible
         warn("[OPENWORKS] "..mode.." save failed: "..tostring(saved))
         self:Status(player,"Ready","Save failed • unsaved changes kept")
         return false,"DataStore write failed; unsaved work is still in this server"
@@ -547,6 +565,7 @@ function Persistence:Clear(player)
     self.LastWriteAt[player]=nil
     self.LastWrittenDocument[player]=nil
     self.KnownCloudRevision[player]=nil
+    self.UncertainWriteIds[player]=nil
     self.Dirty[player]=nil
     self.DirtySince[player]=nil
     self.LastAttemptAt[player]=nil
