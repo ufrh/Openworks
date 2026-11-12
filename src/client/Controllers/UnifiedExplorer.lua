@@ -314,7 +314,8 @@ function Panel:Select(node,propagate)
     if self.Feedback then
         self.Feedback:Clear("explorer-selection")
         if node and (self.Tools.PrimaryId~="Build"
-            or self.Tools.SubtoolId~="Edit" or node.partialComponent) then
+            or self.Tools.SubtoolId~="Edit" or node.partialComponent
+            or node.kind=="assembly" or node.kind=="relation") then
             local members={}
             local activeRoot
             if simulating() then
@@ -356,7 +357,8 @@ function Panel:Select(node,propagate)
                         end
                     end
                     self.Feedback:Set("explorer-selection","active",
-                        members,"selection",#members>1)
+                        members,if node.kind=="assembly" then "assembly"
+                            else "selection",#members>1)
                 end
             end
         end
