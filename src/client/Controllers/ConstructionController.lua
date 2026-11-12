@@ -984,6 +984,9 @@ function Controller:RebuildPreview()
     local ghost = if source.Name == "OPENWORKS_ComponentGhost" then source else source:Clone()
     ghost.Name = "OPENWORKS_Ghost"
     local combined=source.Name=="OPENWORKS_ComponentGhost"
+    -- Logical pivot scope is explicit: a primitive may contain nested
+    -- decorative models, but only a component ghost contains editable members.
+    ghost:SetAttribute("FitPivotScope",if combined then "Component" else "Primitive")
     -- A component ghost is ONE presentation. Per-member transparent parts
     -- multiply shadow/shading through overlaps, so make their color solid
     -- and use one top-level Highlight for the complete assembled shape.
