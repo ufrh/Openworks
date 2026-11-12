@@ -32,6 +32,22 @@ function Handle:Update(anchor,scope,active)
     ad.Color3=if scope=="Component" then Color3.fromRGB(162,127,242)
         else Color3.fromRGB(83,221,239)
 end
+function Handle:UpdateCandidate(anchor,world,scope)
+    local ad=self.Adornment
+    if not anchor or not anchor.Parent or not anchor.PrimaryPart
+        or typeof(world)~="Vector3" then
+        ad.Adornee=nil
+        ad.Visible=false
+        return
+    end
+    local root=anchor.PrimaryPart
+    ad.Adornee=root
+    ad.CFrame=CFrame.new(root.CFrame:PointToObjectSpace(world))
+    ad.Color3=if scope=="Component" then Color3.fromRGB(162,127,242)
+        else Color3.fromRGB(83,221,239)
+    ad.Visible=true
+end
+
 function Handle:UpdatePreview(ghost)
     local ad=self.Adornment
     if not ghost or not ghost.Parent then
