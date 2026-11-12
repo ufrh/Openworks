@@ -1190,11 +1190,21 @@ function Controller:Start()
                 if not self:IsSimulating() then self:ToggleGround() end
             elseif self:IsSimulating() then
                 if key==Enum.KeyCode.O then
-                    self:Request({action="PauseSimulation"})
+                    if self.UnifiedExplorer then
+                        self.UnifiedExplorer:RunSimulationAction("pause",
+                            self.UnifiedExplorer.Selected)
+                    else self:Request({action="PauseSimulation"}) end
                 elseif key==Enum.KeyCode.U then
-                    self:Request({action="ResetSimulation"})
+                    if self.UnifiedExplorer then
+                        self.UnifiedExplorer:RunSimulationAction("reset",
+                            self.UnifiedExplorer.Selected)
+                    else self:Request({action="ResetSimulation"}) end
                 elseif key==Enum.KeyCode.I then
-                    self:Request({action="GetMechanismInfo",seedId=self.SimSeedId})
+                    if self.UnifiedExplorer then
+                        self.UnifiedExplorer:RunSimulationAction("telemetry",
+                            self.UnifiedExplorer.Selected)
+                    else self:Request({action="GetMechanismInfo",
+                        seedId=self.SimSeedId}) end
                 end
             end
             return
