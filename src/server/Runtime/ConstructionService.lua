@@ -80,11 +80,11 @@ local function accessFor(player, action)
     if action=="Undo" or action=="Redo" then
         -- Assembly edits commit the same safe metadata history as Edit.
         -- Allow undo/redo without equipping an unrelated construction tool.
-        return hasEquippedTool(player,"Assembly")
-            or hasEquippedTool(player,"Edit")
+        return hasEquippedTool(player,"AssemblySimulation")
+            or hasEquippedTool(player,"Mechanics")
             or hasEquippedTool(player,"Build")
     end
-    return hasEquippedTool(player,"Edit") or hasEquippedTool(player,"Build")
+    return hasEquippedTool(player,"Build")
 end
 
 local function nearPlayer(player, position)
@@ -1153,53 +1153,51 @@ local function handle(player, payload)
     if action == "GetMechanismInfo" then
         -- Read-only information is available even during simulation.
     elseif simulationAction then
-        if action ~= "StopSimulation" and not hasEquippedTool(player,"Simulate") then
+        if action ~= "StopSimulation" and not hasEquippedTool(player,"AssemblySimulation") then
             return {ok=false,message="Equip Simulate to run a mechanism"}
         end
-    elseif simulation and simulation:IsRunning(player)
-        and not propertyAction then
+    elseif simulation and simulation:IsRunning(player) then
         return { ok = false, message = "Stop simulation before changing construction" }
     elseif mechanicalAction then
         if propertyAction then
-            if not hasEquippedTool(player,"Simulate") then
-                return {ok=false,message="Use Simulate Properties to edit relationships"}
-            end
-            if simulation:IsRunning(player)
-                and not simulation:HasRelationship(player,payload.relationId) then
-                return {ok=false,message="Relation is not in the running mechanism"}
+            if not hasEquippedTool(player,"Mechanics") then
+                return {ok=false,message="Use Mechanics / Configure to edit relationships"}
             end
         elseif action=="SetGrounded" then
-            if not hasEquippedTool(player,"Simulate")
-                and not hasEquippedTool(player,"Edit") then
-                return {ok=false,message="Equip Simulate to ground a body"}
+            if not hasEquippedTool(player,"AssemblySimulation") then
+                return {ok=false,message="Use Assembly & Simulation to ground a body"}
             end
         elseif action=="CreateWeld" then
-            if not hasEquippedTool(player,"Weld") then
-                return {ok=false,message="Equip Weld to designate a physical weld"}
+            if not hasEquippedTool(player,"Mechanics") then
+                return {ok=false,message="Use Mechanics / Connect to designate a weld"}
             end
         elseif action~="GetMechanismInfo"
-            and not hasEquippedTool(player,"Edit") then
-            return {ok=false,message="Equip Edit to modify relationships"}
+            and not hasEquippedTool(player,"Mechanics") then
+            return {ok=false,message="Use Mechanics to modify relationships"}
         end
     elseif materialAction then
-        if not hasEquippedTool(player,"Edit") then
-            return {ok=false,message="Equip Edit to apply paint or materials"}
+        if not hasEquippedTool(player,"Build") then
+            return {ok=false,message="Use Build / Paint to apply paint or materials"}
         end
     elseif verticalAction then
-        if (payload.scope=="Assembly" and not hasEquippedTool(player,"Assembly"))
-            or (payload.scope~="Assembly" and not hasEquippedTool(player,"Edit")) then
-            return {ok=false,message="Equip Edit for components or Assembly for assemblies"}
+        if (payload.scope=="Assembly" and not hasEquippedTool(player,"AssemblySimulation"))
+            or (payload.scope~="Assembly" and not hasEquippedTool(player,"Build")) then
+            return {ok=false,message="Use Build for components or Assembly & Simulation for assemblies"}
         end
     elseif assemblyAction then
-        if not hasEquippedTool(player,"Assembly") then
-            return {ok=false,message="Equip Assembly to create or edit assemblies"}
+        if not hasEquippedTool(player,"AssemblySimulation") then
+            return {ok=false,message="Use Assembly Editor to create or edit assemblies"}
         end
     elseif componentAction or alignmentAction or smartAction then
-        if not hasEquippedTool(player, "Edit") then
-            return { ok = false, message = "Equip Edit to modify components" }
+        if (componentAction or smartAction) and not hasEquippedTool(player,"Build") then
+            return {ok=false,message="Use Build to modify construction"}
+        end
+        if alignmentAction and not hasEquippedTool(player,"Build")
+            and not hasEquippedTool(player,"Mechanics") then
+            return {ok=false,message="Use Build or Mechanics to align objects"}
         end
     elseif not accessFor(player, action) then
-        return { ok = false, message = "Equip Build or Edit" }
+        return { ok = false, message = "Equip Build" }
     end
 
     local now = os.clock()
@@ -1466,7 +1464,7 @@ function Service.Start()
     crankEvent.Name="OPENWORKS_CrankControl"
     crankEvent.Parent=ReplicatedStorage
     crankEvent.OnServerEvent:Connect(function(player,crankId,speed,dragging,release)
-        if not hasEquippedTool(player,"Simulate") then return end
+        if not hasEquippedTool(player,"AssemblySimulation") then return end
         if type(crankId)~="string" or #crankId>64 then return end
         simulation:InputCrank(player,crankId,speed,dragging,release)
     end)
@@ -1477,7 +1475,7 @@ function Service.Start()
     rackEvent.Name="OPENWORKS_RackControl"
     rackEvent.Parent=ReplicatedStorage
     rackEvent.OnServerEvent:Connect(function(player,rackId,direction,holding,release)
-        if not hasEquippedTool(player,"Simulate") then return end
+        if not hasEquippedTool(player,"AssemblySimulation") then return end
         if type(rackId)~="string" or #rackId>64 then return end
         if direction~=-1 and direction~=1 then return end
         simulation:InputRack(player,rackId,direction,holding,release)
@@ -1489,7 +1487,7 @@ function Service.Start()
     motorEvent.Name="OPENWORKS_MotorControl"
     motorEvent.Parent=ReplicatedStorage
     motorEvent.OnServerEvent:Connect(function(player,key,holding)
-        if not hasEquippedTool(player,"Simulate") then return end
+        if not hasEquippedTool(player,"AssemblySimulation") then return end
         if type(key)~="string" or type(holding)~="boolean" then return end
         simulation:InputMotor(player,key,holding)
     end)
