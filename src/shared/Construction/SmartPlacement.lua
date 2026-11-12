@@ -385,7 +385,46 @@ local function socketPlan(members, shaft, target, forcedByAim)
     return plan,units,roll,radial+math.abs(depth)*0.12
 end
 
-local function reverseSocketPlan(members, opening, shaft, forcedByAim)
+-- Finds the closest approach of the center camera ray to the FINITE
+-- physical shaft segment. Returns an axial coordinate from the shaft's
+-- midpoint, not the cursor's distance from the shaft's central pivot.
+-- The ray can hit the cylindrical SIDE, a shaft END or an empty space
+-- between neighbouring hinge leaves; all use the same projection.
+local function shaftCursorDepth(ray,shaft)
+    if not ray or not shaft or not shaft.PrimaryPart then
+        return nil,math.huge
+    end
+    local shaftCF=shaft:GetPivot()
+    local center=shaftCF.Position
+    local axis=shaftCF.RightVector.Unit
+    local halfLength=shaft.PrimaryPart.Size.X*0.5
+    local direction=ray.Direction.Unit
+    local relative=ray.Origin-center
+    local parallel=direction:Dot(axis)
+    local rayProjection=relative:Dot(direction)
+    local shaftProjection=relative:Dot(axis)
+    local denominator=1-parallel*parallel
+    local depth,rayT
+    if denominator>0.0001 then
+        rayT=(parallel*shaftProjection-rayProjection)/denominator
+        depth=shaftProjection+parallel*math.max(0,rayT)
+    else
+        -- Looking directly down the shaft axis is ambiguous: choose the
+        -- VISIBLE near end rather than springing back to the midpoint.
+        depth=if parallel>=0 then -halfLength else halfLength
+    end
+    depth=math.clamp(depth,-halfLength,halfLength)
+    local nearest=center+axis*depth
+    rayT=(nearest-ray.Origin):Dot(direction)
+    if rayT<=0 or rayT>Grid.MaxDistance then
+        return nil,math.huge
+    end
+    local error=(ray.Origin+direction*rayT-nearest).Magnitude
+    return depth,error
+end
+
+local function reverseSocketPlan(members, opening, shaft, forcedByAim,
+    mouseDepth,mouseError)
     if not Bore.CanInsert(shaft,opening) then return nil end
     local shaftCF=shaft:GetPivot()
     local holeCF=opening:GetPivot()
@@ -410,6 +449,20 @@ local function reverseSocketPlan(members, opening, shaft, forcedByAim)
         or math.abs(axial)>axialReach) then
         axial=0
     end
+    -- For a MOVING drilled hole onto a FIXED shaft, use the actual
+    -- crosshair position ALONG that shaft. The old behavior projected
+    -- the moving ghost's center and repeatedly jumped to the midpoint.
+    -- Never follow a ray pointing past the shaft or far outside its
+    -- radius: only a genuine shaft aim overrides ordinary drag proximity.
+    local cursorTolerance=math.clamp(
+        math.max(shaft.PrimaryPart.Size.Y,shaft.PrimaryPart.Size.Z)*0.5+0.14,
+        0.20,0.60)
+    local cursorOnShaft=type(mouseDepth)=="number"
+        and type(mouseError)=="number"
+        and mouseError<=cursorTolerance
+    if cursorOnShaft then
+        axial=mouseDepth*shaftAxis:Dot(axis)
+    end
     local low,high=Alignment.InsertionBounds(shaft,opening)
     if not low then return nil end
     local snapped=math.round((-axial)/(Grid.Unit*0.5))*0.5
@@ -420,7 +473,9 @@ local function reverseSocketPlan(members, opening, shaft, forcedByAim)
     local roll=shaft:GetAttribute("ShaftRollDegrees") or 0
     local plan=Alignment.ReversePlan(members,opening,shaft,units,roll)
     if not plan then return nil end
-    return plan,units,roll,radial+math.abs(axial)*0.12
+    return plan,units,roll,
+        if cursorOnShaft then mouseError+0.03
+            else radial+math.abs(axial)*0.12
 end
 
 local function aimDistance(ray, worldPosition)
@@ -438,17 +493,10 @@ local function hubAimDistance(ray,target)
     if not ray or not target.PrimaryPart then return math.huge end
     if gear(target) then return aimDistance(ray,target:GetPivot().Position) end
     if not Alignment.IsShaft(target) then return math.huge end
-    local cf=target:GetPivot()
-    local half=target.PrimaryPart.Size.X*0.5
-    local best=math.huge
-    -- Minimize distance from the camera ray to the FINITE shaft segment.
-    -- A tiny sample set is enough to find the visible insertion location;
-    -- this is selection assistance only, never the final fit predicate.
-    for i=0,8 do
-        local position=cf.Position+cf.RightVector*((i/8*2-1)*half)
-        best=math.min(best,aimDistance(ray,position))
-    end
-    return best
+    -- Analytic closest ray/segment point, not 9 uneven sample points.
+    -- The exact same cursor depth feeds reverse drilled-hole insertion.
+    local _,distance=shaftCursorDepth(ray,target)
+    return distance
 end
 
 -- A single coaxial fit leaves free rotation about its axis. For a plate
@@ -586,6 +634,11 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 continue
             end
             local rayError=aimDistance(aimRay,target:GetPivot().Position)
+            local shaftMouseDepth,shaftMouseError
+            if isOpening and Alignment.IsShaft(target) then
+                shaftMouseDepth,shaftMouseError=shaftCursorDepth(aimRay,target)
+                if shaftMouseDepth then rayError=shaftMouseError end
+            end
             local aimReach=math.clamp(target.PrimaryPart.Size.Magnitude*0.38,0.48,1.5)
             local aimed=rayError<=aimReach
             local kind,cf,offset,roll,score,approach
@@ -607,16 +660,25 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 local near=source:GetPivot().Position
                 if hubAimed then
                     local stationary=target:GetPivot()
-                    local delta=near-stationary.Position
-                    local axial=delta:Dot(stationary.RightVector)
-                    local radial=(delta-stationary.RightVector*axial).Magnitude
-                    if radial>Smart.HubSnapRadius then
-                        -- An intentional center aim lets a shaft reach a
-                        -- NON-COLLIDING gear opening even if the world's
-                        -- surface hit snapped the ghost against its rim.
-                        near=stationary.Position
-                            +stationary.RightVector*math.clamp(axial,
-                                -Smart.HubAxialReach,Smart.HubAxialReach)
+                    if isGear and Alignment.IsShaft(target) then
+                        -- Gears also have real bores: while dragging a
+                        -- gear onto a long fixed shaft, preserve the
+                        -- crosshair's axial location, not shaft midpoint.
+                        local cursorDepth=shaftCursorDepth(aimRay,target)
+                        if cursorDepth then
+                            near=stationary.Position
+                                +stationary.RightVector*cursorDepth
+                        end
+                    else
+                        local delta=near-stationary.Position
+                        local axial=delta:Dot(stationary.RightVector)
+                        local radial=(delta-stationary.RightVector*axial).Magnitude
+                        if radial>Smart.HubSnapRadius then
+                            -- Shaft into an empty NON-COLLIDING gear bore.
+                            near=stationary.Position
+                                +stationary.RightVector*math.clamp(axial,
+                                    -Smart.HubAxialReach,Smart.HubAxialReach)
+                        end
                     end
                 end
                 local pose,dist,u=Smart.HubPose(source,target,near)
@@ -630,7 +692,8 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 end
             elseif isOpening and Alignment.IsShaft(target) then
                 local plan,u,r,dist=reverseSocketPlan(
-                    members,source,target,aimed
+                    members,source,target,aimed,
+                    shaftMouseDepth,shaftMouseError
                 )
                 if plan then
                     kind="Bore"
@@ -813,6 +876,12 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 if target==preferred then
                     score-=if kind=="Gear" or kind=="Rack"
                         or kind=="Guide" then 0.08 else 1.5
+                end
+                if kind=="Bore" and isOpening and aimedModel==target
+                    and shaftMouseDepth~=nil then
+                    -- Aim at this particular shaft outranks a sticky
+                    -- previously hovered shaft across crowded builds.
+                    score=-3+shaftMouseError*0.05
                 end
                 candidate.score=score
                 table.insert(matches,candidate)

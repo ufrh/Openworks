@@ -197,3 +197,11 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 - [ ] Test 30, 60 and 144 FPS and a simulated long frame: response remains consistent, and the frame-delta cap prevents large interpolation spikes. High-part-count gear/assembly edits should stay within the animation budget and remain responsive.
 
 - [ ] After a bearing is created, in both Edit > L and the mechanical relationship tool's Fit stage, scroll insertion and Q/E shaft roll: shaft and its grouped moving members animate together rather than stepping into final position. Move beyond a physical tube-face stop: server rejects, visual returns to original pose with no residual hidden geometry.
+
+## Cursor-depth reverse shaft fitting
+- [ ] Create a long (e.g. 12 U) fixed shaft and separately drag a drilled block onto it. Aim the crosshair near the **left end** of the shaft; preview hole should align coaxially there, not at shaft center. Aim the **right end** without changing the shaft; the drilled block should follow to the right end in 0.5U increments, using the same Build/Edit visual easing. Final placement must exactly match the indicated snapped depth.
+- [ ] Approach a shaft from either side or with its X axis inverted (rotate the shaft and the incoming hole 180°). Mouse projection and offset sign must remain correct. Directly aim down the shaft's end cap: it should attach at the **near end** rather than choose an arbitrary center or flip polarity.
+- [ ] Aim at a point 2 U outside a shaft's end and at open space far from its diameter: the hole must not magnetize to an invisible extension of the shaft. With a very short shaft, insertion limits still require real overlap, not floating alignment.
+- [ ] Place two shafts close together and move the crosshair from one to the other, aiming at distinct depths. A direct shaft hit must take priority over a stale preferred shaft and over center-distance scoring.
+- [ ] Test moving a gear (with a real hub bore) onto a long shaft. Its position should follow the aimed shaft segment too, while Hub Radius, fit clearance, and explicit Rigid/Rotation choice stay enforced.
+- [ ] Check that multi-hole fitted shafts, native bearings, rigid joints, undo/redo, autosave and simulation retain the exact selected insertion pose. Moving the hole on its own must not create an implicit weld.

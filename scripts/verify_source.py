@@ -644,6 +644,24 @@ def main() -> int:
     multi_fit=read("src/shared/Construction/MultiFitMath.lua")
     smart_place=read("src/shared/Construction/SmartPlacement.lua")
     align_service=read("src/server/Runtime/AlignmentService.lua")
+    check("Moving drilled bores follow crosshair depth along finite shafts",
+          'local function shaftCursorDepth(ray,shaft)' in smart_place
+          and 'local denominator=1-parallel*parallel' in smart_place
+          and 'depth=math.clamp(depth,-halfLength,halfLength)' in smart_place
+          and 'rayT<=0 or rayT>Grid.MaxDistance' in smart_place
+          and 'axial=mouseDepth*shaftAxis:Dot(axis)' in smart_place
+          and 'shaftMouseDepth,shaftMouseError=shaftCursorDepth(aimRay,target)' in smart_place
+          and 'members,source,target,aimed,' in smart_place
+          and 'shaftMouseDepth,shaftMouseError' in smart_place
+          and 'score=-3+shaftMouseError*0.05' in smart_place
+          and 'Alignment.ReversePlan(members,opening,shaft,units,roll)' in smart_place
+          and 'local units=math.clamp(snapped,loSnap,hiSnap)' in smart_place)
+    check("Gear-on-shaft placement also preserves real cursor depth",
+          'if isGear and Alignment.IsShaft(target) then' in smart_place
+          and 'local cursorDepth=shaftCursorDepth(aimRay,target)' in smart_place
+          and 'near=stationary.Position' in smart_place
+          and 'Smart.HubPose(source,target,near)' in smart_place
+          and 'local _,distance=shaftCursorDepth(ray,target)' in smart_place)
     check("Long hinge shafts use real segment overlap, not center-only bounds",
           'function Alignment.InsertionBounds(shaft,opening)' in alignment_math
           and 'local requiredOverlap=' in alignment_math
