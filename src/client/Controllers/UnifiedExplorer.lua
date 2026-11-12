@@ -13,6 +13,7 @@ local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 local construction=RS:WaitForChild("Openworks"):WaitForChild("Construction")
 local Config=require(construction:WaitForChild("BuildConfig"))
 local Grid=require(construction:WaitForChild("GridMath"))
+local ComponentGeometry=require(construction:WaitForChild("ComponentGeometry"))
 local Materials=require(construction:WaitForChild("MaterialCatalog"))
 local Paint=require(construction:WaitForChild("PaintCatalog"))
 local player=Players.LocalPlayer
@@ -315,8 +316,25 @@ function Panel:Select(node,propagate)
                 end
             end
             if #members>0 and node.kind~="unassigned" then
-                self.Feedback:Set("explorer-selection","active",
-                    members,"selection",#members>1)
+                if node.kind=="relation" or node.kind=="multi" then
+                    for i,member in ipairs(members) do
+                        self.Feedback:Set("explorer-selection",
+                            tostring(i),{member},"selection",false)
+                    end
+                else
+                    if node.kind=="component" and #members>1 then
+                        local anchor=ComponentGeometry.CentralPrimitive(members)
+                        if anchor then
+                            local ordered={anchor}
+                            for _,m in ipairs(members) do
+                                if m~=anchor then table.insert(ordered,m) end
+                            end
+                            members=ordered
+                        end
+                    end
+                    self.Feedback:Set("explorer-selection","active",
+                        members,"selection",#members>1)
+                end
             end
         end
     end
@@ -607,7 +625,14 @@ function Panel:Geometry(node)
     self:Value("Members",#(node.members or {}))
     if model.PrimaryPart then
         self:Value("Position (U)",formatVector(model:GetPivot().Position))
-        self:Value("Size (U)",formatVector(model.PrimaryPart.Size))
+        self:Value(if node.kind=="component" then "Anchor size (U)"
+            else "Size (U)",formatVector(model.PrimaryPart.Size))
+    end
+    if node.kind=="component" then
+        local total=#self.Build:ComponentMembers(node.componentId)
+        if total>#node.members then
+            self:Value("Whole component",total)
+        end
     end
     self:Value("Material",model:GetAttribute("ConstructionMaterial") or "Steel")
     self:Value("Finish",model:GetAttribute("PaintFinish") or "Factory")
