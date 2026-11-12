@@ -206,7 +206,7 @@ function UI:Start()
             if processed or UserInputService:GetFocusedTextBox() then return end
             if input.KeyCode==Enum.KeyCode.F6 then
                 self:Show(not self.Open)
-            elseif input.KeyCode==Enum.KeyCode.Escape and self.Open then
+            elseif input.KeyCode==Enum.KeyCode.Return and self.Open then
                 self:Show(false)
             end
         end))
