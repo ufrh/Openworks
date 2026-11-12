@@ -551,6 +551,174 @@ function Controller:ToggleGearMode()
     self:RefreshHUD()
 end
 
+-- Phase 4 single two-part connection session. Connect never owns its
+-- own validation rules: the exact existing server actions validate each
+-- weld, spring, bolt, physical bore, crank and gear mount.
+function Controller:StartConnect(seed)
+    self:Reset()
+    self.ManualActive=true
+    self.Stage="ChooseFirst"
+    if seed and seed.Parent
+        and seed:GetAttribute("OwnerUserId")==player.UserId
+        and type(seed:GetAttribute("InstanceId"))=="string" then
+        self.ConnectFirst=seed
+        self.Stage="ChooseSecond"
+    end
+    self:RefreshHUD()
+end
+
+function Controller:BeginConnect(model)
+    if self.Mode~="Mechanics" or self.Tools.SubtoolId~="Connect"
+        or self:IsSimulating() then return false end
+    if not model or not model.Parent
+        or model:GetAttribute("OwnerUserId")~=player.UserId then return false end
+    self:StartConnect(model)
+    return true
+end
+
+function Controller:CommitConnect(kind,first,second)
+    if not first or not first.Parent or not second or not second.Parent
+        or first==second then
+        self:StartConnect()
+        return
+    end
+    if kind==nil then
+        -- Esc dismisses the relationship choice, retaining the first part.
+        self.ConnectSecond=nil
+        self.ConnectInvalid=false
+        self.Stage="ChooseSecond"
+        self:RefreshHUD()
+        return
+    end
+    if self.Mode~="Mechanics" or self.Tools.SubtoolId~="Connect"
+        or self.ConnectFirst~=first or self.ConnectSecond~=second
+        or self:IsSimulating() then return end
+    local allowed=false
+    for _,choice in ipairs(ConnectionCatalog.Pair(first,second)) do
+        if choice.id==kind then allowed=true break end
+    end
+    if not allowed then
+        self:Message("This connection is not compatible with those parts")
+        return
+    end
+
+    local roles=ConnectionCatalog.Roles(first,second)
+    local firstId=first:GetAttribute("InstanceId")
+    local secondId=second:GetAttribute("InstanceId")
+    if kind=="Bearing" or kind=="Slider" or kind=="Cylindrical" then
+        if not roles.shaft or not roles.opening
+            or not Alignment.TargetAxis(roles.opening) then
+            self.ConnectInvalid=true
+            self.Stage="ChoiceRejected"
+            self:Message("A real shaft and matching opening are required")
+            self:RefreshHUD()
+            return
+        end
+        self.KindIndex=table.find(TYPES,kind) or 1
+        self.Housing=roles.opening
+        self.Source=roles.shaft
+        self.Members=self:SourceMembers(roles.shaft)
+        self.OffsetUnits=0
+        self.RollDegrees=0
+        self.ConnectFirst=nil
+        self.ConnectSecond=nil
+        self.ConnectInvalid=false
+        self.Stage="Preview"
+        self:MakePreview()
+        self:RefreshHUD()
+        return
+    end
+
+    local request
+    if kind=="FreeFit" then
+        request={
+            action="SmartMate",mateKind="Bore",relationKind="FreeFit",
+            sourceId=roles.shaft:GetAttribute("InstanceId"),
+            targetId=roles.opening:GetAttribute("InstanceId"),
+            offsetUnits=0,rollDegrees=0,reverse=false,
+        }
+    elseif kind=="Rotation" or kind=="Rigid" then
+        request={
+            action="SmartMate",mateKind="Hub",relationKind=kind,
+            sourceId=roles.gear:GetAttribute("InstanceId"),
+            targetId=roles.axle:GetAttribute("InstanceId"),
+            approach=roles.gear:GetPivot().Position,
+        }
+    elseif kind=="CrankCoupling" then
+        request={
+            action="CoupleHandCrank",
+            sourceId=roles.crank:GetAttribute("InstanceId"),
+            targetId=roles.crankShaft:GetAttribute("InstanceId"),
+        }
+    elseif kind=="Spring" then
+        local source,target=first,second
+        if Alignment.IsShaft(second) and Alignment.TargetAxis(first) then
+            source,target=second,first
+        end
+        request={
+            action="CreateSpring",
+            sourceId=source:GetAttribute("InstanceId"),
+            targetId=target:GetAttribute("InstanceId"),
+        }
+    elseif kind=="Weld" or kind=="Bolt" then
+        request={
+            action=if kind=="Weld" then "CreateWeld" else "CreateBolt",
+            sourceId=firstId,targetId=secondId,
+        }
+    end
+    if not request then return end
+    local ok=self:Request(request)
+    if ok then
+        if self.Feedback then self.Feedback:FlashSuccess({first,second}) end
+        self:StartConnect()
+    else
+        -- Keep a failed pair selected, the second part red. No partial
+        -- connection or fabricated green pulse is created on rejection.
+        self.ConnectInvalid=true
+        self.Stage="ChoiceRejected"
+        self:RefreshHUD()
+    end
+end
+
+function Controller:ConnectClick()
+    if self:IsSimulating() or self.Busy then return end
+    if self.Stage=="Preview" or self.Stage=="Fit" then
+        self:Activate() -- Existing tested shaft pose/fit commit path.
+        if self.Stage=="Housing" and self.ManualActive then
+            self:StartConnect()
+        end
+        return
+    end
+    if not self.ManualActive then self:StartConnect() end
+    if self.Stage=="Choice" then return end
+    if self.Stage=="ChooseFirst" or not self.ConnectFirst then
+        local first=self:Pick()
+        if not first then return end
+        self.ConnectFirst=first
+        self.ConnectSecond=nil
+        self.Stage="ChooseSecond"
+        self:RefreshHUD()
+        return
+    end
+    local second=self:Pick({[self.ConnectFirst]=true})
+    if not second or second==self.ConnectFirst then return end
+    local first=self.ConnectFirst
+    self.ConnectSecond=second
+    self.ConnectInvalid=false
+    self.Stage="Choice"
+    self:RefreshHUD()
+    local shown=self.UnifiedExplorer and
+        self.UnifiedExplorer:ChoosePair(first,second,function(kind)
+            self:CommitConnect(kind,first,second)
+        end)
+    if not shown then
+        self.ConnectInvalid=true
+        self.Stage="ChoiceRejected"
+        self:Message("Connection picker is unavailable")
+        self:RefreshHUD()
+    end
+end
+
 -- Distinct authoring actions remain in Edit, but no extra native tool
 -- is required. A two-click pair is only needed for explicit springs,
 -- structural welds and physical bolt holes.
