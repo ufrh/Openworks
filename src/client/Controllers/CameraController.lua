@@ -44,6 +44,7 @@ local function uiCapturesPointer()
         or player:GetAttribute("OPENWORKS_PlotMenuOpen")==true
         or player:GetAttribute("OPENWORKS_AssemblyNaming")==true
         or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
+        or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
         or player:GetAttribute("OPENWORKS_CursorUIOpen")==true
         or player:GetAttribute("OPENWORKS_PropertiesLooking")==true
         or player:GetAttribute("OPENWORKS_CrankActive")==true
