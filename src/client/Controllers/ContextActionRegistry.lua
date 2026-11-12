@@ -4,7 +4,7 @@
 -- server validation; no explorer-side privileged changes.
 local Actions={}
 
-function Actions.List(node,tools,simulating,assemblyStage)
+function Actions.List(node,tools,simulating,assemblyStage,runningAssemblyId)
     local result={}
     local function add(id,label,tip,shortcut)
         table.insert(result,{id=id,label=label,tooltip=tip,shortcut=shortcut})
@@ -52,9 +52,13 @@ function Actions.List(node,tools,simulating,assemblyStage)
                 add("edit-members","Edit members","Open the existing assembly membership workflow")
                 add("rename","Rename","Edit the assembly's registered name")
             elseif subtool=="Simulation" then
-                add(if simulating then "stop" else "run",
-                    if simulating then "Stop" else "Simulate",
-                    "Simulate exactly the saved assembly membership","P")
+                if not simulating then
+                    add("run","Simulate",
+                        "Simulate exactly the saved assembly membership","P")
+                elseif node.id==runningAssemblyId then
+                    add("stop","Stop",
+                        "Stop the currently running registered assembly","P")
+                end
             end
         end
     elseif node.kind=="relation" then
