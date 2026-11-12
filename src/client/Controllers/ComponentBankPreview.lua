@@ -26,9 +26,11 @@ function Preview.Create(entry)
         local model=template.Model:Clone()
         model.Name=part.template
         model:SetAttribute("TemplateId",part.template)
-        model:SetAttribute("InstanceId",part.id)
-        model:SetAttribute("ComponentId",entry.id)
-        model:SetAttribute("ComponentAnchorId",entry.anchorId)
+        -- Preview IDs must never equal the original saved component IDs,
+        -- or SmartPlacement can mistake this reusable ghost for itself.
+        model:SetAttribute("InstanceId","BANK_PREVIEW_"..part.id)
+        model:SetAttribute("ComponentId","BANK_PREVIEW_"..entry.id)
+        model:SetAttribute("ComponentAnchorId","BANK_PREVIEW_"..entry.anchorId)
         if part.fitPivot then
             model:SetAttribute("FitPivotLocal",Codec.ReadVec(part.fitPivot))
         end
