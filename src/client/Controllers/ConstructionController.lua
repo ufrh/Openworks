@@ -1514,11 +1514,9 @@ function Controller:Place(chosenKind)
             then self.PreviewCF.Rotation else nil,
         autoMate=if self.SmartMatch
             and (self.Pending~="Copy"
-                or self.SmartMatch.kind=="Gear"
-                or self.SmartMatch.kind=="Rack"
-                or self.SmartMatch.kind=="Guide") then {
-            -- Gear/Rack/Guide snaps only position geometry. All physical
-            -- bearing/weld/mount relationships are omitted on an F-copy.
+                or self.SmartMatch.kind=="Gear") then {
+            -- Gear-to-gear meshing only positions geometry on an F-copy.
+            -- Gear/shaft welds are never copied implicitly.
             kind=self.SmartMatch.kind,
             targetId=self.SmartMatch.target:GetAttribute("InstanceId"),
             relationKind=chosenKind or self.SmartMatch.relationKind,
