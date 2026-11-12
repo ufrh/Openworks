@@ -615,7 +615,8 @@ function Layered:ConfirmAlignment()
     local componentId=align.ComponentId
     local offset=align.OffsetUnits
     local roll=align.RollDegrees
-    local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"
+    local isHub=type(align.Target:GetAttribute("GearTeeth"))=="number"
+        or align.Target:GetAttribute("PrimitiveFamily")=="Pulley"
     parent.PendingMateChoice="ManualAlign"
     local function onChoice(choice)
         parent.PendingMateChoice=nil
@@ -639,7 +640,7 @@ function Layered:ConfirmAlignment()
         -- server-verified multi-opening transaction as drag fitting.
         -- The old CreateRelation/Align path moved only one shaft/hole.
         local exact=selected.Plan.delta*selected.Shaft:GetPivot()
-        local ok=parent:Request(if isGear then {
+        local ok=parent:Request(if isHub then {
             action="SmartMate",
             mateKind="Hub",
             relationKind=choice,
@@ -668,10 +669,12 @@ function Layered:ConfirmAlignment()
         parent:RefreshPointer()
         parent:RefreshHUD()
     end
-    if not (parent.UnifiedExplorer and parent.UnifiedExplorer:ChooseFit(
-        if isGear then "Hub" else "Bore",onChoice,
-        selected.FittedCount or 1)) then
-        -- Never silently open a second legacy modal.
+    if isHub then
+        -- All gear and pulley mounts are automatically rigid; no redundant
+        -- independent/movable hub choice belongs in UI v2.
+        onChoice("Rigid")
+    elseif not (parent.UnifiedExplorer and parent.UnifiedExplorer:ChooseFit(
+        "Bore",onChoice,selected.FittedCount or 1)) then
         onChoice(nil)
     end
 end
