@@ -153,6 +153,51 @@ def main() -> int:
           and 'self.Panel.Visible=self.Mode=="Assembly" and self.UnifiedExplorer==nil' in assembly_ui
           and 'self.Gui.Enabled = self.Active and self.UnifiedExplorer==nil' in mechanical_ui)
 
+    connection_catalog = read("src/client/Controllers/ConnectionCatalog.lua")
+    mechanics_connect = read("src/client/Controllers/AssemblyController.lua")
+    build_connect = read("src/client/Controllers/ConstructionController.lua")
+    mechanic_authority = read("src/server/Runtime/ConstructionService.lua")
+    check("UI v2 Phase 4 owns one typed relationship choice catalog",
+          'function Catalog.Fit(kind)' in connection_catalog
+          and 'function Catalog.Pair(first,second)' in connection_catalog
+          and 'function Catalog.Roles(first,second)' in connection_catalog
+          and all(('id="'+kind+'"') in connection_catalog or
+                  ('add("'+kind+'")') in connection_catalog for kind in (
+                     'Cylindrical','Slider','Bearing','FreeFit','Weld',
+                     'Spring','Bolt','CrankCoupling','Rotation','Rigid'))
+          and 'if not hub then add("Weld") end' in connection_catalog)
+    check("Build auto fit and Mechanics pairs use the SAME contextual picker",
+          'self.UnifiedExplorer:ChooseFit(' in build_connect
+          and 'function Panel:ChooseFit(kind,callback,count)' in unified_panel
+          and 'function Panel:ChoosePair(first,second,callback)' in unified_panel
+          and 'return self:ChooseConnection(options,callback' in unified_panel
+          and 'self.UnifiedExplorer:ChoosePair(first,second' in mechanics_connect)
+    check("Connect pair controls share validated requests and endpoint feedback",
+          all(token in mechanics_connect for token in (
+              'function Controller:StartConnect(seed)',
+              'function Controller:PickConnectPart(part)',
+              'function Controller:CommitConnect(kind,first,second)',
+              'self.Feedback:FlashSuccess({first,second})',
+              'self.ConnectInvalid=true',
+              'action="SmartMate",mateKind="Bore",relationKind="FreeFit"',
+              'action="SmartMate",mateKind="Hub",relationKind=kind',
+              'action="CreateSpring"',
+              'action="CoupleHandCrank"',
+              'action=if kind=="Weld" then "CreateWeld" else "CreateBolt"',
+          ))
+          and 'self.Mechanics:PickConnectPart(node.model)' in unified_panel)
+    check("Mechanics does not reintroduce F/H/Shift+J standalone connect modes",
+          'if key==Enum.KeyCode.F' not in mechanics_connect
+          and 'if key==Enum.KeyCode.H' not in mechanics_connect
+          and 'self:StartPair("Spring")' not in mechanics_connect
+          and 'self:ConnectClick()' in mechanics_connect
+          and 'self:StartConnect()' in mechanics_connect)
+    check("Mechanics SmartMate authorization narrowly allows only bore fit and hub",
+          'local approved=(mode=="Bore" and kind=="FreeFit")' in mechanic_authority
+          and '(mode=="Hub" and (kind=="Rotation" or kind=="Rigid"))' in mechanic_authority
+          and 'not approved or not hasEquippedTool(player,"Mechanics")' in mechanic_authority
+          and 'mechanical:SmartMate(player,payload,false)' in mechanic_authority)
+
     rokit = read("rokit.toml")
     aftman = read("aftman.toml")
     for name in ("rojo", "stylua", "selene"):
