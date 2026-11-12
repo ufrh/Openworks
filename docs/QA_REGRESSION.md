@@ -84,9 +84,13 @@ Run after changing the shared geometry code, construction services, tool dispatc
 ## UI and persistence
 - [ ] Left-side passive Simulate panel and controls list visible, right inspector opens on click, Esc closes it; ordinary mouse remains first-person locked.
 - [ ] Assembly naming, plot saving, properties, numeric editor and mate selection unlock cursor only while modal is open, then restore lock.
-- [ ] Manually save with F6; leave, rejoin, verify all parts/components/named assemblies/relations/grounding persisted. Undo history must not be persisted.
-- [ ] Manual Save failure displays an error, clears Busy, and never writes an empty fallback over a valid previous save.
-- [ ] Explicit Load restores last saved state without autosaving changes made since. A corrupt/unavailable document returns Error and does not strand the plot in Loading.
+- [ ] F6 still manually saves/loads. After successfully loaded construction edits, autosave writes roughly every 120 seconds. Idle no-op periods must write nothing. Materials, paints, assemblies, grounding, joints and part geometry all round-trip; Undo history remains volatile.
+- [ ] Continue building rapidly for 3+ minutes. Repeated edits do not postpone autosave indefinitely; every saved timestamp reflects an actual completed write.
+- [ ] Exit within 2 minutes of editing: final PlayerRemoving flush saves the dirty authored plot before destroying parts/relations. Rejoin and confirm changes; no manual save required. BindToClose flushes dirty plots concurrently, best effort.
+- [ ] Force DataStore write failure or poor budget: SaveState returns Ready with visible pending changes, Busy clears, no valid cloud data is replaced, and the next autosave retry is bounded. Failed initial load must never write an empty plot.
+- [ ] F6 panel shows latest save timestamp, save mode and unsaved-edit indicator. Manual Save forces immediate write; manual Load only restores latest committed cloud snapshot after confirmation, discarding changes since last save.
+- [ ] Simulate a mechanical assembly during autosave: saved data contains authored geometry only, never temporary moving clones.
+- [ ] Simulate stale cross-server writes: UpdateAsync refuses a stale `writeId` lineage; existing legacy manual schema-v1 plot loads and migrates on next save.
 - [ ] After all scenarios, Output has no Luau errors and no orphan `OPENWORKS_Local...` visual folders, old ghost Parts, or extra `OPENWORKS_Simulated` sessions.
 
 ## Verify code without Studio

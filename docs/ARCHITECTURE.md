@@ -16,7 +16,7 @@ Roblox native Tool (Build / Edit / Assembly / Simulate / Inspect / Weld)
   │    ├─ HandCrankController (hold LMB to drive; release stops; no mouse drag)
   │    ├─ RelationshipProperties (read/edit mechanical settings)
   │    ├─ WorldVisuals, ComponentOutline (adornments / grounded state)
-  │    ├─ PlotSaveController (manual F6 Save/Load)
+  │    ├─ PlotSaveController (F6 autosave status + manual Save/Load)
   │    └─ StudioTheme, ContextKeybinds (presentation)
   │
   ├─ shared/Construction → BuildConfig, ToolDefinitions, Registry,
@@ -31,7 +31,7 @@ Roblox native Tool (Build / Edit / Assembly / Simulate / Inspect / Weld)
        ├─ SimulationService → temporary physical clones, passive constraints,
        │     grounding, controlled crank rotation, pause/reset/cleanup
        ├─ PlotService       → isolated per-player plot bounds
-       └─ PlotPersistence   → validated explicit F6 persistence
+       └─ PlotPersistence   → dirty-only autosave + version-guarded manual F6
 ```
 
 FORGE/Reforge remains in `src/forge-shared` and `src/forge-server`; domain-specific modules are not imported into the framework kernel.
@@ -89,9 +89,9 @@ An optional **Shaft Motor** is now configured on an authored *Bearing*, never on
 
 ## Plot persistence and error handling
 
-`PlotService` owns isolated 124×124 stud plots. `PlotPersistence` stores versioned records with primitive IDs, geometry state, component metadata, assembly metadata, grounding and mechanical relation specifications. On join the server attempts to **load the last manual save**. If Studio API access fails, the plot reports **Error** and saving is refused; *constructing may continue in the assigned in-memory plot*. Only the explicit `SavePlot` action invokes `DataStore:SetAsync`. Do not add autosaving on close, spawn, timer, pause or simulation.
+`PlotService` owns isolated 124×124 stud plots. `PlotPersistence` stores versioned records with primitive IDs, geometry state, component metadata, assembly metadata, grounding and mechanical relation specifications. On join the server attempts to **load the latest saved plot**. Failed/corrupt loads report **Error**, refuse autosave, and preserve the remote save; construction may continue temporarily in memory. Successful edits mark only the authored plot dirty. The server checks every 10 seconds, writes approximately every **120 seconds while changes are pending**, waits at least 10 seconds after first edit, and retries transient failures no faster than 45 seconds. **PlayerRemoving** and **BindToClose** attempt a final dirty-only save before tearing down models and relationships. Manual F6 Save/Load still works, and loading discards local unsaved edits only after confirmation. All writes use the original schema-v1 DataStore key with `DataStore:UpdateAsync` and a `writeId` compare-and-swap guard, preventing stale sessions from silently replacing newer data. Failed load does not generate an empty fallback write, and temporary simulation clones never enter persistence.
 
-**Busy flag invariant:** every load/save error path must clear `persistence.Busy[player]`. Loader apply and save encode are guarded; failure must not leave the UI saying Loading forever. Save failures must not overwrite the last known good document intentionally. Undo is volatile and clears upon loading; undo is not a save. Ctrl+Z/Ctrl+Y are also available while Assembly is equipped.
+**Busy flag invariant:** every load/save error path must clear `persistence.Busy[player]`. Loader apply and save encode are guarded; failure must not leave the UI saying Loading forever. Autosave failures keep edits dirty and retry; a detected cloud revision conflict disables writing until a deliberate reload. Successful writes alone clear dirty flags. Save failures must not intentionally overwrite the last known good document. Undo is volatile and clears upon loading; undo is not a save. Ctrl+Z/Ctrl+Y are also available while Assembly is equipped.
 
 ## World visuals and UI
 

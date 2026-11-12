@@ -658,15 +658,47 @@ def main() -> int:
         if "forge-" in file.as_posix():
             continue
         text = file.read_text(encoding="utf-8")
-        if ":SetAsync(" in text:
+        if ":SetAsync(" in text or ":UpdateAsync(" in text:
             save_writes.append(file.relative_to(ROOT).as_posix())
     check("Exactly one DataStore write location",
           save_writes == ["src/server/Runtime/PlotPersistence.lua"],
           str(save_writes))
-    check("Explicit SavePlot is the write gate",
+    plot_ui=read("src/client/Controllers/PlotSaveController.lua")
+    config=read("src/shared/Construction/BuildConfig.lua")
+    check("Autosave and manual SavePlot use one revision-protected write path",
           'if action=="SavePlot" or action=="LoadPlot"' in service
-          and "self.Store:SetAsync(" in persistence
-          and 'ManualSaveOnly = true' in read("src/shared/Construction/BuildConfig.lua"))
+          and "self.Store:UpdateAsync(" in persistence
+          and 'AutoSaveEnabled = true' in config
+          and 'AutoSaveIntervalSeconds = 120' in config
+          and 'function Persistence:Save(player,mode)' in persistence
+          and 'sameCloudRevision(cloud,expected,document)' in persistence
+          and 'self.KnownCloudRevision[player]=if document==nil then false' in persistence)
+    check("Autosave only follows successful building edits, never failed load",
+          'persistence:MarkDirty(player)' in service
+          and 'if result and persistence and not simulationAction' in service
+          and 'if not Config.AutoSaveEnabled or not self.Ready[player]' in persistence
+          and 'self.Dirty[player]=false' in persistence
+          and 'now-(self.DirtySince[player] or now)' in persistence
+          and 'self:ShouldAutoSave(player)' in persistence
+          and 'persistence:StartAutoSave()' in service)
+    check("Save on exit and shutdown happens before deleting authored plot",
+          'persistence:Flush(player,"Exit")' in service
+          and 'persistence:Flush(player,"Shutdown")' in service
+          and 'game:BindToClose(function()' in service
+          and service.index('persistence:Flush(player,"Exit")')
+              <service.index('if simulation then simulation:ClearPlayer(player) end')
+          and 'self:Save(player,mode or "Exit")' in persistence)
+    check("F6 plot panel shows autosave status and unsaved edits",
+          'OPENWORKS_LastSaveMode' in plot_ui
+          and 'OPENWORKS_AutoSavePending' in plot_ui
+          and 'LAST SAVED  /' in plot_ui
+          and 'Autosave pending' in plot_ui)
+    check("Cloud conflict blocks overwrite; failures retain dirty state",
+          'if conflict or saved==nil then' in persistence
+          and 'self.Ready[player]=false' in persistence
+          and 'self:MarkSaved(player,document,mode)' in persistence
+          and 'DataStore write failed; unsaved work' in persistence
+          and 'if expected==false then return cloud==nil end' in persistence)
     check("Both loading and saving clear Busy after failure",
           "pcall(self.Apply,self,player,target)" in persistence
           and "pcall(self.Encode,self,player)" in persistence
