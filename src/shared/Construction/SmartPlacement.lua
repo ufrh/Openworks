@@ -278,8 +278,7 @@ function Smart.MultiGearPose(source:Model,target:Model,near:Vector3,
 end
 
 -- Gear bores are real open centers. Dragging a gear onto a shaft (or
--- vice versa) aligns the hub; the user must explicitly choose a free
--- rotational hinge or a rigid weld before the mount is committed.
+-- vice versa) aligns the hub and always creates a rigid weld on commit.
 function Smart.HubFits(source: Model, target: Model)
     local gearBody=if gear(source) then source else if gear(target) then target else nil
     local shaft=if Alignment.IsShaft(source) then source
@@ -867,7 +866,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     cf=cf,offsetUnits=offset or 0,rollDegrees=roll or 0,
                     relationKind=if kind=="Bore" then "Cylindrical"
                         elseif kind=="CrankCoupling" then "Weld"
-                        elseif kind=="Hub" then "Rotation"
+                        elseif kind=="Hub" then "Weld"
                         elseif kind=="Rack" then "Rack"
                         elseif kind=="Guide" then "Guide" else "Gear",
                     reverse=kind=="Bore" and isOpening,
