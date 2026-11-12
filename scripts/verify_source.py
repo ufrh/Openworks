@@ -260,7 +260,7 @@ def main() -> int:
           and 'PaintCatalog.Apply(model,if PaintCatalog.IsValidFinish' in service
           and 'CustomPhysicalProperties=PhysicalProperties.new(' in materials
           and 'part.Material=finish.Material' in paint
-          and 'CustomPhysicalProperties' not in paint)
+          and 'part.CustomPhysicalProperties=' not in paint)
     check("Paint stays on copies, transforms, history, and manual plots",
           'paintFinish=model:GetAttribute("PaintFinish") or "Factory"' in service
           and 'paintColorHex=model:GetAttribute("PaintColorHex")' in service
