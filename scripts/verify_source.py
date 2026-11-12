@@ -252,6 +252,33 @@ def main() -> int:
             read("src/server/Runtime/ConstructionService.lua")
           and 'node.id==runningAssemblyId' in context_v2)
 
+    check("Phase 6 retired parallel UI modules are physically removed",
+          all(not (ROOT / "src/client/Controllers" / module).exists()
+              for module in (
+                  "ContextKeybinds.lua","ComponentOutline.lua",
+                  "MateChoicePanel.lua","MaterialPickerController.lua",
+                  "RelationshipProperties.lua",
+              )))
+    check("Phase 6 only the unified dock owns relationship and paint dialogs",
+          "MateChoicePanel" not in selection
+          and "MaterialPickerController" not in selection
+          and "ComponentOutline" not in selection
+          and "RelationshipProperties" not in mechanical_ui
+          and 'parent.UnifiedExplorer:ChooseFit(' in layered
+          and 'function Panel:Appearance(node)' in unified_panel
+          and 'function Panel:RelationshipProperties(node)' in unified_panel
+          and 'Name="UnifiedConnectionChoice"' in unified_panel)
+    check("Phase 6 does not advertise a server-rejected direct Bolt action",
+          'add("Bolt")' not in connection_catalog
+          and 'action="CreateBolt"' not in mechanical_ui
+          and 'action=="CreateBolt" then' in mechanic_authority
+          and 'Use Build > Fasteners' in mechanic_authority)
+    check("Phase 6 no dead selection world folder or parallel inspector owner",
+          'OPENWORKS_LocalSelectionVisuals' not in selection
+          and 'OPENWORKS_LocalInspectorSelection' not in mechanical_ui
+          and 'OPENWORKS_UnifiedExplorerProperties' in unified_panel
+          and 'OPENWORKS_UIV2_Feedback' in feedback)
+
     rokit = read("rokit.toml")
     aftman = read("aftman.toml")
     for name in ("rojo", "stylua", "selene"):
@@ -843,7 +870,8 @@ def main() -> int:
           'local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"' in layered
           and 'mateKind="Hub"' in layered
           and 'relationKind=choice' in layered
-          and 'end,selected.FittedCount or 1,isGear)' in layered)
+          and 'parent.UnifiedExplorer:ChooseFit(' in layered
+          and 'selected.FittedCount or 1))' in layered)
     check("Simulation uses gear center axis for physical hinge",
           'JointFrames.ForOpening(edge.target)' in simulation
           and 'local explicit = axisOverride(model)' in read("src/shared/Construction/AlignmentMath.lua")
