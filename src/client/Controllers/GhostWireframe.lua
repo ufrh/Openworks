@@ -108,7 +108,12 @@ function Ghost:Update()
         for _,line in ipairs(self.Edges) do line.Visible=false end
         return
     end
-    if os.clock()-self.LastRender<0.08 then return end
+    -- Resizing previews are live interactive geometry: their strokes must
+    -- update alongside the selection box every rendered frame. Ordinary
+    -- placement ghosts retain a capped 12.5 Hz redraw budget.
+    local isResizing=self.Model and
+        self.Model.Name=="OPENWORKS_ResizePreview"
+    if not isResizing and os.clock()-self.LastRender<0.08 then return end
     self.LastRender=os.clock()
     local edgeData={}
     for _,part in ipairs(self.Model:GetDescendants()) do
