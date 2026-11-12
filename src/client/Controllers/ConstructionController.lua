@@ -1085,6 +1085,7 @@ function Controller:SetSelection(model)
     self:RefreshSelectionHighlights()
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshHUD()
+    if self.UnifiedExplorer then self.UnifiedExplorer:OnConstructionSelection() end
     if model and self.Tools.PrimaryId == "Build"
         and self.Tools.SubtoolId == "Resize"
         and not self.ScaleMode then
@@ -1133,6 +1134,7 @@ function Controller:SetComponentSelection(componentId, membersOverride)
     self:RefreshSelectionHighlights()
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshHUD()
+    if self.UnifiedExplorer then self.UnifiedExplorer:OnConstructionSelection() end
 end
 
 function Controller:ToggleMultiSelection(model)
@@ -1238,7 +1240,9 @@ function Controller:OnSubtoolChanged(primary,subtool,_previous)
     end
     if subtool == "Resize" then
         self:BeginScale()
-    elseif subtool == "Paint" and self.MaterialPicker then
+    elseif subtool == "Paint" and self.MaterialPicker
+        and not self.UnifiedExplorer then
+        -- Standalone picker retained as an unverified fallback only.
         self.MaterialPicker:Open()
     end
     self:RefreshHUD()
@@ -2144,6 +2148,7 @@ end
 -- beyond a small world-space threshold starts the existing temporary G move.
 function Controller:BeginDirectDrag()
     if self.PendingMateChoice
+        or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
         or (self.Assembly and self.Assembly:IsEditingJoint())
         or self.Tools.PrimaryId ~= "Build" or self.Tools.SubtoolId ~= "Edit"
         or self.Mode ~= "Edit" or self.Pending
@@ -2269,6 +2274,7 @@ end
 
 function Controller:OnInput(input, processed)
     if self.Tools:WasConsumed(input) then return end
+    if player:GetAttribute("OPENWORKS_ExplorerOpen")==true then return end
     if self.PendingMateChoice then return end
     if self.Numeric and self.Numeric.Active then
         if input.KeyCode==Enum.KeyCode.Escape then
@@ -2332,7 +2338,8 @@ function Controller:OnInput(input, processed)
         return
     end
     if key==Enum.KeyCode.M and self.Mode=="Edit" and not processed then
-        if self.MaterialPicker then self.MaterialPicker:Open() end
+        if self.UnifiedExplorer then self.UnifiedExplorer:Focus(true)
+        elseif self.MaterialPicker then self.MaterialPicker:Open() end
         return
     end
     if key == Enum.KeyCode.V and not processed then
@@ -2487,6 +2494,7 @@ function Controller:Start()
             elseif player:GetAttribute("OPENWORKS_PlotMenuOpen")==true
                 or player:GetAttribute("OPENWORKS_AssemblyNaming")==true
                 or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
+                or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
                 or (self.Numeric and self.Numeric.Active)
                 or self.PendingMateChoice then
                 UserInputService.MouseBehavior=Enum.MouseBehavior.Default
