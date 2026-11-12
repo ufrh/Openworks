@@ -686,6 +686,28 @@ function Controller:OpenMateChoice(mode)
     return true
 end
 
+-- Capture the last visible ghost for a short, one-way presentation handoff.
+-- The edit still commits the precise (non-smoothed) PreviewCF to the server.
+function Controller:CapturePendingHandoff()
+    if not self.Preview or not self.PreviewCF
+        or (self.Pending~="Move" and self.Pending~="ComponentMove") then
+        return nil
+    end
+    local models=if self.Pending=="ComponentMove"
+        then table.clone(self.SelectedParts)
+        else if self.Selected then {self.Selected} else {}
+    if #models==0 then return nil end
+    return self.Preview:Clone(),self.PreviewCF,models
+end
+
+function Controller:FinishPendingHandoff(snapshot,goal,models,succeeded)
+    if succeeded and snapshot and goal then
+        WorldMotion.SettlePreview(snapshot,goal,models)
+    elseif snapshot then
+        snapshot:Destroy()
+    end
+end
+
 function Controller:SmartDrop(chosenKind)
     local match=self.SmartMatch
     if not match or not match.target.Parent
@@ -707,6 +729,7 @@ function Controller:SmartDrop(chosenKind)
     )
     local exactSourceCF=self.PreviewCF*sourceOffset
     local exactSourcePosition=exactSourceCF.Position
+    local handoff,goal,models=self:CapturePendingHandoff()
     local ok=self:Request({
         action=if match.kind=="BoltHole" then "FastenBolt"
             elseif match.kind=="CrankCoupling" then "CoupleHandCrank"
@@ -728,6 +751,7 @@ function Controller:SmartDrop(chosenKind)
         groupPivot=if self.Pending=="ComponentMove" then self.PreviewCF else nil,
     })
     if ok then self:CancelPending() self:RefreshHUD() end
+    self:FinishPendingHandoff(handoff,goal,models,ok)
     return true
 end
 
@@ -1570,18 +1594,20 @@ function Controller:ConfirmMove()
         self:Message("Red preview: movement intersects existing geometry")
         return
     end
-    local success = self:Request({
-        action = "Update",
-        instanceId = self.Selected:GetAttribute("InstanceId"),
-        position = self.PreviewCF.Position,
-        steps = stepsCopy(self.Steps),
-        size = self.CurrentSize,
-        freePosition = true,
+    local handoff,goal,models=self:CapturePendingHandoff()
+    local success=self:Request({
+        action="Update",
+        instanceId=self.Selected:GetAttribute("InstanceId"),
+        position=self.PreviewCF.Position,
+        steps=stepsCopy(self.Steps),
+        size=self.CurrentSize,
+        freePosition=true,
     })
     if success then
         self:CancelPending()
         self:RefreshHUD()
     end
+    self:FinishPendingHandoff(handoff,goal,models,success)
 end
 
 function Controller:ConfirmComponentPlacement()
@@ -1592,7 +1618,8 @@ function Controller:ConfirmComponentPlacement()
         self:Message("Red preview: component overlaps another construction")
         return
     end
-    local isCopy = self.Pending == "ComponentCopy"
+    local isCopy=self.Pending=="ComponentCopy"
+    local handoff,goal,models=self:CapturePendingHandoff()
     local ok = self:Request({
         action = if isCopy then "DuplicateComponent" else "TransformComponent",
         componentId = self.SelectedComponentId,
@@ -1611,6 +1638,7 @@ function Controller:ConfirmComponentPlacement()
         end
         self:RefreshHUD()
     end
+    self:FinishPendingHandoff(handoff,goal,models,ok)
 end
 
 function Controller:Activate(mode)
