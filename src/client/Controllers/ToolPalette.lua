@@ -176,8 +176,10 @@ function Palette:RenderSubtools()
         textLabel.ZIndex=6
         self.PrimaryButtons[item.Id]={Row=row,Stripe=stripe,Label=textLabel}
         row.Activated:Connect(function()
-            if blocked or
-                player:GetAttribute("OPENWORKS_ExplorerOpen")~=true
+            if (primary=="AssemblySimulation" and
+                    item.Id=="AssemblyEditor" and
+                    player:GetAttribute("OPENWORKS_Simulating")==true)
+                or player:GetAttribute("OPENWORKS_ExplorerOpen")~=true
                 or player:GetAttribute("OPENWORKS_PlotMenuOpen")==true then return end
             self.Tools:SetSubtool(item.Id)
         end)
