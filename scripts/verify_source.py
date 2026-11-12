@@ -355,6 +355,12 @@ def main() -> int:
           and 'if self:Request(request) then' in alignment_editor
           and 'self.Feedback:FlashSuccess({first,second})' in alignment_editor
           and 'self.Feedback:FlashSuccess({self.WeldFirst,picked})' in alignment_editor)
+    check("UI v2 automatic smart fits use orange pending and real committed models",
+          'self.Feedback:SetGhostPending(mechanical)' in selection
+          and 'if mechanical then "pending" else "snap"' in selection
+          and 'self.Feedback:FlashSuccess(participants)' in selection
+          and 'and model:GetAttribute("InstanceId")==newId' in selection
+          and 'if ok then' in selection)
     check("UI v2 geometry ghost edges are client-only with CSG fallback",
           'Instance.new("LineHandleAdornment")' in ghost_edges
           and 'MAX_EDGES=384' in ghost_edges
