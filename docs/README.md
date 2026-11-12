@@ -17,5 +17,6 @@ Current controls live in the root [README](../README.md). Changes to engine beha
 - **[Phase 3 unified Explorer, Properties, context menus and tooltips](UI_V2_PHASE_3_IMPLEMENTATION.md)** — implementation details, permission filters, inline editing, and Studio acceptance cases.
 - **[Phase 4 unified mechanical connections](UI_V2_PHASE_4_IMPLEMENTATION.md)** — shared Connect picker, shaft/hole/gear mounting, validated server actions, retired shortcuts, and Studio regression.
 - **[Phase 5 unified Assembly & Simulation](UI_V2_PHASE_5_IMPLEMENTATION.md)** — inline assembly drafts, exact membership, shared run/pause/reset/telemetry controls, actuator input focus and Studio acceptance.
+- **[Phase 6 final cleanup and regression handoff](UI_V2_PHASE_6_IMPLEMENTATION.md)** — retired UI modules, no duplicate live HUDs, Build Fasteners correction, Luau parser CI, and mandatory Studio release gates.
 
 These documents cover committed UI v2 client source work on the isolated feature branch. The original six-tool implementation remains on the untouched `dev` branch. **None of the new UI has been certified in Roblox Studio yet.**
