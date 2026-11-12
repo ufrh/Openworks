@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS client bootstrap: native tools, Forge, editor and simulation controllers.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.12.UI-V2-PHASE1-TOOL-ROUTER"
+local BUILD = "2026.11.12.UI-V2-PHASE2-VISUALS"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -17,6 +17,7 @@ local AssemblyController = require(controllers:WaitForChild("AssemblyController"
 local AssemblyToolController=require(controllers:WaitForChild("AssemblyToolController"))
 local ContextKeybinds = require(controllers:WaitForChild("ContextKeybinds"))
 local WorldVisuals = require(controllers:WaitForChild("WorldVisuals"))
+local VisualFeedback = require(controllers:WaitForChild("VisualFeedback"))
 local PlotSaveController = require(controllers:WaitForChild("PlotSaveController"))
 
 FORGE.Start({ Roots = {} })
@@ -27,9 +28,15 @@ camera:Start()
 local tools = ToolController.new()
 tools:Start()
 
+local feedback = VisualFeedback.new()
+feedback:Start()
+
 local constructionController = ConstructionController.new(tools)
 local assemblyController = AssemblyController.new(tools)
 local assemblyToolController=AssemblyToolController.new(tools)
+constructionController.Feedback=feedback
+assemblyController.Feedback=feedback
+assemblyToolController.Feedback=feedback
 -- Edit authors geometry/joints, Assembly names and chooses member sets,
 -- and Simulate exclusively runs registered assemblies.
 constructionController.Assembly = assemblyController
@@ -62,7 +69,7 @@ local contextKeybinds = ContextKeybinds.new(
 )
 contextKeybinds:Start()
 
-local worldVisuals = WorldVisuals.new()
+local worldVisuals = WorldVisuals.new(feedback)
 worldVisuals:Start()
 
 local plotSave = PlotSaveController.new()
@@ -75,4 +82,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 phase 1 / three primary tools / eight contextual subtools", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 phase 2 / shared visual feedback", BUILD, tostring(FORGE.Version)))
