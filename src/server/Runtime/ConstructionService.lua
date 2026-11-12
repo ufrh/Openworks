@@ -1126,7 +1126,7 @@ local function handle(player, payload)
         or action == "CreateSpring" or action == "TuneSpring"
         or action == "CreateWeld" or action == "CreateBolt"
         or action == "CoupleHandCrank" or action == "TuneBearingMotor"
-        or action == "CreateBelt"
+        or action == "CreateBelt" or action == "RemoveBelt"
 
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
         or action=="TuneBearingMotor"
@@ -1174,7 +1174,7 @@ local function handle(player, payload)
                 and not hasEquippedTool(player,"Edit") then
                 return {ok=false,message="Equip Simulate to ground a body"}
             end
-        elseif action=="CreateBelt" then
+        elseif action=="CreateBelt" or action=="RemoveBelt" then
             if not hasEquippedTool(player,"Belt") then
                 return {ok=false,message="Equip Belt to connect pulleys"}
             end
@@ -1249,6 +1249,9 @@ local function handle(player, payload)
         end
         if action=="CreateBelt" then
             return mechanical:CreateBelt(player,payload)
+        end
+        if action=="RemoveBelt" then
+            return mechanical:RemoveBelt(player,payload)
         end
         if action=="CreateSpring" then
             return mechanical:CreateSpring(player,payload)
