@@ -289,7 +289,8 @@ function Panel:Select(node,propagate)
     self.Flags={}
     if self.Feedback then
         self.Feedback:Clear("explorer-selection")
-        if node and self.Tools.PrimaryId~="Build" then
+        if node and (self.Tools.PrimaryId~="Build"
+            or self.Tools.SubtoolId~="Edit") then
             local members={}
             for _,m in ipairs(node.members or {}) do
                 if own(m) then table.insert(members,m) end
@@ -585,6 +586,38 @@ function Panel:Geometry(node)
         self:Value("Assembly",assembly)
     end
     self:Appearance(node)
+    -- A part can participate in many independent relationships. Show the
+    -- actual saved relation endpoints, never inferred parent/child joints.
+    local included={}
+    for _,member in ipairs(node.members or {}) do
+        local id=entityId(member)
+        if type(id)=="string" then included[id]=true end
+    end
+    local connected={}
+    for _,relation in ipairs(self.Snapshot and self.Snapshot.relations or {}) do
+        local raw=relation.relation
+        if included[raw:GetAttribute("SourceId")]
+            or included[raw:GetAttribute("TargetId")]
+            or included[raw:GetAttribute("SecondTargetId")] then
+            table.insert(connected,relation)
+        end
+    end
+    if #connected>0 then
+        self:Section("Connections")
+        for i,relation in ipairs(connected) do
+            if i>12 then break end
+            local shown=relation
+            self:ActionButton(relation.name,
+                "Inspect "..relation.name.." and its real endpoints",function()
+                    self.View="Connections"
+                    self:Select(shown,false)
+                    self:Focus(true)
+                end)
+        end
+        if #connected>12 then
+            self:Value("More",#connected-12)
+        end
+    end
     if self.Tools.PrimaryId=="Build" and not simulating()
         and node.kind=="primitive" then
         self:ActionButton("Resize","Show face handles for this exact primitive [V]",function()
@@ -906,7 +939,12 @@ function Panel:Start()
     self:MakeUI()
     table.insert(self.Connections,self.Tools.SubtoolChanged.Event:Connect(function()
         self:CloseMenu()
-        self:Focus(false)
+        if self.Tools.PrimaryId=="Build"
+            and self.Tools.SubtoolId=="Paint" then
+            self:Focus(true)
+        else
+            self:Focus(false)
+        end
         if self.Selected then self:Select(self.Selected,false) end
     end))
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
