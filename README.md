@@ -1,29 +1,39 @@
 # OPENWORKS
 
-**OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The active implementation lives on `dev`, uses **Rojo** and **FORGE/Reforge**, and is currently undergoing in-engine validation.
+**OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The stable pre-UI-v2 implementation lives on `dev`. UI v2 Phase 1 is isolated on `feature/ui-reorganization-v2`. Both use **Rojo** and **FORGE/Reforge** and still require Roblox Studio validation.
 
 > **State:** Experimental. Do not assume a feature is Studio-verified merely because it is committed. See [current regression checks](docs/QA_REGRESSION.md) and [known limitations](docs/ARCHITECTURE.md#known-limitations).
 
 ## Start developing
 
-1. Check out `dev`; install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
+1. Check out `feature/ui-reorganization-v2` to test UI v2 Phase 1 (`dev` remains the fallback); install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
 2. Run `START_OPENWORKS.bat` (Windows) or `scripts/start-dev.ps1` using PowerShell.
 3. Connect the Roblox Studio Rojo plugin to **localhost:34872**. The place ID and Rojo mapping are in `default.project.json`.
 4. The **Studio-generated primitive bank** must exist in `ReplicatedStorage` and be saved with the place. The server only backfills some dynamic prefab families. Restart **Play** after switching code because Roblox caches ModuleScripts.
 5. Press Play and inspect the Output window for the OPENWORKS build marker and FORGE banner. Perform the [smoke test](docs/QA_REGRESSION.md) after changing simulation, serialization or mechanical constraints.
 
-The in-game plot is isolated per player. Published Studio DataStore tests require enabling Studio API Services. **A plot loads the latest explicitly saved version when you join; F6 Save is the only DataStore write.** No automatic saving happens when you leave.
+The in-game plot is isolated per player. Published Studio DataStore tests require enabling Studio API Services. **A plot loads the latest saved version on join.** The current persistence system autosaves dirty plots periodically and attempts a final flush on exit; F6 opens manual Save/Load. Test persistence on disposable plots before relying on a save.
 
-## Native tools
+## Native tools — UI v2 Phase 1
 
-| Tool | Purpose |
-|---|---|
-| **Build** | Primitive catalog, placement, snapping, hole/shaft fitting, resizing |
-| **Edit** | Select/transform geometry, combine or ungroup components, author mechanical relationships |
-| **Assembly** | Create named assemblies and explicitly choose their primitives/components |
-| **Simulate** | Preview the aimed assembly in **purple**; P runs physics only for registered members |
-| **Inspect** | Inspect or select obstructed geometry |
-| **Weld** | Make explicit rigid physical welds between valid solids |
+The native Roblox hotbar now contains **exactly three** primary tools. Letter keys change **subtools within the equipped primary tool**; switching primary tools remembers their last subtool.
+
+| Hotbar | Primary tool | Subtool | Key | Current workflow |
+|---|---|---|---|---|
+| 1 | **Build** | Place | B | Catalog, placement, snapping, geometry previews |
+| 1 | **Build** | Edit | E | Select, group, drag, duplicate, transform |
+| 1 | **Build** | Resize | V | Neon face resize and precise dimensions |
+| 1 | **Build** | Paint | M | Colors, finishes, physical material presets |
+| 2 | **Mechanics** | Connect | C | Bearing/slider/cylindrical joint, spring, weld, crank coupling |
+| 2 | **Mechanics** | Configure | E | Inspect and adjust joint, spring and bearing motor properties |
+| 3 | **Assembly & Simulation** | Assembly Editor | E | Create/edit named assembly membership |
+| 3 | **Assembly & Simulation** | Simulation | Y | Ground and test registered assembly |
+
+**Temporary Phase 1 shortcuts within Mechanics / Connect:** click physical housing then shaft for manual fitting; **H** resets that workflow, **F** enters two-part Weld (press F again or Esc to exit), **Shift+J** selects two endpoints for Spring, **Shift+C** couples a crank to a shaft. **Shift+Delete** removes a relation. Existing constraints and geometry validation are unchanged. These paths will be unified into one contextual connection interface in a later phase.
+
+Build/Place still uses **B** to open the catalog when already active; Build/Edit still uses **E** for component interior editing when already active; Build/Resize uses **V** to toggle face handles when already active. A live fit reserves Q/E for shaft roll so E does not inadvertently switch subtools.
+
+The old six-tool instructional HUDs, visualizers, and separate property windows are **still present during Phase 1**. Consolidating them belongs to subsequent UI v2 phases. See [Phase 1 implementation notes](docs/UI_V2_PHASE_1_IMPLEMENTATION.md) and the [regression matrix](docs/UI_V2_REGRESSION_MATRIX.md).
 
 The following three ideas **must never be conflated**:
 
@@ -35,9 +45,9 @@ A **mechanical relationship** restricts or permits motion. A distinct **actuator
 
 ## Assembly workflow
 
-Equip **Assembly**. Press **N** and name it; click primitives or whole components to toggle inclusion; **Alt + click** selects one primitive inside a component; press **Enter** to commit. **Ctrl+Z / Ctrl+Y** undo and redo assembly membership changes without switching tools. Aim at an existing assembly member and click to edit membership; **R** renames. Assemblies can include disconnected objects, but a simulation is rejected when a real relationship crosses into an unregistered part. Press **Esc** to cancel the draft.
+Equip **Assembly & Simulation**, select the **Assembly Editor** subtool (**E**). Press **N** and name it; click primitives or whole components to toggle inclusion; **Alt + click** selects one primitive inside a component; press **Enter** to commit. **Ctrl+Z / Ctrl+Y** undo and redo assembly membership changes without switching tools. Aim at an existing assembly member and click to edit membership; **R** renames. Assemblies can include disconnected objects, but a simulation is rejected when a real relationship crosses into an unregistered part. Press **Esc** to cancel the draft.
 
-Equip **Simulate** and aim at a member to preview the complete saved assembly in **purple**. **P** starts/stops the assembly; **Shift+P** starts free, **G** toggles grounding before simulation, **O** pauses, and **U** resets. Clicking a running part opens the mechanical Properties inspector. Hold LMB and move the locked mouse horizontally on a properly coupled hand crank to supply physical torque.
+In **Assembly & Simulation**, press **Y** for the **Simulation** subtool and aim at a registered member to preview its complete assembly in **purple**. **P** starts/stops it with the authored grounding state, **G** toggles grounding before simulation, **O** pauses, and **U** resets. Clicking a running part opens Properties. Hold LMB on a correctly coupled hand crank to drive it at the server-controlled rate; release to stop. Shift+P is no longer a separate simulation mode.
 
 ## Where code lives
 
