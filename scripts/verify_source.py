@@ -428,6 +428,26 @@ def main() -> int:
           and 'Instance.new("SphereHandleAdornment")' in pivot_handle
           and 'Set its shared fitting / rotation origin' in keybinds
           and 'Reset pivot to default' in keybinds)
+    pivot_snap = read("src/client/Controllers/FitPivotSnap.lua")
+    check("Universal pivot scope ignores nested decorative primitive models",
+          'ghost:GetAttribute("FitPivotScope")~="Component"' in origin
+          and 'ghost:SetAttribute("FitPivotScope",if combined then "Component" else "Primitive")' in construction_ui)
+    check("Pivot target discovery works when authored origin is far from part center",
+          'local originAimed=originPosition' in placement
+          and 'or originAimed' in placement
+          and 'aimDistance(aimRay,originPosition)<=0.42' in placement)
+    check("Pivot editing supports cursor, face center, edge and corner precision",
+          'Snap.Modes=table.freeze({"Cursor","Face","Edge","Corner"})' in pivot_snap
+          and 'function Snap.Point(part,world,mode)' in pivot_snap
+          and 'FitPivotSnap.Point(hit.Instance,hit.Position,' in construction_ui
+          and 'self.PivotModeIndex=(self.PivotModeIndex-1+delta' in construction_ui
+          and 'Q / E' in keybinds)
+    check("Shared fit solver prioritizes component origins before member origins",
+          'targetPosition=targetPosition or (if feature.HasOrigin' in fit_solver
+          and 'FitOrigin.HasComponent(model)' in placement)
+    check("Pivot authoring and reset both enforce owner proximity",
+          'if not nearPlayer(player,anchor:GetPivot().Position) then' in service
+          and 'if not hitModel then' in service)
     check("World rotations use the authored origin on client and server",
           'FitOrigin.World(self.GroupAnchor,"Component")' in construction_ui
           and 'FitOrigin.World(self.Selected,"Primitive")' in construction_ui
