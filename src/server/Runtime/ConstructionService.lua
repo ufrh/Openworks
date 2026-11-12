@@ -1107,7 +1107,7 @@ local function setFitPivot(player,payload)
         then "ComponentFitPivotLocal" else "FitPivotLocal"
     anchor:SetAttribute(attribute,localPoint)
     commitMetadata(player,{prior},{snapshot(anchor)})
-    return true,if payload.reset then "Alignment origin reset to center"
+    return true,if payload.reset then "Alignment origin reset to default"
         else "Alignment origin placed • move to align from that point"
 end
 
