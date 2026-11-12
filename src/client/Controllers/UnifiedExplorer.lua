@@ -565,6 +565,7 @@ function Panel:CreateTreeRow(node,depth,expandable,force)
     local menu=button(line,"⋯",UDim2.new(1,-27,0,0),
         UDim2.fromOffset(26,25),function()
             self:Select(node,true)
+            if self.ConnectionChoiceOpen then return end
             local mouse=UIS:GetMouseLocation()
             self:OpenMenu(node,mouse)
         end)
