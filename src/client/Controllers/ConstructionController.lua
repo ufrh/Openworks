@@ -2298,9 +2298,7 @@ function Controller:Start()
             local open=self.CatalogOpen or self.PendingMateChoice~=nil
                 or (self.Numeric and self.Numeric.Active)
                 or (self.MaterialPicker and self.MaterialPicker.Visible)
-                or (self.Assembly and self.Assembly.Angular
-                    and self.Assembly.Angular.Active
-                    and self.Assembly.Angular.Stage=="Choose")
+
             if player:GetAttribute("OPENWORKS_CursorUIOpen")~=open then
                 player:SetAttribute("OPENWORKS_CursorUIOpen",open)
             end

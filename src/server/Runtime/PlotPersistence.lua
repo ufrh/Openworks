@@ -220,7 +220,24 @@ function Persistence:Decode(player,document)
         end
         seen[spec.relationId]=true
     end
-    return parsed,document.joints
+    -- Retired arbitrary-joint types can appear in older manual saves.
+    -- Keep physical construction and valid relationships loadable instead
+    -- of failing the entire plot on a deleted imaginary joint.
+    local supported={}
+    local skipped=0
+    for _,spec in ipairs(document.joints) do
+        if spec.kind=="AxisHinge" or spec.kind=="AxisBall"
+            or spec.kind=="AxisUniversal" or spec.kind=="PoweredHinge" then
+            skipped+=1
+        else
+            table.insert(supported,spec)
+        end
+    end
+    if skipped>0 then
+        warn("[OPENWORKS] Skipped "..skipped..
+            " retired arbitrary-axis joint(s) during plot load")
+    end
+    return parsed,supported
 end
 
 function Persistence:Apply(player,document)
