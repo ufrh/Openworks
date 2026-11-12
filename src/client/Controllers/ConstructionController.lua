@@ -553,6 +553,13 @@ function Controller:Message(text)
     self:RefreshHUD()
 end
 
+function Controller:DisplayName(model)
+    if not model then return "" end
+    local id=model:GetAttribute("TemplateId") or model.Name
+    local entry=Registry.Get(id)
+    return if entry then entry.DisplayName else model.Name
+end
+
 function Controller:RefreshHUD()
     if not self.Gui then return end
     self.Gui.Enabled = self.Mode == "Build" or self.Mode == "Edit" or self.Mode == "Inspect"
@@ -569,7 +576,7 @@ function Controller:RefreshHUD()
         and (self.Mode == "Build" or self.Pending) then
         local match=self.SmartMatch
         self.DetailLabel.Text=string.upper(match.relationKind)
-            .. " / "..tostring(match.target.Name)
+            .. " / "..self:DisplayName(match.target)
             .. (if match.kind=="Bore" and (match.fittedCount or 0)>1
                 then "  •  "..tostring(match.fittedCount).." points" else "")
         self.HelpLabel.Text=if match.kind=="Bore"
@@ -618,7 +625,7 @@ function Controller:RefreshHUD()
         end
         self.DetailLabel.Text = (if self.SelectedComponentId then
             "Component / " .. tostring(#self.SelectedParts) .. " parts"
-            elseif target then target.Name else "Aim and click to inspect")
+            elseif target then self:DisplayName(target) else "Aim and click to inspect")
             .. (if dimensions then string.format("  /  %.1f × %.1f × %.1f U",
                 dimensions.X / Grid.Unit, dimensions.Y / Grid.Unit,
                 dimensions.Z / Grid.Unit) else "")
@@ -647,7 +654,7 @@ function Controller:RefreshHUD()
         self.HelpLabel.Text = if self.CatalogOpen then "Choose a primitive • B/Enter close"
             else "Click place • R/T/Y rotate • V grips • N size • Enter select"
     elseif self.Pending == "Move" then
-        self.DetailLabel.Text = "MOVE  /  " .. (self.Selected and self.Selected.Name or "")
+        self.DetailLabel.Text = "MOVE  /  " .. self:DisplayName(self.Selected)
         self.HelpLabel.Text = "Click to place  •  R/T/Y rotate  •  Enter cancel"
     elseif self.Pending == "Copy" then
         self.DetailLabel.Text = "DUPLICATE  /  " .. current
@@ -663,12 +670,12 @@ function Controller:RefreshHUD()
         self.DetailLabel.Text = tostring(#self.SelectedParts) .. " primitives selected"
         self.HelpLabel.Text = "C combine  •  Shift+click to change selection"
     elseif self.EditingComponentId then
-        self.DetailLabel.Text = (self.Selected and self.Selected.Name or "Editing component")
+        self.DetailLabel.Text = (if self.Selected then self:DisplayName(self.Selected) else "Editing component")
             .. "  /  component interior"
         self.HelpLabel.Text = "Click other members • V scale • E select whole component"
     else
         local target = self.Selected
-        self.DetailLabel.Text = if target then target.Name .. " / V grips • N exact U" else "Click a constructed piece"
+        self.DetailLabel.Text = if target then self:DisplayName(target) .. " / V grips • N exact U" else "Click a constructed piece"
         self.HelpLabel.Text = "Click select • B add primitive • G move • V scale • O origin"
     end
 
