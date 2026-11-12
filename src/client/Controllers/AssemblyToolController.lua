@@ -613,9 +613,14 @@ function Tool:OnModeChanged(mode)
     self:ClearVisuals()
     if mode~="Assembly" then
         if self.Modal and self.Modal.Visible then self:CloseName(true) end
-        self.Stage="Idle"
-        self.Selected={}
-        self.EditingId=nil
+        -- A named membership draft stays LOCAL if the author temporarily
+        -- changes subtools. Never lose selected IDs by switching away, and
+        -- never auto-commit it into a running simulation.
+        if not (self.UnifiedExplorer and self.Stage=="Selecting") then
+            self.Stage="Idle"
+            self.Selected={}
+            self.EditingId=nil
+        end
         self.VerticalHeld=nil
     end
     self:Refresh()
