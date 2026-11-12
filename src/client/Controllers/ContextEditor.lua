@@ -422,7 +422,8 @@ function Panel:Select(node,propagate)
     self.Selected=node
     if self.Feedback then
         self.Feedback:Clear("context-selection")
-        if self.Tools.PrimaryId~="Build" then
+        if self.Tools.PrimaryId~="Build"
+            or self.Tools.SubtoolId=="Place" then
             local members={}
             for _,model in ipairs(node.members or {}) do
                 if own(model) then table.insert(members,model) end
@@ -454,7 +455,8 @@ function Panel:OnConstructionSelection()
     elseif build.Selected and own(build.Selected) then
         node=self:NodeForModel(build.Selected,false)
     end
-    if node then self.Selected=node end
+    self.Selected=node
+    if self.Feedback then self.Feedback:Clear("context-selection") end
 end
 
 function Panel:SelectWorldAtCenter()
@@ -1102,7 +1104,7 @@ function Panel:Start()
         self:OnAssemblyDraftChanged()
         self:OnSimulationSessionChanged()
         if self.Feedback then self.Feedback:Clear("context-selection") end
-        if self.Tools.PrimaryId=="Build"
+            if self.Tools.PrimaryId=="Build"
             and self.Tools.SubtoolId=="Paint"
             and self.Selected then
             self:OpenSelectedContext()
@@ -1138,7 +1140,12 @@ function Panel:Start()
             if self.ContextOpen then
                 self:CloseContext()
             elseif not self.Focused then
-                if self.Selected then self:OpenSelectedContext()
+                if self.AssemblyTool.Stage=="Selecting" then
+                    -- The centered assembly toolbar can be clicked while
+                    -- selecting members without opening a property window.
+                    self:Focus(true)
+                elseif self.Selected then
+                    self:OpenSelectedContext()
                 else self:Focus(true) end
             else self:Focus(false) end
             return
