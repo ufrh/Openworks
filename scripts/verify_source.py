@@ -422,18 +422,21 @@ def main() -> int:
           and 'math.max(0,meshes-1)*0.5' in smart_placement)
     transmission=read("src/server/Runtime/GearLibrary.lua")
     rack_client=read("src/client/Controllers/RackControlController.lua")
-    check("45-degree bevel catalog contains actual tapered tooth-ring geometry",
+    check("45/90-degree bevel catalog contains actual tapered tooth-ring geometry",
           'function bevelTemplate(' in transmission
           and 'local halfCone=math.rad(22.5)' in transmission
-          and 'model:SetAttribute("BevelShaftAngleDeg",45)' in transmission
-          and 'bevelTemplate(transmission,count)' in transmission)
-    check("Bevel geometry requires equal-tooth intersecting pitch-cone apexes",
+          and 'model:SetAttribute("BevelShaftAngleDeg",shaftAngleDeg)' in transmission
+          and 'for _,angle in ipairs({45,90}) do' in transmission
+          and 'bevelTemplate(transmission,count,angle)' in transmission)
+    check("Bevel 45 and 90 geometry requires intersecting pitch-cone apexes",
           'function GearMath.AutoBevelStatus(' in gear_math
           and 'na~=nb' in gear_math
           and 'math.cos(BEVEL_SHAFT_ANGLE)' in gear_math
           and 'GearMath.BevelApex(a)-GearMath.BevelApex(b)' in gear_math
           and 'function Smart.BevelPose(' in smart_placement
-          and 'directAim and GearMath.Kind(source)=="Bevel45"' in smart_placement)
+          and 'GearMath.Kind(target)==bevelKind' in smart_placement
+          and 'kind=="Bevel45" or kind=="Bevel90"' in gears
+          and 'BevelConeDeg") or 22.5' in gear_math)
     check("Rack and guide parts are available as generated templates",
           'function rackTemplate(' in transmission
           and 'function rackGuideTemplate(' in transmission

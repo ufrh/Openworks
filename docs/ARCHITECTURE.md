@@ -120,3 +120,6 @@ The shared Studio-style UI design lives in `StudioTheme.lua`. Normal Simulate re
 
 ### Compact drilled block
 `CompactHoleLibrary.Ensure()` runs a single GeometryService subtraction at server startup to provision the optional `DrilledBlock_1U_D098` template, and never during construction, snapping or simulation. It produces a 1 U cube with a true Y-axis 0.98 U circular bore and explicit `HoleDiameterU` metadata consumed by the shared BoreClearance math. It is separate from all existing authored drilled blocks. If CSG fails, no misleading solid-block substitute is installed. Its 0.01 U walls are exceptionally thin and require in-Studio verification; this is a deliberate compact-sized exception to the generally prebaked template policy.
+
+### 90-degree bevel gears
+`GearLibrary` includes matching `Bevel90_12T` and `Bevel90_20T` gear templates whose pitch cones have 45° half angles, so fitted shafts may intersect at a right angle. The same verified axle/apex/pitch predicate is shared between smart snapping and kinematic simulation; mixed 45°/90° pairs are not accepted. Equal tooth counts provide 1:1 speed transfer and explicitly modeled toothed annuli with a physical shaft bore. Gear transmission is currently the deterministic simulation kinematics system, not native tooth contact physics.

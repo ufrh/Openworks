@@ -32,32 +32,32 @@ local function solid(name, parent, size, cf, color)
     return p
 end
 
--- The 45-degree pair is an equal-tooth straight bevel pair with
--- 22.5-degree pitch half-cones. Their shaft axes meet at 45 degrees.
--- These are separate prebaked templates, NOT spur discs rotated sideways.
-local function bevelTemplate(transmission,count)
-    local name="Bevel45_"..count.."T"
+-- Equal-tooth, complementary straight bevel pairs for 45° and 90°
+-- shaft crossings. Cones share a true apex; not spur discs rotated sideways.
+local function bevelTemplate(transmission,count,shaftAngleDeg)
+    local kind="Bevel"..tostring(shaftAngleDeg)
+    local name=kind.."_"..count.."T"
     local old=transmission:FindFirstChild(name)
     if old then
-        if old:GetAttribute("GearKind")=="Bevel45"
+        if old:GetAttribute("GearKind")==kind
             and old:GetAttribute("GeometryVersion")==2 then return end
         old:Destroy()
     end
     local pitchRadius=MODULE*count/(2*math.pi)
-    local halfCone=math.rad(22.5)
+    local halfCone=math.rad(shaftAngleDeg*0.5)
     local boreRadius=0.215
     local steel=Color3.fromRGB(105,120,135)
     local model=Instance.new("Model")
     model.Name=name
     model:SetAttribute("PrimitiveFamily","Gear")
     model:SetAttribute("ResizeMode","None")
-    model:SetAttribute("GearKind","Bevel45")
+    model:SetAttribute("GearKind",kind)
     model:SetAttribute("GearTeeth",count)
     model:SetAttribute("GearModuleStuds",MODULE)
     model:SetAttribute("PitchRadiusStuds",pitchRadius)
     model:SetAttribute("BoreRadiusStuds",boreRadius)
-    model:SetAttribute("BevelConeDeg",22.5)
-    model:SetAttribute("BevelShaftAngleDeg",45)
+    model:SetAttribute("BevelConeDeg",shaftAngleDeg*0.5)
+    model:SetAttribute("BevelShaftAngleDeg",shaftAngleDeg)
     model:SetAttribute("GeometryVersion",2)
     model:SetAttribute("AxialAxis","X")
 
@@ -279,10 +279,12 @@ function GearLibrary.Ensure()
         model.Parent = transmission
     end
 
-    -- The first bevel catalog includes matched 1:1 45-degree pairs.
-    -- Other ratios will require their own conjugate cone profiles.
-    for _,count in ipairs({12,20}) do
-        bevelTemplate(transmission,count)
+    -- Matched, equal-tooth pairs for 45° and 90° shafts.
+    -- Non-1:1 bevel ratios need intentionally different cone angles.
+    for _,angle in ipairs({45,90}) do
+        for _,count in ipairs({12,20}) do
+            bevelTemplate(transmission,count,angle)
+        end
     end
     for _,length in ipairs({4,8}) do
         rackTemplate(transmission,length)

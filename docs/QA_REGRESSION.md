@@ -151,3 +151,8 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 - [ ] Its outer dimensions are 1 U × 1 U × 1 U. Hole diameter measures 0.98 U. Place Shaft (0.95 U diameter), aim at the opening and perform Bore fit. 0.03 U total diametral clearance is accepted by geometry, collision validation and server. Cylinder remains available.
 - [ ] F-copy, save/load and assembly simulation retain actual collision geometry and HoleDiameterU metadata. Position/rotation of the block must not change the Y-axis hole definition. Invalid CSG startup must log a warning rather than register a fake uncut block.
 - [ ] Acknowledge exceptionally thin remaining wall (0.01 U per side): under high load, Roblox collision decomposition and native physics might not remain stable. Verify in Studio, not only source contracts.
+
+## 90-degree bevel drivetrain
+- [ ] Mechanics > Transmission offers Bevel90_12T and Bevel90_20T, in addition to both existing 45-degree bevel sets; all have visibly tapered physical tooth rings, open 0.43-stud bore and X-axis shaft mounting.
+- [ ] Fit a 90-degree bevel gear rigidly to a shaft in its physical bore, then fit a matching equal-tooth 90-degree bevel to a *perpendicular* shaft at the shared pitch cone apex. Gear-to-gear snap auto-aligns for exact 90°, not 45°. Reject mixed 45°/90°, different tooth counts, incompatible module or offset apex.
+- [ ] Simulate the fully registered rigid-mounted geared assembly: paired shafts rotate with equal reciprocal speed and correct direction; cross-axis gearbox never silently falls back to a parallel spur mesh. For a drive test, couple a real hand crank to the input shaft. Gear movement is currently a kinematic solver: this is not proof of a steerable powered car.

@@ -15,7 +15,7 @@ Smart.HubAimRadius = 0.24 -- small crosshair tolerance through an empty bore
 Smart.HubAxialReach = 0.65 -- axial approach tolerance, excluding shaft overlap
 Smart.GearPitchCapture = 0.7 -- radial proximity to the true mesh pitch circle
 Smart.GearFaceCapture = 0.55 -- transient cursor distance from axial gear plane
-Smart.BevelCapture = 0.85 -- near the proper 45-degree pitch-cone apex
+Smart.BevelCapture = 0.85 -- near a matching 45°/90° pitch-cone apex
 Smart.RackCapture = 0.65 -- near actual straight toothed pitch line
 Smart.MaxAxialOffsetUnits = 64
 Smart.PreviewInterval = 0.08
@@ -46,8 +46,9 @@ end
 
 function Smart.GearPose(source: Model, target: Model, near: Vector3)
     if not gear(source) or not gear(target) then return nil end
-    if GearMath.Kind(source)=="Bevel45"
-        or GearMath.Kind(target)=="Bevel45" then
+    local aKind,bKind=GearMath.Kind(source),GearMath.Kind(target)
+    if aKind=="Bevel45" or aKind=="Bevel90"
+        or bKind=="Bevel45" or bKind=="Bevel90" then
         return Smart.BevelPose(source,target,near)
     end
     local moduleA, moduleB = source:GetAttribute("GearModuleStuds"),
@@ -91,13 +92,14 @@ function Smart.GearPose(source: Model, target: Model, near: Vector3)
         math.abs(radial.Magnitude-pitch)+math.abs(depth)
 end
 
--- Place an equal-tooth bevel at the intersection of two pitch
--- cones, where the shaft directions meet at 45 degrees. The direction
+-- Place an equal-tooth bevel where its physical 45° or 90° pitch
+-- cones intersect. The direction
 -- around the fixed shaft is selected by approaching with the cursor;
 -- the cone apex position and exact shaft angle are never guessed.
 function Smart.BevelPose(source:Model,target:Model,near:Vector3)
-    if GearMath.Kind(source)~="Bevel45"
-        or GearMath.Kind(target)~="Bevel45" then return nil end
+    local kind=GearMath.Kind(source)
+    if (kind~="Bevel45" and kind~="Bevel90")
+        or GearMath.Kind(target)~=kind then return nil end
     if source:GetAttribute("GearTeeth")~=target:GetAttribute("GearTeeth")
         or math.abs((source:GetAttribute("GearModuleStuds") or -1)
             -(target:GetAttribute("GearModuleStuds") or -2))>0.0001 then
@@ -110,10 +112,11 @@ function Smart.BevelPose(source:Model,target:Model,near:Vector3)
     local lateral=diff-xaxis*diff:Dot(xaxis)
     local side=if lateral.Magnitude>0.001
         then lateral.Unit else fixed.UpVector
-    local angle=math.rad(45)
+    local angle=math.rad(source:GetAttribute("BevelShaftAngleDeg") or 45)
+    local cone=math.rad(source:GetAttribute("BevelConeDeg") or 22.5)
     local newAxis=xaxis*math.cos(angle)+side*math.sin(angle)
     local radius=GearMath.PitchRadius(source)
-    local center=apex+newAxis*radius/math.tan(math.rad(22.5))
+    local center=apex+newAxis*radius/math.tan(cone)
     if (center-near).Magnitude>Smart.BevelCapture
         +radius*0.75 then return nil end
     local up=side-newAxis*side:Dot(newAxis)
@@ -667,11 +670,13 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
             elseif isGear and gear(target) then
                 local directAim=aimedModel==target
                 approach=source:GetPivot().Position
-                if directAim and GearMath.Kind(source)=="Bevel45"
-                    and GearMath.Kind(target)=="Bevel45" then
+                local bevelKind=GearMath.Kind(source)
+                if directAim and (bevelKind=="Bevel45"
+                    or bevelKind=="Bevel90")
+                    and GearMath.Kind(target)==bevelKind then
                     -- Aim anywhere on the actual target bevel teeth.
                     -- The cursor chooses the azimuth around its axle;
-                    -- the correct 45-degree shaft angle and pitch-cone
+                    -- the correct 45° or 90° shaft angle and pitch-cone
                     -- apex are enforced automatically.
                     local fixed=target:GetPivot()
                     local axis=fixed.RightVector.Unit
@@ -680,10 +685,14 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     local lateral=delta-axis*delta:Dot(axis)
                     local side=if lateral.Magnitude>0.001 then
                         lateral.Unit else fixed.UpVector
-                    local outputAxis=axis*math.cos(math.rad(45))
-                        +side*math.sin(math.rad(45))
+                    local theta=math.rad(
+                        source:GetAttribute("BevelShaftAngleDeg") or 45)
+                    local cone=math.rad(
+                        source:GetAttribute("BevelConeDeg") or 22.5)
+                    local outputAxis=axis*math.cos(theta)
+                        +side*math.sin(theta)
                     approach=apex+outputAxis*GearMath.PitchRadius(source)
-                        /math.tan(math.rad(22.5))
+                        /math.tan(cone)
                 elseif directAim and GearMath.Kind(source)=="Spur"
                     and GearMath.Kind(target)=="Spur" then
                     -- The ray often strikes a TOOTH, not the transparent

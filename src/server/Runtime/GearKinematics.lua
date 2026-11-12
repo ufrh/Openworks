@@ -28,6 +28,7 @@ end
 local function isGear(model)
     return GearMath.Kind(model)=="Spur"
         or GearMath.Kind(model)=="Bevel45"
+        or GearMath.Kind(model)=="Bevel90"
 end
 
 local function isRack(model)
@@ -389,7 +390,7 @@ function Kinematics:Detect()
             local a,b=left.Group,right.Group
             local kind=GearMath.Kind(left.Model)
             local ratio
-            if kind=="Bevel45" then
+            if kind=="Bevel45" or kind=="Bevel90" then
                 -- Each group measures speed about its OWN local axle,
                 -- which need not be parallel for an angled bevel mesh.
                 local signA=if a.Axis:Dot(left.Model:GetPivot().RightVector)>=0

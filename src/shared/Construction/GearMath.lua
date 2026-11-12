@@ -3,8 +3,6 @@
 -- permitted ONLY with matching module, parallel axes and a correct
 -- transverse pitch-circle center distance.
 local GearMath={}
-local BEVEL_SHAFT_ANGLE=math.rad(45)
-local BEVEL_CONE_ANGLE=BEVEL_SHAFT_ANGLE*0.5
 local BEVEL_AXIS_TOLERANCE=0.025
 local BEVEL_APEX_TOLERANCE=0.085
 local RACK_POSITION_TOLERANCE=0.075
@@ -18,8 +16,9 @@ function GearMath.Kind(model:Model?):string
         return "Rack"
     end
     if type(model:GetAttribute("GearTeeth"))=="number" then
-        return if model:GetAttribute("GearKind")=="Bevel45"
-            then "Bevel45" else "Spur"
+        local kind=model:GetAttribute("GearKind")
+        if kind=="Bevel45" or kind=="Bevel90" then return kind end
+        return "Spur"
     end
     return "None"
 end
@@ -31,16 +30,22 @@ end
 
 function GearMath.BevelApex(model:Model):Vector3
     local cf=model:GetPivot()
+    local cone=math.rad(model:GetAttribute("BevelConeDeg") or 22.5)
     return cf.Position-cf.RightVector
-        *(GearMath.PitchRadius(model)/math.tan(BEVEL_CONE_ANGLE))
+        *(GearMath.PitchRadius(model)/math.tan(cone))
 end
 
--- Matched equal-tooth, 22.5-degree pitch cones mesh on shafts meeting at
--- 45 degrees. Unequal tooth counts require matched NON-22.5-degree cones
--- and must not be silently accepted as physically meaningful.
+-- True 45° and 90° bevel sets require equal teeth and shared pitch cone apexes.
+-- Mixed-angle bevel sets and unequal tooth ratios are not conjugate mates.
 function GearMath.AutoBevelStatus(a:Model,b:Model):(boolean,string,number)
-    if GearMath.Kind(a)~="Bevel45" or GearMath.Kind(b)~="Bevel45" then
-        return false,"Bevel gears require matching Bevel45 profiles",math.huge
+    local kindA,kindB=GearMath.Kind(a),GearMath.Kind(b)
+    if (kindA~="Bevel45" and kindA~="Bevel90") or kindB~=kindA then
+        return false,"Use a matching pair of 45° or 90° bevel gears",math.huge
+    end
+    local shaftAngle=a:GetAttribute("BevelShaftAngleDeg")
+    if shaftAngle~=(kindA=="Bevel90" and 90 or 45)
+        or b:GetAttribute("BevelShaftAngleDeg")~=shaftAngle then
+        return false,"Bevel shaft angles are inconsistent",math.huge
     end
     local na,nb=a:GetAttribute("GearTeeth"),b:GetAttribute("GearTeeth")
     local ma,mb=a:GetAttribute("GearModuleStuds"),
@@ -48,21 +53,22 @@ function GearMath.AutoBevelStatus(a:Model,b:Model):(boolean,string,number)
     if type(na)~="number" or type(nb)~="number"
         or type(ma)~="number" or type(mb)~="number"
         or na~=nb or math.abs(ma-mb)>0.0001 then
-        return false,"45-degree bevel gears need matching teeth and pitch",
+        return false,"Bevel gears need matching teeth and pitch",
             math.huge
     end
     local aaxis=a:GetPivot().RightVector.Unit
     local baxis=b:GetPivot().RightVector.Unit
-    local axisError=math.abs(aaxis:Dot(baxis)-math.cos(BEVEL_SHAFT_ANGLE))
+    local axisError=math.abs(math.abs(aaxis:Dot(baxis))
+        -math.cos(math.rad(shaftAngle)))
     local apexError=(GearMath.BevelApex(a)-GearMath.BevelApex(b)).Magnitude
     local proximity=apexError+axisError*2
     if axisError>BEVEL_AXIS_TOLERANCE then
-        return false,"Bevel shaft axes must intersect at 45 degrees",proximity
+        return false,"Bevel shaft axes must intersect at "..shaftAngle.." degrees",proximity
     end
     if apexError>BEVEL_APEX_TOLERANCE then
         return false,"Bevel pitch-cone apexes do not coincide",proximity
     end
-    return true,"45-degree bevel mesh",proximity
+    return true,tostring(shaftAngle).."-degree bevel mesh",proximity
 end
 
 -- An unpowered, grounded rack guide constrains ONLY translation.
@@ -190,7 +196,8 @@ function GearMath.AutoMeshStatus(a:Model,b:Model):(boolean,string,number)
     if kindA=="Rack" or kindB=="Rack" then
         return GearMath.AutoRackStatus(a,b)
     end
-    if kindA=="Bevel45" or kindB=="Bevel45" then
+    if kindA=="Bevel45" or kindA=="Bevel90"
+        or kindB=="Bevel45" or kindB=="Bevel90" then
         return GearMath.AutoBevelStatus(a,b)
     end
     if not a or not b or a==b or not a.PrimaryPart or not b.PrimaryPart then
