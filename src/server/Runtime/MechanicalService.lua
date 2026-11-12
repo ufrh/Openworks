@@ -127,6 +127,13 @@ function Mechanical:Restore(player, spec)
     if not source or not target or source == target then
         return false, "Relationship parts were deleted"
     end
+    -- Upgrade legacy free-spinning gear hubs during plot restore. Every
+    -- gear/shaft interface is now a rigid weld, regardless of save version.
+    if spec.kind=="Bearing" and type(target:GetAttribute("GearTeeth"))=="number"
+        and Alignment.IsShaft(source) then
+        spec=table.clone(spec)
+        spec.kind="Weld"
+    end
 
     local folder = Instance.new("Folder")
     folder.Name = "Relationship_" .. spec.relationId
@@ -555,9 +562,9 @@ function Mechanical:SmartMate(player, request, newSource)
     end
 
     local mode=request.mateKind
-    if mode=="Hub" and request.relationKind~="Rotation"
+    if mode=="Hub" and request.relationKind~="Weld"
         and request.relationKind~="Rigid" then
-        return false,"Choose Rotation or Rigid for a gear/shaft mount"
+        return false,"Gear/shaft mounts are always rigid welds"
     end
     if mode=="Surface" then
         return false,"Touching parts are never welded automatically. Use Weld."
@@ -576,11 +583,10 @@ function Mechanical:SmartMate(player, request, newSource)
     local typeName=if mode=="Bore" then (request.relationKind or "Cylindrical")
         elseif mode=="Gear" or mode=="Rack"
             or mode=="Guide" then mode
-        elseif mode=="Hub" then
-            (if request.relationKind=="Rotation" then "Bearing" else "Weld")
+        elseif mode=="Hub" then "Weld"
         else "Fixed"
-    -- Gear/shaft mounts become explicit Hinge or Weld physics links,
-    -- never a component grouping or an implicit fixed connection.
+    -- Gear/shaft mounts ALWAYS create explicit WeldConstraints.
+    -- Shaft/housing bearings alone determine rotational freedom.
     if mode=="Bore" and typeName~="Bearing"
         and typeName~="Slider" and typeName~="Cylindrical"
         and typeName~="FreeFit" then
@@ -815,6 +821,44 @@ function Mechanical:SmartMate(player, request, newSource)
 
     local fitPairs=nil
     local fitMap=nil
+    local hubGears=nil
+    if mode=="Hub" then
+        -- One long shaft may pass through and weld several distinct gears.
+        -- Do not stop at the first valid hub, but only attach a gear if its
+        -- actual bore overlaps the finite shaft and passes full clearance.
+        hubGears={opening}
+        if Alignment.IsShaft(source) then
+            local shaftCF=shaft:GetPivot()
+            local axis=shaftCF.RightVector.Unit
+            local seen={[opening]=true}
+            local shaftHalf=shaft.PrimaryPart.Size.X*0.5
+            for _,candidate in ipairs(d.folder:GetChildren()) do
+                if candidate:IsA("Model") and candidate~=shaft
+                    and candidate.PrimaryPart
+                    and candidate:GetAttribute("OwnerUserId")==player.UserId
+                    and type(candidate:GetAttribute("GearTeeth"))=="number"
+                    and not excluded[candidate] and not seen[candidate] then
+                    local delta=candidate:GetPivot().Position-shaftCF.Position
+                    local axial=math.abs(delta:Dot(axis))
+                    local radial=(delta-axis*delta:Dot(axis)).Magnitude
+                    local reach=shaftHalf+candidate.PrimaryPart.Size.X*0.5
+                    if axial<reach-0.002 and radial<0.035 then
+                        local fits,why=Smart.HubFits(shaft,candidate)
+                        if not fits then
+                            restoreMoving()
+                            return false,why or "Another gear cannot fit this shaft"
+                        end
+                        seen[candidate]=true
+                        table.insert(hubGears,candidate)
+                    end
+                end
+            end
+        end
+        fitMap={[shaft]={}}
+        for _,gear in ipairs(hubGears) do
+            fitMap[shaft][gear]=true
+        end
+    end
     if mode=="Bore" then
         local all={}
         for _,candidate in ipairs(d.folder:GetChildren()) do
@@ -987,22 +1031,30 @@ function Mechanical:SmartMate(player, request, newSource)
             }
             table.insert(desiredSpecs,candidateSpec)
         end
+    elseif mode=="Hub" then
+        for _,gear in ipairs(hubGears) do
+            table.insert(desiredSpecs,{
+                relationId=HttpService:GenerateGUID(false),
+                ownerUserId=player.UserId,
+                kind="Weld",
+                sourceId=shaft:GetAttribute("InstanceId"),
+                targetId=gear:GetAttribute("InstanceId"),
+                componentId=shaft:GetAttribute("ComponentId"),
+                offsetUnits=(gear:GetPivot().Position-shaft:GetPivot().Position)
+                    :Dot(shaft:GetPivot().RightVector)/0.25,
+                rollDegrees=0,
+            })
+        end
     else
         table.insert(desiredSpecs,{
             relationId=HttpService:GenerateGUID(false),
             ownerUserId=player.UserId,
             kind=typeName,
-            sourceId=if mode=="Hub"
-                then shaft:GetAttribute("InstanceId") else request.sourceId,
-            targetId=if mode=="Hub"
-                then opening:GetAttribute("InstanceId") else request.targetId,
-            componentId=if mode=="Hub" then shaft:GetAttribute("ComponentId")
-                else movingComponent,
+            sourceId=request.sourceId,
+            targetId=request.targetId,
+            componentId=movingComponent,
             offsetUnits=offset,
             rollDegrees=roll,
-            gearRatio=if mode=="Gear"
-                then -(source:GetAttribute("GearTeeth")
-                    /target:GetAttribute("GearTeeth")) else nil,
         })
     end
 
@@ -1080,8 +1132,7 @@ function Mechanical:SmartMate(player, request, newSource)
         string.format("%d physical shaft/hole %s connections fitted",
             #desiredSpecs,typeName)
         elseif mode=="Hub" then
-            (if typeName=="Bearing" then "Gear mounted • rotation only"
-                else "Gear mounted • rigidly welded to shaft")
+            string.format("%d gear(s) rigidly welded to shaft",#hubGears)
         else typeName.." connected"
 end
 
