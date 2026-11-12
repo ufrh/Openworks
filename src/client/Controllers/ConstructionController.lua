@@ -12,6 +12,7 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("Construction")
 local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
+local CatalogMetadata=require(construction:WaitForChild("PrimitiveCatalogMetadata"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentGeometry = require(construction:WaitForChild("ComponentGeometry"))
@@ -136,6 +137,8 @@ function Controller.new(tools)
         BankEntries={},
         BankConfirmRemove=nil,
         CatalogCollapsed={},
+        BankLoaded=false,
+        CurrentDisplayName=nil,
         ScaleMode = false,
         NumericPrecision = false,
         Numeric = nil,
@@ -320,77 +323,134 @@ function Controller:BankRequest(payload)
     return result.data,result
 end
 
+function Controller:RefreshBankEntries()
+    local data=self:BankRequest({action="ListComponentBank"})
+    self.BankEntries=if data and type(data.entries)=="table"
+        then data.entries else {}
+    self.BankLoaded=true
+end
+
 function Controller:RefreshCatalog()
+    if not self.List then return end
     for _,child in ipairs(self.List:GetChildren()) do
         if child:IsA("TextButton") or child:IsA("TextLabel")
             or child:IsA("Frame") then child:Destroy() end
     end
+    local search=if self.CatalogSearch
+        then self.CatalogSearch.Text:lower():match("^%s*(.-)%s*$")
+        else ""
+    local searching=search~=""
     local order=0
-    local function header(name)
+    local visibleItems=0
+    local function advance()
         order+=1
-        local h=label(self.List,name,UDim2.new(1,-8,0,26),
-            UDim2.fromOffset(0,0),13,Theme.Accent)
-        h.LayoutOrder=order
+        return order
     end
-    header("MY COMPONENT BANK")
-    local data=self:BankRequest({action="ListComponentBank"})
-    self.BankEntries=if data and type(data.entries)=="table"
-        then data.entries else {}
-    if #self.BankEntries==0 then
-        order+=1
-        local empty=label(self.List,"No saved components yet • select a component, Shift+B",
-            UDim2.new(1,-8,0,36),UDim2.fromOffset(0,0),12,MUTED)
-        empty.LayoutOrder=order
-    end
-    for _,entry in ipairs(self.BankEntries) do
-        order+=1
-        local row=create("Frame",{
-            Size=UDim2.new(1,-7,0,38),BackgroundTransparency=1,
-            BorderSizePixel=0,LayoutOrder=order,
-        },self.List)
-        local use=button(row,entry.name.."  •  "..tostring(entry.parts).." parts",
-            UDim2.new(1,-44,1,0),UDim2.fromOffset(0,0))
-        use.TextXAlignment=Enum.TextXAlignment.Left
-        use.Activated:Connect(function()
-            self:SelectBank(entry.id)
-            self:ShowCatalog(false)
-        end)
-        local remove=button(row,if self.BankConfirmRemove==entry.id
-            then "?" else "×",UDim2.fromOffset(38,38),
-            UDim2.new(1,-38,0,0))
-        remove.Activated:Connect(function()
-            if self.BankConfirmRemove~=entry.id then
-                self.BankConfirmRemove=entry.id
-                self:Message("Click ? again to remove "..entry.name.." from the bank")
+    local function header(name,count)
+        local collapsed=self.CatalogCollapsed[name]==true
+        local h=button(self.List,
+            (if collapsed and not searching then "▸  " else "▾  ")
+                ..name:upper().."    "..tostring(count),
+            UDim2.new(1,-7,0,29))
+        h.LayoutOrder=advance()
+        h.TextColor3=Theme.Accent
+        h.TextXAlignment=Enum.TextXAlignment.Left
+        h.Activated:Connect(function()
+            if not searching then
+                self.CatalogCollapsed[name]=not collapsed
                 self:RefreshCatalog()
-                return
             end
-            self.BankConfirmRemove=nil
-            local _,result=self:BankRequest({
-                action="RemoveComponentBank",bankId=entry.id,
-            })
-            if result then self:RefreshCatalog() end
         end)
+        return not collapsed or searching
     end
-    header("PRIMITIVES")
+    local bank={}
+    for _,entry in ipairs(self.BankEntries) do
+        if not searching or (entry.name.." saved component bank")
+            :lower():find(search,1,true) then
+            table.insert(bank,entry)
+        end
+    end
+    if #bank>0 or not searching then
+        if header("My Components",#bank) then
+            if #bank==0 then
+                local empty=label(self.List,
+                    "Nothing saved yet  ·  Select a component, Shift+B",
+                    UDim2.new(1,-8,0,36),UDim2.fromOffset(0,0),12,MUTED)
+                empty.LayoutOrder=advance()
+            end
+            for _,entry in ipairs(bank) do
+                visibleItems+=1
+                local row=create("Frame",{
+                    Size=UDim2.new(1,-7,0,38),
+                    BackgroundTransparency=1,BorderSizePixel=0,
+                    LayoutOrder=advance(),
+                },self.List)
+                local use=button(row,entry.name.."  ·  "..tostring(entry.parts).." parts",
+                    UDim2.new(1,-44,1,0),UDim2.fromOffset(0,0))
+                use.TextXAlignment=Enum.TextXAlignment.Left
+                use.Activated:Connect(function()
+                    self:SelectBank(entry.id)
+                    self:ShowCatalog(false)
+                end)
+                local remove=button(row,
+                    if self.BankConfirmRemove==entry.id then "?" else "×",
+                    UDim2.fromOffset(38,38),UDim2.new(1,-38,0,0))
+                remove.Activated:Connect(function()
+                    if self.BankConfirmRemove~=entry.id then
+                        self.BankConfirmRemove=entry.id
+                        self:Message("Click ? again to remove "..entry.name.." from the bank")
+                        self:RefreshCatalog()
+                        return
+                    end
+                    self.BankConfirmRemove=nil
+                    local _,result=self:BankRequest({
+                        action="RemoveComponentBank",bankId=entry.id,
+                    })
+                    if result then
+                        self:RefreshBankEntries()
+                        self:RefreshCatalog()
+                    end
+                end)
+            end
+        end
+    end
+    local grouped={}
     local entries=Registry.List()
-    if #entries==0 then
-        order+=1
-        local missing=label(self.List,"No primitives found. Generate and save the Studio library.",
-            UDim2.new(1,-8,0,56),UDim2.fromOffset(0,0),13,MUTED)
-        missing.LayoutOrder=order
-    end
     for _,entry in ipairs(entries) do
-        order+=1
-        local b=button(self.List,entry.Id,UDim2.new(1,-7,0,32))
-        b.LayoutOrder=order
-        b.BackgroundColor3=if entry.Id==self.CurrentId
-            and self.Mode=="Build" and not self.CurrentBank
-            then Theme.Active else PANEL
-        b.Activated:Connect(function()
-            self:SelectPrimitive(entry.Id)
-            self:ShowCatalog(false)
-        end)
+        if not searching or entry.SearchText:find(search,1,true) then
+            local group=entry.Category
+            if not grouped[group] then grouped[group]={} end
+            table.insert(grouped[group],entry)
+        end
+    end
+    for _,category in ipairs(CatalogMetadata.Categories) do
+        local group=grouped[category]
+        if group and #group>0 and header(category,#group) then
+            for _,entry in ipairs(group) do
+                visibleItems+=1
+                local b=button(self.List,entry.DisplayName,
+                    UDim2.new(1,-7,0,34))
+                b.LayoutOrder=advance()
+                b.TextXAlignment=Enum.TextXAlignment.Left
+                b.BackgroundColor3=if entry.Id==self.CurrentId
+                    and self.Mode=="Build" and not self.CurrentBank
+                    then Theme.Active else PANEL
+                b.Activated:Connect(function()
+                    self:SelectPrimitive(entry.Id)
+                    self:ShowCatalog(false)
+                end)
+            end
+        end
+    end
+    if #entries==0 then
+        local missing=label(self.List,
+            "No primitives found. Generate and save the Studio library.",
+            UDim2.new(1,-8,0,54),UDim2.fromOffset(0,0),13,MUTED)
+        missing.LayoutOrder=advance()
+    elseif searching and visibleItems==0 then
+        local empty=label(self.List,"No parts match “"..search.."”",
+            UDim2.new(1,-8,0,42),UDim2.fromOffset(0,0),13,MUTED)
+        empty.LayoutOrder=advance()
     end
 end
 
