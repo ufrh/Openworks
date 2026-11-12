@@ -226,6 +226,7 @@ function Controller:MakeUI()
     }, gui)
 
     self.Gui = gui
+    self.StatusFrame=status
     self.TitleLabel = title
     self.DetailLabel = details
     self.HelpLabel = help
@@ -312,6 +313,9 @@ end
 
 function Controller:RefreshHUD()
     if not self.Gui then return end
+    if self.StatusFrame then
+        self.StatusFrame.Visible=self.UnifiedExplorer==nil
+    end
     self.Gui.Enabled = self.Mode == "Build" or self.Mode == "Edit" or self.Mode == "Inspect"
     if not self.Gui.Enabled then return end
 
@@ -1161,6 +1165,7 @@ function Controller:ToggleMultiSelection(model)
     self:RefreshSelectionHighlights()
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshHUD()
+    if self.UnifiedExplorer then self.UnifiedExplorer:OnConstructionSelection() end
 end
 
 function Controller:CancelPending()
