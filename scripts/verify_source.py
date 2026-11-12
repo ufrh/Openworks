@@ -198,6 +198,26 @@ def main() -> int:
           and 'function Mechanical:CreateAxisJoint(' not in mechanical
           and 'JointFrameMath' not in mechanical
           and 'kind=="AxisHinge"' not in simulation)
+    motor_client=read("src/client/Controllers/MotorControlController.lua")
+    properties=read("src/client/Controllers/RelationshipProperties.lua")
+    check("Key-driven motor requires a real shaft-in-hole Bearing",
+          'function Mechanical:TuneBearingMotor(' in mechanical
+          and 'joint:GetAttribute("Kind")~="Bearing"' in mechanical
+          and 'constraint:IsA("HingeConstraint") and spec.motorEnabled==true' in mechanical
+          and 'and edge.kind=="Bearing"' in simulation
+          and 'and edge.relation:GetAttribute("MotorEnabled")==true' in simulation
+          and 'joint:GetAttribute("Kind")=="Bearing"' in motor_client
+          and 'joint:GetAttribute("MotorEnabled")==true' in motor_client
+          and 'action="TuneBearingMotor"' in properties
+          and 'action=="TuneBearingMotor"' in service)
+    check("Bearing motor is saved, undoable, live-editable and fail-safe",
+          'motorEnabled=relation:GetAttribute("MotorEnabled")==true' in mechanical
+          and 'relation:SetAttribute("MotorEnabled",spec.motorEnabled==true)' in mechanical
+          and 'RelationId=edge.relation:GetAttribute("RelationId")' in simulation
+          and 'if motor.RelationId==id then found=motor break end' in simulation
+          and 'motor.Constraint.AngularVelocity=0' in simulation
+          and 'os.clock()-motor.LastInput>0.45' in simulation
+          and 'propertyAction and simulation:IsRunning(player)' in service)
     check("Shaft-hole bearing still drives native hinge physics",
           'kind == "Bearing"' in mechanical
           and 'Instance.new("HingeConstraint")' in mechanical
