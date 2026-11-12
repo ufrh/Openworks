@@ -15,5 +15,6 @@ Current controls live in the root [README](../README.md). Changes to engine beha
 - **[Phase 1 implementation and Studio smoke test](UI_V2_PHASE_1_IMPLEMENTATION.md)** — three-tool/eight-subtool routing, permissions, interim keybinds, CI status, and unverified runtime acceptance.
 - **[Phase 2 visualization implementation and known CSG limits](UI_V2_PHASE_2_IMPLEMENTATION.md)** — shared 12-edge outlines, connection confirmation, assembly feedback, ghost geometry strokes and Studio test cases.
 - **[Phase 3 unified Explorer, Properties, context menus and tooltips](UI_V2_PHASE_3_IMPLEMENTATION.md)** — implementation details, permission filters, inline editing, and Studio acceptance cases.
+- **[Phase 4 unified mechanical connections](UI_V2_PHASE_4_IMPLEMENTATION.md)** — shared Connect picker, shaft/hole/gear mounting, validated server actions, retired shortcuts, and Studio regression.
 
 These documents cover committed UI v2 client source work on the isolated feature branch. The original six-tool implementation remains on the untouched `dev` branch. **None of the new UI has been certified in Roblox Studio yet.**
