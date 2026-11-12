@@ -801,6 +801,13 @@ function Panel:Geometry(node)
             self:Value("More",#connected-12)
         end
     end
+    if self.Tools.PrimaryId=="Mechanics"
+        and self.Tools.SubtoolId=="Connect"
+        and not simulating() and node.kind=="primitive" then
+        self:ActionButton("Connect","Select this as the first mechanical participant",function()
+            self:RunAction("connect",node)
+        end)
+    end
     if self.Tools.PrimaryId=="Build" and not simulating()
         and node.kind=="primitive" then
         self:ActionButton("Resize","Show face handles for this exact primitive [V]",function()
@@ -1028,6 +1035,10 @@ function Panel:RunAction(action,node)
     local model=node.model or node.members and node.members[1]
     if action=="select" then
         self:Select(node,true)
+    elseif action=="connect" and own(model) then
+        if self.Mechanics:BeginConnect(model) then
+            self:Focus(false)
+        end
     elseif action=="resize" and own(model) then
         self.Build:SetSelection(model)
         self.Tools:SetSubtool("Resize")
@@ -1122,6 +1133,7 @@ function Panel:Start()
     self.Signature=self.Snapshot.signature
     self:MakeUI()
     table.insert(self.Connections,self.Tools.SubtoolChanged.Event:Connect(function()
+        self:CloseConnectionChoice(true)
         self:CloseMenu()
         if self.Tools.PrimaryId=="Build"
             and self.Tools.SubtoolId=="Paint" then
