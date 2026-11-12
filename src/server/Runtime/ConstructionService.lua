@@ -13,6 +13,7 @@ local Bore = require(construction:WaitForChild("BoreClearance"))
 local Alignment = require(construction:WaitForChild("AlignmentMath"))
 local MultiFit = require(construction:WaitForChild("MultiFitMath"))
 local Smart = require(construction:WaitForChild("SmartPlacement"))
+local FitOrigin = require(construction:WaitForChild("FitOrigin"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
 local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
@@ -122,6 +123,8 @@ local function snapshot(model)
         size = primary.Size,
         componentId = model:GetAttribute("ComponentId"),
         componentAnchorId = model:GetAttribute("ComponentAnchorId"),
+        fitPivotLocal=model:GetAttribute("FitPivotLocal"),
+        componentFitPivotLocal=model:GetAttribute("ComponentFitPivotLocal"),
         assemblyPrecision = model:GetAttribute("AssemblyPrecision") == true,
         resizePrecision = model:GetAttribute("ResizePrecision") == true,
         freePosition = model:GetAttribute("FreePosition") == true,
@@ -256,6 +259,11 @@ local function validState(player, entry, proposed)
         or typeof(proposed.size) ~= "Vector3" then
         return false, "Invalid construction state"
     end
+    if (proposed.fitPivotLocal~=nil and not FitOrigin.Valid(proposed.fitPivotLocal))
+        or (proposed.componentFitPivotLocal~=nil
+            and not FitOrigin.Valid(proposed.componentFitPivotLocal)) then
+        return false,"Invalid alignment origin"
+    end
     if not nearPlayer(player, proposed.position) then
         return false, "Target is outside your plot or too far away"
     end
@@ -300,6 +308,8 @@ local function applyState(model, data)
     model:SetAttribute("RotZ", data.steps.z)
     model:SetAttribute("ComponentId", data.componentId)
     model:SetAttribute("ComponentAnchorId", data.componentAnchorId)
+    model:SetAttribute("FitPivotLocal",data.fitPivotLocal)
+    model:SetAttribute("ComponentFitPivotLocal",data.componentFitPivotLocal)
     model:SetAttribute("AssemblyPrecision", data.assemblyPrecision == true)
     model:SetAttribute("ResizePrecision", data.resizePrecision == true
         or Grid.HasFractionalSize(data.size))
@@ -523,6 +533,7 @@ local function place(player, payload)
         paintFinish=if PaintCatalog.IsValidFinish(payload.paintFinish)
             then payload.paintFinish else "Factory",
         paintColorHex=PaintCatalog.NormalizeHex(payload.paintColorHex),
+        fitPivotLocal=payload.fitPivotLocal,
         orientation = if payload.autoMate
             and (payload.autoMate.kind=="BoltHole"
                 or payload.autoMate.kind=="Bore"
@@ -646,6 +657,8 @@ local function update(player, payload)
         materialId=model:GetAttribute("ConstructionMaterial") or "Steel",
         paintFinish=model:GetAttribute("PaintFinish") or "Factory",
         paintColorHex=model:GetAttribute("PaintColorHex"),
+        fitPivotLocal=model:GetAttribute("FitPivotLocal"),
+        componentFitPivotLocal=model:GetAttribute("ComponentFitPivotLocal"),
     }
     local before=snapshot(model)
     local crankCouplings=if Alignment.IsShaft(model)
@@ -1028,6 +1041,75 @@ local function setPaint(player,payload)
         ..tostring(#members).." primitives"
 end
 
+-- A universal editable alignment origin exists for BOTH primitive and
+-- component selections. Never move the physics root or manufacture a joint.
+-- Validate that the selected point belongs to actual owned component geometry.
+local function setFitPivot(player,payload)
+    if type(payload)~="table" or (payload.scope~="Primitive"
+        and payload.scope~="Component") or type(payload.id)~="string"
+        or #payload.id>64 then
+        return false,"Select a primitive or component before editing its origin"
+    end
+    local members,anchor
+    if payload.scope=="Component" then
+        members=components:Members(player,payload.id)
+        if #members<2 then return false,"Select a registered component" end
+        anchor=FitOrigin.ComponentAnchor(members)
+    else
+        anchor=findOwned(player,payload.id)
+        members=if anchor then {anchor} else {}
+    end
+    if not anchor then return false,"Component anchor is unavailable" end
+    local prior=snapshot(anchor)
+    local localPoint=nil
+    if payload.reset~=true then
+        if typeof(payload.position)~="Vector3"
+            or not Grid.ValidPosition(payload.position)
+            or type(payload.hitId)~="string" then
+            return false,"Look at a surface on the selected construction"
+        end
+        local hitModel=nil
+        for _,member in ipairs(members) do
+            if member:GetAttribute("InstanceId")==payload.hitId then
+                hitModel=member
+                break
+            end
+        end
+        if not hitModel then
+            return false,"The pivot point must belong to the selection"
+        end
+        if not nearPlayer(player,payload.position) then
+            return false,"The pivot is outside the plot"
+        end
+        local inside=false
+        for _,part in ipairs(hitModel:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanQuery
+                and part:GetAttribute("GearPivotOnly")~=true then
+                local p=part.CFrame:PointToObjectSpace(payload.position)
+                local half=part.Size*0.5+Vector3.one*0.10
+                if math.abs(p.X)<=half.X and math.abs(p.Y)<=half.Y
+                    and math.abs(p.Z)<=half.Z then
+                    inside=true
+                    break
+                end
+            end
+        end
+        if not inside then
+            return false,"Choose a point on the selected physical surface"
+        end
+        localPoint=anchor:GetPivot():PointToObjectSpace(payload.position)
+        if not FitOrigin.Valid(localPoint) then
+            return false,"Pivot offset exceeds safe construction range"
+        end
+    end
+    local attribute=if payload.scope=="Component"
+        then "ComponentFitPivotLocal" else "FitPivotLocal"
+    anchor:SetAttribute(attribute,localPoint)
+    commitMetadata(player,{prior},{snapshot(anchor)})
+    return true,if payload.reset then "Alignment origin reset to center"
+        else "Alignment origin placed • move to align from that point"
+end
+
 local function restoreMetadata(player,record,undo)
     local states=if undo then record.before else record.after
     if type(states)~="table" then return false,"Invalid metadata history" end
@@ -1047,6 +1129,8 @@ local function restoreMetadata(player,record,undo)
         model:SetAttribute("AssemblyId",state.assemblyId)
         model:SetAttribute("AssemblyName",state.assemblyName)
         model:SetAttribute("Grounded",state.grounded==true)
+        model:SetAttribute("FitPivotLocal",state.fitPivotLocal)
+        model:SetAttribute("ComponentFitPivotLocal",state.componentFitPivotLocal)
     end
     return true
 end
@@ -1135,6 +1219,7 @@ local function handle(player, payload)
         or action == "StopSimulation"
         or action == "PauseSimulation" or action == "ResetSimulation"
     local materialAction=action=="SetMaterial" or action=="SetPaint"
+    local fitOriginAction=action=="SetFitPivot"
     local verticalAction=action=="VerticalMove"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
@@ -1146,7 +1231,7 @@ local function handle(player, payload)
     if action ~= "Place" and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
         and not componentAction and not smartAction and not assemblyAction
-        and not verticalAction and not materialAction
+        and not verticalAction and not materialAction and not fitOriginAction
         and not alignmentAction and not mechanicalAction
         and not simulationAction then
         return { ok = false, message = "Unknown action" }
@@ -1185,6 +1270,10 @@ local function handle(player, payload)
         elseif action~="GetMechanismInfo"
             and not hasEquippedTool(player,"Edit") then
             return {ok=false,message="Equip Edit to modify relationships"}
+        end
+    elseif fitOriginAction then
+        if not hasEquippedTool(player,"Edit") then
+            return {ok=false,message="Equip Edit to set an alignment origin"}
         end
     elseif materialAction then
         if not hasEquippedTool(player,"Edit") then
@@ -1226,6 +1315,7 @@ local function handle(player, payload)
         if action == "ResetSimulation" then return simulation:Reset(player) end
         if action == "Place" then return place(player, payload) end
         if action == "VerticalMove" then return verticalMove(player,payload) end
+        if action == "SetFitPivot" then return setFitPivot(player,payload) end
         if action == "SetMaterial" then return setMaterial(player,payload) end
         if action == "SetPaint" then return setPaint(player,payload) end
         if action == "Update" then return update(player, payload) end
@@ -1296,7 +1386,8 @@ local function handle(player, payload)
         local relation=mechanical:OwnedRelation(player,payload.relationId)
         if relation then simulation:SyncRelationship(player,relation) end
     end
-    local metadataOnly=action=="CreateAssembly" or action=="UpdateAssembly"
+    local metadataOnly=action=="SetFitPivot"
+        or action=="CreateAssembly" or action=="UpdateAssembly"
         or action=="Group" or action=="Ungroup"
         or action=="SetGrounded"
     -- Mark dirty BEFORE optional geometry rebuild: a rebuild error must
