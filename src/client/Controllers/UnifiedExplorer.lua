@@ -661,6 +661,212 @@ function Panel:RenderTree()
     end
 end
 
+-- One explicit draft transaction in the shared Properties pane. This is
+-- client-only until the existing AssemblyTool:Confirm call validates and
+-- submits the complete member set. Partial components never imply a weld.
+function Panel:ApplyDraftName()
+    local draft=self.AssemblyTool
+    if draft.Stage~="Selecting" then return true end
+    local field=self.Fields["Draft name"]
+    local candidate=if field and field.Parent then field.Text else draft.Name
+    local name=tostring(candidate or ""):match("^%s*(.-)%s*$")
+    if not name or #name==0 or #name>48 or name:find("[%c]") then
+        self:Message("Assembly name must contain 1–48 valid characters")
+        return false
+    end
+    draft.Name=name
+    return true
+end
+
+function Panel:FocusAssemblyName()
+    if not self.Properties then return end
+    self:RenderProperties()
+    local field=self.Fields["Draft name"]
+    if field then
+        self:Focus(true)
+        task.defer(function()
+            if field.Parent and self.AssemblyTool.Stage=="Selecting" then
+                field:CaptureFocus()
+            end
+        end)
+    end
+end
+
+function Panel:OnAssemblyDraftChanged()
+    if not self.Properties then return end
+    local draft=self.AssemblyTool
+    local ids={}
+    for id in pairs(draft.Selected or {}) do table.insert(ids,id) end
+    table.sort(ids)
+    local signature=table.concat({
+        tostring(draft.Stage),tostring(draft.EditingId or ""),
+        tostring(draft.Name or ""),table.concat(ids,","),
+    },"|")
+    if signature==self.DraftSignature then return end
+    self.DraftSignature=signature
+    if not UIS:GetFocusedTextBox() then self:RenderProperties() end
+end
+
+function Panel:RenderAssemblyDraft(node)
+    local draft=self.AssemblyTool
+    self:Section("Assembly editor")
+    if draft.Stage~="Selecting" then
+        self:ActionButton("Create assembly",
+            "Start a named assembly and select its physical members",function()
+                draft:BeginNew()
+                self:FocusAssemblyName()
+            end)
+        return
+    end
+    local count=0
+    for _ in pairs(draft.Selected) do count+=1 end
+    self:Value("Mode",if draft.EditingId then "Editing saved assembly"
+        else "Creating assembly")
+    self:Field("Draft name",draft.Name)
+    self:Value("Selected primitives",count)
+    if node and (node.kind=="primitive" or node.kind=="component")
+        and node.members and #node.members>0
+        and not node.partialComponent then
+        local member=node.members[1]
+        local id=entityId(member)
+        local selected=id and draft.Selected[id]==true
+        self:ActionButton(
+            if selected then "Remove from draft" else "Add to draft",
+            if node.kind=="primitive" then
+                "Toggle this individual primitive only"
+            else "Toggle every primitive in the complete editor component",
+            function()
+                draft:ToggleMember(member,node.kind=="primitive")
+                self:OnAssemblyDraftChanged()
+            end)
+    end
+    self:ActionButton(
+        if draft.EditingId then "Save assembly changes" else "Create assembly",
+        "Confirm exact named membership through the existing server API",function()
+            draft:Confirm()
+            self:Scan(true)
+        end)
+    self:ActionButton("Discard draft",
+        "Discard uncommitted assembly membership and name",function()
+            draft:Cancel()
+            self:OnAssemblyDraftChanged()
+        end)
+end
+
+function Panel:OnSimulationSessionChanged()
+    if not self.Properties then return end
+    local signature=table.concat({
+        tostring(simulating()),
+        tostring(player:GetAttribute("OPENWORKS_SimulationPaused")==true),
+        tostring(self.Mechanics.SimSeedId or ""),
+        tostring(self.Mechanics.SimAssemblyId or ""),
+        tostring(self.Tools.PrimaryId or ""),
+        tostring(self.Tools.SubtoolId or ""),
+    },"|")
+    if signature==self.SessionSignature then return end
+    self.SessionSignature=signature
+    if not UIS:GetFocusedTextBox() then self:RenderProperties() end
+end
+
+function Panel:RunSimulationAction(action,node)
+    if self.Tools.PrimaryId~="AssemblySimulation"
+        or self.Tools.SubtoolId~="Simulation" then return false end
+    local running=simulating()
+    if action=="run" then
+        if running or not node or node.kind~="assembly" then return false end
+        local seed=node.members and node.members[1]
+        if not own(seed) then return false end
+        local ok=self.Mechanics:StartRegisteredAssembly(seed)
+        if ok then
+            self.Telemetry=nil
+            self.TelemetrySeed=nil
+            self:OnSimulationSessionChanged()
+        end
+        return ok
+    elseif not running then
+        self:Message("Select a saved assembly to simulate")
+        return false
+    end
+    if action=="stop" then
+        local ok=self.Mechanics:StopRegisteredAssembly()
+        if ok then
+            self.Telemetry=nil
+            self.TelemetrySeed=nil
+        end
+        self:OnSimulationSessionChanged()
+        return ok
+    elseif action=="pause" or action=="reset" then
+        local ok=self:Send({action=if action=="pause"
+            then "PauseSimulation" else "ResetSimulation"},true)
+        self:OnSimulationSessionChanged()
+        return ok
+    elseif action=="telemetry" then
+        local id=self.Mechanics.SimSeedId
+        if type(id)~="string" then return false end
+        local ok,result=self.Mechanics:Request({
+            action="GetMechanismInfo",seedId=id,
+        })
+        if ok and result then
+            self.Telemetry=tostring(result.message or "")
+            self.TelemetrySeed=id
+            self:RenderProperties()
+        end
+        return ok
+    end
+    return false
+end
+
+function Panel:RenderSimulationControls(node)
+    self:Section("Simulation")
+    local running=simulating()
+    if not running then
+        self:Value("Status","Ready")
+        if node and node.kind=="assembly" and node.members
+            and #node.members>0 then
+            self:Value("Selected",node.name)
+            self:Value("Included primitives",#node.members)
+            self:ActionButton("Run assembly",
+                "Simulate exactly the registered assembly members",function()
+                    self:RunSimulationAction("run",node)
+                end)
+        else
+            self:Value("Target","Select a registered assembly")
+        end
+        return
+    end
+    self:Value("Status",if player:GetAttribute(
+        "OPENWORKS_SimulationPaused")==true then "Paused" else "Running")
+    self:Value("Assembly",self.Mechanics.SimAssemblyName or "Registered assembly")
+    self:ActionButton("Stop and return to build",
+        "Stop physics and restore the authored construction",function()
+            self:RunSimulationAction("stop",node)
+        end)
+    self:ActionButton(
+        if player:GetAttribute("OPENWORKS_SimulationPaused")==true
+            then "Resume physics" else "Pause physics",
+        "Toggle simulation pause without changing saved geometry",function()
+            self:RunSimulationAction("pause",node)
+        end)
+    self:ActionButton("Reset simulation",
+        "Restart the active assembly from its authored saved positions",function()
+            self:RunSimulationAction("reset",node)
+        end)
+    self:ActionButton("Inspect mechanism",
+        "Read current relationships, transmissions and constraints",function()
+            self:RunSimulationAction("telemetry",node)
+        end)
+    if self.Telemetry and self.TelemetrySeed==self.Mechanics.SimSeedId then
+        self:Section("Live inspection")
+        for i,part in ipairs(string.split(self.Telemetry,"  /  ")) do
+            if i>12 then break end
+            local line=row(self.Properties,32)
+            local t=label(line,part,UDim2.fromOffset(5,0),
+                UDim2.new(1,-8,1,0),Theme.Muted)
+            t.TextWrapped=true
+        end
+    end
+end
+
 function Panel:Section(title)
     local r=row(self.Properties,22)
     label(r,title:upper(),UDim2.fromOffset(5,0),
