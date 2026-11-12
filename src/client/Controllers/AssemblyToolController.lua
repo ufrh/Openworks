@@ -320,9 +320,17 @@ function Tool:LoadExisting(model)
 end
 
 function Tool:Click()
+    local model=self:Pick()
+    if self.UnifiedExplorer and model then
+        self.UnifiedExplorer:Select(
+            self.UnifiedExplorer:NodeForModel(model),false)
+    end
+    self:ToggleMember(model)
+end
+
+function Tool:ToggleMember(model)
     if self.Mode~="Assembly" or self.Busy
         or self.Stage=="Naming" then return end
-    local model=self:Pick()
     if not model then
         self:Tell("Aim at a constructed primitive or editor component")
         return
