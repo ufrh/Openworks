@@ -280,7 +280,7 @@ def main() -> int:
           'OPENWORKS_LocalSelectionVisuals' not in selection_ui_v2
           and 'OPENWORKS_LocalInspectorSelection' not in mechanical_ui
           and 'OPENWORKS_UnifiedExplorerProperties' in unified_panel
-          and 'OPENWORKS_UIV2_Feedback' in feedback)
+          and 'OPENWORKS_UIV2_Feedback' in visual_ui_v2)
 
     rokit = read("rokit.toml")
     aftman = read("aftman.toml")
