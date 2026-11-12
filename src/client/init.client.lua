@@ -60,19 +60,20 @@ tools:SetShortcutGuard(function(primary,current,_next,key)
     return true
 end)
 
-constructionController:Start()
-assemblyController:Start()
-assemblyToolController:Start()
-
+-- Publish the unified owner BEFORE domain controllers start, so
+-- Assembly Editor and Mechanics never allocate their retired HUDs.
+-- Start the dock only AFTER those controllers initialize their remotes.
 local unifiedExplorer=UnifiedExplorer.new(tools,
     constructionController,assemblyController,assemblyToolController,feedback)
 constructionController.UnifiedExplorer=unifiedExplorer
 assemblyController.UnifiedExplorer=unifiedExplorer
 assemblyToolController.UnifiedExplorer=unifiedExplorer
+
+constructionController:Start()
+assemblyController:Start()
+assemblyToolController:Start()
 unifiedExplorer:Start()
--- Domain controllers started before the shared panel so they retain their
--- existing networking/camera initialization. Refresh once now that the dock
--- owns status/Properties; no legacy instruction HUD should linger on join.
+-- One startup refresh ensures shared authored selection and status match.
 constructionController:RefreshHUD()
 assemblyController:RefreshHUD()
 assemblyToolController:Refresh()
