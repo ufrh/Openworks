@@ -46,6 +46,13 @@ function Context:Lines()
         append(lines,"Esc","Cancel")
         return lines
     end
+    if tool=="Edit" and c.PivotSetting then
+        append(lines,"Crosshair","Look at a selected primitive or component face")
+        append(lines,"Click","Set its shared fitting / rotation origin")
+        append(lines,"Esc","Cancel pivot selection")
+        append(lines,"Shift+O","Reset pivot to default")
+        return lines
+    end
     if tool=="Weld" then
         append(lines,"Click","Select first solid, then second to weld")
         append(lines,"Esc","Cancel weld selection")
@@ -194,6 +201,7 @@ function Context:Lines()
             append(lines, "LMB", "Select editor group")
             append(lines, "Double click", "Edit member inside component")
             append(lines, "Hold selected", "Drag to auto-align")
+            append(lines,"O / Shift+O","Set face/vertex origin • reset to center")
             append(lines, "Alt+LMB", "Cycle deeper layers")
             append(lines, "V / N / G", "Scale / exact size / Move")
             append(lines,"Alt+Up/Down","World up/down • 0.25 studs")
