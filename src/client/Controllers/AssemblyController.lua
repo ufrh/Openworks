@@ -136,41 +136,59 @@ function Controller:IsSimulating()
     return player:GetAttribute("OPENWORKS_Simulating") == true
 end
 
+-- One simulation lifecycle entry point shared by keyboard P and the unified
+-- Assembly/Simulation Properties pane. Never start an unregistered mechanism.
+function Controller:StartRegisteredAssembly(seed)
+    if self.Busy or self:IsSimulating() or self.Mode~="Simulate"
+        or not seed or not seed.Parent
+        or seed:GetAttribute("OwnerUserId")~=player.UserId then return false end
+    local id=seed:GetAttribute("InstanceId")
+    local assemblyId=seed:GetAttribute("AssemblyId")
+    if type(id)~="string" or type(assemblyId)~="string"
+        or assemblyId=="" then
+        self:Message("Select a registered assembly first")
+        return false
+    end
+    local ok=self:Request({
+        action="StartSimulation",seedId=id,grounded=false,
+    })
+    if ok then
+        self:Reset()
+        self.SimSeedId=id
+        self.SimAssemblyId=assemblyId
+        self.SimAssemblyName=seed:GetAttribute("AssemblyName") or "Assembly"
+        if self.UnifiedExplorer then
+            self.UnifiedExplorer:OnSimulationSessionChanged()
+        end
+    end
+    return ok
+end
+
+function Controller:StopRegisteredAssembly()
+    if self.Busy or not self:IsSimulating() then return false end
+    local ok=self:Request({action="StopSimulation"})
+    if ok then
+        self:Reset()
+        self.SimSeedId=nil
+        self.SimAssemblyId=nil
+        self.SimAssemblyName=nil
+        if self.UnifiedExplorer then
+            self.UnifiedExplorer:OnSimulationSessionChanged()
+        end
+    end
+    return ok
+end
+
 function Controller:ToggleSimulation()
     if self.Busy then return end
-
     if self:IsSimulating() then
-        if self:Request({ action = "StopSimulation" }) then self:Reset() end
+        self:StopRegisteredAssembly()
         return
     end
-
-    local seed = self:Pick()
-    if not seed then
-        self:Message("Aim at a registered assembly member, then press P")
-        return
-    end
-    local id = seed:GetAttribute("InstanceId")
-    if type(id) ~= "string" then
-        self:Message("Select a constructed body you own")
-        return
-    end
-
-    local assemblyId=seed:GetAttribute("AssemblyId")
-    if type(assemblyId)~="string" or assemblyId=="" then
-        self:Message("Create an assembly in the Assembly tool: N, name, select, Enter")
-        return
-    end
-
-    -- Simulate the entire registered assembly, never an arbitrary connected
-    -- mechanism selected via a seed. The server independently enforces
-    -- membership and rejects incomplete connected registrations.
-    self.SimAssemblyName=seed:GetAttribute("AssemblyName") or "Assembly"
-    self:Reset()
-    -- Simulation starts ungrounded regardless of Shift. Grounding
-    -- is explicitly authored on supports when needed, not a camera mode.
-    self.SimSeedId = id
-    self:Request({ action = "StartSimulation", seedId = id,
-        grounded = false })
+    local chosen=self.UnifiedExplorer and self.UnifiedExplorer.Selected
+    local seed=chosen and chosen.kind=="assembly"
+        and chosen.members and chosen.members[1] or nil
+    self:StartRegisteredAssembly(seed or self:Pick())
 end
 
 function Controller:Message(message)
@@ -1286,10 +1304,16 @@ function Controller:Start()
     table.insert(self.Connections, player:GetAttributeChangedSignal(
         "OPENWORKS_Simulating"):Connect(function()
             self:RefreshHUD()
+            if self.UnifiedExplorer then
+                self.UnifiedExplorer:OnSimulationSessionChanged()
+            end
         end))
     table.insert(self.Connections,player:GetAttributeChangedSignal(
         "OPENWORKS_SimulationPaused"):Connect(function()
             self:RefreshHUD()
+            if self.UnifiedExplorer then
+                self.UnifiedExplorer:OnSimulationSessionChanged()
+            end
         end))
     for _, name in ipairs({ "OPENWORKS_Grounded" }) do
         table.insert(self.Connections, player:GetAttributeChangedSignal(
