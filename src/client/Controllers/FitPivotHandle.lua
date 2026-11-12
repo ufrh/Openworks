@@ -29,8 +29,8 @@ function Handle:Update(anchor,scope,active)
     ad.Adornee=anchor.PrimaryPart
     ad.CFrame=CFrame.new(anchor.PrimaryPart.CFrame:PointToObjectSpace(world))
     ad.Visible=true
-    ad.Color3=if scope=="Component" then Color3.fromRGB(162,127,242)
-        else Color3.fromRGB(83,221,239)
+    -- Purple remains reserved for assembly selection and simulation scope.
+    ad.Color3=Color3.fromRGB(83,221,239)
 end
 function Handle:UpdateCandidate(anchor,world,scope)
     local ad=self.Adornment
@@ -43,8 +43,8 @@ function Handle:UpdateCandidate(anchor,world,scope)
     local root=anchor.PrimaryPart
     ad.Adornee=root
     ad.CFrame=CFrame.new(root.CFrame:PointToObjectSpace(world))
-    ad.Color3=if scope=="Component" then Color3.fromRGB(162,127,242)
-        else Color3.fromRGB(83,221,239)
+    -- Purple remains reserved for assembly selection and simulation scope.
+    ad.Color3=Color3.fromRGB(83,221,239)
     ad.Visible=true
 end
 
