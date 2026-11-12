@@ -2559,13 +2559,17 @@ function Controller:Start()
         if self.FitPivotHandle then
             local originAnchor=if self.SelectedComponentId then self.GroupAnchor
                 else self.Selected
-            self.FitPivotHandle:Update(originAnchor,
-                if self.SelectedComponentId then "Component" else "Primitive",
-                self.Mode=="Edit" and not self.Pending and not self.ScaleMode
-                    and (self.PivotSetting or (originAnchor~=nil
-                        and (if self.SelectedComponentId
-                            then FitOrigin.HasComponent(originAnchor)
-                            else FitOrigin.HasPrimitive(originAnchor)))))
+            if self.Pending and self.Preview then
+                self.FitPivotHandle:UpdatePreview(self.Preview)
+            else
+                self.FitPivotHandle:Update(originAnchor,
+                    if self.SelectedComponentId then "Component" else "Primitive",
+                    self.Mode=="Edit" and not self.ScaleMode
+                        and (self.PivotSetting or (originAnchor~=nil
+                            and (if self.SelectedComponentId
+                                then FitOrigin.HasComponent(originAnchor)
+                                else FitOrigin.HasPrimitive(originAnchor)))))
+            end
         end
         if not self.PendingMateChoice
             and (self.Mode == "Build" or
