@@ -467,6 +467,13 @@ function Panel:Select(node,propagate)
             end
         end
         self.ApplyingSelection=false
+    elseif propagate and node and node.kind=="primitive"
+        and self.Tools.PrimaryId=="Mechanics"
+        and self.Tools.SubtoolId=="Connect"
+        and not self.ConnectionChoiceOpen then
+        -- Explorer and 3D clicks participate in the EXACT same pair draft.
+        -- The controller validates ownership before accepting either part.
+        self.Mechanics:PickConnectPart(node.model)
     end
     self:RenderProperties()
     self:RenderTree()
