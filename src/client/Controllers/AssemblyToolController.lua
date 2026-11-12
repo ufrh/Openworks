@@ -638,7 +638,8 @@ function Tool:Start()
             end
             return
         end
-        if processed or UIS:GetFocusedTextBox() then return end
+        if processed or UIS:GetFocusedTextBox()
+            or player:GetAttribute("OPENWORKS_ExplorerOpen")==true then return end
         local key=input.KeyCode
         local control=UIS:IsKeyDown(Enum.KeyCode.LeftControl)
             or UIS:IsKeyDown(Enum.KeyCode.RightControl)
