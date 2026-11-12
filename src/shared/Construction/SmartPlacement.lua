@@ -366,7 +366,7 @@ local function socketPlan(members, shaft, target, forcedByAim)
             target.PrimaryPart.Size.Magnitude+1.5)) then
         depth=0
     end
-    local low,high=Alignment.OffsetBounds(shaft,target)
+    local low,high=Alignment.InsertionBounds(shaft,target)
     if not low then return nil end
     local snapped=math.round(depth/(Grid.Unit*0.5))*0.5
     -- Authored offsets must stay on the half-U lattice. The physical
@@ -406,7 +406,7 @@ local function reverseSocketPlan(members, opening, shaft, forcedByAim)
             opening.PrimaryPart.Size.Magnitude+1.5)) then
         axial=0
     end
-    local low,high=Alignment.OffsetBounds(shaft,opening)
+    local low,high=Alignment.InsertionBounds(shaft,opening)
     if not low then return nil end
     local snapped=math.round((-axial)/(Grid.Unit*0.5))*0.5
     local loSnap=math.ceil(low*2-1e-6)*0.5
@@ -726,9 +726,11 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 end
             end
             if cf and kind=="Bore" and #members>1 then
-                local chosenTargets=scoped(target)
+                local delta=cf*ghost:GetPivot():Inverse()
+                local chosenTargets=MultiFit.StationarySet(
+                    members,target,allTargets or targets,delta,ignored)
                 local initial=MultiFit.Find(members,chosenTargets,
-                    cf*ghost:GetPivot():Inverse(),ignored)
+                    delta,ignored)
                 -- Solve the full pattern even if a partial 2/4 snap
                 -- looks valid around the first guide. A two-point result
                 -- is not sufficient when there are four expected holes.
@@ -755,9 +757,10 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 local fitted=nil
                 if kind=="Bore" then
                     local delta=cf*ghost:GetPivot():Inverse()
+                    local stations=MultiFit.StationarySet(
+                        members,target,allTargets or targets,delta,ignored)
                     local raw=MultiFit.Find(members,
-                        scoped(target),
-                        delta,ignored)
+                        stations,delta,ignored)
                     fitted=raw and MultiFit.Unique(raw,
                         source:GetAttribute("InstanceId"),
                         target:GetAttribute("InstanceId"))
@@ -776,9 +779,12 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                         error/= #fitted
                         if error.Magnitude>0.00005 then
                             local candidateCF=CFrame.new(error)*cf
+                            local refinedDelta=candidateCF*ghost:GetPivot():Inverse()
+                            local refinedStations=MultiFit.StationarySet(
+                                members,target,allTargets or targets,
+                                refinedDelta,ignored)
                             local checked=MultiFit.Find(members,
-                                scoped(target),
-                                candidateCF*ghost:GetPivot():Inverse(),ignored)
+                                refinedStations,refinedDelta,ignored)
                             local refined=checked and MultiFit.Unique(checked,
                                 source:GetAttribute("InstanceId"),
                                 target:GetAttribute("InstanceId"))

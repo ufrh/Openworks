@@ -862,7 +862,7 @@ function Controller:RecognizeAttachment(raw,hit)
             match.relationKind=self.SmartBoreKind
             local shaft=if match.reverse then match.target else match.source
             local hole=if match.reverse then match.source else match.target
-            local lower,upper=AlignmentMath.OffsetBounds(shaft,hole)
+            local lower,upper=AlignmentMath.InsertionBounds(shaft,hole)
             if not lower then return nil end
             local offset=math.clamp(
                 match.offsetUnits+self.SmartOffsetDeltaU,lower,upper)
@@ -1252,7 +1252,7 @@ function Controller:UpdatePreview()
         end
         local shaft=if match.reverse then match.target else match.source
         local hole=if match.reverse then match.source else match.target
-        local lower,upper=AlignmentMath.OffsetBounds(shaft,hole)
+        local lower,upper=AlignmentMath.InsertionBounds(shaft,hole)
         if not lower then self:ClearSmartMatch() return end
         local offset=math.clamp(locked.offset+self.SmartOffsetDeltaU,lower,upper)
         local roll=math.clamp(locked.roll+self.SmartRollDelta,-360,360)
@@ -1354,7 +1354,8 @@ function Controller:UpdatePreview()
                 end
             end
             local moving=SmartPlacement.Members(self.Preview)
-            local stationary=MultiFit.Scope(match.target,allTargets)
+            local stationary=MultiFit.StationarySet(moving,match.target,
+                allTargets,nil,ignore)
             local candidates,why=MultiFit.Find(moving,stationary)
             local matches=candidates and MultiFit.Unique(candidates,
                 match.source:GetAttribute("InstanceId"),

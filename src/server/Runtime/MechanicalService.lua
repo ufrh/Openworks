@@ -824,7 +824,8 @@ function Mechanical:SmartMate(player, request, newSource)
             end
         end
         local reason
-        local stationary=MultiFit.Scope(target,all)
+        local stationary=MultiFit.StationarySet(members,target,
+            all,nil,excluded)
         local candidates
         candidates,reason=MultiFit.Find(members,stationary,nil,excluded)
         if not candidates then
@@ -1060,7 +1061,7 @@ function Mechanical:SmartMate(player, request, newSource)
     -- One authored operation, one undo/redo entry, all joints or none.
     d.commitAssembly(player,before,after,createdSpecs,false,relationEdits)
     return true,if mode=="Bore" then
-        string.format("%d individual %s relationships connected (one per rod/hole)",
+        string.format("%d physical shaft/hole %s connections fitted",
             #desiredSpecs,typeName)
         elseif mode=="Hub" then
             (if typeName=="Bearing" then "Gear mounted • rotation only"
