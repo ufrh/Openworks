@@ -53,6 +53,13 @@ function Context:Lines()
         append(lines,"Shift+O","Reset pivot to default")
         return lines
     end
+    if tool=="Edit" and c.PivotSetting then
+        append(lines,"Click","Place origin on aimed selected surface")
+        append(lines,"Q / E","Cycle cursor • face center • edge • corner")
+        append(lines,"Shift+O","Reset primitive / component origin")
+        append(lines,"Esc","Cancel origin placement")
+        return lines
+    end
     if tool=="Weld" then
         append(lines,"Click","Select first solid, then second to weld")
         append(lines,"Esc","Cancel weld selection")
