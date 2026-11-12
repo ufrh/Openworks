@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS client bootstrap: native tools, Forge, editor and simulation controllers.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.10.ARCHITECTURE-ORGANIZATION-AUDIT"
+local BUILD = "2026.11.12.UI-V2-PHASE1-TOOL-ROUTER"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -34,6 +34,25 @@ local assemblyToolController=AssemblyToolController.new(tools)
 -- and Simulate exclusively runs registered assemblies.
 constructionController.Assembly = assemblyController
 assemblyController.Construction = constructionController
+
+-- A subtool hotkey must not steal a key already being used by a live
+-- shaft-fit/precision interaction or an active modal.
+tools:SetShortcutGuard(function(primary,current,_next,key)
+    if constructionController.PendingMateChoice
+        or constructionController.LockedAlignment
+        or (constructionController.Numeric and constructionController.Numeric.Active)
+        or (constructionController.Layered and constructionController.Layered.Alignment) then
+        return false
+    end
+    if primary=="Mechanics" and current=="Connect"
+        and key==Enum.KeyCode.E and assemblyController.ManualActive
+        and (assemblyController.Stage=="Preview" or assemblyController.Stage=="Fit") then
+        return false -- E is live shaft roll during fitting.
+    end
+    if assemblyToolController.Stage=="Naming" then return false end
+    return true
+end)
+
 constructionController:Start()
 assemblyController:Start()
 assemblyToolController:Start()
@@ -56,4 +75,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | architecture audit / metadata undo / guarded persistence / named assembly tooling ready", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 phase 1 / three primary tools / eight contextual subtools", BUILD, tostring(FORGE.Version)))
