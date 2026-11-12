@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS client bootstrap: native tools, Forge, editor and simulation controllers.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.12.UI-V2-PHASE2-VISUALS"
+local BUILD = "2026.11.12.UI-V2-PHASE3-EXPLORER"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -15,7 +15,7 @@ local ToolController = require(controllers:WaitForChild("ToolController"))
 local ConstructionController = require(controllers:WaitForChild("ConstructionController"))
 local AssemblyController = require(controllers:WaitForChild("AssemblyController"))
 local AssemblyToolController=require(controllers:WaitForChild("AssemblyToolController"))
-local ContextKeybinds = require(controllers:WaitForChild("ContextKeybinds"))
+local UnifiedExplorer = require(controllers:WaitForChild("UnifiedExplorer"))
 local WorldVisuals = require(controllers:WaitForChild("WorldVisuals"))
 local VisualFeedback = require(controllers:WaitForChild("VisualFeedback"))
 local PlotSaveController = require(controllers:WaitForChild("PlotSaveController"))
@@ -64,10 +64,12 @@ constructionController:Start()
 assemblyController:Start()
 assemblyToolController:Start()
 
-local contextKeybinds = ContextKeybinds.new(
-    tools, constructionController, assemblyController
-)
-contextKeybinds:Start()
+local unifiedExplorer=UnifiedExplorer.new(tools,
+    constructionController,assemblyController,assemblyToolController,feedback)
+constructionController.UnifiedExplorer=unifiedExplorer
+assemblyController.UnifiedExplorer=unifiedExplorer
+assemblyToolController.UnifiedExplorer=unifiedExplorer
+unifiedExplorer:Start()
 
 local worldVisuals = WorldVisuals.new(feedback)
 worldVisuals:Start()
@@ -82,4 +84,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 phase 2 / shared visual feedback", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 phase 3 / unified Explorer and Properties", BUILD, tostring(FORGE.Version)))
