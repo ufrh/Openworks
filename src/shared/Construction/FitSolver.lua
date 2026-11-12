@@ -13,22 +13,36 @@ local function rayDistance(ray,position)
     if along<=0 or along>256 then return math.huge end
     return (delta-direction*along).Magnitude
 end
-function Solver.PivotCandidate(ghost,target,aimRay,aimed)
+function Solver.PivotCandidate(ghost,target,aimRay,aimed,allTargets)
     local feature=Features.Describe(target)
-    if not feature or not feature.HasOrigin then return nil end
-    local sourceLocal,custom=Origin.PreviewLocal(ghost)
-    if not custom then return nil end
-    local mouseDistance=rayDistance(aimRay,feature.Origin)
+    if not feature then return nil end
+    local targetPosition=if feature.HasOrigin then feature.Origin else nil
+    local componentId=target:GetAttribute("ComponentId")
+    if componentId and not targetPosition then
+        local members={}
+        for _,model in ipairs(allTargets or {}) do
+            if model:GetAttribute("ComponentId")==componentId then
+                table.insert(members,model)
+            end
+        end
+        local component=Features.Component(members)
+        if component and component.HasOrigin then
+            targetPosition=component.Origin
+        end
+    end
+    if not targetPosition then return nil end
+    local sourceLocal=Origin.PreviewLocal(ghost)
+    local mouseDistance=rayDistance(aimRay,targetPosition)
     if mouseDistance>CAPTURE then return nil end
     local original=ghost:GetPivot()
-    local pose=CFrame.new(feature.Origin)*original.Rotation
+    local pose=CFrame.new(targetPosition)*original.Rotation
         *CFrame.new(-sourceLocal)
     return {
         kind="Pivot",relationKind="FitOnly",
         cf=pose,target=target,
         score=if target==aimed then -1.4+mouseDistance
             else -0.1+mouseDistance,
-        approach=feature.Origin,
+        approach=targetPosition,
         offsetUnits=0,rollDegrees=0,
     }
 end
