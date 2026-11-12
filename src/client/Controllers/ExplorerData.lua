@@ -88,8 +88,20 @@ function Data.Snapshot(player)
             table.insert(group.children,item)
         end
     end
+    local componentCounts={}
+    for _,model in ipairs(models) do
+        local cid=model:GetAttribute("ComponentId")
+        if type(cid)=="string" and cid~="" then
+            componentCounts[cid]=(componentCounts[cid] or 0)+1
+        end
+    end
     for _,group in ipairs(assemblies) do
         for _,comp in pairs(group.components) do
+            comp.totalMembers=componentCounts[comp.id] or #comp.members
+            comp.partialComponent=#comp.members<comp.totalMembers
+            comp.name="Component "..comp.id:sub(1,8)
+                ..(if comp.partialComponent then
+                    " ("..#comp.members.."/"..comp.totalMembers..")" else "")
             sortNames(comp.children)
         end
         sortNames(group.children)
@@ -127,10 +139,30 @@ function Data.Snapshot(player)
             tostring(m:GetAttribute("ComponentId") or ""),
             tostring(m:GetAttribute("AssemblyId") or ""),
             tostring(m:GetAttribute("AssemblyName") or ""),
+            tostring(m:GetAttribute("Grounded") or ""),
+            tostring(m:GetAttribute("ConstructionMaterial") or ""),
+            tostring(m:GetAttribute("PaintFinish") or ""),
+            tostring(m:GetAttribute("PaintColorHex") or ""),
+            tostring(m:GetPivot().Position),
+            tostring(m.PrimaryPart.Size),
         },"|"))
     end
     for _,r in ipairs(relations) do
-        table.insert(signature,r.id.."|"..r.name)
+        local relation=r.relation
+        table.insert(signature,table.concat({
+            r.id,r.name,
+            tostring(relation:GetAttribute("LowerLimit") or ""),
+            tostring(relation:GetAttribute("UpperLimit") or ""),
+            tostring(relation:GetAttribute("LimitsEnabled") or ""),
+            tostring(relation:GetAttribute("Stiffness") or ""),
+            tostring(relation:GetAttribute("Damping") or ""),
+            tostring(relation:GetAttribute("FreeLength") or ""),
+            tostring(relation:GetAttribute("MotorEnabled") or ""),
+            tostring(relation:GetAttribute("MotorKey") or ""),
+            tostring(relation:GetAttribute("MotorSpeed") or ""),
+            tostring(relation:GetAttribute("MotorTorque") or ""),
+            tostring(relation:GetAttribute("MotorAcceleration") or ""),
+        },"|"))
     end
     return {
         assemblies=assemblies,relations=relations,byId=byId,
