@@ -54,7 +54,7 @@ function Fit.Check(moving,stationary,delta)
     -- Without this clearance check a nearly-aligned rod could be falsely
     -- whitelisted as noninterfering despite clipping the bore wall.
     if shaftDiameter+2*(radial+skew)>diameter-0.002 then return nil end
-    local lo,hi=Alignment.OffsetBounds(shaft,hole)
+    local lo,hi=Alignment.InsertionBounds(shaft,hole)
     if not lo or depth/Grid.Unit<lo-0.006
         or depth/Grid.Unit>hi+0.006 then return nil end
     return {
@@ -155,6 +155,34 @@ function Fit.Scope(target,all)
         return tostring(a:GetAttribute("InstanceId"))
             <tostring(b:GetAttribute("InstanceId"))
     end)
+    return result
+end
+
+-- A long single shaft can span ungrouped hinge plates; only include
+-- independent stationary holes with verified coaxial geometry and
+-- actual positive insertion length at the proposed pose.
+function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
+    local result=Fit.Scope(primary,all)
+    local known={}
+    for _,target in ipairs(result) do known[target]=true end
+    local shafts={}
+    local movingHoles=0
+    for _,member in ipairs(movingMembers) do
+        if Alignment.IsShaft(member) then table.insert(shafts,member) end
+        if Alignment.TargetAxis(member) then movingHoles+=1 end
+    end
+    if #shafts==1 and movingHoles==0 then
+        for _,candidate in ipairs(all or {}) do
+            if not known[candidate] and not (ignored and ignored[candidate])
+                and candidate:GetAttribute("OwnerUserId")
+                    ==primary:GetAttribute("OwnerUserId")
+                and Alignment.TargetAxis(candidate)
+                and Fit.Check(shafts[1],candidate,delta) then
+                table.insert(result,candidate)
+                known[candidate]=true
+            end
+        end
+    end
     return result
 end
 
@@ -285,6 +313,29 @@ function Fit.Unique(matches,primaryMovingId,primaryStationaryId)
     local result={}
     for _,id in ipairs(ids) do
         if selected[id] then table.insert(result,selected[id]) end
+    end
+    -- Preserve the optimal 1:1 assignment for normal multi-shaft arrays,
+    -- then allow an already assigned shaft to pass through additional FREE
+    -- coaxial holes. Reverse alignment allows multiple moving holes on
+    -- one stationary shaft as well. Each opening is still used once.
+    local usedMoving,usedStationary={},{}
+    for _,pair in ipairs(result) do
+        usedMoving[pair.movingId]=true
+        usedStationary[pair.stationaryId]=true
+    end
+    for _,pair in ipairs(matches or {}) do
+        if #result>=Fit.MaxPairs then break end
+        if pair.reverse then
+            if usedStationary[pair.stationaryId]
+                and not usedMoving[pair.movingId] then
+                table.insert(result,pair)
+                usedMoving[pair.movingId]=true
+            end
+        elseif usedMoving[pair.movingId]
+            and not usedStationary[pair.stationaryId] then
+            table.insert(result,pair)
+            usedStationary[pair.stationaryId]=true
+        end
     end
     return result
 end

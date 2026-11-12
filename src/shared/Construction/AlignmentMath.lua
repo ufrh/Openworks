@@ -103,6 +103,24 @@ function Alignment.OffsetBounds(shaft, opening)
     return -bound,bound
 end
 
+-- Physical insertion differs from SLIDER travel: a shaft may pass through
+-- two separated hinge lugs with its midpoint in the gap between them.
+-- Require nonzero genuine axial overlap, never a floating coaxial fit.
+function Alignment.InsertionBounds(shaft,opening)
+    local low,high,reason=Alignment.OffsetBounds(shaft,opening)
+    if not low then return nil,nil,reason end
+    local axis=Alignment.TargetAxis(opening)
+    local size=opening.PrimaryPart.Size
+    local housingLength=math.abs(axis.X)*size.X
+        +math.abs(axis.Y)*size.Y+math.abs(axis.Z)*size.Z
+    local shaftLength=shaft.PrimaryPart.Size.X
+    local requiredOverlap=math.min(0.012,housingLength*0.1,shaftLength*0.1)
+    local bound=((housingLength+shaftLength)*0.5-requiredOverlap)
+        /Grid.Unit
+    return -math.min(bound,Alignment.MaxOffsetUnits),
+        math.min(bound,Alignment.MaxOffsetUnits)
+end
+
 -- Native Prismatic/Cylindrical constraints measure translation from
 -- their initial common attachment frame (0 studs), not from the
 -- construction plot's housing center. Compute that offset ONCE and
@@ -118,7 +136,7 @@ function Alignment.RelativeTravelBounds(shaft,opening)
 end
 
 function Alignment.Engaged(shaft,opening)
-    local lo,hi=Alignment.OffsetBounds(shaft,opening)
+    local lo,hi=Alignment.InsertionBounds(shaft,opening)
     if not lo then return false,hi end
     local axis=opening:GetPivot():VectorToWorldSpace(
         Alignment.TargetAxis(opening)
@@ -126,7 +144,7 @@ function Alignment.Engaged(shaft,opening)
     local separation=(shaft:GetPivot().Position-opening:GetPivot().Position)
         :Dot(axis)/Grid.Unit
     if separation<lo-0.005 or separation>hi+0.005 then
-        return false,"Shaft must remain inside the opening"
+        return false,"Shaft does not reach the opening"
     end
     return true
 end
@@ -185,7 +203,7 @@ function Alignment.Plan(members, shaft, target, offsetUnits, rollDegrees)
     end
 
     local direction = target:GetPivot():VectorToWorldSpace(axisLocal).Unit
-    local lo,hi,why=Alignment.OffsetBounds(shaft,target)
+    local lo,hi,why=Alignment.InsertionBounds(shaft,target)
     if not lo then return nil,why end
     if offsetUnits<lo or offsetUnits>hi then
         return nil,string.format("Insertion must stay between %.1f and %.1f U",lo,hi)
@@ -245,7 +263,7 @@ function Alignment.ReversePlan(members, opening, fixedShaft, offsetUnits, rollDe
     if not Alignment.IsOffsetValid(offsetUnits) then
         return nil,"Insertion depth uses 0.5 U increments"
     end
-    local lo,hi,why=Alignment.OffsetBounds(fixedShaft,opening)
+    local lo,hi,why=Alignment.InsertionBounds(fixedShaft,opening)
     if not lo then return nil,why end
     if offsetUnits<lo or offsetUnits>hi then
         return nil,string.format("Insertion must stay between %.1f and %.1f U",lo,hi)
