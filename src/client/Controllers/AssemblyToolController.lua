@@ -314,6 +314,10 @@ end
 function Tool:BeginNew()
     if self.Mode~="Assembly" or self.Busy
         or player:GetAttribute("OPENWORKS_Simulating")==true then return end
+    if self.Stage=="Selecting" then
+        self:Tell("Save or discard the current assembly draft first")
+        return
+    end
     self.Selected={}
     self.EditingId=nil
     self.Name=if self.UnifiedExplorer then "New Assembly" else ""
@@ -328,6 +332,10 @@ function Tool:LoadExisting(model)
         or player:GetAttribute("OPENWORKS_Simulating")==true
         or model:GetAttribute("OwnerUserId")~=player.UserId then return end
     local id=model:GetAttribute("AssemblyId")
+    if self.Stage=="Selecting" and self.EditingId~=id then
+        self:Tell("Save or discard the current assembly draft first")
+        return
+    end
     if type(id)~="string" or id=="" then
         self:Tell("Press N to create a named assembly")
         return
