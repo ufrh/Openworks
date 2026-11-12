@@ -1929,12 +1929,13 @@ function Controller:BeginScale()
                 part.CanQuery = false
                 part.CanTouch = false
                 part.LocalTransparencyModifier = 0
-                part.Transparency = 0.45
+                part.Transparency = 0.65
                 part.Color = BLUE
             end
         end
         ghost.Parent = workspace
         self.ScaleGhost = ghost
+        if self.Feedback then self.Feedback:SetGhost(ghost,true) end
         model.PrimaryPart.LocalTransparencyModifier = 1
     end
 
@@ -2027,6 +2028,7 @@ function Controller:EndScale()
     self.ScaleHandles:Close()
 
     if self.ScaleGhost then
+        if self.Feedback then self.Feedback:SetGhost(nil,true) end
         self.ScaleGhost:Destroy()
         self.ScaleGhost = nil
     elseif self.Mode=="Build" and self.Preview and self.Preview.PrimaryPart
