@@ -1,12 +1,15 @@
 --!strict
--- Versioned manual-only player plot persistence.
--- NEVER call Save from PlayerRemoving, BindToClose or a timer.
+-- Versioned player plot persistence. Autosave only successful edits from a
+-- loaded plot, with manual Save/Load and safe final flush on leave/shutdown.
+-- Existing manual saves remain readable under the same DataStore key.
 local DataStoreService=game:GetService("DataStoreService")
+local Players=game:GetService("Players")
 local HttpService=game:GetService("HttpService")
 local shared=game:GetService("ReplicatedStorage")
     :WaitForChild("Openworks"):WaitForChild("Construction")
 local HandCrankMath=require(shared:WaitForChild("HandCrankMath"))
 local PaintCatalog=require(shared:WaitForChild("PaintCatalog"))
+local Config=require(shared:WaitForChild("BuildConfig"))
 
 local Persistence={}
 Persistence.__index=Persistence
@@ -64,7 +67,13 @@ function Persistence.new(deps)
         Ready={},
         Busy={},
         LastManualSave={},
+        LastWriteAt={},
         LastWrittenDocument={},
+        KnownCloudRevision={},
+        Dirty={},
+        DirtySince={},
+        LastAttemptAt={},
+        AutoSaveActive=false,
     },Persistence)
 end
 
@@ -75,6 +84,66 @@ end
 function Persistence:Status(player,status,message)
     player:SetAttribute("OPENWORKS_SaveState",status)
     player:SetAttribute("OPENWORKS_SaveMessage",message or "")
+end
+
+function Persistence:MarkDirty(player)
+    -- The first successful mutation starts a pending autosave window.
+    -- Ongoing edits must not postpone periodic saves indefinitely.
+    if not self.Dirty[player] then
+        self.DirtySince[player]=os.clock()
+    end
+    self.Dirty[player]=true
+    player:SetAttribute("OPENWORKS_AutoSavePending",true)
+end
+
+function Persistence:MarkSaved(player,document,mode)
+    self.Dirty[player]=false
+    self.DirtySince[player]=nil
+    self.LastWriteAt[player]=os.clock()
+    self.LastWrittenDocument[player]=document
+    self.KnownCloudRevision[player]={
+        id=document.writeId,
+        savedAt=document.savedAt,
+    }
+    player:SetAttribute("OPENWORKS_AutoSavePending",false)
+    player:SetAttribute("OPENWORKS_LastSavedAt",document.savedAt or 0)
+    player:SetAttribute("OPENWORKS_LastSaveMode",mode)
+end
+
+function Persistence:ShouldAutoSave(player)
+    if not Config.AutoSaveEnabled or not self.Ready[player]
+        or not self.Dirty[player] or self.Busy[player]
+        or not self.D.plots:Get(player) then return false end
+    local now=os.clock()
+    return now-(self.LastWriteAt[player] or now)>=Config.AutoSaveIntervalSeconds
+        and now-(self.DirtySince[player] or now)>=Config.AutoSaveDebounceSeconds
+        and now-(self.LastAttemptAt[player] or 0)>=Config.AutoSaveRetrySeconds
+end
+
+function Persistence:StartAutoSave()
+    if self.AutoSaveActive then return end
+    self.AutoSaveActive=true
+    task.spawn(function()
+        while self.AutoSaveActive do
+            task.wait(Config.AutoSaveCheckSeconds)
+            if not self.AutoSaveActive then break end
+            for _,player in ipairs(Players:GetPlayers()) do
+                if self:ShouldAutoSave(player) then
+                    task.spawn(function()
+                        local ok,why=self:Save(player,"Auto")
+                        if not ok then
+                            warn("[OPENWORKS] Autosave for "..player.Name
+                                .." failed: "..tostring(why))
+                        end
+                    end)
+                end
+            end
+        end
+    end)
+end
+
+function Persistence:StopAutoSave()
+    self.AutoSaveActive=false
 end
 
 function Persistence:Encode(player)
@@ -316,17 +385,16 @@ function Persistence:Apply(player,document)
         #states,#specs)
 end
 
+-- Read-only load. Never write back failed, malformed or missing data.
 function Persistence:Load(player)
     if self.Busy[player] then return false,"Plot storage is busy" end
     if not self.D.plots:Get(player) then return false,"Plot not assigned" end
     self.Busy[player]=true
-    self:Status(player,"Loading","Loading your last manual save")
-    -- Roblox caches GetAsync results briefly. An explicit Reload directly
-    -- after a successful manual Save should restore the newly written data,
-    -- not an older cached server-side GetAsync result.
+    self:Status(player,"Loading","Loading latest saved plot")
+    -- Recently acknowledged writes take precedence over GetAsync cache.
     local recent=self.LastWrittenDocument[player]
-    local useRecent=recent and self.LastManualSave[player]
-        and os.clock()-self.LastManualSave[player]<30
+    local useRecent=recent and self.LastWriteAt[player]
+        and os.clock()-self.LastWriteAt[player]<30
     local ok,document
     if useRecent then
         ok,document=true,recent
@@ -338,18 +406,17 @@ function Persistence:Load(player)
     if not ok then
         self.Busy[player]=nil
         self.Ready[player]=false
-        self:Status(player,"Error","Storage unavailable. Enable Studio API access")
+        self:Status(player,"Error","Storage unavailable • autosave disabled")
         warn("[OPENWORKS] Plot load failed: "..tostring(document))
-        return false,"Could not access plot storage; your existing construction was not erased"
+        return false,"Could not access plot storage; prior cloud save intact"
     end
-    if not player.Parent then self.Busy[player]=nil return false,"Player left" end
+    if not player.Parent then
+        self.Busy[player]=nil
+        return false,"Player left"
+    end
     local target=if document==nil
         then {version=SCHEMA_VERSION,parts={},joints={}}
         else document
-    -- Always release the plot's Loading lock, even if a future schema
-    -- migration or a runtime error escapes the normal validation path.
-    -- Explicit manual reload still restores an empty plot when no save
-    -- exists; normal data-store errors do not erase player constructions.
     local completed,result,message=pcall(self.Apply,self,player,target)
     self.Busy[player]=nil
     if not completed then
@@ -357,14 +424,27 @@ function Persistence:Load(player)
         message="Plot load failed unexpectedly; check Output"
         result=false
     end
-    if result and document==nil then
-        message="Loaded empty plot (no manual save yet)"
-    end
     self.Ready[player]=result==true
     if result then
-        local savedAt=document and document.savedAt or 0
+        -- Empty means no save ONLY when GetAsync itself succeeded.
+        self.KnownCloudRevision[player]=if document==nil then false else {
+            id=document.writeId,
+            savedAt=document.savedAt,
+        }
+        self.LastWriteAt[player]=os.clock()
+        self.LastWrittenDocument[player]=document
+        self.Dirty[player]=false
+        self.DirtySince[player]=nil
+        self.LastAttemptAt[player]=nil
+        player:SetAttribute("OPENWORKS_AutoSavePending",false)
+        local at=document and document.savedAt or 0
         player:SetAttribute("OPENWORKS_LastSavedAt",
-            if finite(savedAt) then savedAt else 0)
+            if finite(at) then at else 0)
+        player:SetAttribute("OPENWORKS_LastSaveMode",if document
+            then (document.saveMode or "Previous") else "None")
+        if document==nil then
+            message="Empty plot loaded • autosave enabled"
+        end
         self:Status(player,"Ready",message)
     else
         self:Status(player,"Error",message)
@@ -372,54 +452,104 @@ function Persistence:Load(player)
     return result,message
 end
 
-function Persistence:Save(player)
-    if self.Busy[player] or not self.Ready[player] then
-        return false,"Plot not loaded; saving is disabled to protect your data"
+-- A newer writer must never be silently overwritten. New saves carry a
+-- writeId; legacy manual saves compare their savedAt timestamp on migration.
+local function sameCloudRevision(cloud,expected,attempt)
+    if type(cloud)=="table" and cloud.writeId==attempt.writeId then
+        -- Idempotent on UpdateAsync internal retries.
+        return true
     end
-    if self.LastManualSave[player]
+    if expected==false then return cloud==nil end
+    if type(expected)~="table" or type(cloud)~="table" then return false end
+    if expected.id then return cloud.writeId==expected.id end
+    return cloud.writeId==nil and cloud.savedAt==expected.savedAt
+end
+
+-- All four save modes use the SAME version-protected write path.
+function Persistence:Save(player,mode)
+    mode=mode or "Manual"
+    if self.Busy[player] or not self.Ready[player] then
+        return false,"Plot not fully loaded; saving disabled to protect cloud data"
+    end
+    if mode~="Manual" and not self.Dirty[player] then
+        return true,"No unsaved changes"
+    end
+    if mode=="Manual" and self.LastManualSave[player]
         and os.clock()-self.LastManualSave[player]<4 then
         return false,"Save was just requested; try again shortly"
     end
     self.Busy[player]=true
+    self.LastAttemptAt[player]=os.clock()
     local completed,document,problem=pcall(self.Encode,self,player)
-    if not completed then
-        -- A malformed template or unexpected serialize error must NOT
-        -- leave the save lock set for the rest of this player session.
+    if not completed or not document then
         self.Busy[player]=nil
-        warn("[OPENWORKS] Plot encode failed: "..tostring(document))
-        self:Status(player,"Ready","Save validation failed; previous save intact")
-        return false,"Could not prepare plot save (see Studio Output)"
+        if not completed then
+            warn("[OPENWORKS] Plot encode failed: "..tostring(document))
+        end
+        self:Status(player,"Ready","Save blocked • previous cloud save intact")
+        return false,if completed then tostring(problem)
+            else "Plot encode error (see Studio Output)"
     end
-    if not document then
-        self.Busy[player]=nil
-        self:Status(player,"Ready","Save blocked: "..tostring(problem))
-        return false,problem
-    end
-    self:Status(player,"Saving","Writing your manual save")
-    -- This is the ONLY DataStore WRITE anywhere in OPENWORKS. No autosave.
-    local ok,err=pcall(function()
-        self.Store:SetAsync(self:Key(player),document)
+    document.writeId=HttpService:GenerateGUID(false)
+    document.saveMode=mode
+    local expected=self.KnownCloudRevision[player]
+    self:Status(player,"Saving",if mode=="Auto"
+        then "Autosaving construction" else "Saving construction")
+    local conflict=false
+    local ok,saved=pcall(function()
+        return self.Store:UpdateAsync(self:Key(player),function(cloud)
+            if not sameCloudRevision(cloud,expected,document) then
+                conflict=true
+                return nil
+            end
+            return document
+        end)
     end)
     self.Busy[player]=nil
     if not ok then
-        warn("[OPENWORKS] Manual save failed: "..tostring(err))
-        self:Status(player,"Ready","Save FAILED; your previous save is intact")
-        return false,"Save failed; previous save was not intentionally overwritten"
+        warn("[OPENWORKS] "..mode.." save failed: "..tostring(saved))
+        self:Status(player,"Ready","Save failed • unsaved changes kept")
+        return false,"DataStore write failed; unsaved work is still in this server"
     end
-    self.LastManualSave[player]=os.clock()
-    self.LastWrittenDocument[player]=document
-    player:SetAttribute("OPENWORKS_LastSavedAt",document.savedAt)
-    self:Status(player,"Ready","Saved manually")
+    if conflict or saved==nil then
+        self.Ready[player]=false
+        self:Status(player,"Error","Cloud plot changed elsewhere • reload required")
+        return false,"Cloud plot was updated elsewhere; local edits not overwritten"
+    end
+    if mode=="Manual" then self.LastManualSave[player]=os.clock() end
+    self:MarkSaved(player,document,mode)
+    self:Status(player,"Ready",if mode=="Auto" then
+        "Autosaved successfully" elseif mode=="Exit" then
+        "Saved on exit" elseif mode=="Shutdown" then
+        "Saved on shutdown" else "Saved manually")
     return true,string.format("Saved %d parts and %d relationships",
         #document.parts,#document.joints)
 end
 
+function Persistence:Flush(player,mode)
+    local started=os.clock()
+    while self.Busy[player] and os.clock()-started<18 do
+        task.wait(0.1)
+    end
+    if self.Busy[player] then
+        return false,"Previous save is still running"
+    end
+    if not self.Ready[player] then
+        return false,"Cloud plot not loaded; refusing unsafe exit save"
+    end
+    return self:Save(player,mode or "Exit")
+end
+
 function Persistence:Clear(player)
-    -- Intentionally no save on player leave or server shutdown.
     self.Ready[player]=nil
     self.Busy[player]=nil
     self.LastManualSave[player]=nil
+    self.LastWriteAt[player]=nil
     self.LastWrittenDocument[player]=nil
+    self.KnownCloudRevision[player]=nil
+    self.Dirty[player]=nil
+    self.DirtySince[player]=nil
+    self.LastAttemptAt[player]=nil
 end
 
 return Persistence
