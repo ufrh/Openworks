@@ -1,11 +1,11 @@
 # OPENWORKS — Current architecture
 
-This document describes **current `dev` behavior**, not obsolete phase designs. Update it when module responsibilities, networking contracts, persistence or simulation semantics change.
+This document describes the **feature-branch architecture** proposed for `dev`; it does not imply the draft PR has been merged or physically validated in Roblox Studio. Update it when module responsibilities, networking contracts, persistence or simulation semantics change.
 
 ## System boundaries
 
 ```text
-Roblox native Tool (Build / Edit / Assembly / Simulate / Inspect / Weld)
+Roblox native Tool (Build / Edit / Assembly / Simulate / Inspect / Weld / Belt)
   │
   ├─ client/Controllers  → input, presentation, ghosts, local-only 3D guides
   │    ├─ ToolController (tool equipped/activated state)
@@ -20,7 +20,7 @@ Roblox native Tool (Build / Edit / Assembly / Simulate / Inspect / Weld)
   │    └─ StudioTheme, ContextKeybinds (presentation)
   │
   ├─ shared/Construction → BuildConfig, ToolDefinitions, Registry,
-  │    fit math, geometry math, axes, springs, gears, etc.
+  │    fit math, geometry math, axes, springs, gears, pulleys, belts
   │
   └─ ConstructionRequest / CrankControl (server)
        ├─ ConstructionService → authorization, ownership, tool/action dispatch,
@@ -53,7 +53,7 @@ FORGE/Reforge remains in `src/forge-shared` and `src/forge-server`; domain-speci
 - Client state, ghost transforms, property panels and adornments are **advisory**.
 - Server must verify **equipped native Tool**, owning player, individual IDs, valid data, plot, distance where appropriate, collisions and physical-fit limits before mutating.
 - `ConstructionService` is the only dispatcher for `OPENWORKS_ConstructionRequest`. The hand crank uses a validated `BeginCrank` press through this request; `OPENWORKS_CrankControl` carries authenticated held-input heartbeats and release signals, never arbitrary speeds. The server applies a fixed angular-speed target with bounded physical torque and cancels it on release, heartbeat timeout, pause, range loss, or stop.
-- Only `Assembly` may `CreateAssembly` / `UpdateAssembly`. Only `Simulate` may start/pause/reset and operate a manual crank. `Edit` authors mechanical joints; `Weld` creates explicit touching-solid welds.
+- Only `Assembly` may `CreateAssembly` / `UpdateAssembly`. Only `Simulate` may start/pause/reset and operate a manual crank. `Edit` authors mechanical joints; `Weld` creates explicit touching-solid welds. Only `Belt` may author a two-pulley friction belt, and neither belt nor pulley creates a motor.
 - Naming an assembly sends the **exact** selected primitive IDs to the server; it never trusts selected client Instances or automatically traverses relationships.
 - Geometry mutation is different from metadata-only mutation. The latter uses `commitMetadata` / `restoreMetadata` to undo/redo membership, grouping and grounding **in place**; do not route it through destructive geometry reconstruction.
 
@@ -71,7 +71,17 @@ Simulating must never overwrite player-authored original CFrames or delete saved
 
 Bevel placement computes intersecting *pitch-cone apexes* and the appropriate shaft angle. The server revalidates the geometry before committing; gears only become part of a rotating shaft when the builder fits them coaxially into a shaft hub, at which point the weld is automatic. Simulate uses native constraints and the welded shaft's current angular velocity to calculate reciprocal torque. A grounded housing supports a shaft through its authored physical bearing, not through scripted support or invisible anchoring. Dedicated guided-rack and Q/E rack-drive shortcuts have been removed.
 
-**Duplication invariant:** a single-primitive F copy always gets a fresh server GUID and remains mechanically independent. A duplicated multi-primitive component gets fresh GUIDs for *every primitive*, a fresh ComponentId and an internally remapped ComponentAnchorId. All **fully internal** authored relationships (weld, bearing, slider, cylinder, spring, bolt and shared fit sets) are independently recreated under new RelationIds, with their source/target/auxiliary IDs remapped to the copied primitives and tuning retained. Links to primitives outside the component are deliberately omitted to prevent reconnecting copies to originals. Internal AlignedOpeningId, offset and roll are preserved with mapped IDs; external alignment is cleared. Assembly membership and grounding are not inherited. Duplication and the new relationships form one undo/redo transaction. Gear meshing remains geometry-driven, not an authored relationship.
+**Duplication invariant:** a single-primitive F copy always gets a fresh server GUID and remains mechanically independent. A duplicated multi-primitive component gets fresh GUIDs for *every primitive*, a fresh ComponentId and an internally remapped ComponentAnchorId. All **fully internal** authored relationships (weld, bearing, slider, cylinder, spring, belt, bolt and shared fit sets) are independently recreated under new RelationIds, with their source/target/auxiliary IDs remapped to the copied primitives and tuning retained. Links to primitives outside the component are deliberately omitted to prevent reconnecting copies to originals. Internal AlignedOpeningId, offset and roll are preserved with mapped IDs; external alignment is cleared. Assembly membership and grounding are not inherited. Duplication and the new relationships form one undo/redo transaction. Gear meshing remains geometry-driven, not an authored relationship.
+
+### Friction belt transmission (two-pulley phase)
+
+`PulleyLibrary` registers fixed-size open-bore `Pulley_5U`, `Pulley_8U` and `Pulley_12U` under Transmission. Each has an actual faceted annular rim and an invisible noncolliding pivot. Both insertion directions use `SmartPlacement.HubPose` + `BoreClearance.ShaftFits`; valid hub fitting **automatically authors a Weld** to the physical cylinder shaft. Bearing supports are independent constructions, not part of the pulley prefab.
+
+Equip **Belt**, click two distinct, shaft-welded pulleys, and the server checks ownership, range, mount welds, separate shafts, parallel axes, coplanarity, diameter and nonintersection. A single `Belt` relationship records pulley endpoint IDs plus `BeltRestLength` (initially 98.5% of the exact tangent-and-wrap path). The continuous open-belt path is computed by `BeltMath`; `BeltVisual` renders 32 connected, noncolliding beam spans around both pulley circumferences. There are no hidden welds between the two shafts, no automatic drives and no ready-made linear actuator.
+
+When the registered assembly simulates, `BeltTransmission` groups authored fixed/weld/bolt-connected primitives by shaft, rebuilds the exact belt path from the cloned moving pulley positions, and applies reciprocal native `Torque` constraints to the actual shaft assemblies. Belt tension scales with positive stretch beyond the saved rest length; the wrap-angle friction limit caps transferred torque. Torque is reciprocal and supports backdrive; insufficient grip produces **slip**, not perfect synchronization. Editing pulley separation recalculates the displayed belt path and keeps the relation while the route is valid. The original authoring beams hide while simulating and return on Stop. The relationship persists through plot autosave, undo/redo and component duplication when both endpoints are included.
+
+**Current scope:** open friction belts, two pulleys per loop, one plane, fixed loop length. No crossed routing, idlers/multi-pulley loops, spring tensioner model, toothed timing engagement, belt segment collisions, wear, tooth jump, or explicit radial bearing load from belt tension yet. The native torque model is a bounded approximation requiring Studio playtests under load; architecture contracts only verify source invariants.
 
 ### Face-relative construction snapping
 
