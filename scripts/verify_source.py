@@ -1302,6 +1302,80 @@ def main() -> int:
           and 'self:Confirm()' in assembly_tool
           and 'self:Cancel()' in assembly_tool
           and 'Enum.KeyCode.G' not in assembly_tool)
+    # UI v2 integration contracts: preserve the new physics features without
+    # importing old-branch native tools, panels, or persistence assumptions.
+    bank_service=read("src/server/Runtime/ComponentBankService.lua")
+    bank_preview=read("src/client/Controllers/ComponentBankPreview.lua")
+    fit_origin=read("src/shared/Construction/FitOrigin.lua")
+    fit_solver=read("src/shared/Construction/FitSolver.lua")
+    catalog_meta=read("src/shared/Construction/PrimitiveCatalogMetadata.lua")
+    registry=read("src/shared/Construction/PrimitiveRegistry.lua")
+    help_v2=read("src/client/Controllers/ToolHelpDefinitions.lua")
+    panel_v2=read("src/client/Controllers/ContextEditor.lua")
+    check("UI v2 primitive catalog is grouped, searchable and ID-stable",
+          'Id = model.Name' in registry
+          and 'DisplayName = details.DisplayName' in registry
+          and 'function Catalog.Describe(' in catalog_meta
+          and 'self.CatalogSearch.Text' in selection
+          and 'CatalogMetadata.Categories' in selection
+          and 'self.CatalogCollapsed[name]' in selection)
+    check("UI v2 persistent bank is browsable, named and usable as blueprint",
+          'function Controller:RefreshBankEntries()' in selection
+          and 'function Controller:SelectBank(id)' in selection
+          and 'function Controller:PlaceSavedComponent()' in selection
+          and 'source=ComponentBankPreview.Create(self.CurrentBank)' in selection
+          and 'action="PlaceComponentBank"' in selection
+          and 'function Bank:Register(player,payload)' in bank_service
+          and 'function Bank:Place(player,payload)' in bank_service
+          and 'function Preview.Create(entry)' in bank_preview)
+    check("Placing saved components triggers plot autosave, not repeated bank writes",
+          'and (not bankAction or action=="PlaceComponentBank")' in service
+          and 'persistence:MarkDirty(player)' in service
+          and 'bankAction=action=="ListComponentBank"' in service
+          and 'DataStoreService:GetDataStore("OPENWORKS_ComponentBank_v1")'
+              in bank_service)
+    check("UI v2 bank modal owns mouse during text input",
+          'or (self.BankModal and self.BankModal.Visible)' in selection
+          and 'Name="OPENWORKS_BankSave"' in selection
+          and 'self.BankNameInput:CaptureFocus()' in selection
+          and 'self:CloseBankSave()' in selection)
+    check("UI v2 authored origins persist through preview and native geometry",
+          'function Origin.PreviewLocal(ghost)' in fit_origin
+          and 'function FitSolver.SurfacePose(' in fit_solver
+          and 'FitSolver.SurfacePose(' in selection
+          and 'function Controller:EditFitPivot(reset)' in selection
+          and 'action="SetFitPivot"' in selection
+          and 'function Controller:CommitFitPivot()' in selection
+          and 'fitPivotLocal=model:GetAttribute("FitPivotLocal")' in service)
+    check("UI v2 connects belts and never offers free-floating gear mounts",
+          'Belt="Friction belt between pulleys"' in connection_catalog
+          and 'add("Belt")' in connection_catalog
+          and 'add("Rotation")' not in connection_catalog
+          and 'action="CreateBelt"' in mechanics_connect
+          and 'kind=="Rigid"' in mechanics_connect
+          and 'action=="CreateBelt" or action=="RemoveBelt"' in service)
+    check("Alt+arrow nudges use UI v2 Edit scope and one atomic server batch",
+          'function Controller:CanNudge()' in selection
+          and 'self.Tools.PrimaryId=="Build"' in selection
+          and 'self.Tools.SubtoolId=="Edit"' in selection
+          and 'ContextActionService:BindActionAtPriority(' in selection
+          and 'scope,ids="Primitives",{}' in selection
+          and 'if scope=="Primitives" then' in service
+          and 'commitBatch(player,before,after)' in service)
+    check("Context editor exposes component bank and manual fitting origins",
+          'function Panel:BeginBuildOperation(node,action)' in panel_v2
+          and 'self.Build:OpenBankSave()' in panel_v2
+          and 'self.Build:EditFitPivot(false)' in panel_v2
+          and 'self.Build:EditFitPivot(true)' in panel_v2
+          and 'Shift+B' in help_v2
+          and 'O / Shift+O' in help_v2)
+    check("UI v2 rack fallback is isolated; pure gear and belt shafts use torque",
+          'RackSimulationService.new(deps)' in simulation
+          and 'return self.Rack:Start(player,payload)' in simulation
+          and 'session.Gears=GearTransmission.new(graph,copies,runtime)' in simulation
+          and 'session.Belts=BeltTransmission.new(graph,copies,runtime)' in simulation
+          and 'function Transmission:Step(dt)' in shaft_gears
+          and 'function Transmission:Step(dt)' in belts)
     check("Current docs and regressions documented",
           (ROOT / "docs/ARCHITECTURE.md").is_file()
           and (ROOT / "docs/QA_REGRESSION.md").is_file()
