@@ -45,6 +45,12 @@ end
 -- Express the chosen handle in the preview's own local reference frame so
 -- WorldPivot, clone ordering and other members never affect the grab point.
 function Origin.PreviewLocal(ghost)
+    -- A primitive may contain decorative nested Models. Only an explicit
+    -- component ghost should look inside member models for its origin.
+    if ghost:GetAttribute("FitPivotScope")~="Component"
+        and ghost.PrimaryPart then
+        return Origin.PrimitiveLocal(ghost),Origin.HasPrimitive(ghost)
+    end
     local members={}
     for _,child in ipairs(ghost:GetChildren()) do
         if child:IsA("Model") and child.PrimaryPart then
