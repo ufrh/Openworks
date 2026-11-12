@@ -12,7 +12,8 @@ function Features.Describe(model)
     local cf=model:GetPivot()
     local isShaft=Alignment.IsShaft(model)
     local axis=Alignment.TargetAxis(model)
-    local gear=GearMath.Kind(model)
+    local gearKind=GearMath.Kind(model)
+    local gear=if gearKind~="None" then gearKind else nil
     local pulley=model:GetAttribute("PrimitiveFamily")=="Pulley"
     return {
         Model=model,
