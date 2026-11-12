@@ -334,9 +334,9 @@ function Panel:SelectWorldAtCenter()
     return node
 end
 
-function Panel:CreateTreeRow(node,depth,expandable)
+function Panel:CreateTreeRow(node,depth,expandable,force)
     local search=self.Search.Text:lower()
-    if search~="" and not node.name:lower():find(search,1,true)
+    if not force and search~="" and not node.name:lower():find(search,1,true)
         and not tostring(node.id or ""):lower():find(search,1,true) then
         return
     end
@@ -415,7 +415,7 @@ function Panel:RenderTree()
                     -- matched the search rather than the assembly name.
                     header.name=a.name
                 end
-                self:CreateTreeRow(header,0,true)
+                self:CreateTreeRow(header,0,true,true)
                 if self.Expanded[a.key]~=false or search~="" then
                     for _,c in ipairs(a.children) do
                         if c.kind=="component" then
@@ -427,20 +427,20 @@ function Panel:RenderTree()
                                 end
                             end
                             if contains then
-                                self:CreateTreeRow(c,1,true)
+                                self:CreateTreeRow(c,1,true,true)
                                 if self.Expanded[c.key]~=false or search~="" then
                                     for _,p in ipairs(c.children) do
                                         if search=="" or parentMatch
                                             or c.name:lower():find(search,1,true)
                                             or p.name:lower():find(search,1,true) then
-                                            self:CreateTreeRow(p,2,false)
+                                            self:CreateTreeRow(p,2,false,true)
                                         end
                                     end
                                 end
                             end
                         elseif search=="" or parentMatch
                             or c.name:lower():find(search,1,true) then
-                            self:CreateTreeRow(c,1,false)
+                            self:CreateTreeRow(c,1,false,true)
                         end
                     end
                 end
@@ -669,7 +669,8 @@ function Panel:RelationshipProperties(node)
         self:Field("Lower limit",relation:GetAttribute("LowerLimit") or -4)
         self:Field("Upper limit",relation:GetAttribute("UpperLimit") or 4)
         self.Flags.Limits=relation:GetAttribute("LimitsEnabled")==true
-        local toggle=self:ActionButton(
+        local toggle
+        toggle=self:ActionButton(
             if self.Flags.Limits then "Limits: enabled" else "Limits: disabled",
             "Toggle mechanical motion limits",function()
                 self.Flags.Limits=not self.Flags.Limits
@@ -910,6 +911,9 @@ function Panel:Start()
     end))
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
         if input.KeyCode==Enum.KeyCode.Tab and not processed
+            and not self.Build.SmartMatch
+            and not self.Build.LockedAlignment
+            and not self.Build.PendingMateChoice
             and not UIS:GetFocusedTextBox()
             and not player:GetAttribute("OPENWORKS_AssemblyNaming")
             and not player:GetAttribute("OPENWORKS_PlotMenuOpen")
