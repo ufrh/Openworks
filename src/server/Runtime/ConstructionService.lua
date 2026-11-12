@@ -1077,8 +1077,8 @@ local function handle(player, payload)
     end
 
     local action = payload.action
-    -- Saving and loading are deliberate, separate GUI actions; never timer,
-    -- departure, or server-shutdown callbacks.
+    -- Manual Save/Load is available alongside periodic server autosaves.
+    -- Only authored geometry is persisted, never temporary physics clones.
     if action=="SavePlot" or action=="LoadPlot" then
         if not persistence or not plots:Get(player) then
             return {ok=false,message="Plot isn't ready"}
@@ -1275,6 +1275,10 @@ local function handle(player, payload)
         and action~="GetMechanismInfo" and not metadataOnly then
         mechanical:RebuildRelations()
     end
+    if result and persistence and not simulationAction
+        and action~="GetMechanismInfo" then
+        persistence:MarkDirty(player)
+    end
     local message = tostring(extra or "")
     if result and action == "Place" then message = "Placed" end
     if result and action == "Update" then message = "Updated" end
@@ -1399,7 +1403,7 @@ function Service.Start()
             player:Kick("All OPENWORKS plots are occupied")
             return
         end
-        persistence:Status(player,"Loading","Loading last manually saved plot")
+        persistence:Status(player,"Loading","Loading latest saved plot")
         simulation:SetStatus(player,false)
         player.CharacterAdded:Connect(function(character)
             if simulation:IsRunning(player) then simulation:Stop(player) end
@@ -1414,6 +1418,7 @@ function Service.Start()
             end
         end)
     end
+    persistence:StartAutoSave()
     Players.PlayerAdded:Connect(initializePlayer)
     for _, present in ipairs(Players:GetPlayers()) do initializePlayer(present) end
 
@@ -1470,6 +1475,13 @@ function Service.Start()
     end)
 
     Players.PlayerRemoving:Connect(function(player)
+        if persistence and persistence.Dirty[player] then
+            local ok,why=persistence:Flush(player,"Exit")
+            if not ok then
+                warn("[OPENWORKS] Exit save for "..player.Name
+                    .." failed: "..tostring(why))
+            end
+        end
         if simulation then simulation:ClearPlayer(player) end
         if assemblies then assemblies:ClearPlayer(player) end
         for _, model in ipairs(folder:GetChildren()) do
@@ -1484,7 +1496,34 @@ function Service.Start()
         lastRequest[player] = nil
     end)
 
-    print("[OPENWORKS] ConstructionService ready: isolated plots / manual saves / relationships")
+    game:BindToClose(function()
+        if not persistence then return end
+        persistence:StopAutoSave()
+        local remaining=0
+        for _,player in ipairs(Players:GetPlayers()) do
+            if persistence.Dirty[player] then
+                remaining+=1
+                task.spawn(function()
+                    local ok,why=persistence:Flush(player,"Shutdown")
+                    if not ok then
+                        warn("[OPENWORKS] Shutdown save for "..player.Name
+                            .." failed: "..tostring(why))
+                    end
+                    remaining-=1
+                end)
+            end
+        end
+        local started=os.clock()
+        while remaining>0 and os.clock()-started<25 do
+            task.wait(0.1)
+        end
+        if remaining>0 then
+            warn("[OPENWORKS] Shutdown has "
+                ..remaining.." unfinished plot save(s)")
+        end
+    end)
+
+    print("[OPENWORKS] ConstructionService ready: isolated plots / autosave + manual saves / relationships")
 end
 
 return Service

@@ -1,5 +1,5 @@
 --!strict
--- Player-owned construction and persistence limits for manual-save plots.
+-- Player-owned construction and persistence limits. Autosave is dirty-only.
 return table.freeze({
     MaxPartsPerPlayer = 500,
     UndoLimit = 50,
@@ -10,5 +10,9 @@ return table.freeze({
     PlotSize = 124,
     PlotSpacing = 168,
     MaxPlotsPerServer = 20,
-    ManualSaveOnly = true,
+    AutoSaveEnabled = true,
+    AutoSaveIntervalSeconds = 120,
+    AutoSaveDebounceSeconds = 10,
+    AutoSaveCheckSeconds = 10,
+    AutoSaveRetrySeconds = 45,
 })
