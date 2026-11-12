@@ -97,6 +97,9 @@ end
 
 function Tool:Tell(message)
     self.LastMessage=tostring(message)
+    if self.UnifiedExplorer then
+        self.UnifiedExplorer:Message(self.LastMessage)
+    end
     self.MessageUntil=os.clock()+3.2
     self:Refresh()
 end
