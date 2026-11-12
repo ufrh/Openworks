@@ -33,7 +33,7 @@ The native Roblox hotbar now contains **exactly three** primary tools. Letter ke
 
 Build/Place still uses **B** to open the catalog when already active; Build/Edit still uses **E** for component interior editing when already active; Build/Resize uses **V** to toggle face handles when already active. A live fit reserves Q/E for shaft roll so E does not inadvertently switch subtools.
 
-The old six-tool instructional HUDs, visualizers, and separate property windows are **still present during Phase 1**. Consolidating them belongs to subsequent UI v2 phases. See [Phase 1 implementation notes](docs/UI_V2_PHASE_1_IMPLEMENTATION.md) and the [regression matrix](docs/UI_V2_REGRESSION_MATRIX.md).
+Phase 2 now implements shared aqua/purple/orange/green/red wireframe feedback, visual ghost edges and minimal relationship adornments, replacing competing selection/grounding Highlights. **Exact triangle-edge CSG wireframes and localized CSG interference outlines remain unfinished**. Instructional HUDs and Properties are still temporary until later phases. See [Phase 2 notes](docs/UI_V2_PHASE_2_IMPLEMENTATION.md) and the [regression matrix](docs/UI_V2_REGRESSION_MATRIX.md).
 
 The following three ideas **must never be conflated**:
 
