@@ -90,6 +90,7 @@ function Controller:TryGrab()
     if self.Assembly.Mode~="Simulate"
         or not self.Assembly:IsSimulating()
         or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
+        or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
         or player:GetAttribute("OPENWORKS_SimulationPaused")==true
         or not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
         return false
@@ -148,6 +149,7 @@ function Controller:Start()
             or not self.Assembly:IsSimulating()
             or player:GetAttribute("OPENWORKS_SimulationPaused")==true
             or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
+            or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
             or not UserInputService:IsMouseButtonPressed(
                 Enum.UserInputType.MouseButton1) then
             self:Release()
