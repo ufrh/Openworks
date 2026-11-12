@@ -1029,41 +1029,6 @@ function Controller:UpdateHover()
     return
 end
 
-function Controller:_LegacyHoverDisabled()
-    if not self.Feedback then return end
-    local now=os.clock()
-    if now-(self.LastHoverTick or 0)<0.11 then return end
-    self.LastHoverTick=now
-    if self.Tools.PrimaryId~="Build" or self.Mode~="Edit"
-        or self.Pending or self.ScaleMode
-        or self.CatalogOpen or self.PendingMateChoice
-        or player:GetAttribute("OPENWORKS_CursorUIOpen")==true
-        or player:GetAttribute("OPENWORKS_Simulating")==true then
-        self.Feedback:Clear("hover")
-        return
-    end
-    local built=workspace:FindFirstChild(Config.FolderName)
-    local hit=self:CastCenter(false)
-    local target=if built and hit then topBuiltModel(hit.Instance,built) else nil
-    if not target or target:GetAttribute("OwnerUserId")~=player.UserId then
-        self.Feedback:Clear("hover")
-        return
-    end
-    local models={target}
-    local component=target:GetAttribute("ComponentId")
-    if type(component)=="string" and component~="" then
-        models=self:ComponentMembers(component)
-        local anchor=ComponentGeometry.CentralPrimitive(models)
-        if anchor then
-            local ordered={anchor}
-            for _,member in ipairs(models) do
-                if member~=anchor then table.insert(ordered,member) end
-            end
-            models=ordered
-        end
-    end
-    self.Feedback:Set("hover","target",models,"snap",#models>1)
-end
 
 function Controller:RefreshSelectionHighlights()
     if not self.Feedback then return end
