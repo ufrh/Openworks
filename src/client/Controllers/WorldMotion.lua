@@ -18,6 +18,7 @@ WorldMotion.Profile=table.freeze({
 local running=setmetatable({}, {__mode="k"})
 local MAX_ANIMATED_PARTS=260
 local MAX_ANIMATED_MODELS=48
+local MAX_REPLICATION_HOLD=0.45
 
 function WorldMotion.Alpha(dt:number,response:number?):number
     return 1-math.exp(
@@ -123,7 +124,7 @@ function WorldMotion.AnimateTurn(models,delta:CFrame,seconds:number?)
             end
         end
         clone.Parent=workspace
-        table.insert(ghosts,{copy=clone,from=from})
+        table.insert(ghosts,{copy=clone,from=from,real=model})
         for _,part in ipairs(model:GetDescendants()) do
             if part:IsA("BasePart") then
                 table.insert(originals,{
@@ -137,15 +138,42 @@ function WorldMotion.AnimateTurn(models,delta:CFrame,seconds:number?)
 
     local start=os.clock()
     local duration=math.max(0.035,seconds or WorldMotion.Profile.TurnSeconds)
+    local function stillWaitingForReplication()
+        -- A RemoteFunction response can precede property replication.
+        -- Keep the ghost at its FINAL pose only while a real model still
+        -- appears unchanged; never keep moving after animation ends.
+        for _,entry in ipairs(ghosts) do
+            if entry.real.Parent then
+                local previous=entry.from
+                local expected=delta*previous
+                local changed=(expected.Position-previous.Position).Magnitude>0.012
+                    or expected.LookVector:Dot(previous.LookVector)<0.9999
+                    or expected.UpVector:Dot(previous.UpVector)<0.9999
+                if changed then
+                    local actual=entry.real:GetPivot()
+                    if (actual.Position-previous.Position).Magnitude<0.003
+                        and actual.LookVector:Dot(previous.LookVector)>0.99998
+                        and actual.UpVector:Dot(previous.UpVector)>0.99998 then
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end
     connection=RunService.RenderStepped:Connect(function()
-        local t=math.clamp((os.clock()-start)/duration,0,1)
+        local elapsed=os.clock()-start
+        local t=math.clamp(elapsed/duration,0,1)
         local eased=WorldMotion.Ease(t)
         for _,entry in ipairs(ghosts) do
             if entry.copy.Parent then
                 entry.copy:PivotTo(entry.from:Lerp(delta*entry.from,eased))
             end
         end
-        if t>=1 then cleanup() end
+        if t>=1 and (not stillWaitingForReplication()
+            or elapsed>=duration+MAX_REPLICATION_HOLD) then
+            cleanup()
+        end
     end)
     return cleanup
 end

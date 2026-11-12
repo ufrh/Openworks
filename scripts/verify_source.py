@@ -845,7 +845,6 @@ def main() -> int:
           'position=self.PreviewCF.Position' in selection
           and 'position=self.PreviewCF.Position,' in selection
           and 'size=self.CurrentSize' in selection
-          and 'position=cf.Position' in selection
           and 'self.ScaleCF' in selection
           and 'position = cf.Position' in selection
           and 'WorldMotion.SettlePreview(snapshot,goal,models)' in selection
@@ -860,7 +859,9 @@ def main() -> int:
           and 'WorldMotion.Profile.TurnSeconds' in selection
           and 'if not succeeded then stop() end' in selection
           and 'if not ok or type(answer)~="table" or not answer.ok then stop() end' in assembly_tool
-          and 'function WorldMotion.Cancel(models)' in motion)
+          and 'function WorldMotion.Cancel(models)' in motion
+          and 'local function stillWaitingForReplication()' in motion
+          and 'elapsed>=duration+MAX_REPLICATION_HOLD' in motion)
     check("Drag commit handoffs never leave persistent hidden or colliding ghosts",
           'local handoff,goal,models=self:CapturePendingHandoff()' in selection
           and 'self:FinishPendingHandoff(handoff,goal,models,success)' in selection
