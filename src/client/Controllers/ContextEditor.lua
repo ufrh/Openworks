@@ -434,6 +434,16 @@ function Panel:Select(node,propagate)
                 if own(model) then table.insert(members,model) end
             end
             if #members>0 then
+                if node.kind=="component" then
+                    local anchor=ComponentGeometry.CentralPrimitive(members)
+                    if anchor then
+                        local ordered={anchor}
+                        for _,model in ipairs(members) do
+                            if model~=anchor then table.insert(ordered,model) end
+                        end
+                        members=ordered
+                    end
+                end
                 self.Feedback:Set("context-selection","selected",
                     members,if node.kind=="assembly" then "assembly"
                     else "selection",node.kind=="assembly"
@@ -1190,7 +1200,8 @@ function Panel:Start()
             and not player:GetAttribute("OPENWORKS_PlotMenuOpen")
             and not player:GetAttribute("OPENWORKS_PropertiesOpen") then
             local node=self:SelectWorldAtCenter()
-            if node then self:OpenForNode(node,UIS:GetMouseLocation()) end
+            if node then self:OpenForNode(node,UIS:GetMouseLocation())
+            else self:CloseContext() end
         end
     end))
     for _,attribute in ipairs({
