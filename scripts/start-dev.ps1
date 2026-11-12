@@ -42,8 +42,8 @@ if ($RemoteSha) {
     $BehindCount = [int]((& git rev-list "HEAD..origin/$Branch" --count | Out-String).Trim())
 }
 Write-Host "[OPENWORKS] Local source: $Branch @ $LocalSha | origin/$Branch @ $RemoteSha"
-if ($Branch -ne 'dev') {
-    Write-Warning "[OPENWORKS] You are running '$Branch', not dev. The current OPENWORKS redesign baseline is on dev."
+if ($Branch -ne 'feature/ui-reorganization-v2') {
+    Write-Warning "[OPENWORKS] Active '$Branch'. UI v2 with integrated mechanics is on feature/ui-reorganization-v2."
 }
 if ($BehindCount -gt 0) {
     Write-Warning "[OPENWORKS] STALE SOURCE: local '$Branch' is $BehindCount commit(s) behind origin/$Branch."
