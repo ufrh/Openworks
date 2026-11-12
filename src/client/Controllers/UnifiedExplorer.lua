@@ -257,8 +257,6 @@ function Panel:MakeUI()
                 and self.Tools.SubtoolId=="AssemblyEditor"
                 and not simulating() then
                 self.AssemblyTool:BeginNew()
-                self:Focus(true)
-                self:FocusAssemblyName()
             end
         end)
     self.NewAssemblyButton.Visible=false
@@ -714,7 +712,6 @@ function Panel:RenderAssemblyDraft(node)
         self:ActionButton("Create assembly",
             "Start a named assembly and select its physical members",function()
                 draft:BeginNew()
-                self:FocusAssemblyName()
             end)
         return
     end
@@ -722,7 +719,14 @@ function Panel:RenderAssemblyDraft(node)
     for _ in pairs(draft.Selected) do count+=1 end
     self:Value("Mode",if draft.EditingId then "Editing saved assembly"
         else "Creating assembly")
-    self:Field("Draft name",draft.Name)
+    local nameField=self:Field("Draft name",draft.Name)
+    nameField:GetPropertyChangedSignal("Text"):Connect(function()
+        -- Preserve in-progress typing if the user selects another object
+        -- before committing the assembly draft.
+        if draft.Stage=="Selecting" then
+            draft.Name=nameField.Text
+        end
+    end)
     self:Value("Selected primitives",count)
     if node and (node.kind=="primitive" or node.kind=="component")
         and node.members and #node.members>0
