@@ -4,6 +4,11 @@
 -- Only presentation clones/ghosts are interpolated: placement, collision,
 -- constraints, sizes and persistence remain EXACT server-authoritative state.
 local RunService=game:GetService("RunService")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local shared=ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction")
+local Alignment=require(shared:WaitForChild("AlignmentMath"))
+local Grid=require(shared:WaitForChild("GridMath"))
 
 local WorldMotion={}
 WorldMotion.Profile=table.freeze({
@@ -182,6 +187,32 @@ function WorldMotion.AnimateMove(models,direction:Vector3,seconds:number?)
     if direction.Magnitude<0.00001 then return function() end end
     return WorldMotion.AnimateTurn(models,CFrame.new(direction),
         seconds or WorldMotion.Profile.NudgeSeconds)
+end
+
+-- Post-fit offset/roll uses the exact SAME SE(3) transform as the
+-- server's authored PoseShaft operation; we only animate a presentation
+-- copy of the shaft / explicitly selected moving component.
+function WorldMotion.AnimateShaftPose(models,shaft:Model,opening:Model,
+    offset:number,roll:number)
+    local localAxis=Alignment.TargetAxis(opening)
+    if not localAxis or not shaft.PrimaryPart then
+        return function() end
+    end
+    local targetCF=opening:GetPivot()
+    local axis=targetCF:VectorToWorldSpace(localAxis).Unit
+    local pivot=targetCF.Position
+    local oldOffset=shaft:GetAttribute("AlignedOffsetU") or 0
+    local oldRoll=shaft:GetAttribute("ShaftRollDegrees") or 0
+    if math.abs(offset-oldOffset)<0.001
+        and math.abs(roll-oldRoll)<0.001 then
+        return function() end
+    end
+    local delta=CFrame.new(axis*((offset-oldOffset)*Grid.Unit))
+        *CFrame.new(pivot)
+        *CFrame.fromAxisAngle(axis,math.rad(roll-oldRoll))
+        *CFrame.new(-pivot)
+    return WorldMotion.AnimateTurn(models,delta,
+        WorldMotion.Profile.NudgeSeconds)
 end
 
 -- After the server ACKs a drag, the blue preview may be one or two frames

@@ -474,6 +474,8 @@ end
 
 function Controller:PoseConnected(offset,roll)
     if self.Stage~="Fit" or not self.Source or not self.Housing then return end
+    local stop=WorldMotion.AnimateShaftPose(self.Members,self.Source,
+        self.Housing,offset,roll)
     local ok=self:Request({
         action="PoseShaft",
         sourceId=self.Source:GetAttribute("InstanceId"),
@@ -484,6 +486,8 @@ function Controller:PoseConnected(offset,roll)
     if ok then
         self.OffsetUnits=offset
         self.RollDegrees=roll
+    else
+        stop()
     end
 end
 

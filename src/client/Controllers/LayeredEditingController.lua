@@ -554,9 +554,11 @@ function Layered:AdjustOffset(wheel)
     return true
 end
 
-function Layered:CommitPose(nextOffset, nextRoll)
+function Layered:CommitPose(nextOffset,nextRoll)
     local align=self.Alignment
     if not align or not align.Target then return end
+    local stop=WorldMotion.AnimateShaftPose(align.Members,align.Shaft,
+        align.Target,nextOffset,nextRoll)
     local ok=self.Parent:Request({
         action="PoseShaft",
         sourceId=align.Shaft:GetAttribute("InstanceId"),
@@ -568,6 +570,8 @@ function Layered:CommitPose(nextOffset, nextRoll)
         align.OffsetUnits=nextOffset
         align.RollDegrees=nextRoll
         self.Parent:RefreshHUD()
+    else
+        stop()
     end
 end
 

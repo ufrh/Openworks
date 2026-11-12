@@ -862,6 +862,17 @@ def main() -> int:
           and 'function WorldMotion.Cancel(models)' in motion
           and 'local function stillWaitingForReplication()' in motion
           and 'elapsed>=duration+MAX_REPLICATION_HOLD' in motion)
+    check("Post-fit shaft depth and roll inherit exact same visual-only motion",
+          'function WorldMotion.AnimateShaftPose(' in motion
+          and 'local oldOffset=shaft:GetAttribute("AlignedOffsetU") or 0' in motion
+          and 'local oldRoll=shaft:GetAttribute("ShaftRollDegrees") or 0' in motion
+          and 'CFrame.fromAxisAngle(axis,math.rad(roll-oldRoll))' in motion
+          and 'WorldMotion.Profile.NudgeSeconds' in motion
+          and 'WorldMotion.AnimateShaftPose(align.Members,align.Shaft,' in layered
+          and 'WorldMotion.AnimateShaftPose(self.Members,self.Source,' in alignment_editor
+          and 'if ok then' in layered
+          and 'stop()' in layered
+          and 'stop()' in alignment_editor)
     check("Drag commit handoffs never leave persistent hidden or colliding ghosts",
           'local handoff,goal,models=self:CapturePendingHandoff()' in selection
           and 'self:FinishPendingHandoff(handoff,goal,models,success)' in selection
