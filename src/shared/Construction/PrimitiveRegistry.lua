@@ -4,6 +4,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LIBRARY_NAME = "OPENWORKS_PrimitiveLibrary_DRAFT"
+local Catalog=require(script.Parent:WaitForChild("PrimitiveCatalogMetadata"))
 
 local Registry = {}
 
@@ -42,9 +43,15 @@ function Registry.List()
 
             local geometry = model.PrimaryPart or model:FindFirstChild("Geometry")
             if geometry and geometry:IsA("BasePart") then
+                local presentation=Catalog.Describe(model.Name,category.Name,model)
                 table.insert(entries, {
                     Id = model.Name,
-                    Category = category.Name,
+                    -- The ID never changes; names/categories are UI only.
+                    Category = presentation.Group,
+                    SourceCategory=category.Name,
+                    DisplayName=presentation.DisplayName,
+                    GroupOrder=presentation.GroupOrder,
+                    SearchText=presentation.SearchText,
                     ResizeMode = Registry.ResolveResizeMode(model),
                     Model = model,
                 })
@@ -53,7 +60,13 @@ function Registry.List()
     end
 
     table.sort(entries, function(a, b)
-        return a.Id < b.Id
+        if a.GroupOrder~=b.GroupOrder then
+            return a.GroupOrder<b.GroupOrder
+        end
+        if a.DisplayName~=b.DisplayName then
+            return a.DisplayName<b.DisplayName
+        end
+        return a.Id<b.Id
     end)
 
     return entries
