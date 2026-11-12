@@ -508,7 +508,7 @@ function Tool:Cancel()
 end
 
 function Tool:ClearVisuals()
-    if self.PreviewRoot then self.PreviewRoot:Destroy() end
+    if self.Feedback then self.Feedback:Clear("assembly") end
     self.PreviewRoot=nil
     self.PreviewCache=""
     self.PreviewOutlines={}
@@ -516,7 +516,8 @@ function Tool:ClearVisuals()
     player:SetAttribute("OPENWORKS_HoverAssemblyId","")
 end
 
-function Tool:ShowVisuals(members,color)
+function Tool:ShowVisuals(members,_color)
+    if not self.Feedback then return end
     local byId={}
     for _,member in ipairs(members) do
         local id=instanceId(member)
@@ -536,35 +537,24 @@ function Tool:ShowVisuals(members,color)
             sameModels=false
         end
     end
-    local signature=table.concat(signatureParts,";")
-    if #ids==0 then
-        if self.PreviewRoot then self:ClearVisuals() end
-        return
-    end
-    if signature==self.PreviewCache and self.PreviewRoot
-        and sameModels then return end
-    self:ClearVisuals()
-    if #ids==0 then return end
+    local selecting=self.Mode=="Assembly" and self.Stage=="Selecting"
+    local signature=(if selecting then "members|" else "outer|")
+        ..table.concat(signatureParts,";")
+    if signature==self.PreviewCache and sameModels then return end
+    self.Feedback:Clear("assembly")
     self.PreviewCache=signature
-    -- Native Highlights/HandleAdornments render as 3D world feedback.
-    -- Their lifetime is still owned by this client controller, not the
-    -- server's authored constructions.
-    local root=make("Folder",workspace,{
-        Name="OPENWORKS_LocalAssemblyPreview",
-    })
-    self.PreviewRoot=root
     self.PreviewModels=byId
-    -- Each selected assembly primitive gets its OWN silhouette, even
-    -- when it belongs to the same editor component. The former unified
-    -- component bounding-box outline enclosed unwanted empty space.
-    for _,id in ipairs(ids) do
-        local model=byId[id]
-        make("Highlight",root,{
-            Name="AssemblyPrimitive",Adornee=model,
-            FillColor=color,FillTransparency=0.88,
-            OutlineColor=color,OutlineTransparency=0.06,
-            DepthMode=Enum.HighlightDepthMode.Occluded,
-        })
+    if #ids==0 then return end
+    if selecting then
+        -- Membership is shown as one purple box PER actual primitive.
+        for _,id in ipairs(ids) do
+            self.Feedback:Set("assembly",id,{byId[id]},"assembly",false)
+        end
+    else
+        -- Hover/selection previews the WHOLE assembly as one local box.
+        local ordered={}
+        for _,id in ipairs(ids) do table.insert(ordered,byId[id]) end
+        self.Feedback:Set("assembly","outer",ordered,"assembly",true)
     end
 end
 
