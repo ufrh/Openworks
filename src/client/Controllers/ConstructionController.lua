@@ -736,7 +736,15 @@ function Controller:SmartDrop(chosenKind)
     if ok then
         if self.Feedback and (match.kind=="Bore" or match.kind=="Hub"
             or match.kind=="BoltHole" or match.kind=="CrankCoupling") then
-            self.Feedback:FlashSuccess({match.source,match.target})
+            local participants={match.target}
+            if self.Pending=="ComponentMove" then
+                for _,member in ipairs(self.SelectedParts) do
+                    table.insert(participants,member)
+                end
+            elseif self.Selected then
+                table.insert(participants,self.Selected)
+            end
+            self.Feedback:FlashSuccess(participants)
         end
         self:CancelPending()
         self:RefreshHUD()
@@ -1577,18 +1585,36 @@ function Controller:Place(chosenKind)
             and (placedMate.kind=="Bore" or placedMate.kind=="Hub"
                 or placedMate.kind=="BoltHole"
                 or placedMate.kind=="CrankCoupling") then
-            local participants={placedMate.target}
-            local built=workspace:FindFirstChild(Config.FolderName)
-            if built and reply and type(reply.instanceId)=="string" then
-                for _,model in ipairs(built:GetChildren()) do
-                    if model:IsA("Model")
-                        and model:GetAttribute("InstanceId")==reply.instanceId then
-                        table.insert(participants,model)
-                        break
+            local target=placedMate.target
+            local newId=reply and reply.instanceId
+            local feedback=self.Feedback
+            -- The server can acknowledge before its authored Model replicates.
+            -- Only flash once the real new object exists, never a recycled ghost.
+            task.spawn(function()
+                local created
+                if type(newId)=="string" then
+                    for _=1,8 do
+                        local built=workspace:FindFirstChild(Config.FolderName)
+                        if built then
+                            for _,model in ipairs(built:GetChildren()) do
+                                if model:IsA("Model")
+                                    and model:GetAttribute("InstanceId")==newId then
+                                    created=model
+                                    break
+                                end
+                            end
+                        end
+                        if created then break end
+                        task.wait(0.05)
                     end
                 end
-            end
-            self.Feedback:FlashSuccess(participants)
+                local participants={}
+                if target and target.Parent then table.insert(participants,target) end
+                if created then table.insert(participants,created) end
+                if #participants>0 and feedback then
+                    feedback:FlashSuccess(participants)
+                end
+            end)
         end
         if self.Pending=="Copy" then
             self:CancelPending()
