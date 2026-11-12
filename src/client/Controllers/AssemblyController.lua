@@ -110,6 +110,10 @@ function Controller.new(tools)
         RollDegrees = 0,
         GearFirst = nil,
         PairFirst = nil,
+        PairCandidate = nil,
+        PairValid = true,
+        WeldCandidate = nil,
+        WeldValid = true,
         PairKind = nil,
         Joint = nil,
         LastRollSend = 0,
@@ -183,14 +187,18 @@ function Controller:SyncConnectionFeedback()
         elseif self.Stage=="PairSecond" then self.PairFirst
         elseif self.Stage=="GearSecond" then self.GearFirst
         else self.Housing
-    local second=if self.WeldMode then nil
+    local second=if self.WeldMode then self.WeldCandidate
+        elseif self.Stage=="PairSecond" then self.PairCandidate
         elseif self.Stage=="Preview" then self.Source else nil
+    local valid=if self.WeldMode then self.WeldValid
+        elseif self.Stage=="PairSecond" then self.PairValid
+        else self.PreviewValid
     if first and first.Parent then
         self.Feedback:Set("connection","first",{first},"pending",false)
     else self.Feedback:Remove("connection","first") end
     if second and second.Parent then
         self.Feedback:Set("connection","second",{second},
-            if self.PreviewValid then "pending" else "invalid",false)
+            if valid then "pending" else "invalid",false)
     else self.Feedback:Remove("connection","second") end
 end
 
@@ -335,6 +343,10 @@ function Controller:Reset()
     self.RollDegrees = 0
     self.GearFirst = nil
     self.PairFirst = nil
+    self.PairCandidate = nil
+    self.PairValid = true
+    self.WeldCandidate = nil
+    self.WeldValid = true
     self.PairKind = nil
     self.Joint = nil
     self.WeldFirst=nil
@@ -551,6 +563,9 @@ function Controller:WeldClick()
         self:Message("Select a different touching solid")
         return
     end
+    self.WeldCandidate=picked
+    self.WeldValid=true
+    self:SyncConnectionFeedback()
     local success=self:Request({
         action="CreateWeld",
         sourceId=self.WeldFirst:GetAttribute("InstanceId"),
@@ -563,6 +578,8 @@ function Controller:WeldClick()
         self.WeldFirst=nil
         self.WeldMode=false
         self:StartManualJoint()
+    else
+        self.WeldValid=false
     end
     self:RefreshHUD()
 end
@@ -691,6 +708,9 @@ function Controller:Activate()
             return
         end
         local first=self.PairFirst
+        self.PairCandidate=second
+        self.PairValid=true
+        self:SyncConnectionFeedback()
         local request={
             action=if self.PairKind=="CrankCoupling"
                 then "CoupleHandCrank" else "Create"..self.PairKind,
@@ -709,6 +729,9 @@ function Controller:Activate()
                 self.Feedback:FlashSuccess({first,second})
             end
             self:StartManualJoint()
+        else
+            self.PairValid=false
+            self:RefreshHUD()
         end
         return
     end
