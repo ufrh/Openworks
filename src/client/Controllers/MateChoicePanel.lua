@@ -30,7 +30,6 @@ local BLOCKED_KEYS={
     Enum.KeyCode.KeypadSix,Enum.KeyCode.KeypadSeven,
     Enum.KeyCode.KeypadEight,Enum.KeyCode.KeypadNine,
     Enum.KeyCode.Return,Enum.KeyCode.KeypadEnter,
-    Enum.KeyCode.Escape,
 }
 
 local function create(className,parent,properties)
@@ -162,7 +161,7 @@ function Mate.new(_ownerGui)
         BackgroundTransparency=1,
         TextColor3=Color3.fromRGB(183,203,214),
         Font=Enum.Font.GothamMedium,TextSize=12,
-        Text="CANCEL  •  ESC",
+        Text="CANCEL  •  ENTER",
         AutoButtonColor=true,Active=true,BorderSizePixel=0,ZIndex=32,
     })
     self.CancelButton.Activated:Connect(function() self:Cancel() end)
@@ -207,7 +206,8 @@ function Mate:Show(callback,fitCount)
     ContextActionService:BindActionAtPriority(
         "OPENWORKS_ShaftChoice",function(_,state,input)
             if state==Enum.UserInputState.Begin
-                and input.KeyCode==Enum.KeyCode.Escape then
+                and (input.KeyCode==Enum.KeyCode.Return
+                    or input.KeyCode==Enum.KeyCode.KeypadEnter) then
                 self:Cancel()
             end
             return Enum.ContextActionResult.Sink
