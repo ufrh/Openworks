@@ -18,8 +18,10 @@ function Actions.List(node,tools,simulating,assemblyStage)
             if node.kind=="primitive" then
                 add("resize","Resize","Open face handles and precise sizing","V")
             end
-            add("paint","Appearance","Edit physical material and surface finish","M")
-            if subtool=="Edit" then
+            if not node.partialComponent then
+                add("paint","Appearance","Edit physical material and surface finish","M")
+            end
+            if subtool=="Edit" and not node.partialComponent then
                 add("duplicate","Duplicate","Copy this object while preserving existing duplication rules","Ctrl+D")
                 add("delete","Delete","Delete the selected construction and its linked relationships","Del")
                 if node.kind=="component" then
@@ -31,7 +33,8 @@ function Actions.List(node,tools,simulating,assemblyStage)
                 add("connections","Connections","Inspect actual mechanical relationships for this object")
             end
         elseif primary=="AssemblySimulation" and not simulating then
-            if subtool=="AssemblyEditor" and assemblyStage=="Selecting" then
+            if subtool=="AssemblyEditor" and assemblyStage=="Selecting"
+                and not node.partialComponent then
                 add("membership","Toggle membership","Add or remove this object from the assembly draft")
             end
             if node.kind=="primitive" then
