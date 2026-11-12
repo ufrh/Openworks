@@ -785,8 +785,9 @@ local function rotatePrimitiveWorld(player,payload)
     if model:GetAttribute("ComponentId") then
         return false,"Rotate the complete body or enter component editing"
     end
-    local delta=RotationMath.Delta(payload.axis,payload.direction,
-        model:GetPivot().Position)
+    local center=if FitOrigin.HasPrimitive(model)
+        then FitOrigin.World(model,"Primitive") else model:GetPivot().Position
+    local delta=RotationMath.Delta(payload.axis,payload.direction,center)
     if not delta then return false,"Choose world X, Y or Z" end
     local before=snapshot(model)
     local wanted=delta*model:GetPivot()
