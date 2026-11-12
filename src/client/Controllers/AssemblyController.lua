@@ -176,9 +176,9 @@ end
 function Controller:RefreshHUD()
     if not self.Gui then return end
     self.Gui.Enabled = self.Active
-        and (self.Mode=="Simulate" or self.Mode=="Weld" or self.ManualActive)
+        and (self.Mode=="Simulate" or self.WeldMode or self.ManualActive)
     self.HUDPanel.Visible=self.Mode=="Simulate"
-        or self.Mode=="Weld" or self.ManualActive
+        or self.WeldMode or self.ManualActive
     self.HUDPanel.AnchorPoint=Vector2.new(0,0)
     self.HUDPanel.Position=if self.Mode=="Simulate"
         then UDim2.fromOffset(16,64)
@@ -188,7 +188,7 @@ function Controller:RefreshHUD()
         else UDim2.fromOffset(380,116)
     if not self.Gui.Enabled then return end
 
-    if self.Mode=="Weld" then
+    if self.Mode=="Mechanics" and self.WeldMode then
         self.Header.Text="OPENWORKS / WELD"
         self.Detail.Text=if self.WeldFirst
             then "Choose touching surfaces or an inserted shaft in a drilled block"
@@ -222,7 +222,7 @@ function Controller:RefreshHUD()
         return
     end
 
-    self.Header.Text = "OPENWORKS / EDIT / " .. string.upper(self:Kind())
+    self.Header.Text = "OPENWORKS / MECHANICS / " .. string.upper(self:Kind())
     if self.Stage == "GearFirst" then
         self.Header.Text = "OPENWORKS / GEAR TRANSMISSION"
         self.Detail.Text = "Choose the first gear"
@@ -554,7 +554,7 @@ function Controller:StartManualJoint()
 end
 
 function Controller:HandleEditClick()
-    if self.Mode ~= "Edit" or not self.ManualActive then
+    if self.Mode ~= "Mechanics" or not self.ManualActive then
         return false
     end
     self:Activate()
@@ -562,7 +562,7 @@ function Controller:HandleEditClick()
 end
 
 function Controller:IsEditingJoint()
-    return self.Mode=="Edit" and self.ManualActive
+    return self.Mode=="Mechanics" and self.ManualActive
 end
 
 function Controller:ToggleGround()
@@ -839,8 +839,21 @@ end
 function Controller:OnModeChanged(mode)
     if self.Mode~=mode then self:Reset() end
     self.Mode=mode
-    self.Active=mode=="Edit" or mode=="Simulate" or mode=="Weld"
+    self.Active=mode=="Mechanics" or mode=="Simulate"
+    self.WeldMode=false
     if self.Properties then self.Properties:Show(false) end
+    if mode=="Mechanics" and self.Tools.SubtoolId=="Connect" then
+        self:StartManualJoint()
+    end
+    self:RefreshHUD()
+end
+
+function Controller:OnSubtoolChanged(primary,subtool,_previous)
+    if primary~="Mechanics" then return end
+    self:Reset()
+    self.WeldMode=false
+    if self.Properties then self.Properties:Show(false) end
+    if subtool=="Connect" then self:StartManualJoint() end
     self:RefreshHUD()
 end
 
@@ -859,6 +872,10 @@ function Controller:Start()
     table.insert(self.Connections,self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
     end))
+    table.insert(self.Connections,self.Tools.SubtoolChanged.Event:Connect(
+        function(primary,subtool,previous)
+            self:OnSubtoolChanged(primary,subtool,previous)
+        end))
     table.insert(self.Connections,self.Tools.Activated.Event:Connect(function(mode)
         if mode=="Simulate"
             and not player:GetAttribute("OPENWORKS_PropertiesOpen") then
@@ -866,15 +883,26 @@ function Controller:Start()
             -- release stops it. Other clicks inspect the aimed body.
             if self.HandCrank and self.HandCrank:TryGrab() then return end
             self.Properties:InspectAtCenter()
-        elseif mode=="Weld" then
-            self:WeldClick()
+        elseif mode=="Mechanics" then
+            if self.Tools.SubtoolId=="Configure" then
+                self.Properties:InspectAtCenter()
+            elseif self.WeldMode then
+                self:WeldClick()
+            elseif self.ManualActive then
+                self:Activate()
+            end
         end
     end))
     table.insert(self.Connections,UserInputService.InputBegan:Connect(function(input,processed)
-        if not self.Active or UserInputService:GetFocusedTextBox() then return end
+        if not self.Active or UserInputService:GetFocusedTextBox()
+            or self.Tools:WasConsumed(input) then return end
         local key=input.KeyCode
-        if self.Mode=="Weld" then
-            if key==Enum.KeyCode.Escape then self.WeldFirst=nil self:RefreshHUD() end
+        if self.Mode=="Mechanics" and self.WeldMode then
+            if key==Enum.KeyCode.Escape or key==Enum.KeyCode.F then
+                self.WeldFirst=nil
+                self.WeldMode=false
+                self:StartManualJoint()
+            end
             return
         end
         if self.Construction and
@@ -899,14 +927,22 @@ function Controller:Start()
             return
         end
 
-        -- All mechanical authoring now lives in Edit. Only explicit
-        -- K/J/H interactions capture clicks; ordinary selection and drag
-        -- continue to belong to ConstructionController.
-        if self.Mode~="Edit" or processed then return end
+        -- Mechanics / Connect owns mechanical authoring; Build/Edit owns
+        -- world selection and geometry manipulation.
+        if self.Mode~="Mechanics"
+            or self.Tools.SubtoolId~="Connect" or processed then return end
         local control=UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
         local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        -- F enters the legacy validated two-solid weld workflow. W remains
+        -- the universal freecam forward key, so it cannot be a weld shortcut.
+        if key==Enum.KeyCode.F and not control then
+            self:Reset()
+            self.WeldMode=true
+            self:RefreshHUD()
+            return
+        end
         -- Shift+J creates a real spring between authored components.
         if key==Enum.KeyCode.J and shift then
             self:StartPair("Spring")
@@ -945,7 +981,7 @@ function Controller:Start()
         end
     end))
     table.insert(self.Connections, UserInputService.InputChanged:Connect(function(input)
-        if self.Mode~="Edit" or not self.ManualActive
+        if self.Mode~="Mechanics" or not self.ManualActive
             or (self.Stage ~= "Preview" and self.Stage ~= "Fit")
             or self:Kind() == "Fixed" then return end
         if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
@@ -983,7 +1019,7 @@ function Controller:Start()
                 self:RefreshHUD()
             end
         end
-        if self.Mode~="Edit" or not self.ManualActive
+        if self.Mode~="Mechanics" or not self.ManualActive
             or self:IsSimulating() then return end
         if self.Stage=="Preview" and self.PreviewModel and self.TargetPose then
             self.VisualPose=WorldMotion.Step(
@@ -1025,6 +1061,7 @@ function Controller:Start()
     end
     -- Use the state of the already-equipped native tool on client startup.
     self:OnModeChanged(self.Tools.ActiveId)
+    self:OnSubtoolChanged(self.Tools.PrimaryId,self.Tools.SubtoolId,nil)
 end
 
 function Controller:Destroy()
