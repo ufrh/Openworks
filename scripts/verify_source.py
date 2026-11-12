@@ -330,7 +330,7 @@ def main() -> int:
           and 'self:ActionButton("CONFIRM"' in unified_panel
           and 'Name="RightClickEditor"' in unified_panel)
     check("Context server property edits preserve owner and simulation gates",
-          'if propertyAction then' in mechanic_authority
+          'if propertyAction or action=="RemoveRelation" then' in mechanic_authority
           and 'hasEquippedTool(player,"Build")' in mechanic_authority
           and 'hasEquippedTool(player,"Mechanics")' in mechanic_authority
           and 'hasEquippedTool(player,"AssemblySimulation")' in mechanic_authority
