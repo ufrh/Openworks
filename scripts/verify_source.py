@@ -377,6 +377,62 @@ def main() -> int:
           and 'session.Belts=BeltTransmission.new(graph,copies,runtime)' in simulation
           and 'session.Belts:Step(dt)' in simulation)
 
+    origin = read("src/shared/Construction/FitOrigin.lua")
+    features = read("src/shared/Construction/FitFeatureRegistry.lua")
+    fit_solver = read("src/shared/Construction/FitSolver.lua")
+    placement = read("src/shared/Construction/SmartPlacement.lua")
+    pivot_handle = read("src/client/Controllers/FitPivotHandle.lua")
+    components = read("src/server/Runtime/ComponentService.lua")
+    persistence = read("src/server/Runtime/PlotPersistence.lua")
+    keybinds = read("src/client/Controllers/ContextKeybinds.lua")
+    check("Every primitive and component has a canonical shared local fit origin",
+          'function Origin.PrimitiveLocal(model)' in origin
+          and 'function Origin.ComponentLocal(anchor)' in origin
+          and 'function Origin.ComponentAnchor(members)' in origin
+          and 'ComponentAnchorId' in origin
+          and 'function Origin.PreviewLocal(ghost)' in origin)
+    check("Unified fit registry distinguishes shafts, bores, gears and hub mounts",
+          'function Features.PairDescriptors(left,right)' in features
+          and 'not right.ShaftAxis' in features
+          and 'not left.ShaftAxis' in features
+          and 'gearKind~="None"' in features
+          and 'FitFeatures.PairDescriptors(' in placement
+          and 'FitFeatures.Pair(source,target)~=mode' in mechanical)
+    check("Explicit origin-to-origin fitting is geometric, never a covert weld",
+          'function Solver.PivotCandidate(' in fit_solver
+          and 'relationKind="FitOnly"' in fit_solver
+          and 'FitSolver.PivotCandidate(' in placement
+          and 'match.kind=="Pivot"' in construction_ui
+          and 'self.SmartMatch.kind~="Pivot"' in construction_ui)
+    check("Server origin editor is scoped to owned actual geometry and undoable",
+          'local function setFitPivot(player,payload)' in service
+          and 'if not hitModel then' in service
+          and 'and part.CanQuery' in service
+          and 'FitOrigin.Valid(localPoint)' in service
+          and 'commitMetadata(player,{prior},{snapshot(anchor)})' in service
+          and 'fitOriginAction=action=="SetFitPivot"' in service)
+    check("Universal origins survive plot saves, transformations and copies",
+          'fitPivot=if FitOrigin.Valid(snap.fitPivotLocal)' in persistence
+          and 'componentFitPivot=if FitOrigin.Valid(snap.componentFitPivotLocal)' in persistence
+          and 'fitPivotLocal=pivot,componentFitPivotLocal=componentPivot' in persistence
+          and 'model:SetAttribute("FitPivotLocal",data.fitPivotLocal)' in service
+          and 'model:SetAttribute("ComponentFitPivotLocal",data.componentFitPivotLocal)' in service
+          and 'fitPivotLocal=payload.fitPivotLocal' in service
+          and 'FitOrigin.ComponentAnchor(members)' in components)
+    check("Both scopes get native Edit origin pickup, reset and visible handles",
+          'function Controller:EditFitPivot(reset)' in construction_ui
+          and 'function Controller:CommitFitPivot()' in construction_ui
+          and 'self:EditFitPivot(shiftHeld)' in construction_ui
+          and 'FitSolver.SurfacePose(' in construction_ui
+          and 'self.FitPivotHandle:UpdatePreview(self.Preview)' in construction_ui
+          and 'Instance.new("SphereHandleAdornment")' in pivot_handle
+          and 'Set origin' in keybinds)
+    check("World rotations use the authored origin on client and server",
+          'FitOrigin.World(self.GroupAnchor,"Component")' in construction_ui
+          and 'FitOrigin.World(self.Selected,"Primitive")' in construction_ui
+          and 'FitOrigin.World(anchor,"Component")' in components
+          and 'FitOrigin.World(model,"Primitive")' in service)
+
     check("Runtime gear engagement matches real face overlap",
           'function GearMath.AutoMeshStatus(' in gear_math
           and 'MESH_PITCH_TOLERANCE=0.09' in gear_math
