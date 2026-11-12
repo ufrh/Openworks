@@ -17,7 +17,6 @@ local Grid = require(construction:WaitForChild("GridMath"))
 local Alignment = require(construction:WaitForChild("AlignmentMath"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
-local RelationshipProperties=require(script.Parent:WaitForChild("RelationshipProperties"))
 local HandCrankController=require(script.Parent:WaitForChild("HandCrankController"))
 local RackControlController=require(script.Parent:WaitForChild("RackControlController"))
 local MotorControlController=require(script.Parent:WaitForChild("MotorControlController"))
@@ -1118,7 +1117,6 @@ function Controller:OnModeChanged(mode)
     self.Mode=mode
     self.Active=mode=="Mechanics" or mode=="Simulate"
     self.WeldMode=false
-    if self.Properties then self.Properties:Show(false) end
     if mode=="Mechanics" and self.Tools.SubtoolId=="Connect" then
         self:StartConnect()
     end
@@ -1129,7 +1127,6 @@ function Controller:OnSubtoolChanged(primary,subtool,_previous)
     if primary~="Mechanics" then return end
     self:Reset()
     self.WeldMode=false
-    if self.Properties then self.Properties:Show(false) end
     if subtool=="Connect" then self:StartConnect() end
     self:RefreshHUD()
 end
@@ -1137,9 +1134,6 @@ end
 function Controller:Start()
     self.Gui, self.HUDPanel, self.Header, self.Detail, self.Help = createGui()
     table.insert(self.Connections,Theme.Attach(self.Gui))
-    self.Properties=RelationshipProperties.new(self)
-    self.Properties.Feedback=self.Feedback
-    self.Properties:Start()
     self.Remote = ReplicatedStorage:WaitForChild(Config.RequestName)
     self.HandCrank=HandCrankController.new(self)
     self.HandCrank:Start()
@@ -1162,12 +1156,12 @@ function Controller:Start()
             if self.HandCrank and self.HandCrank:TryGrab() then return end
             if self.UnifiedExplorer then
                 self.UnifiedExplorer:SelectWorldAtCenter()
-            else self.Properties:InspectAtCenter() end
+            end
         elseif mode=="Mechanics" then
             if self.Tools.SubtoolId=="Configure" then
                 if self.UnifiedExplorer then
                     self.UnifiedExplorer:SelectWorldAtCenter()
-                else self.Properties:InspectAtCenter() end
+                end
             elseif self.Tools.SubtoolId=="Connect" then
                 self:ConnectClick()
             end
@@ -1341,7 +1335,6 @@ function Controller:Destroy()
     self:Reset()
     for _, conn in ipairs(self.Connections) do conn:Disconnect() end
     table.clear(self.Connections)
-    if self.Properties then self.Properties:Destroy() end
     if self.Gui then self.Gui:Destroy() end
 end
 
