@@ -632,7 +632,7 @@ function Simulation:Start(player, payload)
                 weld.Part0 = p0
                 weld.Part1 = p1
                 weld.Parent = runtime
-            elseif edge.kind=="Spring" then            elseif edge.kind=="Spring" then
+            elseif edge.kind=="Spring" then
                 local mode=edge.relation:GetAttribute("SpringMode")
                 -- Old piston/plate labels are normalized to a free spring.
                 mode="General"

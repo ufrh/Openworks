@@ -188,61 +188,24 @@ def main() -> int:
           and 'Enum.KeyCode.PageUp' not in assembly_tool)
     materials=read("src/shared/Construction/MaterialCatalog.lua")
     material_ui=read("src/client/Controllers/MaterialPickerController.lua")
-    angular=read("src/client/Controllers/AngularJointController.lua")
-    check("Angular joint anchor Up/Down uses world vertical regardless of Shift",
-          'if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then' in angular
-          and 'self.Anchor+=Vector3.yAxis*' in angular
-          and 'elseif key==Enum.KeyCode.Left or key==Enum.KeyCode.Right then' in angular
-          and 'local v=cam.CFrame.RightVector' in angular)
-    joint_frames=read("src/shared/Construction/JointFrameMath.lua")
-    motor_client=read("src/client/Controllers/MotorControlController.lua")
     assembly_client=read("src/client/Controllers/AssemblyController.lua")
     mechanical=read("src/server/Runtime/MechanicalService.lua")
-    check("Physical materials set density/grip/restitution and include tire rubber",
-          'Rubber={Name="Rubber (tires)"' in materials
-          and 'CustomPhysicalProperties=PhysicalProperties.new(' in materials
-          and 'settings.Friction,settings.Elasticity,100,100' in materials
-          and 'part.Material=settings.Material' in materials)
-    check("Material palette is user-selectable, owned, saved and undoable",
-          'action="SetMaterial"' in material_ui
-          and 'function Picker:Open()' in material_ui
-          and 'MaterialCatalog.IsValid(payload.materialId)' in service
-          and 'MaterialCatalog.Apply(model,if MaterialCatalog.IsValid' in service
-          and 'commitBatch(player,before,after)' in service
-          and 'material=snap.materialId' in persistence
-          and 'materialId=record.material or "Steel"' in persistence)
-    check("Arbitrary joint frames use 12 finite local coordinates",
-          'function Frames.Decode(values)' in joint_frames
-          and '#values~=12' in joint_frames
-          and 'function Frames.Validate(kind,a,b,frameA,frameB)' in joint_frames
-          and 'Frames.Encode(partA.CFrame:ToObjectSpace(worldFrame))' in joint_frames)
-    check("Arbitrary hinge, ball, universal and powered joints saved by server",
-          'function Mechanical:CreateAxisJoint(' in mechanical
-          and 'function Mechanical:EditAxisJoint(' in mechanical
-          and 'spec.frameA' in mechanical
-          and 'spec.frameB' in mechanical
-          and 'joint.Attachment0=a0' in mechanical
-          and 'joint.Attachment1=a1' in mechanical)
-    check("Joint authoring and reediting input paths are wired",
-          'AngularJointController.new(self)' in assembly_client
-          and 'self.Angular:Click()' in assembly_client
-          and 'function Angular:EditAimed()' in angular
-          and 'action=if self.EditId then "EditAxisJoint" else "CreateAxisJoint"' in angular
-          and 'action=="CreateAxisJoint"' in service
-          and 'action=="EditAxisJoint"' in service)
-    check("Powered hinge obeys configured held key with safety liveness timeout",
-          'OPENWORKS_MotorControl' in service
-          and 'simulation:InputMotor(player,key,holding)' in service
-          and 'function Simulation:InputMotor(player,key,holding)' in simulation
-          and 'os.clock()-motor.LastInput>0.45' in simulation
-          and 'motor.Constraint.AngularVelocity=0' in simulation
-          and 'self.Remote:FireServer(key,false)' in motor_client
-          and 'self.Remote:FireServer(key,true)' in motor_client)
-    check("Motor tuning persists and supports native key/speed/torque editing",
-          'function Mechanical:TuneAxisMotor(' in mechanical
-          and 'motorKey=relation:GetAttribute("MotorKey")' in mechanical
-          and 'action="TuneAxisMotor"' in angular
-          and 'action=="TuneAxisMotor"' in service)
+    check("No free-floating joint editor or arbitrary-joint server actions",
+          'AngularJointController' not in assembly_client
+          and 'CreateAxisJoint' not in service
+          and 'EditAxisJoint' not in service
+          and 'TuneAxisMotor' not in service
+          and 'function Mechanical:CreateAxisJoint(' not in mechanical
+          and 'JointFrameMath' not in mechanical
+          and 'kind=="AxisHinge"' not in simulation)
+    check("Shaft-hole bearing still drives native hinge physics",
+          'kind == "Bearing"' in mechanical
+          and 'Instance.new("HingeConstraint")' in mechanical
+          and 'edge.kind == "Bearing"' in simulation
+          and 'JointFrames.ForOpening(edge.target)' in simulation)
+    check("Retired joints skipped in old plot saves",
+          'skipped+=1' in persistence
+          and 'retired arbitrary-axis joint(s)' in persistence)
     check("Assembly server authorization",
           'hasEquippedTool(player,"Assembly")' in service
           and 'action=="CreateAssembly"' in service
@@ -424,14 +387,14 @@ def main() -> int:
     rack_client=read("src/client/Controllers/RackControlController.lua")
     check("45/90-degree bevel catalog contains actual tapered tooth-ring geometry",
           'function bevelTemplate(' in transmission
-          and 'local halfCone=math.rad(22.5)' in transmission
+          and 'local halfCone=math.rad(shaftAngleDeg*0.5)' in transmission
           and 'model:SetAttribute("BevelShaftAngleDeg",shaftAngleDeg)' in transmission
           and 'for _,angle in ipairs({45,90}) do' in transmission
           and 'bevelTemplate(transmission,count,angle)' in transmission)
     check("Bevel 45 and 90 geometry requires intersecting pitch-cone apexes",
           'function GearMath.AutoBevelStatus(' in gear_math
           and 'na~=nb' in gear_math
-          and 'math.cos(BEVEL_SHAFT_ANGLE)' in gear_math
+          and 'math.cos(math.rad(shaftAngle))' in gear_math
           and 'GearMath.BevelApex(a)-GearMath.BevelApex(b)' in gear_math
           and 'function Smart.BevelPose(' in smart_placement
           and 'GearMath.Kind(target)==bevelKind' in smart_placement

@@ -1167,7 +1167,7 @@ local function handle(player, payload)
             return mechanical:SmartMate(player,payload,false)
         end
         if action == "CreateRelation" then return mechanical:Create(player, payload) end
-        if action == "RemoveRelation" then        if action == "RemoveRelation" then return mechanical:Remove(player, payload) end
+        if action == "RemoveRelation" then return mechanical:Remove(player, payload) end
         if action == "FitShaft" then return mechanical:Fit(player, payload) end
         if action == "SetGrounded" then return components:SetGrounded(player, payload) end
         if action == "RotateComponent" then return components:RotateWorld(player, payload) end

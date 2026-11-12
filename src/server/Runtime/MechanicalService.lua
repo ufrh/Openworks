@@ -164,7 +164,7 @@ function Mechanical:Restore(player, spec)
         return false, "Missing relationship geometry"
     end
 
-    if spec.kind == "Gear" then    elseif spec.kind == "Gear" then
+    if spec.kind == "Gear" then
         if not source:GetAttribute("GearTeeth")
             or not target:GetAttribute("GearTeeth") then
             folder:Destroy()
