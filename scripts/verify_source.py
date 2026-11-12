@@ -90,10 +90,12 @@ def main() -> int:
           and 'Enum.RenderPriority.Camera.Value+1' in camera
           and 'player.CharacterAdded:Connect(function()' in camera
           and 'Enum.CameraMode.LockFirstPerson' not in camera)
-    check("Mouse movement always looks around without RMB activation",
+    check("Mouse movement always looks around with responsive smoothed aiming",
           'UIS:GetMouseDelta()' in camera
-          and 'self.Yaw-=delta.X*LOOK_SENSITIVITY' in camera
-          and 'self.Pitch=math.clamp(self.Pitch-delta.Y*LOOK_SENSITIVITY' in camera
+          and 'self.TargetYaw-=delta.X*LOOK_SENSITIVITY' in camera
+          and 'self.TargetPitch=math.clamp(' in camera
+          and 'self.Yaw+=shortestAngle(self.Yaw,self.TargetYaw)*turn' in camera
+          and 'self.Pitch+=(self.TargetPitch-self.Pitch)*turn' in camera
           and 'self.Rotating=true' not in camera
           and 'self.Panning=true' not in camera)
     check("Mouse stays center-locked except for UI modals",
@@ -113,11 +115,25 @@ def main() -> int:
           and 'ScreenPointToRay' not in aiming
           and all('CameraAimRay.Ray(camera)' in doc for doc in (
               construction_ui,assembly_ui,assembly_tool,crank_ui,rack_ui)))
-    check("Revert prior head-start and look smoothing",
-          'LOOK_RESPONSE=22' not in camera
-          and 'POSITION_RESPONSE=18' not in camera
-          and 'OPENWORKS_CameraSpawnReady' not in camera
-          and 'OPENWORKS_CameraSpawnReady' not in plots_service)
+    check("Freecam smooths movement, braking and FOV without spring drift",
+          'local ACCEL_RESPONSE=15' in camera
+          and 'local BRAKE_RESPONSE=27' in camera
+          and 'local LOOK_RESPONSE=26' in camera
+          and 'local ZOOM_RESPONSE=17' in camera
+          and '1-math.exp(-rate*dt)' in camera
+          and 'self.Velocity=self.Velocity:Lerp(desired,response(rate,step))' in camera
+          and 'camera.FieldOfView=self.CurrentFov' in camera
+          and 'self.CurrentFov+=(self.TargetFov-self.CurrentFov)' in camera
+          and 'if desired.Magnitude==0 and self.Velocity.Magnitude<0.04 then' in camera)
+    check("Freecam pauses cleanly in modals and stays inside plot limits",
+          'if inputBlocked then' in camera
+          and 'self.Velocity=Vector3.zero' in camera
+          and 'self.TargetYaw=self.Yaw' in camera
+          and 'self.TargetPitch=self.Pitch' in camera
+          and 'local clamped=clampToPlot(proposed)' in camera
+          and 'if math.abs(clamped.X-proposed.X)>0.00001' in camera
+          and 'self.TargetYaw=self.Yaw+shortestAngle(self.Yaw,self.TargetYaw)' in camera
+          and 'OPENWORKS_CameraSpawnReady' not in camera)
     check("Character remains invisible, anchored and immobile with native tools",
           'root.Anchored=true' in plots_service
           and 'humanoid.WalkSpeed=0' in plots_service

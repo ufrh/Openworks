@@ -3,6 +3,8 @@
 -- Scriptable locked-mouse freecam. Native Roblox
 -- Tools, Backpack and UI remain fully active. Character is immobile on server.
 -- Mouse: always look, WASD: fly, Space/Ctrl: elevate, Z/Shift+Z: FOV.
+-- Frame-rate independent response curves smooth motion without softening
+-- precise construction aim or dragging the view after a UI opens.
 local Players=game:GetService("Players")
 local RunService=game:GetService("RunService")
 local UIS=game:GetService("UserInputService")
@@ -17,7 +19,21 @@ local FOV_STEP=5
 local MOVE_SPEED=22
 local FAST_SPEED=44
 local LOOK_SENSITIVITY=0.0036
-local PAN_SENSITIVITY=0.022
+-- Smooth acceleration, firm braking, responsive aiming and soft zoom.
+-- The coefficients are inverse-seconds (higher = faster settling).
+local ACCEL_RESPONSE=15
+local BRAKE_RESPONSE=27
+local LOOK_RESPONSE=26
+local ZOOM_RESPONSE=17
+local MAX_CAMERA_DT=0.06
+
+local function response(rate,dt)
+    return 1-math.exp(-rate*dt)
+end
+
+local function shortestAngle(from,to)
+    return math.atan2(math.sin(to-from),math.cos(to-from))
+end
 
 local Camera={}
 Camera.__index=Camera
@@ -48,10 +64,12 @@ end
 
 function Camera.new()
     return setmetatable({
-        Position=nil,
+        Position=nil,Velocity=Vector3.zero,
         Pitch=math.rad(-35),Yaw=math.rad(45),
-        TargetFov=DEFAULT_FOV,Rotating=false,Panning=false,
-        Connections={},CharacterConnections={},Started=false,
+        TargetPitch=math.rad(-35),TargetYaw=math.rad(45),
+        TargetFov=DEFAULT_FOV,CurrentFov=DEFAULT_FOV,
+        InputBlocked=false,
+        Connections={},Started=false,
     },Camera)
 end
 
@@ -70,6 +88,11 @@ function Camera:ResetPosition()
     local dir=(target-self.Position).Unit
     self.Yaw=math.atan2(-dir.X,-dir.Z)
     self.Pitch=math.asin(math.clamp(dir.Y,-0.98,0.98))
+    -- Teleports / plot assignment must not spring from the prior plot.
+    self.TargetYaw=self.Yaw
+    self.TargetPitch=self.Pitch
+    self.Velocity=Vector3.zero
+    self.CurrentFov=self.TargetFov
 end
 
 function Camera:Start()
@@ -81,7 +104,7 @@ function Camera:Start()
         local cam=workspace.CurrentCamera
         if cam then
             cam.CameraType=Enum.CameraType.Scriptable
-            cam.FieldOfView=self.TargetFov
+            cam.FieldOfView=self.CurrentFov
         end
     end
     cameraChanged()
@@ -118,42 +141,80 @@ function Camera:Start()
             camera.CameraType=Enum.CameraType.Scriptable
         end
         if not self.Position then self:ResetPosition() end
+        local step=math.clamp(dt,0,MAX_CAMERA_DT)
         local inputBlocked=uiCapturesPointer()
         local delta=UIS:GetMouseDelta()
-        if not inputBlocked then
-            self.Yaw-=delta.X*LOOK_SENSITIVITY
-            self.Pitch=math.clamp(self.Pitch-delta.Y*LOOK_SENSITIVITY,
+        if inputBlocked then
+            -- Opening a modal must NEVER keep coasting, turning or moving
+            -- the camera behind the user's unlocked pointer.
+            self.Velocity=Vector3.zero
+            self.TargetYaw=self.Yaw
+            self.TargetPitch=self.Pitch
+        else
+            -- Accumulate RAW pixels; smooth the view rather than the mouse
+            -- delta itself. This avoids frame-rate-dependent aim overshoot.
+            self.TargetYaw-=delta.X*LOOK_SENSITIVITY
+            self.TargetPitch=math.clamp(
+                self.TargetPitch-delta.Y*LOOK_SENSITIVITY,
                 math.rad(-88),math.rad(88))
+            local turn=response(LOOK_RESPONSE,step)
+            self.Yaw+=shortestAngle(self.Yaw,self.TargetYaw)*turn
+            self.Pitch+=(self.TargetPitch-self.Pitch)*turn
+            -- Keep unbounded turns numerically stable after long sessions.
+            self.TargetYaw=self.Yaw+shortestAngle(self.Yaw,self.TargetYaw)
         end
+        self.InputBlocked=inputBlocked
+
         local rotation=CFrame.fromEulerAnglesYXZ(self.Pitch,self.Yaw,0)
         local forward=rotation.LookVector
         local right=rotation.RightVector
         local up=Vector3.yAxis
         if not inputBlocked then
-            local horizontal=Vector3.zero
-            if UIS:IsKeyDown(Enum.KeyCode.W) then horizontal+=forward end
-            if UIS:IsKeyDown(Enum.KeyCode.S) then horizontal-=forward end
-            if UIS:IsKeyDown(Enum.KeyCode.D) then horizontal+=right end
-            if UIS:IsKeyDown(Enum.KeyCode.A) then horizontal-=right end
-            if UIS:IsKeyDown(Enum.KeyCode.Space) then horizontal+=up end
-            -- Ctrl is a height modifier only without the Z/Y/D
-            -- edit/history shortcuts. A held Ctrl can lower the camera.
+            local desired=Vector3.zero
+            if UIS:IsKeyDown(Enum.KeyCode.W) then desired+=forward end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then desired-=forward end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then desired+=right end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then desired-=right end
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then desired+=up end
+            -- Ctrl descends; leave all editing shortcuts and bindings intact.
             if UIS:IsKeyDown(Enum.KeyCode.LeftControl)
                 or UIS:IsKeyDown(Enum.KeyCode.RightControl) then
-                horizontal-=up
+                desired-=up
             end
-            if horizontal.Magnitude>0 then
+            if desired.Magnitude>0 then
                 local speed=if UIS:IsKeyDown(Enum.KeyCode.LeftShift)
                     or UIS:IsKeyDown(Enum.KeyCode.RightShift)
                     then FAST_SPEED else MOVE_SPEED
-                self.Position+=horizontal.Unit*speed*math.min(dt,0.1)
+                desired=desired.Unit*speed
             end
+            local rate=if desired.Magnitude>0
+                then ACCEL_RESPONSE else BRAKE_RESPONSE
+            self.Velocity=self.Velocity:Lerp(desired,response(rate,step))
+            -- Finish stopping cleanly; avoid subpixel drift after release.
+            if desired.Magnitude==0 and self.Velocity.Magnitude<0.04 then
+                self.Velocity=Vector3.zero
+            end
+            local proposed=self.Position+self.Velocity*step
+            local clamped=clampToPlot(proposed)
+            -- Do not store outward velocity against plot boundaries.
+            self.Velocity=Vector3.new(
+                if math.abs(clamped.X-proposed.X)>0.00001
+                    then 0 else self.Velocity.X,
+                if math.abs(clamped.Y-proposed.Y)>0.00001
+                    then 0 else self.Velocity.Y,
+                if math.abs(clamped.Z-proposed.Z)>0.00001
+                    then 0 else self.Velocity.Z)
+            self.Position=clamped
         end
-        self.Position=clampToPlot(self.Position)
-        -- Direct mouse-look with immediate response, no RMB or easing.
+        self.CurrentFov+=(self.TargetFov-self.CurrentFov)
+            *response(ZOOM_RESPONSE,step)
+        if math.abs(self.TargetFov-self.CurrentFov)<0.005 then
+            self.CurrentFov=self.TargetFov
+        end
+
         camera.CFrame=CFrame.new(self.Position)*rotation
         camera.Focus=CFrame.new(self.Position+rotation.LookVector*24)
-        camera.FieldOfView=self.TargetFov
+        camera.FieldOfView=self.CurrentFov
     end)
     RunService:BindToRenderStep(RENDER_BINDING.."_Pointer",
         Enum.RenderPriority.Camera.Value+3,function()
