@@ -103,6 +103,15 @@ end
 
 function Feedback:Set(owner,key,members,role,whole)
     assert(PALETTE[role]~=nil,"Invalid visual feedback role")
+    -- Only deliberate selection, explicit assembly members, active
+    -- connection participants and transient confirmations make boxes.
+    -- Passive hover, auto snap and per-body grounding must never render
+    -- as selection-like bounding boxes.
+    if owner=="hover" or owner=="snap" or owner=="ground"
+        or owner=="explorer-selection" then
+        self:Clear(owner)
+        return
+    end
     local layer=self.Layers[owner]
     if not layer then
         layer={}
@@ -224,7 +233,9 @@ end
 
 function Feedback:Update()
     local now=os.clock()
-    if now-self.LastUpdate<0.08 then return end
+    -- Selection lines must track each actual resize and transform frame,
+    -- rather than lagging behind the previous tenth-second geometry.
+    if now-self.LastUpdate<1/120 then return end
     self.LastUpdate=now
     self.Ghost:Update()
     -- O(N) priority lookup instead of comparing every box to every other box.
