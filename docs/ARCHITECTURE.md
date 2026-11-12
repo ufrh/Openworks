@@ -1,11 +1,11 @@
 # OPENWORKS — Current architecture
 
-This document describes **current `dev` behavior**, not obsolete phase designs. Update it when module responsibilities, networking contracts, persistence or simulation semantics change.
+This document describes the **UI v2 feature branch's architecture**. The original `dev` branch remains the fallback until Roblox Studio regression is complete. Update this when module responsibilities, networking contracts, persistence or simulation semantics change.
 
 ## System boundaries
 
 ```text
-Roblox native Tool (Build / Edit / Assembly / Simulate / Inspect / Weld)
+Roblox native Tool (Build / Mechanics / Assembly & Simulation)
   │
   ├─ client/Controllers  → input, presentation, ghosts, local-only 3D guides
   │    ├─ ToolController (tool equipped/activated state)
@@ -14,10 +14,12 @@ Roblox native Tool (Build / Edit / Assembly / Simulate / Inspect / Weld)
   │    ├─ AssemblyToolController (named assembly drafts and purple preview)
   │    ├─ AssemblyController (Edit relationships + Simulate UX)
   │    ├─ HandCrankController (hold LMB to drive; release stops; no mouse drag)
-  │    ├─ RelationshipProperties (read/edit mechanical settings)
-  │    ├─ WorldVisuals, ComponentOutline (adornments / grounded state)
+  │    ├─ UnifiedExplorer, ExplorerData, ContextActionRegistry
+  │    │    (single selection, Properties, connection picker, context menus)
+  │    ├─ VisualFeedback, GhostWireframe, WorldVisuals
+  │    │    (one local-only 3D feedback owner; grounded state and joint cues)
   │    ├─ PlotSaveController (F6 autosave status + manual Save/Load)
-  │    └─ StudioTheme, ContextKeybinds (presentation)
+  │    └─ StudioTheme (shared presentation)
   │
   ├─ shared/Construction → BuildConfig, ToolDefinitions, Registry,
   │    fit math, geometry math, axes, springs, gears, etc.
@@ -83,7 +85,7 @@ A physical shaft must fit inside a verified opening before authoring a **Bearing
 
 An optional **Shaft Motor** is now configured on an authored *Bearing*, never on two floating parts. Equip **Simulate**, inspect a physical bearing in the Properties panel, enable Shaft Motor, choose a hold key, signed angular velocity (rad/s), torque and acceleration, then save. The Simulate client sends only held-key liveness and the server owns the saved motor settings. Motors stop on release/pause or after 0.45 seconds of missing input. Motor drive is currently a software-controlled native actuator on real shaft hardware, not yet a separate fabricated electric motor or an electrical circuit. Kinematic gears remain primarily hand-crank driven until power sources are integrated into GearKinematics.
 
-`MaterialCatalog` defines Steel, Aluminum, Rubber, Plastic, Wood, and Concrete. **M** in Edit opens a native Roblox material picker for the selected primitive or full editor component. The material is represented by appearance, density, friction, elasticity, and weighted native `CustomPhysicalProperties`; choose Rubber for tire surfaces. The selected material is stored in the primitive snapshot, inherited by component duplication, and included in manual plot save/load. Presets alter physical contact and mass rather than bypassing Roblox's physics; tire slip, anisotropic tread, thermal behavior and wear are not yet modeled.
+`MaterialCatalog` defines Steel, Aluminum, Rubber, Plastic, Wood, and Concrete. **M** within Build selects the Paint subtool and opens the unified Properties surface for the selected primitive or full editor component. The material is represented by appearance, density, friction, elasticity, and weighted native `CustomPhysicalProperties`; choose Rubber for tire surfaces. The selected material is stored in the primitive snapshot, inherited by component duplication, and included in manual plot save/load. Presets alter physical contact and mass rather than bypassing Roblox's physics; tire slip, anisotropic tread, thermal behavior and wear are not yet modeled.
 
 **Alt+arrows** in Edit and Assembly replace Alt+mousewheel. Up/Down always raise/lower on WORLD Y, Left/Right nudge along the camera's horizontal right direction; **Shift+Alt+any arrow** uses fine 0.05-stud steps, versus ordinary 0.25. The server chooses X, Y or Z, verifies ownership and all member moves against the plot/collision system, and commits a single undo record for the entire selected component or named assembly.
 
@@ -99,7 +101,7 @@ UI v2 Phase 2 uses one client-side `VisualFeedback` manager in `Workspace.OPENWO
 
 `GhostWireframe`, owned by the same manager, draws actual geometry-following edges for built-in block, cylinder and ball parts, with 0.65-transparent non-colliding ghosts. Roblox `PartOperation`/precompiled CSG does not expose a trusted synchronous full triangle-edge extraction path in this implementation, so those ghosts currently use safe oriented-extents strokes; **exact CSG edge outlines and precise localized red CSG intersection segments are still outstanding**, not assumed complete. The existing `PreviewFeedback.Check` continues to validate actual CSG collision before commits. `WorldVisuals` now uses minimal blue/orange bearing arcs (with powered POW), blue linear travel, green endpoints, native blue springs and no extra rigid/weld/gear visualizer; all authored/simulated physics stays server-owned.
 
-The shared Studio-style UI design lives in `StudioTheme.lua`. Normal Simulate remains locked first-person; the properties panel unlocks the mouse only while open; the assembly naming modal also temporarily unlocks it. All temporary UI/modal states must restore cursor ownership when they close.
+The shared Studio-style UI design lives in `StudioTheme.lua`. Normal Simulation remains locked first-person; the unified Explorer/Properties dock unlocks the mouse only when focused. Assembly naming is inline in the dock, not a second naming modal. All temporary UI/modal states must restore cursor ownership when they close.
 
 ## Code organization rules
 
@@ -127,10 +129,10 @@ The shared Studio-style UI design lives in `StudioTheme.lua`. Normal Simulate re
 `GearLibrary` includes matching `Bevel90_12T` and `Bevel90_20T` gear templates whose pitch cones have 45° half angles, so fitted shafts may intersect at a right angle. The same verified axle/apex/pitch predicate is shared between smart snapping and kinematic simulation; mixed 45°/90° pairs are not accepted. Equal tooth counts provide 1:1 speed transfer and explicitly modeled toothed annuli with a physical shaft bore. Gear transmission is currently the deterministic simulation kinematics system, not native tooth contact physics.
 
 ### Key-bound motor on physical bearing
-The retired PoweredHinge shortcut does not remove power: an existing, physically fitted shaft/bore Rotation Only relationship can be configured with **Simulate > Properties > the Bearing relationship > HOLD-KEY MOTOR**. This sets an optional motor on the native hinge constraint using a hold-to-run key, angular velocity, max torque and acceleration. Unlike arbitrary axis creation, it does not manufacture a magical pivot. Server ownership and saved relationship settings are authoritative; motor inputs stop on release or missing heartbeats. Validation in Studio is still required, particularly when the gear kinematic solver owns the driven shaft.
+The retired PoweredHinge shortcut does not remove power: an existing, physically fitted shaft/bore Rotation Only relationship can be configured with **Mechanics > Configure > unified Properties > the Bearing relationship > HOLD-KEY MOTOR**. This sets an optional motor on the native hinge constraint using a hold-to-run key, angular velocity, max torque and acceleration. Unlike arbitrary axis creation, it does not manufacture a magical pivot. Server ownership and saved relationship settings are authoritative; motor inputs stop on release or missing heartbeats. Validation in Studio is still required, particularly when the gear kinematic solver owns the driven shaft.
 
 ### Paint, surface finishes, and physical materials
-Paint is independent of engineering material. **M** in Edit opens Paint Studio with a Paint & Finish tab and a Physical Material tab. You can color an owned primitive or a selected component using 18 quick swatches or any `#RRGGBB` hex, select Original, Matte, Satin, High Gloss, Metallic, Chrome, Brushed Metal or Pearlescent and apply/reset the finish. Server authorization, component targeting, history, duplication, and manual save/load use model-level `PaintFinish` and `PaintColorHex` attributes. `MaterialCatalog` sets density, grip, restitution and native physical properties; `PaintCatalog` touches only visual material, color, and reflectance so chrome bodywork does not magically change suspension density or tire traction. The Roblox standard BasePart material/reflectance approximation is NOT physically based real-world automotive clearcoat, anisotropic brushed metal or environmental mirror reflection; true mirror/PBR coatings would require supported textures/shader assets and a separate renderer workflow. Whole-primitive/component painting is in scope, per-face painting/decal livery is not in this first release.
+Paint is independent of engineering material. **M** selects Build > Paint; the unified Properties surface contains both Paint & Finish and Physical Material controls. You can color an owned primitive or a selected component using 18 quick swatches or any `#RRGGBB` hex, select Original, Matte, Satin, High Gloss, Metallic, Chrome, Brushed Metal or Pearlescent and apply/reset the finish. Server authorization, component targeting, history, duplication, and manual save/load use model-level `PaintFinish` and `PaintColorHex` attributes. `MaterialCatalog` sets density, grip, restitution and native physical properties; `PaintCatalog` touches only visual material, color, and reflectance so chrome bodywork does not magically change suspension density or tire traction. The Roblox standard BasePart material/reflectance approximation is NOT physically based real-world automotive clearcoat, anisotropic brushed metal or environmental mirror reflection; true mirror/PBR coatings would require supported textures/shader assets and a separate renderer workflow. Whole-primitive/component painting is in scope, per-face painting/decal livery is not in this first release.
 
 When Roblox reports a DataStore error, the backend may already have written that attempted revision. `PlotPersistence.UncertainWriteIds` tracks only this server's failed request IDs and allows a subsequent `UpdateAsync` to adopt its own previously committed write, while still rejecting any unrelated concurrent session's newer revision. This prevents a transient unknown-outcome error from permanently locking an otherwise safe autosave lineage.
 
@@ -150,3 +152,11 @@ Shaft **Fit mode** depth/roll adjustments now also use the shared visual present
 
 ### Shaft-position-aware reverse fitting
 For **moving hole / fixed shaft** snapping, the local center aim ray is projected analytically onto the finite physical shaft segment using the closest-points solution. The selected point is clamped to the shaft's actual two end faces, so dragging a drilled hole towards one end places its center near that end rather than at the shaft midpoint. An exactly axial look resolves to the visible near end; an off-target ray cannot override normal proximity snapping. The resulting insertion remains on the existing 0.5U depth lattice and inside `Alignment.InsertionBounds`, and the server rechecks exact shaft/hole clearance, other multi-fit contacts and all real collision geometry before committing. The same rule now applies to **gear-on-shaft hubs**. A deliberate crosshair hit takes priority over a previously preferred nearby shaft; ordinary shaft-into-hole fitting is unchanged. This changes the client placement intent only, not authoritative saved geometry, motor or physics behavior.
+
+## UI v2 Phase 6 ownership and verification
+
+The feature branch uses **three Roblox native tools and eight contextual subtools**. The shared `UnifiedExplorer` owns real assembly/component/primitive inspection, mechanical relationship Properties, material/paint editing, draft naming, connection choices and context menus. Each interaction is routed through its existing controller's authoritative server action. `VisualFeedback` is the sole owner of selection/hover/assembly/connection boxes; `WorldVisuals` owns minimal mechanical adornments, not helpers with physical collisions.
+
+The legacy `ContextKeybinds`, `ComponentOutline`, `MateChoicePanel`, `MaterialPickerController`, and `RelationshipProperties` client modules have been **deleted**. Mechanics and Assembly Editor no longer allocate legacy HUDs at startup because the unified owner is assigned before their `Start()` methods. Dormant fallback HUD creation methods may remain in the controllers until Studio-tested deletion, but they are not instantiated in the UI v2 boot path. The Build geometry catalog, precision sizing modal, and F6 plot dialogs are deliberately preserved.
+
+**Verification scope:** GitHub runs Python source architecture contracts and StyLua 2.1.0's `--verify --syntax luau src` parser/AST verification. These gates cannot validate Roblox API runtime behavior, physics constraints, DataStores, actual CSG intersection surfaces, UI focus, respawn or multiplayer. Do not merge into `dev` until the [Studio regression gates](QA_REGRESSION.md) pass on disposable plots. Phase 2's exact CSG mesh-edge extraction and localized CSG collision visualization remain incomplete.
