@@ -67,4 +67,14 @@ function Visual:Update(path)
     for _,beam in ipairs(self.Beams) do beam.Enabled=self.Enabled end
 end
 
+-- Update authored belt paths after a valid construction transform.
+function Visual.Refresh(parent,path)
+    local marker=parent:FindFirstChild("OPENWORKS_BeltPathOnly")
+    if not marker or not path then return end
+    for i,point in ipairs(BeltMath.Points(path)) do
+        local att=marker:FindFirstChild("BeltPoint_"..i)
+        if att then att.Position=point end
+    end
+end
+
 return Visual
