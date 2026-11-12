@@ -461,6 +461,49 @@ def main() -> int:
           and 'Enum.KeyCode.Delete' not in construction_ui
           and 'Enum.KeyCode.Escape' not in construction_ui
           and 'Enum.KeyCode.Escape' not in assembly_client)
+    bank_service=read("src/server/Runtime/ComponentBankService.lua")
+    bank_codec=read("src/shared/Construction/ComponentBankCodec.lua")
+    bank_preview=read("src/client/Controllers/ComponentBankPreview.lua")
+    check("Personal bank has independent versioned persistent storage",
+          'GetDataStore("OPENWORKS_ComponentBank_v1")' in bank_service
+          and 'function Bank:Persist(player,mutator)' in bank_service
+          and 'self.Store:UpdateAsync(' in bank_service
+          and 'MAX_BANK=16' in bank_service
+          and 'MAX_PARTS=64' in bank_service)
+    check("Saved bank geometry uses relative frames, real prefab templates and valid metadata",
+          'Codec.Pose(baseCF:ToObjectSpace(model:GetPivot()))' in bank_service
+          and 'Codec.ReadPose(part.relative)' in bank_service
+          and 'd.createFromTemplate(player,state.templateId,' in bank_service
+          and 'function Codec.ReadPose(' in bank_codec
+          and 'function Preview.Create(entry)' in bank_preview)
+    check("Bank copies only internal relationships and remaps every endpoint",
+          'relationInternal(spec,ids)' in bank_service
+          and 'result.sourceId=idMap[spec.sourceId]' in bank_service
+          and 'result.targetId=idMap[spec.targetId]' in bank_service
+          and 'result.boltId=if spec.boltId then idMap[spec.boltId]' in bank_service
+          and 'result.secondTargetId=if spec.secondTargetId' in bank_service
+          and 'item.movingId=idMap[point.movingId]' in bank_service
+          and 'item.stationaryId=idMap[point.stationaryId]' in bank_service
+          and 'result.fitSetId=fitSets[spec.fitSetId]' in bank_service)
+    check("Bank place validates all parts and rolls back on any relationship failure",
+          'd.validState(player,primitive,state)' in bank_service
+          and 'd.intersectsConstructed(model)' in bank_service
+          and 'd.mechanical:Restore(player,spec)' in bank_service
+          and 'discard()' in bank_service
+          and 'd.commitAssembly(player,{},states,joints,false)' in bank_service)
+    check("Bank catalog can save, browse, preview, remove and stamp components",
+          'function Controller:OpenBankSave()' in construction_ui
+          and 'function Controller:SelectBank(id)' in construction_ui
+          and 'function Controller:PlaceSavedComponent()' in construction_ui
+          and 'action="RegisterComponentBank"' in construction_ui
+          and 'action="RemoveComponentBank"' in construction_ui
+          and 'action="GetComponentBank"' in construction_ui
+          and 'action="PlaceComponentBank"' in construction_ui)
+    check("Bank read/list operations do not dirty construction plot saves",
+          'local bankAction=action=="ListComponentBank"' in service
+          and 'if bankAction then return componentBank:Handle(player,action,payload)' in service
+          and 'and not simulationAction and not bankAction' in service
+          and 'local metadataOnly=bankAction or' in service)
     check("World rotations use the authored origin on client and server",
           'FitOrigin.World(self.GroupAnchor,"Component")' in construction_ui
           and 'FitOrigin.World(self.Selected,"Primitive")' in construction_ui
@@ -860,8 +903,11 @@ def main() -> int:
         text = file.read_text(encoding="utf-8")
         if ":SetAsync(" in text or ":UpdateAsync(" in text:
             save_writes.append(file.relative_to(ROOT).as_posix())
-    check("Exactly one DataStore write location",
-          save_writes == ["src/server/Runtime/PlotPersistence.lua"],
+    check("Only plot persistence and per-player component bank write DataStores",
+          sorted(save_writes) == sorted([
+              "src/server/Runtime/PlotPersistence.lua",
+              "src/server/Runtime/ComponentBankService.lua",
+          ]),
           str(save_writes))
     plot_ui=read("src/client/Controllers/PlotSaveController.lua")
     config=read("src/shared/Construction/BuildConfig.lua")
