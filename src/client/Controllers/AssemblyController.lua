@@ -685,9 +685,9 @@ function Controller:CommitConnect(kind,first,second)
             sourceId=source:GetAttribute("InstanceId"),
             targetId=target:GetAttribute("InstanceId"),
         }
-    elseif kind=="Weld" or kind=="Bolt" then
+    elseif kind=="Weld" then
         request={
-            action=if kind=="Weld" then "CreateWeld" else "CreateBolt",
+            action="CreateWeld",
             sourceId=firstId,targetId=secondId,
         }
     end
