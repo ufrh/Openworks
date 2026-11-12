@@ -665,7 +665,7 @@ function Layered:ConfirmAlignment()
             selected.Stage="Fit"
             self:RefreshVisuals()
             player:SetAttribute("OPENWORKS_Inserting",true)
-            parent:Message("Aligned • scroll to fine-fit shaft • click/Esc to finish")
+            parent:Message("Aligned • scroll to fine-fit shaft • click/Enter to finish")
         end
         parent:RefreshPointer()
         parent:RefreshHUD()
@@ -721,7 +721,7 @@ function Layered:OnInput(input, processed)
     local parent = self.Parent
     if parent.Mode ~= "Edit" and parent.Mode ~= "Inspect" then return false end
     local key = input.KeyCode
-    if key == Enum.KeyCode.Escape and self.Alignment then
+    if key == Enum.KeyCode.Return and self.Alignment then
         self:CancelAlignment()
         parent:RefreshHUD()
         return true
