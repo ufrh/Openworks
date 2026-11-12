@@ -16,6 +16,7 @@ local Smart = require(construction:WaitForChild("SmartPlacement"))
 local FitOrigin = require(construction:WaitForChild("FitOrigin"))
 local Config = require(construction:WaitForChild("BuildConfig"))
 local ComponentService = require(script.Parent:WaitForChild("ComponentService"))
+local ComponentBankService = require(script.Parent:WaitForChild("ComponentBankService"))
 local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
 local MechanicalService = require(script.Parent:WaitForChild("MechanicalService"))
 local SimulationService = require(script.Parent:WaitForChild("SimulationService"))
@@ -41,6 +42,7 @@ local remote
 local histories = {}
 local lastRequest = {}
 local components
+local componentBank
 local alignmentService
 local mechanical
 local simulation
@@ -1223,6 +1225,9 @@ local function handle(player, payload)
         or action == "PauseSimulation" or action == "ResetSimulation"
     local materialAction=action=="SetMaterial" or action=="SetPaint"
     local fitOriginAction=action=="SetFitPivot"
+    local bankAction=action=="ListComponentBank" or action=="GetComponentBank"
+        or action=="RegisterComponentBank" or action=="PlaceComponentBank"
+        or action=="RemoveComponentBank"
     local verticalAction=action=="VerticalMove"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
@@ -1235,6 +1240,7 @@ local function handle(player, payload)
         and action ~= "Undo" and action ~= "Redo"
         and not componentAction and not smartAction and not assemblyAction
         and not verticalAction and not materialAction and not fitOriginAction
+        and not bankAction
         and not alignmentAction and not mechanicalAction
         and not simulationAction then
         return { ok = false, message = "Unknown action" }
@@ -1273,6 +1279,10 @@ local function handle(player, payload)
         elseif action~="GetMechanismInfo"
             and not hasEquippedTool(player,"Build") then
             return {ok=false,message="Equip Build to modify relationships"}
+        end
+    elseif bankAction then
+        if not hasEquippedTool(player,"Build") then
+            return {ok=false,message="Equip Build to use the component bank"}
         end
     elseif fitOriginAction then
         if not hasEquippedTool(player,"Build") then
@@ -1316,6 +1326,7 @@ local function handle(player, payload)
         if action == "StopSimulation" then return simulation:Stop(player) end
         if action == "PauseSimulation" then return simulation:Pause(player) end
         if action == "ResetSimulation" then return simulation:Reset(player) end
+        if bankAction then return componentBank:Handle(player,action,payload) end
         if action == "Place" then return place(player, payload) end
         if action == "VerticalMove" then return verticalMove(player,payload) end
         if action == "SetFitPivot" then return setFitPivot(player,payload) end
@@ -1389,13 +1400,13 @@ local function handle(player, payload)
         local relation=mechanical:OwnedRelation(player,payload.relationId)
         if relation then simulation:SyncRelationship(player,relation) end
     end
-    local metadataOnly=action=="SetFitPivot"
+    local metadataOnly=bankAction or action=="SetFitPivot"
         or action=="CreateAssembly" or action=="UpdateAssembly"
         or action=="Group" or action=="Ungroup"
         or action=="SetGrounded"
     -- Mark dirty BEFORE optional geometry rebuild: a rebuild error must
     -- not silently discard the already-committed edit from autosaving.
-    if result and persistence and not simulationAction
+    if result and persistence and not simulationAction and not bankAction
         and action~="GetMechanismInfo" then
         persistence:MarkDirty(player)
     end
@@ -1414,6 +1425,7 @@ local function handle(player, payload)
         componentId = if result and (action == "Group" or action == "DuplicateComponent")
             then extra else nil,
         assemblyId=if result and assemblyAction then detail else nil,
+        data=if result and bankAction then detail else nil,
     }
 end
 
@@ -1489,6 +1501,14 @@ function Service.Start()
     -- a require cycle. Inject the constructed service afterward so F
     -- duplicates can snapshot/restore authored INTERNAL relationships.
     components.D.mechanical=mechanical
+    componentBank=ComponentBankService.new({
+        components=components,mechanical=mechanical,
+        folder=folder,Grid=Grid,Registry=Registry,Config=Config,
+        snapshot=snapshot,createFromTemplate=createFromTemplate,
+        ownedCount=ownedCount,validState=validState,applyState=applyState,
+        nearPlayer=nearPlayer,intersectsConstructed=intersectsConstructed,
+        commitAssembly=commitAssembly,commitBatch=commitBatch,
+    })
 
     assemblies=AssemblyService.new({
         folder=folder,
