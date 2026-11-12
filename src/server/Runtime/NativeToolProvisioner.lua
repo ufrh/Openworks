@@ -58,14 +58,16 @@ end
 
 function Provisioner.Start()
     StarterPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
-    -- Clean up legacy Assemble tool copies from the pre-named-Assembly
-    -- workflow; native Assembly now occupies its own hotbar slot.
+    -- Clean up legacy Assemble and retired Edit tools. Build now handles
+    -- both creation and editing in one persistent native hotbar slot.
     local function removeLegacy(container)
         if not container then return end
         for _, tool in ipairs(container:GetChildren()) do
             if tool:IsA("Tool") and
                 (tool:GetAttribute("OpenworksToolId") == "Assemble"
-                or tool.Name == "Assemble") then
+                or tool.Name == "Assemble"
+                or tool:GetAttribute("OpenworksToolId") == "Edit"
+                or tool.Name == "Edit") then
                 tool:Destroy()
             end
         end
@@ -103,7 +105,7 @@ function Provisioner.Start()
         end)
     end
 
-    print("[OPENWORKS] StarterPack native tools provisioned: Build, Edit, Assembly, Simulate, Inspect, Weld, Belt")
+    print("[OPENWORKS] StarterPack native tools provisioned: Build, Assembly, Simulate, Inspect, Weld, Belt")
 end
 
 return Provisioner
