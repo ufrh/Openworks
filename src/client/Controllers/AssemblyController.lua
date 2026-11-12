@@ -957,6 +957,16 @@ function Controller:Start()
         -- K/J/H interactions capture clicks; ordinary selection and drag
         -- continue to belong to ConstructionController.
         if self.Mode~="Edit" or processed then return end
+        -- Build is now the single native creation/edit tool. H/K/J/Shift+C
+        -- must not hijack a primitive or bank placement ghost or open catalog.
+        if self.Construction and (
+            self.Construction.Mode~="Edit"
+            or self.Construction.Pending
+            or self.Construction.CatalogOpen
+            or (self.Construction.BankModal
+                and self.Construction.BankModal.Visible)
+            or self.Construction.PivotSetting
+            or self.Construction.ScaleMode) then return end
         local control=UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
         local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
