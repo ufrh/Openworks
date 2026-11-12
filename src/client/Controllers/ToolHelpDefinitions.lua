@@ -65,7 +65,11 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
                 put(rows,"Click","Select primitive")
                 put(rows,"Double click","Select inside component")
                 put(rows,"Drag / G","Move")
-                put(rows,"F","Duplicate")
+                put(rows,"F / Ctrl+D","Duplicate")
+                put(rows,"R / T / Y","Rotate axes")
+                put(rows,"N","Exact dimensions")
+                put(rows,"Alt+Arrows","Nudge position")
+                put(rows,"Shift+Alt","Fine arrow nudge")
                 put(rows,"C / U","Group / ungroup")
                 put(rows,"L","Align shaft")
                 put(rows,"X / I","X-ray / isolate")
@@ -160,6 +164,12 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
         put(rows,"F2","Unlock cursor")
     end
     if not fitActive then put(rows,"F6","Save / load plot") end
+    -- Shared freecam controls remain concise and only occur once below
+    -- the current operation's list; no separate permanent instruction HUD.
+    put(rows,"WASD","Fly camera")
+    put(rows,"Space / Ctrl","Up / down")
+    put(rows,"Shift","Fly faster")
+    put(rows,"Z / Shift+Z","FOV zoom")
     return {title=stage~="" and stage or "CONTROLS",rows=rows}
 end
 
