@@ -84,70 +84,56 @@ def main() -> int:
         and 'hasEquippedTool(player,"Simulate")' not in read("src/server/Runtime/ConstructionService.lua"),
     )
 
-    explorer_data = read("src/client/Controllers/ExplorerData.lua")
-    unified_panel = read("src/client/Controllers/UnifiedExplorer.lua")
-    context_actions = read("src/client/Controllers/ContextActionRegistry.lua")
+    explorer_data = read("src/client/Controllers/AuthoredIndex.lua")
+    unified_panel = read("src/client/Controllers/ContextEditor.lua")
     client_entry = read("src/client/init.client.lua")
     construction_ui = read("src/client/Controllers/ConstructionController.lua")
     mechanical_ui = read("src/client/Controllers/AssemblyController.lua")
     assembly_ui = read("src/client/Controllers/AssemblyToolController.lua")
     camera_ui = read("src/client/Controllers/CameraController.lua")
-    check("UI v2 Phase 3 has a single docked Explorer/Properties owner",
-          'UnifiedExplorer.new(tools,' in client_entry
-          and 'unifiedExplorer:Start()' in client_entry
-          and 'Name="OPENWORKS_UnifiedExplorerProperties"' in unified_panel
-          and 'function Panel:RenderTree()' in unified_panel
-          and 'function Panel:RenderProperties()' in unified_panel)
-    check("Explorer reflects actual named assemblies and partial components",
+    check("Context editor replaces permanent Explorer and Properties dock",
+          'ContextEditor.new(tools,' in client_entry
+          and 'Name="OPENWORKS_ContextEditor"' in unified_panel
+          and 'Name="RightClickEditor"' in unified_panel
+          and 'function Panel:OpenForNode(node,pos)' in unified_panel
+          and 'function Panel:RenderContext()' in unified_panel
+          and 'Name="OPENWORKS_UnifiedExplorerProperties"' not in unified_panel
+          and 'function Panel:CreateTreeRow(' not in unified_panel)
+    check("Authored index enumerates every owned relationship and member",
           'model:GetAttribute("AssemblyId")' in explorer_data
           and 'model:GetAttribute("ComponentId")' in explorer_data
-          and 'group.components[cid]' in explorer_data
           and 'relation:GetAttribute("SourceId")' in explorer_data
-          and 'model:GetAttribute("OwnerUserId")==player.UserId' in explorer_data)
-    check("Partial component entries cannot issue whole-component destructive actions",
-          'comp.partialComponent=#comp.members<comp.totalMembers' in explorer_data
-          and 'and not node.partialComponent' in context_actions
-          and 'if node.partialComponent then' in unified_panel
-          and 'self.Build:SetSelection(nil)' in unified_panel
-          and 'whole-component:' in unified_panel)
-    check("Explorer refreshes replicated mechanical and appearance properties",
-          all(token in explorer_data for token in (
-              'tostring(m:GetAttribute("PaintFinish") or "")',
-              'tostring(m:GetAttribute("ConstructionMaterial") or "")',
-              'tostring(m:GetAttribute("Grounded") or "")',
-              'tostring(relation:GetAttribute("LowerLimit") or "")',
-              'tostring(relation:GetAttribute("MotorEnabled") or "")',
-              'tostring(relation:GetAttribute("Stiffness") or "")',
-          ))
-          and 'not UIS:GetFocusedTextBox()' in unified_panel)
-
-    check("Unified selection synchronizes World and Explorer, including simulation",
-          'function Panel:SelectWorldAtCenter()' in unified_panel
-          and 'function Panel:OnConstructionSelection()' in unified_panel
-          and 'self.UnifiedExplorer:OnConstructionSelection()' in construction_ui
-          and 'self.UnifiedExplorer:SelectWorldAtCenter()' in mechanical_ui
-          and 'self.UnifiedExplorer:NodeForModel(model)' in assembly_ui
-          and 'Simulation_' in unified_panel)
-    check("Inline Properties reuse validated mechanical and paint APIs",
-          all(key in unified_panel for key in (
+          and 'model:GetAttribute("OwnerUserId")==player.UserId' in explorer_data
+          and 'function Panel:RelevantRelations(node)' in unified_panel
+          and 'or ids[rel:GetAttribute("TargetId")]' in unified_panel
+          and 'or ids[rel:GetAttribute("SecondTargetId")]' in unified_panel
+          and 'for i,relation in ipairs(related) do' in unified_panel)
+    check("Context settings use existing authoritative mechanical and paint APIs",
+          all(t in unified_panel for t in (
+              'function Panel:RenderRelation(node)',
+              'function Panel:RenderObject(node)',
+              'function Panel:ConfirmAppearance(node)',
               'action="SetPaint"', 'action="SetMaterial"',
               'action="TuneSpring"', 'action="AdjustJoint"',
-              'action="TuneBearingMotor"', 'action="UpdateAssembly"',
-              'action="SetGrounded"', 'action="RemoveRelation"',
-          )))
-    check("Context actions are filtered by equipped tool and simulation state",
-          'function Actions.List(node,tools,simulating,assemblyStage,runningAssemblyId)' in context_actions
-          and 'function Panel:OpenMenu(node,position)' in unified_panel
-          and 'function Panel:RunAction(action,node)' in unified_panel
-          and 'if not allowed then' in unified_panel
-          and 'OPENWORKS_ExplorerOpen' in native_tool_controller)
-    check("Explorer pointer focus blocks unintended native world actions",
-          'OPENWORKS_ExplorerOpen' in camera_ui
-          and 'OPENWORKS_ExplorerOpen' in construction_ui
-          and 'OPENWORKS_ExplorerOpen' in mechanical_ui
-          and 'OPENWORKS_ExplorerOpen' in assembly_ui
-          and 'and player:GetAttribute("OPENWORKS_ExplorerOpen")~=true' in native_tool_controller)
-    check("Legacy instructional keybind HUD is not started in Phase 3",
+              'action="TuneBearingMotor"','action="RemoveRelation"',
+          ))
+          and 'function Panel:Send(payload,mechanical)' in unified_panel)
+    check("Right-click selection and UI focus are scoped and server-protected",
+          'UserInputType.MouseButton2' in unified_panel
+          and 'function Panel:SelectWorldAtCenter()' in unified_panel
+          and 'function Panel:OnConstructionSelection()' in unified_panel
+          and 'function Panel:Select(node,propagate)' in unified_panel
+          and 'OPENWORKS_ExplorerOpen' in native_tool_controller
+          and 'OPENWORKS_ExplorerOpen' in camera_ui)
+    check("Centered assembly dialog replaces docked assembly naming",
+          'Name="AssemblyCreator"' in unified_panel
+          and 'Position=UDim2.fromScale(0.5,0.5)' in unified_panel
+          and 'Name="AssemblySelectionBar"' in unified_panel
+          and 'function Panel:FocusAssemblyName()' in unified_panel
+          and 'function Panel:ApplyDraftName()' in unified_panel
+          and 'self.AssemblyTool:Confirm()' in unified_panel
+          and 'self.AssemblyTool:Cancel()' in unified_panel)
+    check("Legacy instructional UI does not start",
           'contextKeybinds:Start()' not in client_entry
           and 'self.StatusFrame.Visible=self.UnifiedExplorer==nil' in construction_ui
           and 'self.Panel.Visible=self.Mode=="Assembly" and self.UnifiedExplorer==nil' in assembly_ui
@@ -186,7 +172,7 @@ def main() -> int:
               'action="CoupleHandCrank"',
               'action="CreateWeld"',
           ))
-          and 'self.Mechanics:PickConnectPart(node.model)' in unified_panel)
+          and 'self.Mechanics:BeginConnect(member)' in unified_panel)
     check("Mechanics does not reintroduce F/H/Shift+J standalone connect modes",
           'if key==Enum.KeyCode.F' not in mechanics_connect
           and 'if key==Enum.KeyCode.H' not in mechanics_connect
@@ -201,56 +187,48 @@ def main() -> int:
 
     assembly_tool_v2 = read("src/client/Controllers/AssemblyToolController.lua")
     simulate_ui_v2 = read("src/client/Controllers/AssemblyController.lua")
-    explorer_v2 = read("src/client/Controllers/UnifiedExplorer.lua")
+    explorer_v2 = read("src/client/Controllers/ContextEditor.lua")
     crank_ui_v2 = read("src/client/Controllers/HandCrankController.lua")
     rack_ui_v2 = read("src/client/Controllers/RackControlController.lua")
     motor_ui_v2 = read("src/client/Controllers/MotorControlController.lua")
-    context_v2 = read("src/client/Controllers/ContextActionRegistry.lua")
-    check("UI v2 Phase 5 drafts are usable without an inspected object",
-          'function Panel:RenderAssemblyDraft(node)' in explorer_v2
+    check("Centered named assembly creation retains exact server membership",
+          'function Panel:FocusAssemblyName()' in explorer_v2
           and 'function Panel:ApplyDraftName()' in explorer_v2
-          and 'function Panel:FocusAssemblyName()' in explorer_v2
-          and 'self:RenderAssemblyDraft(node)' in explorer_v2
-          and 'self:Value("Selection","None")' in explorer_v2
-          and 'self.UnifiedExplorer:OnAssemblyDraftChanged()' in assembly_tool_v2
-          and 'self.NewAssemblyButton.Visible=editing' in explorer_v2)
-    check("UI v2 Phase 5 assembly names and exact members commit through original service",
-          'draft.Name=name' in explorer_v2
+          and 'Name="AssemblyCreator"' in explorer_v2
+          and 'self.AssemblyTool.Name=name' in explorer_v2
           and 'self.UnifiedExplorer:ApplyDraftName()' in assembly_tool_v2
           and 'action=if self.EditingId then "UpdateAssembly" else "CreateAssembly"' in assembly_tool_v2
           and 'memberIds=ids' in assembly_tool_v2
-          and 'self:ToggleMember(model)' in assembly_tool_v2
           and 'function Tool:ToggleMember(model,forceSingle)' in assembly_tool_v2)
-    check("UI v2 Phase 5 simulation start stop share a registered-assembly lifecycle",
+    check("Simulation controls retain registered-assembly startup and stop",
           'function Controller:StartRegisteredAssembly(seed)' in simulate_ui_v2
           and 'function Controller:StopRegisteredAssembly()' in simulate_ui_v2
           and 'self:StartRegisteredAssembly(seed or self:Pick())' in simulate_ui_v2
           and 'self.Mechanics:StartRegisteredAssembly(seed)' in explorer_v2
           and 'self.Mechanics:StopRegisteredAssembly()' in explorer_v2
+          and 'Name="SimulationControls"' in explorer_v2
           and 'grounded=false' in simulate_ui_v2)
-    check("UI v2 Phase 5 run pause reset telemetry are unified in Properties",
+    check("Contextual simulation inspection preserves shared controls",
           'function Panel:RenderSimulationControls(node)' in explorer_v2
           and 'function Panel:RunSimulationAction(action,node)' in explorer_v2
           and 'action="GetMechanismInfo",seedId=id' in explorer_v2
           and '"PauseSimulation"' in explorer_v2
           and '"ResetSimulation"' in explorer_v2
           and 'self.UnifiedExplorer:RunSimulationAction("pause"' in simulate_ui_v2
-          and 'self.UnifiedExplorer:RunSimulationAction("reset"' in simulate_ui_v2
-          and 'self.UnifiedExplorer:RunSimulationAction("telemetry"' in simulate_ui_v2)
-    check("UI v2 Phase 5 actuator holds release on Explorer focus",
+          and 'self.UnifiedExplorer:RunSimulationAction("reset"' in simulate_ui_v2)
+    check("Actuator holds are released while contextual UI has cursor",
           all('OPENWORKS_ExplorerOpen' in controller for controller in (
               crank_ui_v2,rack_ui_v2,motor_ui_v2))
           and 'self:Release()' in crank_ui_v2
           and 'self:Release()' in rack_ui_v2
           and 'self:Release()' in motor_ui_v2)
-    check("UI v2 Phase 5 editing blocked during simulation while Stop remains available",
+    check("Simulation blocks editing while STOP is always available",
           'and id=="AssemblyEditor"' in native_tool_controller
           and 'OPENWORKS_Simulating' in native_tool_controller
           and 'OPENWORKS_Simulating' in assembly_tool_v2
           and 'if action~="stop"' in explorer_v2
           and 'elseif simulation and simulation:IsRunning(player) then' in
-            read("src/server/Runtime/ConstructionService.lua")
-          and 'node.id==runningAssemblyId' in context_v2)
+              read("src/server/Runtime/ConstructionService.lua"))
 
     selection_ui_v2 = read("src/client/Controllers/ConstructionController.lua")
     layered_ui_v2 = read("src/client/Controllers/LayeredEditingController.lua")
@@ -262,14 +240,14 @@ def main() -> int:
                   "MateChoicePanel.lua","MaterialPickerController.lua",
                   "RelationshipProperties.lua",
               )))
-    check("Phase 6 only the unified dock owns relationship and paint dialogs",
+    check("Context editor owns the only live relationship and appearance dialogs",
           "MateChoicePanel" not in selection_ui_v2
           and "MaterialPickerController" not in selection_ui_v2
           and "ComponentOutline" not in selection_ui_v2
           and "RelationshipProperties" not in mechanical_ui
           and 'parent.UnifiedExplorer:ChooseFit(' in layered_ui_v2
-          and 'function Panel:Appearance(node)' in unified_panel
-          and 'function Panel:RelationshipProperties(node)' in unified_panel
+          and 'function Panel:RenderObject(node)' in unified_panel
+          and 'function Panel:RenderRelation(node)' in unified_panel
           and 'Name="UnifiedConnectionChoice"' in unified_panel)
     check("Phase 6 does not advertise a server-rejected direct Bolt action",
           'add("Bolt")' not in connection_catalog
@@ -279,10 +257,10 @@ def main() -> int:
     check("Phase 6 no dead selection world folder or parallel inspector owner",
           'OPENWORKS_LocalSelectionVisuals' not in selection_ui_v2
           and 'OPENWORKS_LocalInspectorSelection' not in mechanical_ui
-          and 'OPENWORKS_UnifiedExplorerProperties' in unified_panel
+          and 'OPENWORKS_ContextEditor' in unified_panel
           and 'OPENWORKS_UIV2_Feedback' in visual_ui_v2)
 
-    check("Phase 6 starts the single dock before legacy UI creation",
+    check("Contextual editor initializes before legacy HUD controllers",
           client_entry.index("constructionController.UnifiedExplorer=unifiedExplorer")
             < client_entry.index("constructionController:Start()")
           and client_entry.index("assemblyController.UnifiedExplorer=unifiedExplorer")
@@ -332,15 +310,31 @@ def main() -> int:
           and 'player:GetAttribute("OPENWORKS_Simulating")==true' in left_panel
           and 'Name="ContextualKeybindRows"' in left_panel
           and 'toolPalette:Start()' in client_entry)
-    check("F2 cursor shortcut preserves Tab for Build Edit depth selection",
-          'input.KeyCode==Enum.KeyCode.F2' in unified_panel
-          and 'input.KeyCode==Enum.KeyCode.Tab' in unified_panel
-          and 'self.Tools.SubtoolId=="Place"' in unified_panel
+    check("F2 cursor shortcut preserves Build Edit Tab depth selection",
+          'key==Enum.KeyCode.F2' in unified_panel
+          and 'key==Enum.KeyCode.Tab' not in unified_panel
           and 'if key == Enum.KeyCode.Tab then' in
               read("src/client/Controllers/LayeredEditingController.lua")
           and 'parent.Tools.SubtoolId~="Edit"' in
               read("src/client/Controllers/LayeredEditingController.lua"))
 
+    check("Primitive library no longer overlaps left-side tool panels",
+          'AnchorPoint = Vector2.new(1,0.5)' in selection
+          and 'Position = UDim2.new(1,-22,0.5,0)' in selection
+          and 'Name="OPENWORKS_ToolKeybinds"' in left_panel)
+    check("Right-click component lists all mechanical relationships and one CONFIRM",
+          'function Panel:RelevantRelations(node)' in unified_panel
+          and 'for i,relation in ipairs(related) do' in unified_panel
+          and 'self.RelationView=item' in unified_panel
+          and 'function Panel:RenderRelation(node)' in unified_panel
+          and 'self:ActionButton("CONFIRM"' in unified_panel
+          and 'Name="RightClickEditor"' in unified_panel)
+    check("Context server property edits preserve owner and simulation gates",
+          'if propertyAction then' in mechanic_authority
+          and 'hasEquippedTool(player,"Build")' in mechanic_authority
+          and 'hasEquippedTool(player,"Mechanics")' in mechanic_authority
+          and 'hasEquippedTool(player,"AssemblySimulation")' in mechanic_authority
+          and 'elseif simulation and simulation:IsRunning(player) then' in mechanic_authority)
     rokit = read("rokit.toml")
     aftman = read("aftman.toml")
     for name in ("rojo", "stylua", "selene"):
@@ -528,7 +522,7 @@ def main() -> int:
           'skipped+=1' in persistence
           and 'retired arbitrary-axis joint(s)' in persistence)
     check("Motor settings are edited only on physical bearings",
-          'function Panel:RelationshipProperties(node)' in unified_panel
+          'function Panel:RenderRelation(node)' in unified_panel
           and 'action="TuneBearingMotor"' in unified_panel
           and 'motorEnabled=self.Flags.Motor' in unified_panel
           and 'function Mechanical:TuneBearingMotor(' in mechanical
@@ -565,8 +559,8 @@ def main() -> int:
           and 'paintFinish=record.paintFinish or "Factory"' in persistence
           and 'paintHex=snap.paintColorHex' in persistence
           and 'result.steps = table.clone(data.steps)' in component)
-    check("Unified paint supports HEX, swatches and factory reset",
-          'function Panel:Appearance(node)' in unified_panel
+    check("Context paint supports HEX, swatches and factory reset",
+          'function Panel:ConfirmAppearance(node)' in unified_panel
           and 'Paint.NormalizeHex(' in unified_panel
           and 'Paint.Palette()' in unified_panel
           and 'action="SetMaterial"' in unified_panel
@@ -594,10 +588,11 @@ def main() -> int:
           and 'if self.GroupAnchor then table.insert(ordered,self.GroupAnchor) end' in selection
           and 'self.Feedback:Set("selection",tostring(i),{model},"selection",false)' in selection
           and 'Instance.new("Highlight")' not in feedback)
-    check("UI v2 assembly boxes use whole-selection and member semantics",
+    check("Assembly outline reflects explicitly selected draft members only",
           'self.Feedback:Set("assembly",id,{byId[id]},"assembly",false)' in tool_ui
-          and 'self.Feedback:Set("assembly","outer",ordered,"assembly",true)' in tool_ui
-          and 'Name="AssemblyPrimitive",Adornee=model' not in tool_ui)
+          and 'if self.Mode=="Assembly" and self.Stage=="Selecting" then' in tool_ui
+          and 'self:ShowVisuals(members,PURPLE)' in tool_ui
+          and 'mode=="Simulate"' not in tool_ui[tool_ui.index('function Tool:Tick()'):tool_ui.index('function Tool:Start()')])
     check("UI v2 orange/red/green connection feedback is server-confirmed",
           'self.Feedback:Set("connection","first",{first},"pending",false)' in alignment_editor
           and 'if valid then "pending" else "invalid"' in alignment_editor
@@ -606,7 +601,7 @@ def main() -> int:
           and 'self.Feedback:FlashSuccess({self.WeldFirst,picked})' in alignment_editor)
     check("UI v2 automatic smart fits use orange pending and real committed models",
           'self.Feedback:SetGhostPending(mechanical)' in selection
-          and 'if mechanical then "pending" else "snap"' in selection
+          and 'self.Feedback:Clear("snap")' in selection
           and 'self.Feedback:FlashSuccess(participants)' in selection
           and 'and model:GetAttribute("InstanceId")==newId' in selection
           and 'if ok then' in selection)
@@ -1128,17 +1123,18 @@ def main() -> int:
     check("Selection and inspection visuals use the single client Workspace manager",
           'Name="OPENWORKS_UIV2_Feedback"' in feedback
           and 'self.Feedback:Set("selection"' in selection
-          and 'self.Feedback:Set("explorer-selection"' in unified_panel
+          and 'self.Feedback:Set("context-selection"' in unified_panel
           and 'Name="OPENWORKS_LocalInspectorSelection"' not in unified_panel)
     check("UI v2 mechanical guides use line/sphere adornments, not Parts",
           'Instance.new("Part")' not in world
           and '"LineHandleAdornment"' in world
           and '"SphereHandleAdornment"' in world
           and 'if kind~="Bearing" and kind~="Slider"' in world)
-    check("Ground and assembly feedback avoid the Highlight budget",
-          'MAX_BODIES=64' in world
-          and 'self.Feedback:Set("ground",id,{model}' in world
-          and 'Color3.fromRGB(162,102,237)' in feedback
+    check("Hover and grounding never generate misleading selection boxes",
+          'self.Feedback:Clear("ground")' in world
+          and 'self.Feedback:Set("ground",id,{model}' not in world
+          and 'self.Feedback:Clear("hover")' in selection
+          and 'if owner=="hover" or owner=="snap" or owner=="ground"' in feedback
           and 'Instance.new("Highlight")' not in world)
     handles=read("src/client/Controllers/PhysicalHandles.lua")
     motion=read("src/client/Controllers/WorldMotion.lua")
@@ -1158,16 +1154,15 @@ def main() -> int:
           and 'self.PreviewVisualPose=WorldMotion.Step(' in selection
           and 'align.VisualPose=WorldMotion.Step(' in layered
           and 'self.VisualPose=WorldMotion.Step(' in alignment_editor)
-    check("Visual resizing eases block center and dimensions together with grips",
-          'function WorldMotion.StepSize(' in motion
-          and 'function Controller:AdvanceScalePreview(dt)' in selection
-          and 'self.ScaleVisualCF=WorldMotion.Step(' in selection
-          and 'self.ScaleVisualSize=WorldMotion.StepSize(' in selection
-          and 'ghost.PrimaryPart.Size=self.ScaleVisualSize' in selection
+    check("Selected resize box updates exact live preview geometry each frame",
+          'function Controller:AdvanceScalePreview(dt)' in selection
+          and 'self.ScaleVisualCF=self.ScaleCF' in selection
+          and 'self.ScaleVisualSize=self.ScaleSize' in selection
+          and 'ghost.PrimaryPart.Size=self.ScaleSize' in selection
+          and 'self.Feedback:Set("selection","resize",{ghost},"selection",false)' in selection
           and 'self:AdvanceScalePreview(dt)' in selection
-          and 'self.VisualCF=WorldMotion.Step(' in gizmo
-          and 'self.VisualSize=WorldMotion.StepSize(' in gizmo
-          and 'self.Visual:Update(self.VisualCF or self.CFrame,' in gizmo)
+          and 'if now-self.LastUpdate<1/120 then return end' in feedback
+          and 'self:RefreshSelectionHighlights()' in selection)
     check("Server commits keep exact geometry rather than eased visual poses",
           'position=self.PreviewCF.Position' in selection
           and 'position=self.PreviewCF.Position,' in selection
@@ -1278,9 +1273,10 @@ def main() -> int:
           'local crankDetaching=false' in service
           and 'not crankDetaching' in service
           and 'model:SetAttribute("AlignedOpeningId",nil)' in service)
-    check("Assembly preview available before P",
-          'mode=="Simulate"' in tool_ui
-          and "self:OwnedAssembly(chosen)" in tool_ui)
+    check("Explicit assembly selection replaces unintended aim hover",
+          'function Tool:Tick()' in tool_ui
+          and 'if self.Mode=="Assembly" and self.Stage=="Selecting" then' in tool_ui
+          and 'player:SetAttribute("OPENWORKS_HoverAssemblyId","")' in tool_ui)
     check("Manual crank uses the same shared range as Simulate",
           "Grid.MaxDistance" in crank and "Grid.MaxDistance" in tool_ui)
     check("Client entry starts Assembly controller",
