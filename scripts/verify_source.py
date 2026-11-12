@@ -298,6 +298,49 @@ def main() -> int:
               read(".github/workflows/source-contracts.yml")
           and 'version: "2.1.0"' in read(".github/workflows/source-contracts.yml"))
 
+    left_panel = read("src/client/Controllers/ToolPalette.lua")
+    contextual_keys = read("src/client/Controllers/ToolHelpDefinitions.lua")
+    tool_defs = read("src/shared/Construction/SubtoolDefinitions.lua")
+    check("Left sidebar displays every real shortcut from shared subtool definitions",
+          'Name="OPENWORKS_ToolKeybinds"' in left_panel
+          and 'Name="SubtoolsColumn"' in left_panel
+          and 'Name="ToolSpecificControls"' in left_panel
+          and 'item.Key.Name' in left_panel
+          and 'local definitions=require(' in left_panel
+          and 'for i,item in ipairs(def.Items)' in left_panel
+          and 'self.Tools:SetSubtool(item.Id)' in left_panel
+          and 'function Palette:RenderSubtools()' in left_panel
+          and 'function Palette:RenderControls(info)' in left_panel
+          and all(t in tool_defs for t in (
+              'Key=Enum.KeyCode.B','Key=Enum.KeyCode.E',
+              'Key=Enum.KeyCode.V','Key=Enum.KeyCode.M',
+              'Key=Enum.KeyCode.C','Key=Enum.KeyCode.Y',
+          )))
+    check("Left contextual controls follow live fitting, draft, and simulation state",
+          'function Help.Context(tools,build,mechanics,assemblyTool,player)' in contextual_keys
+          and all(v in contextual_keys for v in (
+              'build.PendingMateChoice','build.LockedAlignment',
+              'build.Layered and build.Layered.Alignment',
+              'mechanics.Stage','assemblyTool.Stage',
+              'OPENWORKS_Simulating','OPENWORKS_SimulationPaused',
+              'Stage', 'Ctrl+Z / Y', 'Q / E','F6',
+          ))
+          and 'self:SignatureOf()' in left_panel
+          and 'self.RefreshElapsed>=0.2' in left_panel)
+    check("Keybind sidebar honors focused UI and protected simulated subtools",
+          'player:GetAttribute("OPENWORKS_ExplorerOpen")~=true' in left_panel
+          and 'player:GetAttribute("OPENWORKS_Simulating")==true' in left_panel
+          and 'Name="ContextualKeybindRows"' in left_panel
+          and 'toolPalette:Start()' in client_entry)
+    check("F2 cursor shortcut preserves Tab for Build Edit depth selection",
+          'input.KeyCode==Enum.KeyCode.F2' in unified_panel
+          and 'input.KeyCode==Enum.KeyCode.Tab' in unified_panel
+          and 'self.Tools.SubtoolId=="Place"' in unified_panel
+          and 'if key == Enum.KeyCode.Tab then' in
+              read("src/client/Controllers/LayeredEditingController.lua")
+          and 'parent.Tools.SubtoolId~="Edit"' in
+              read("src/client/Controllers/LayeredEditingController.lua"))
+
     rokit = read("rokit.toml")
     aftman = read("aftman.toml")
     for name in ("rojo", "stylua", "selene"):
