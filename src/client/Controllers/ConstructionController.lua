@@ -472,60 +472,29 @@ function Controller:ClearSmartMatch()
     self.SmartBoreKind="Cylindrical"
     self.LockedAlignment=nil
     self.SmartLastScan=0
-    if self.SmartHighlight then self.SmartHighlight:Destroy() end
-    self.SmartHighlight=nil
-    if self.SmartGroupHighlights then
-        for _,light in ipairs(self.SmartGroupHighlights) do light:Destroy() end
-    end
-    self.SmartGroupHighlights=nil
-    self.SmartGroupKey=nil
+    if self.Feedback then self.Feedback:Clear("snap") end
 end
 
 function Controller:HighlightSmartTarget(match)
+    if not self.Feedback then return end
+    self.Feedback:Clear("snap")
     local target=match and match.target
-    local group=target and target:GetAttribute("ComponentId")
-    local groupKey=target and (group or target) or nil
-    if self.SmartHighlight and self.SmartHighlight.Adornee==target
-        and self.SmartGroupKey==groupKey then return end
-    if self.SmartHighlight then self.SmartHighlight:Destroy() end
-    if self.SmartGroupHighlights then
-        for _,light in ipairs(self.SmartGroupHighlights) do light:Destroy() end
-    end
-    self.SmartGroupHighlights={}
-    self.SmartGroupKey=groupKey
-    self.SmartHighlight=nil
-    if target then
-        self.SmartHighlight=create("Highlight",{
-            Name="OPENWORKS_AutoSnapTarget",
-            Adornee=target,
-            FillColor=Color3.fromRGB(106,212,233),
-            FillTransparency=0.7,
-            OutlineTransparency=1,
-            DepthMode=Enum.HighlightDepthMode.AlwaysOnTop,
-        },self.Gui)
-        -- Highlight the WHOLE stationary editor component. The moving
-        -- ghost is already a full component, not just the selected hole.
-        if type(group)=="string" and group~="" then
-            local built=workspace:FindFirstChild(Config.FolderName)
-            if built then
-                for _,model in ipairs(built:GetChildren()) do
-                    if model:IsA("Model") and model~=target
-                        and model:GetAttribute("OwnerUserId")==player.UserId
-                        and model:GetAttribute("ComponentId")==group then
-                        local light=create("Highlight",{
-                            Name="OPENWORKS_FitTargetMember",
-                            Adornee=model,
-                            FillColor=Color3.fromRGB(93,190,212),
-                            FillTransparency=0.86,
-                            OutlineTransparency=1,
-                            DepthMode=Enum.HighlightDepthMode.Occluded,
-                        },self.Gui)
-                        table.insert(self.SmartGroupHighlights,light)
-                    end
+    if not target or not target.Parent then return end
+    local group=target:GetAttribute("ComponentId")
+    local models={target}
+    if type(group)=="string" and group~="" then
+        local built=workspace:FindFirstChild(Config.FolderName)
+        if built then
+            for _,model in ipairs(built:GetChildren()) do
+                if model:IsA("Model") and model~=target
+                    and model:GetAttribute("OwnerUserId")==player.UserId
+                    and model:GetAttribute("ComponentId")==group then
+                    table.insert(models,model)
                 end
             end
         end
     end
+    self.Feedback:Set("snap","target",models,"snap",#models>1)
 end
 
 function Controller:UpdateFitIndicators(match)
@@ -995,7 +964,7 @@ function Controller:RebuildPreview()
             item.Reflectance=0
             item.Material=Enum.Material.SmoothPlastic
             item.Transparency=if item:GetAttribute("GearPivotOnly")==true
-                then 1 else (if combined then 0 else 0.48)
+                then 1 else 0.65
             item.LocalTransparencyModifier=0
             item.Color=BLUE
             if item:IsA("PartOperation") then item.UsePartColor=true end
@@ -1005,17 +974,6 @@ function Controller:RebuildPreview()
         end
     end
 
-    -- Exactly ONE external Highlight on the complete preview container,
-    -- not a separate highlight around each of its primitive children.
-    create("Highlight",{
-        Name="OPENWORKS_UnifiedGhost",
-        Adornee=ghost,
-        FillColor=BLUE,
-        FillTransparency=if combined then 0.94 else 0.8,
-        OutlineColor=BLUE,
-        OutlineTransparency=if combined then 0.06 else 0.45,
-        DepthMode=Enum.HighlightDepthMode.Occluded,
-    },ghost)
 
     if self.Mode=="Build" and self.CurrentId then
         ghost:SetAttribute("TemplateId",self.CurrentId)
@@ -1030,31 +988,16 @@ function Controller:RebuildPreview()
 end
 
 function Controller:RefreshSelectionHighlights()
-    if self.SelectionHighlight then
-        self.SelectionHighlight:Destroy()
-        self.SelectionHighlight=nil
-    end
-    for _,h in ipairs(self.SelectionHighlights) do h:Destroy() end
-    table.clear(self.SelectionHighlights)
-    if self.ComponentOutline then
-        self.ComponentOutline:Destroy()
-        self.ComponentOutline=nil
-    end
+    if not self.Feedback then return end
+    self.Feedback:Clear("selection")
     if self.Mode~="Edit" and self.Mode~="Inspect" then return end
-
-    -- Multi-selection is PER PRIMITIVE, never a single AABB around
-    -- several parts. This remains legible for sparse/nonrectangular
-    -- groups and marks each real model instead of empty space.
-    for _,model in ipairs(self.SelectedParts) do
-        if model and model.Parent and model.PrimaryPart then
-            local highlight=create("Highlight",{
-                Name="OPENWORKS_SelectionOutline",
-                Adornee=model,FillTransparency=1,
-                OutlineTransparency=0,
-                OutlineColor=Color3.fromRGB(0,170,255),
-                DepthMode=Enum.HighlightDepthMode.Occluded,
-            },self.SelectionWorldRoot)
-            table.insert(self.SelectionHighlights,highlight)
+    if self.SelectedComponentId and #self.SelectedParts>0 then
+        -- One oriented box for an editor component.
+        self.Feedback:Set("selection","component",self.SelectedParts,"selection",true)
+    else
+        -- Separate boxes for independent multi-selection.
+        for i,model in ipairs(self.SelectedParts) do
+            self.Feedback:Set("selection",tostring(i),{model},"selection",false)
         end
     end
 end
@@ -2477,29 +2420,18 @@ function Controller:Start()
 
     table.insert(self.Connections,RunService.RenderStepped:Connect(function(dt)
         self:AdvanceScalePreview(dt)
-        -- Only the LIVE ghost is outlined while moving/copying/alignment.
-        -- Never leave a second stale selection boundary at the original
-        -- component location behind the ghost.
+        -- Suppress the original selection box during a moving ghost.
         local previewing=self.Pending~=nil or (self.Layered
             and self.Layered.Alignment
             and self.Layered.Alignment.Stage=="Preview")
         -- Bounds() walks every descendant of each selected primitive.
         -- Selection geometry is stationary outside an explicit transform;
         -- recalculate at 10 Hz, but hide instantly when a ghost begins.
-        local outlineNow=os.clock()
-        if self.ComponentOutline
-            and (self.OutlinePreviewing~=previewing
-                or outlineNow-(self.OutlineLastUpdate or 0)>=0.1) then
-            self.ComponentOutline:Update(
-                if previewing then {} else self.SelectedParts)
-            self.OutlineLastUpdate=outlineNow
-            self.OutlinePreviewing=previewing
+        if self.Feedback then
+            if previewing then self.Feedback:Clear("selection")
+            elseif self.LastPreviewing then self:RefreshSelectionHighlights() end
         end
-        for _,highlight in ipairs(self.SelectionHighlights) do
-            if highlight and highlight.Parent then
-                highlight.Enabled=not previewing
-            end
-        end
+        self.LastPreviewing=previewing
         -- Replicated deletion, undo/redo or plot reload may destroy selected
         -- models without calling SetSelection. Never leave orphan outlines.
         local stale=false
