@@ -2,9 +2,9 @@ name: Source architecture contracts
 
 on:
   push:
-    branches: [dev, main]
+    branches: [dev, main, "feature/ui-reorganization-v2"]
   pull_request:
-    branches: [dev, main]
+    branches: [dev, main, "feature/ui-reorganization-v2"]
 
 permissions:
   contents: read
