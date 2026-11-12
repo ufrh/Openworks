@@ -81,7 +81,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             stage="APPEARANCE"
             put(rows,"Click","Select object")
             put(rows,"M","Open Properties")
-            put(rows,"Tab","Unlock cursor")
+            put(rows,"F2","Unlock cursor")
         end
         if sub~="Paint" then
             put(rows,"Ctrl+Z / Y","Undo / redo")
@@ -102,8 +102,8 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
                 put(rows,"Esc","Cancel choice")
             else
                 stage="CONNECT"
-                put(rows,"Click","Select part "..(if state=="ChooseSecond" then "2" else "1"))
-                put(rows,"Click","Select next part")
+                put(rows,"Click",if state=="ChooseSecond" then
+                    "Select second part" else "Select first part")
                 put(rows,"Esc","Reset selection")
             end
         else
@@ -150,11 +150,16 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             end
         end
     end
-    if not (primary=="Build" and
+    local fitActive=(primary=="Build" and
         (stage=="SHAFT FIT" or stage=="ALIGNMENT" or stage=="SMART FIT"
-        or stage=="CHOOSE OPENING")) then
-        put(rows,"F6","Save / load plot")
+            or stage=="CHOOSE OPENING"))
+        or (primary=="Mechanics" and
+            (stage=="CONNECTION CHOICE" or stage=="INSERTION"
+                or stage=="FINE FIT"))
+    if not fitActive and sub~="Paint" then
+        put(rows,"F2","Unlock cursor")
     end
+    if not fitActive then put(rows,"F6","Save / load plot") end
     return {title=stage~="" and stage or "CONTROLS",rows=rows}
 end
 
