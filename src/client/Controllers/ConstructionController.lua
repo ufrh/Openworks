@@ -326,7 +326,8 @@ function Controller:RefreshHUD()
     local current = self.CurrentId or "Choose a primitive"
     local size = self.CurrentSize
 
-    self.TitleLabel.Text = "OPENWORKS  /  " .. string.upper(mode)
+    self.TitleLabel.Text = "OPENWORKS  /  "
+        .. (if mode=="Build" or mode=="Edit" then "BUILD" else string.upper(mode))
     if self.SmartMatch and not (self.Layered and self.Layered.Alignment)
         and (self.Mode == "Build" or self.Pending) then
         local match=self.SmartMatch
@@ -404,7 +405,7 @@ function Controller:RefreshHUD()
         self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
             size.X / Grid.Unit, size.Y / Grid.Unit, size.Z / Grid.Unit) else "")
         self.HelpLabel.Text = if self.CatalogOpen then "Choose a primitive • B/Esc close"
-            else "B catalog • R/T/Y rotate • V grips • N precise U size"
+            else "Click place • R/T/Y rotate • V grips • N size • Enter select"
     elseif self.Pending == "Move" then
         self.DetailLabel.Text = "MOVE  /  " .. (self.Selected and self.Selected.Name or "")
         self.HelpLabel.Text = "Click to place  •  R/T/Y rotate  •  Esc cancel"
@@ -428,7 +429,7 @@ function Controller:RefreshHUD()
     else
         local target = self.Selected
         self.DetailLabel.Text = if target then target.Name .. " / V grips • N exact U" else "Click a constructed piece"
-        self.HelpLabel.Text = "Tab depth • X X-ray • I isolate • L align • V scale"
+        self.HelpLabel.Text = "Click select • B add primitive • G move • V scale • O origin"
     end
 
     if self.Layered and self.Layered.Alignment
@@ -447,6 +448,12 @@ function Controller:RefreshHUD()
 end
 
 function Controller:SelectPrimitive(id)
+    if self.Tools.ActiveId~="Build" then return end
+    if self.Assembly then self.Assembly:Reset() end
+    self:CancelPending()
+    self:SetSelection(nil)
+    self.Mode="Build" -- placement context within the same native Build tool
+    if self.Layered then self.Layered:OnModeChanged("Build") end
     self.NumericPrecision=false
     local entry = Registry.Get(id)
     if not entry then return end
@@ -456,6 +463,15 @@ function Controller:SelectPrimitive(id)
     self.Steps = { x = 0, y = 0, z = 0 }
     self.Pending = nil
     self:RebuildPreview()
+    self:RefreshHUD()
+end
+
+function Controller:StopPlacement()
+    if self.Mode~="Build" then return end
+    self:ClearSmartMatch()
+    self:ClearPreview()
+    self.Mode="Edit" -- selection context; never requires another hotbar tool
+    if self.Layered then self.Layered:OnModeChanged("Edit") end
     self:RefreshHUD()
 end
 
@@ -1175,6 +1191,9 @@ function Controller:CancelPending()
 end
 
 function Controller:OnModeChanged(mode)
+    -- Build is one equipped tool: selecting and creating are contextual.
+    -- Equipping it always starts in selection, not with an unwanted ghost.
+    if mode=="Build" then mode="Edit" end
     self.PivotSetting=false
     if mode~="Edit" and self.MaterialPicker then
         self.MaterialPicker:Close()
@@ -1198,14 +1217,6 @@ function Controller:OnModeChanged(mode)
         self:ClearPreview()
         self:RefreshHUD()
         return
-    end
-    if mode == "Build" then
-        if not self.CurrentId or not Registry.Get(self.CurrentId) then
-            local entries = Registry.List()
-            if #entries > 0 then self:SelectPrimitive(entries[1].Id) end
-        else
-            self:RebuildPreview()
-        end
     end
     self:RefreshHUD()
 end
@@ -1732,6 +1743,7 @@ function Controller:CommitFitPivot()
 end
 
 function Controller:Activate(mode)
+    if mode=="Build" then mode=self.Mode end
     if mode=="Edit" and self.PivotSetting then
         self:CommitFitPivot()
         return
@@ -2276,7 +2288,7 @@ end
 function Controller:OnInput(input, processed)
     if self.PendingMateChoice then return end
     if self.Numeric and self.Numeric.Active then
-        if input.KeyCode==Enum.KeyCode.Escape then
+        if input.KeyCode==Enum.KeyCode.Return then
             self.Numeric:Hide()
             self:EndScale()
         end
@@ -2294,7 +2306,7 @@ function Controller:OnInput(input, processed)
             self:EditFitPivot(true)
             return
         end
-        if key==Enum.KeyCode.Escape then
+        if key==Enum.KeyCode.Return then
             self.PivotSetting=false
             self:RefreshHUD()
         elseif not processed and (key==Enum.KeyCode.Q or key==Enum.KeyCode.E) then
@@ -2332,7 +2344,7 @@ function Controller:OnInput(input, processed)
         self.LastPreviewCheck=0
         return
     end
-    if self.LockedAlignment and key~=Enum.KeyCode.Escape then
+    if self.LockedAlignment and key~=Enum.KeyCode.Return then
         -- During the positioning stage, only wheel/Q/E, zoom and click
         -- can affect the fit. Don't mutate the component or open sizing.
         return
@@ -2342,20 +2354,26 @@ function Controller:OnInput(input, processed)
 
     if self.Layered and self.Layered:OnInput(input, processed) then return end
 
-    if key == Enum.KeyCode.Escape then
+    if key==Enum.KeyCode.Return or key==Enum.KeyCode.KeypadEnter then
+        -- Enter exits the current tool workflow. Numeric inputs and assembly
+        -- naming consume Enter themselves as confirmation.
         if self.LockedAlignment then
             self:ClearSmartMatch()
             self.LastPreviewCheck=0
-            self:RefreshHUD()
-            return
+        elseif self.ScaleMode then
+            self:EndScale()
+        elseif self.CatalogOpen then
+            self:ShowCatalog(false)
+        elseif self.Pending then
+            self:CancelPending()
+        elseif self.Mode=="Build" then
+            self:StopPlacement()
         end
-        if self.ScaleMode then self:EndScale() end
-        if self.CatalogOpen then self:ShowCatalog(false) end
-        if self.Pending then self:CancelPending() self:RefreshHUD() end
+        self:RefreshHUD()
         return
     end
     if self.MaterialPicker and self.MaterialPicker.Visible then
-        if key==Enum.KeyCode.Escape then self.MaterialPicker:Close() end
+        if key==Enum.KeyCode.Return then self.MaterialPicker:Close() end
         return
     end
     if key==Enum.KeyCode.M and self.Mode=="Edit" and not processed then
@@ -2419,7 +2437,7 @@ function Controller:OnInput(input, processed)
         self:StartMove(false)
     elseif self.Mode == "Edit" and key == Enum.KeyCode.F then
         self:StartMove(true)
-    elseif self.Mode == "Edit" and (key == Enum.KeyCode.Delete or key == Enum.KeyCode.Backspace) then
+    elseif self.Mode == "Edit" and key == Enum.KeyCode.Backspace then
         self:Delete()
     end
 end
