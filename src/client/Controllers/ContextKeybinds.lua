@@ -200,7 +200,7 @@ function Context:Lines()
             append(lines,"Alt+Up/Down","World up/down • 0.25 studs")
             append(lines,"Alt+Left/Right","Horizontal camera-relative nudge")
             append(lines,"Shift+Alt+Arrows","Fine nudge • 0.05 studs")
-            append(lines,"M","Material palette • rubber tires, metal, wood, etc.")
+            append(lines,"M","Paint studio • colors, matte, gloss, chrome + physical materials")
             if c.Selected and type(c.Selected:GetAttribute("AlignedOpeningId"))=="string" then
                 append(lines,"V","Resize aligned shaft length only")
             end

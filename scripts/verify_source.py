@@ -186,6 +186,7 @@ def main() -> int:
           and 'axis=axis,direction=direction,fine=fine' in assembly_tool
           and 'action="VerticalMove",scope="Assembly"' in assembly_tool
           and 'Enum.KeyCode.PageUp' not in assembly_tool)
+    paint=read("src/shared/Construction/PaintCatalog.lua")
     materials=read("src/shared/Construction/MaterialCatalog.lua")
     material_ui=read("src/client/Controllers/MaterialPickerController.lua")
     assembly_client=read("src/client/Controllers/AssemblyController.lua")
@@ -237,6 +238,44 @@ def main() -> int:
           and 'MotorEnabled' in mechanical
           and 'kind=="Bearing"' in simulation
           and 'function Simulation:InputMotor(player,key,holding)' in simulation)
+    check("Vehicle paint has custom HEX, real matte/metallic/chrome finishes",
+          'function Paint.NormalizeHex(value:any)' in paint
+          and 'Factory={Name="Original material"' in paint
+          and 'Matte={Name="Matte"' in paint
+          and 'Gloss={Name="High Gloss"' in paint
+          and 'Chrome={Name="Chrome"' in paint
+          and 'Pearl={Name="Pearlescent"' in paint
+          and 'part.Reflectance=finish.Reflectance' in paint
+          and 'if paintColor then part.Color=paintColor end' in paint)
+    check("Painting is server-authorized, supports components and is undoable",
+          'action=="SetPaint"' in service
+          and 'local function setPaint(player,payload)' in service
+          and 'PaintCatalog.IsValidFinish(payload.paintFinish)' in service
+          and 'PaintCatalog.NormalizeHex(payload.paintColorHex)' in service
+          and 'members=components:Members(player,id)' in service
+          and 'commitBatch(player,before,after)' in service
+          and 'action="SetPaint"' in material_ui)
+    check("Paint and engineering materials have separate physics and appearance",
+          'MaterialCatalog.Apply(model,if MaterialCatalog.IsValid' in service
+          and 'PaintCatalog.Apply(model,if PaintCatalog.IsValidFinish' in service
+          and 'CustomPhysicalProperties=PhysicalProperties.new(' in materials
+          and 'part.Material=finish.Material' in paint
+          and 'CustomPhysicalProperties' not in paint)
+    check("Paint stays on copies, transforms, history, and manual plots",
+          'paintFinish=model:GetAttribute("PaintFinish") or "Factory"' in service
+          and 'paintColorHex=model:GetAttribute("PaintColorHex")' in service
+          and 'then self.Selected:GetAttribute("PaintFinish")' in selection
+          and 'paintFinish=record.paintFinish or "Factory"' in persistence
+          and 'paintHex=snap.paintColorHex' in persistence
+          and 'result.steps = table.clone(data.steps)' in component)
+    check("Paint studio supports custom hexadecimal, swatches and factory reset",
+          'Name="OPENWORKS_Materials"' in material_ui
+          and 'function Picker:ApplyPaint(reset)' in material_ui
+          and 'self.HexBox.Text="#"..self.ColorHex' in material_ui
+          and 'Paint.Palette()' in material_ui
+          and 'action="SetMaterial"' in material_ui
+          and 'paintFinish=finish' in material_ui
+          and 'self:ApplyPaint(true)' in material_ui)
     check("Assembly server authorization",
           'hasEquippedTool(player,"Assembly")' in service
           and 'action=="CreateAssembly"' in service

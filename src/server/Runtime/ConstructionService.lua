@@ -31,6 +31,7 @@ local HandCrankMath = require(construction:WaitForChild("HandCrankMath"))
 
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
 local MaterialCatalog=require(construction:WaitForChild("MaterialCatalog"))
+local PaintCatalog=require(construction:WaitForChild("PaintCatalog"))
 
 local Service = {}
 local folder
@@ -133,6 +134,8 @@ local function snapshot(model)
         shaftRollDegrees = model:GetAttribute("ShaftRollDegrees") or 0,
         alignedOffsetU = model:GetAttribute("AlignedOffsetU") or 0,
         materialId = model:GetAttribute("ConstructionMaterial") or "Steel",
+        paintFinish=model:GetAttribute("PaintFinish") or "Factory",
+        paintColorHex=model:GetAttribute("PaintColorHex"),
     }
 end
 
@@ -179,6 +182,7 @@ local function createFromTemplate(player, templateId, instanceId, bypassLimit)
     end
 
     MaterialCatalog.Apply(model,"Steel")
+    PaintCatalog.Apply(model,"Factory",nil)
     return model
 end
 
@@ -310,6 +314,8 @@ local function applyState(model, data)
     model:SetAttribute("AlignedOffsetU", data.alignedOffsetU or 0)
     MaterialCatalog.Apply(model,if MaterialCatalog.IsValid(data.materialId)
         then data.materialId else "Steel")
+    PaintCatalog.Apply(model,if PaintCatalog.IsValidFinish(data.paintFinish)
+        then data.paintFinish else "Factory",data.paintColorHex)
 end
 
 
@@ -513,6 +519,9 @@ local function place(player, payload)
         size = payload.size or (template and template.Size),
         materialId=if MaterialCatalog.IsValid(payload.materialId)
             then payload.materialId else "Steel",
+        paintFinish=if PaintCatalog.IsValidFinish(payload.paintFinish)
+            then payload.paintFinish else "Factory",
+        paintColorHex=PaintCatalog.NormalizeHex(payload.paintColorHex),
         orientation = if payload.autoMate
             and (payload.autoMate.kind=="BoltHole"
                 or payload.autoMate.kind=="Bore"
@@ -634,6 +643,8 @@ local function update(player, payload)
         shaftRollDegrees = model:GetAttribute("ShaftRollDegrees") or 0,
         alignedOffsetU = model:GetAttribute("AlignedOffsetU") or 0,
         materialId=model:GetAttribute("ConstructionMaterial") or "Steel",
+        paintFinish=model:GetAttribute("PaintFinish") or "Factory",
+        paintColorHex=model:GetAttribute("PaintColorHex"),
     }
     local before=snapshot(model)
     local crankCouplings=if Alignment.IsShaft(model)
@@ -964,6 +975,40 @@ local function setMaterial(player,payload)
     return true,"Applied "..payload.materialId.." to "..#members.." primitives"
 end
 
+local function setPaint(player,payload)
+    if type(payload)~="table"
+        or not PaintCatalog.IsValidFinish(payload.paintFinish)
+        or (payload.paintColorHex~=nil
+            and PaintCatalog.NormalizeHex(payload.paintColorHex)==nil) then
+        return false,"Choose a valid finish and six-digit HEX color"
+    end
+    local id=payload.id
+    if type(id)~="string" or #id>64 then return false,"Select a part" end
+    local members
+    if payload.scope=="Component" then
+        members=components:Members(player,id)
+    elseif payload.scope=="Primitive" then
+        local target=findOwned(player,id)
+        members=if target then {target} else {}
+    else
+        return false,"Paint applies to a primitive or component"
+    end
+    if #members==0 then return false,"No owned paint targets" end
+    local before,after={},{}
+    for _,model in ipairs(members) do
+        local old=snapshot(model)
+        local nextState=table.clone(old)
+        nextState.paintFinish=payload.paintFinish
+        nextState.paintColorHex=PaintCatalog.NormalizeHex(payload.paintColorHex)
+        table.insert(before,old)
+        table.insert(after,nextState)
+    end
+    for i,model in ipairs(members) do applyState(model,after[i]) end
+    commitBatch(player,before,after)
+    return true,"Applied "..payload.paintFinish.." paint to "
+        ..tostring(#members).." primitives"
+end
+
 local function restoreMetadata(player,record,undo)
     local states=if undo then record.before else record.after
     if type(states)~="table" then return false,"Invalid metadata history" end
@@ -1070,7 +1115,7 @@ local function handle(player, payload)
         or action == "BeginRack"
         or action == "StopSimulation"
         or action == "PauseSimulation" or action == "ResetSimulation"
-    local materialAction=action=="SetMaterial"
+    local materialAction=action=="SetMaterial" or action=="SetPaint"
     local verticalAction=action=="VerticalMove"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
@@ -1120,7 +1165,7 @@ local function handle(player, payload)
         end
     elseif materialAction then
         if not hasEquippedTool(player,"Edit") then
-            return {ok=false,message="Equip Edit to apply materials"}
+            return {ok=false,message="Equip Edit to apply paint or materials"}
         end
     elseif verticalAction then
         if (payload.scope=="Assembly" and not hasEquippedTool(player,"Assembly"))
@@ -1160,6 +1205,7 @@ local function handle(player, payload)
         if action == "Place" then return place(player, payload) end
         if action == "VerticalMove" then return verticalMove(player,payload) end
         if action == "SetMaterial" then return setMaterial(player,payload) end
+        if action == "SetPaint" then return setPaint(player,payload) end
         if action == "Update" then return update(player, payload) end
         if action == "Delete" then return delete(player, payload) end
         if componentAction then return components:Handle(player, action, payload) end

@@ -157,3 +157,11 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 - [ ] Simulate the fully registered rigid-mounted geared assembly: paired shafts rotate with equal reciprocal speed and correct direction; cross-axis gearbox never silently falls back to a parallel spur mesh. For a drive test, couple a real hand crank to the input shaft. Gear movement is currently a kinematic solver: this is not proof of a steerable powered car.
 
 - [ ] **Bearing motor UI:** Equip Simulate, aim at constructed bearing-connected part, inspect its Rotation Only relationship. Turn HOLD-KEY MOTOR ON, set F / 3 rad/s / 3000 torque / 40 acceleration, save and simulate assembly. Hold F: fitted shaft rotates; release/pause stops. OFF makes bearing passive. Save/reload and Ctrl+Z/redo preserve the chosen state. Motor must not create a pivot when no shaft is fitted.
+
+## Car body paint and surface finishes
+- [ ] Select a body primitive in Edit and press M. Paint Studio opens with color swatches, user-entered `#RRGGBB` input, 8 finishes, a live color preview and a Factory reset; the old material presets remain available on their own tab.
+- [ ] Paint individual body panels different colors; paint a grouped component to recolor every member. Double-click inside the group for one panel. Verify custom hex, Matte, Satin, Gloss, Metallic, Chrome, Brushed Metal and Pearl yield distinguishable native material/reflection response with adequate scene lighting.
+- [ ] Paint a **Rubber** wheel Chrome then Satin: material must retain its Rubber density, high friction and elasticity even though visual material changes. Toggle Material tab to Steel and back to Rubber: paint survives without drifting physics.
+- [ ] Single F-copy and multi-member component duplicate retain paintHex/paintFinish. Rotate, resize and move painted primitives without stripping their coating; undo/redo restores each prior finish and color; F6 save/load round-trips painted old and new plots.
+- [ ] Existing saved plots with no paint fields load as Factory; malicious paint IDs or invalid saved hex are rejected. Invalid client hex cannot be sent. Paint during running Simulate is blocked by server.
+- [ ] Real chrome mirror-like effects require environment lighting/reflections; verify Reflectance approximations and do not mistake them for physically correct PBR car clearcoat.

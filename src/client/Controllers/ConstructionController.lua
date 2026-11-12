@@ -1468,6 +1468,10 @@ function Controller:Place(chosenKind)
         templateId = self.CurrentId,
         materialId=if self.Pending=="Copy" and self.Selected
             then self.Selected:GetAttribute("ConstructionMaterial") else nil,
+        paintFinish=if self.Pending=="Copy" and self.Selected
+            then self.Selected:GetAttribute("PaintFinish") else nil,
+        paintColorHex=if self.Pending=="Copy" and self.Selected
+            then self.Selected:GetAttribute("PaintColorHex") else nil,
         position = self.PreviewCF.Position,
         steps = stepsCopy(self.Steps),
         size = self.CurrentSize,

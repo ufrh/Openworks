@@ -3,9 +3,10 @@
 -- NEVER call Save from PlayerRemoving, BindToClose or a timer.
 local DataStoreService=game:GetService("DataStoreService")
 local HttpService=game:GetService("HttpService")
-local HandCrankMath=require(game:GetService("ReplicatedStorage")
+local shared=game:GetService("ReplicatedStorage")
     :WaitForChild("Openworks"):WaitForChild("Construction")
-    :WaitForChild("HandCrankMath"))
+local HandCrankMath=require(shared:WaitForChild("HandCrankMath"))
+local PaintCatalog=require(shared:WaitForChild("PaintCatalog"))
 
 local Persistence={}
 Persistence.__index=Persistence
@@ -110,6 +111,8 @@ function Persistence:Encode(player)
                 roll=snap.shaftRollDegrees,
                 offset=snap.alignedOffsetU,
                 material=snap.materialId,
+                paintFinish=snap.paintFinish,
+                paintHex=snap.paintColorHex,
             }
             if type(record.id)~="string" or ids[record.id] then
                 return nil,"Duplicate construction ID; cannot save safely"
@@ -166,7 +169,11 @@ function Persistence:Decode(player,document)
             or not short(record.anchor,64)
             or not short(record.assembly,64)
             or not short(record.assemblyName,80)
-            or not short(record.alignedOpening,64) then
+            or not short(record.alignedOpening,64)
+            or not PaintCatalog.IsValidFinish(
+                record.paintFinish or "Factory")
+            or (record.paintHex~=nil and
+                PaintCatalog.NormalizeHex(record.paintHex)==nil) then
             return nil,"Corrupt construction metadata in plot save"
         end
         local entry=d.registry.Get(record.template)
@@ -207,6 +214,8 @@ function Persistence:Decode(player,document)
             shaftRollDegrees=record.roll or 0,
             alignedOffsetU=record.offset or 0,
             materialId=record.material or "Steel",
+            paintFinish=record.paintFinish or "Factory",
+            paintColorHex=PaintCatalog.NormalizeHex(record.paintHex),
         })
     end
     local seen={}
