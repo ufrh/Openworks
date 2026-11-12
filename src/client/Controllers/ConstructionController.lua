@@ -26,6 +26,7 @@ local SmartPlacement = require(construction:WaitForChild("SmartPlacement"))
 local FitOrigin = require(construction:WaitForChild("FitOrigin"))
 local FitSolver = require(construction:WaitForChild("FitSolver"))
 local FitPivotHandle = require(script.Parent:WaitForChild("FitPivotHandle"))
+local FitPivotSnap = require(script.Parent:WaitForChild("FitPivotSnap"))
 local MultiFit = require(construction:WaitForChild("MultiFitMath"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
 local BoreClearance = require(construction:WaitForChild("BoreClearance"))
@@ -111,6 +112,7 @@ function Controller.new(tools)
         SelectedComponentId = nil,
         EditingComponentId = nil,
         PivotSetting = false,
+        PivotModeIndex=1,
         FitPivotHandle = nil,
         SelectionHighlights = {},
         GroupAnchor = nil,
@@ -384,8 +386,8 @@ function Controller:RefreshHUD()
                 dimensions.Z / Grid.Unit) else "")
         self.HelpLabel.Text = "Tab depth • Shift+Tab reverse • X X-ray • I isolate"
     elseif self.PivotSetting then
-        self.DetailLabel.Text="FIT ORIGIN  /  aim at a surface on this selection"
-        self.HelpLabel.Text="Click set origin • Esc cancel • Shift+O reset"
+        self.DetailLabel.Text="FIT ORIGIN / "..FitPivotSnap.Modes[self.PivotModeIndex]
+        self.HelpLabel.Text="Aim + click set • Q/E: cursor, face, edge, corner • Esc / Shift+O"
     elseif self.ScaleMode then
         self.DetailLabel.Text = current .. (if self.ScaleSize then
             "  •  " .. string.format("%.2g × %.2g × %.2g U",
@@ -1683,6 +1685,7 @@ function Controller:EditFitPivot(reset)
         return
     end
     self.PivotSetting=true
+    self.PivotModeIndex=1
     self:Message("Choose the alignment origin • aim at a selected surface and click")
 end
 
@@ -1716,7 +1719,8 @@ function Controller:CommitFitPivot()
         id=if self.SelectedComponentId then self.SelectedComponentId
             else anchor:GetAttribute("InstanceId"),
         hitId=selected:GetAttribute("InstanceId"),
-        position=hit.Position,
+        position=FitPivotSnap.Point(hit.Instance,hit.Position,
+            FitPivotSnap.Modes[self.PivotModeIndex]),
     })
     if succeeded then
         self.PivotSetting=false
@@ -2289,6 +2293,11 @@ function Controller:OnInput(input, processed)
         end
         if key==Enum.KeyCode.Escape then
             self.PivotSetting=false
+            self:RefreshHUD()
+        elseif not processed and (key==Enum.KeyCode.Q or key==Enum.KeyCode.E) then
+            local delta=if key==Enum.KeyCode.E then 1 else -1
+            self.PivotModeIndex=(self.PivotModeIndex-1+delta
+                +#FitPivotSnap.Modes)%#FitPivotSnap.Modes+1
             self:RefreshHUD()
         end
         return
