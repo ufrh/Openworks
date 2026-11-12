@@ -1081,7 +1081,8 @@ function Panel:AssemblyProperties(node)
     end
     self:Value("Grounded",grounded)
     if self.Tools.PrimaryId=="AssemblySimulation"
-        and self.Tools.SubtoolId=="AssemblyEditor" and not simulating() then
+        and self.Tools.SubtoolId=="AssemblyEditor" and not simulating()
+        and self.AssemblyTool.Stage~="Selecting" then
         self:Field("Name",node.name)
         self:ActionButton("Save name","Rename without changing the member IDs",function()
             local name=self.Fields.Name.Text:match("^%s*(.-)%s*$")
@@ -1101,12 +1102,6 @@ function Panel:AssemblyProperties(node)
         self:ActionButton("Edit members","Edit exactly the registered set",function()
             self:RunAction("edit-members",node)
         end)
-    elseif self.Tools.PrimaryId=="AssemblySimulation"
-        and self.Tools.SubtoolId=="Simulation" then
-        self:ActionButton(if simulating() then "Stop simulation" else "Run simulation",
-            "Run or stop the registered assembly",function()
-                self:RunAction(if simulating() then "stop" else "run",node)
-            end)
     end
 end
 
@@ -1199,12 +1194,17 @@ function Panel:RenderProperties()
     clear(self.Properties)
     self.Fields={}
     self.Flags={}
+    local primary=self.Tools.PrimaryId
+    local subtool=self.Tools.SubtoolId
+    local editing=primary=="AssemblySimulation"
+        and subtool=="AssemblyEditor" and not simulating()
+    if self.NewAssemblyButton then
+        self.NewAssemblyButton.Visible=editing
+    end
     local node=self.Selected
     if not node then
         self:Value("Selection","None")
-        return
-    end
-    if node.kind=="primitive" or node.kind=="component"
+    elseif node.kind=="primitive" or node.kind=="component"
         or node.kind=="multi" then
         self:Geometry(node)
     elseif node.kind=="assembly" then
@@ -1214,18 +1214,12 @@ function Panel:RenderProperties()
     elseif node.kind=="unassigned" then
         self:Value("Primitives",#node.members)
     end
-    if self.Tools.PrimaryId=="AssemblySimulation"
-        and self.Tools.SubtoolId=="AssemblyEditor"
-        and self.AssemblyTool.Stage=="Selecting" then
-        self:Section("Assembly draft")
-        self:Value("Name",self.AssemblyTool.Name)
-        self:ActionButton("Confirm assembly","Commit the exact selected member IDs",function()
-            self.AssemblyTool:Confirm()
-            self:Scan(true)
-        end)
-        self:ActionButton("Cancel draft","Discard uncommitted member selections",function()
-            self.AssemblyTool:Cancel()
-        end)
+    -- Draft authoring is independent of what the user currently inspects.
+    -- It must remain visible with zero selected primitives.
+    if editing then
+        self:RenderAssemblyDraft(node)
+    elseif primary=="AssemblySimulation" and subtool=="Simulation" then
+        self:RenderSimulationControls(node)
     end
 end
 
@@ -1329,7 +1323,10 @@ function Panel:RunAction(action,node)
         self.AssemblyTool:BeginNew()
         self:Focus(false)
     elseif action=="membership" and own(model) then
-        self.AssemblyTool:ToggleMember(model)
+        -- Primitive rows operate on ONE member; component rows operate on
+        -- the full group, as in the world editor's ordinary click workflow.
+        self.AssemblyTool:ToggleMember(model,node.kind=="primitive")
+        self:OnAssemblyDraftChanged()
         self:Scan(true)
     elseif action=="configure" then
         self:Select(node,false)
@@ -1337,17 +1334,8 @@ function Panel:RunAction(action,node)
     elseif action=="remove-relation" then
         self:Send({action="RemoveRelation",relationId=node.id},true)
         self:Select(nil,false)
-    elseif action=="run" and own(model) then
-        local id=entityId(model)
-        if type(id)~="string" then return end
-        self.Mechanics:Reset()
-        self.Mechanics.SimSeedId=id
-        self.Mechanics.SimAssemblyName=node.name
-        self:Send({action="StartSimulation",seedId=id,grounded=false},true)
-    elseif action=="stop" then
-        if self:Send({action="StopSimulation"},true) then
-            self.Mechanics:Reset()
-        end
+    elseif action=="run" or action=="stop" then
+        self:RunSimulationAction(action,node)
     end
 end
 
