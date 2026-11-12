@@ -9,6 +9,7 @@ local RS=game:GetService("ReplicatedStorage")
 local RunService=game:GetService("RunService")
 local Data=require(script.Parent:WaitForChild("ExplorerData"))
 local Actions=require(script.Parent:WaitForChild("ContextActionRegistry"))
+local ConnectionCatalog=require(script.Parent:WaitForChild("ConnectionCatalog"))
 local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 local construction=RS:WaitForChild("Openworks"):WaitForChild("Construction")
 local Config=require(construction:WaitForChild("BuildConfig"))
@@ -92,6 +93,7 @@ function Panel.new(tools,build,mechanics,assemblyTool,feedback)
         Connections={},Selected=nil,SelectedKey=nil,View="Objects",
         Snapshot=nil,Signature="",Expanded={},
         Fields={},Flags={},Focused=false,MenuOpen=false,
+        ConnectionChoiceOpen=false,ChoiceCallback=nil,ChoiceWasFocused=false,
         MenuRestoreFocus=false,StatusUntil=0,LastScan=0,
         Busy=false,Started=false,
     },Panel)
@@ -118,7 +120,8 @@ end
 
 function Panel:Focus(value)
     self.Focused=value==true
-    player:SetAttribute("OPENWORKS_ExplorerOpen",self.Focused or self.MenuOpen)
+    player:SetAttribute("OPENWORKS_ExplorerOpen",
+        self.Focused or self.MenuOpen or self.ConnectionChoiceOpen)
     if self.Focused or self.MenuOpen then
         UIS.MouseBehavior=Enum.MouseBehavior.Default
         UIS.MouseIconEnabled=true
@@ -137,6 +140,67 @@ function Panel:CloseMenu()
     self.Menu.Visible=false
     self.Tooltip.Visible=false
     self:Focus(self.MenuRestoreFocus)
+end
+
+-- One compact connection picker shared by Build's smart fit and
+-- Mechanics' two-part Connect operation. All choices are click-driven;
+-- no number keys, no duplicate fixed/weld entry paths.
+function Panel:CloseConnectionChoice(cancel)
+    if not self.ConnectionChoiceOpen then return end
+    local callback=self.ChoiceCallback
+    local restore=self.ChoiceWasFocused
+    self.ConnectionChoiceOpen=false
+    self.ChoiceCallback=nil
+    self.ConnectionChoice.Visible=false
+    if self.Tooltip then self.Tooltip.Visible=false end
+    self:Focus(restore)
+    if cancel==true and callback then callback(nil) end
+end
+
+function Panel:ChooseConnection(options,callback,heading)
+    if not self.ConnectionChoice then return false end
+    if self.ConnectionChoiceOpen then self:CloseConnectionChoice(true) end
+    if type(options)~="table" or #options==0 then return false end
+    self:CloseMenu()
+    self.ChoiceWasFocused=self.Focused
+    self.ConnectionChoiceOpen=true
+    self.ChoiceCallback=callback
+    self.ConnectionChoiceHeading.Text=heading or "CONNECTION"
+    clear(self.ConnectionChoices)
+    local count=math.min(#options,12)
+    local height=math.clamp(count*35+89,135,405)
+    self.ConnectionChoice.Size=UDim2.fromOffset(268,height)
+    self.ConnectionChoices.Size=UDim2.new(1,-16,1,-84)
+    for i=1,count do
+        local choice=options[i]
+        local holder=row(self.ConnectionChoices,32)
+        local item=button(holder,choice.label,
+            UDim2.fromOffset(0,0),UDim2.new(1,0,1,0),function()
+                local result=self.ChoiceCallback
+                self:CloseConnectionChoice(false)
+                if result then result(choice.id) end
+            end)
+        item.TextXAlignment=Enum.TextXAlignment.Left
+        item.ZIndex=43
+        self:Hint(item,choice.tooltip or choice.label)
+    end
+    self.ConnectionChoice.Visible=true
+    self:Focus(true)
+    return true
+end
+
+function Panel:ChooseFit(kind,callback,count)
+    local options=ConnectionCatalog.Fit(kind)
+    local title=if kind=="Hub" then "GEAR / SHAFT"
+        elseif (count or 0)>1 then
+            tostring(count).." OPENINGS / SHAFT"
+        else "SHAFT / HOLE"
+    return self:ChooseConnection(options,callback,title)
+end
+
+function Panel:ChoosePair(first,second,callback)
+    local options=ConnectionCatalog.Pair(first,second)
+    return self:ChooseConnection(options,callback,"CONNECT TWO PARTS")
 end
 
 function Panel:Message(message)
@@ -230,6 +294,30 @@ function Panel:MakeUI()
         ZIndex=60,
     }),Theme.Panel)
     self.Menu.Visible=false
+    local choice=style(mk("Frame",gui,{
+        Name="UnifiedConnectionChoice",Visible=false,
+        BackgroundColor3=Theme.Window,Size=UDim2.fromOffset(268,280),
+        Position=UDim2.new(1,-636,0,115),ZIndex=40,
+    }),Theme.Window)
+    self.ConnectionChoice=choice
+    self.ConnectionChoiceHeading=label(choice,"CONNECTION",
+        UDim2.fromOffset(10,8),UDim2.new(1,-46,0,26))
+    self.ConnectionChoiceHeading.ZIndex=41
+    self.ConnectionChoices=mk("ScrollingFrame",choice,{
+        Name="CompatibleConnections",Position=UDim2.fromOffset(8,40),
+        Size=UDim2.new(1,-16,1,-84),
+        ScrollBarThickness=3,
+        AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        CanvasSize=UDim2.fromOffset(0,0),
+        BackgroundTransparency=1,ZIndex=41,
+    })
+    list(self.ConnectionChoices)
+    self.ConnectionCancel=button(choice,"CANCEL",
+        UDim2.new(0,8,1,-38),UDim2.new(1,-16,0,30),function()
+            self:CloseConnectionChoice(true)
+        end)
+    self.ConnectionCancel.ZIndex=43
+    self:Hint(self.ConnectionCancel,"Cancel without changing any authored connection")
     self:Focus(false)
     self:RenderTree()
     self:RenderProperties()
@@ -1057,6 +1145,10 @@ function Panel:Start()
             return
         end
         if input.KeyCode==Enum.KeyCode.Escape then
+            if self.ConnectionChoiceOpen then
+                self:CloseConnectionChoice(true)
+                return
+            end
             if self.MenuOpen then self:CloseMenu() return end
             if self.Focused and not UIS:GetFocusedTextBox() then
                 self:Focus(false)
@@ -1084,6 +1176,7 @@ function Panel:Start()
 end
 
 function Panel:Destroy()
+    self:CloseConnectionChoice(true)
     self:CloseMenu()
     self:Focus(false)
     for _,conn in ipairs(self.Connections) do conn:Disconnect() end
