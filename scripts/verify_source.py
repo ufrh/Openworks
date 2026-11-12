@@ -49,7 +49,7 @@ def main() -> int:
     tool_ids = re.findall(r'\{\s*Id\s*=\s*"([^"]+)"', definitions)
     check(
         "Native tool inventory and order",
-        tool_ids == ["Build", "Edit", "Assembly", "Simulate", "Inspect", "Weld"],
+        tool_ids == ["Build", "Edit", "Assembly", "Simulate", "Inspect", "Weld", "Belt"],
         str(tool_ids),
     )
 
@@ -335,7 +335,41 @@ def main() -> int:
     check("Automatic tooth contacts do not require authored gear edges",
           'GearMath.AutoMeshable(left.Model,right.Model)' in gears
           and 'function GearMath.AutoMeshable(' in gear_math
-          and 'if edge.kind == "Gear" then' in simulation)
+          and 'if edge.kind == "Gear" or edge.kind=="Belt" then' in simulation)
+    belts = read("src/server/Runtime/BeltTransmission.lua")
+    belt_math = read("src/shared/Construction/BeltMath.lua")
+    belt_visual = read("src/server/Runtime/BeltVisual.lua")
+    pulleys = read("src/server/Runtime/PulleyLibrary.lua")
+    check("Belt pulley templates have a real open shaft bore",
+          'model:SetAttribute("PrimitiveFamily","Pulley")' in pulleys
+          and 'model:SetAttribute("BoreRadiusStuds",BORE)' in pulleys
+          and 'pivot.CanCollide=false' in pulleys
+          and 'PulleyLibrary.Ensure()' in construction)
+    check("Belt routing validates tangent length, coplanarity and clearance",
+          'function Belt.Path(a,b)' in belt_math
+          and 'math.abs(axial)>0.075' in belt_math
+          and 'distance<=ra+rb+0.03' in belt_math
+          and 'local length=2*tangent+ra*wrapA+rb*wrapB' in belt_math)
+    check("Belt is a server-authorized two-click native tool",
+          '{ Id = "Belt"' in definitions
+          and 'action == "CreateBelt"' in construction
+          and 'function Mechanical:CreateBelt(' in mechanical
+          and 'function Controller:BeltClick()' in assembly)
+    check("Belt tension and friction limit bidirectional shaft torques",
+          'local tension=math.max(0,(path.Length-loop.RestLength)*STIFFNESS)' in belts
+          and 'local capstan=math.tanh(' in belts
+          and 'a.Pending+=axisA*(-ratio*transmitted)' in belts
+          and 'b.Pending+=axisB*transmitted' in belts
+          and 'Instance.new("Torque")' in belts
+          and 'PivotTo(' not in belts)
+    check("Belt is one saved relationship and visual, not an auto-actuator",
+          'beltRestLength = relation:GetAttribute("BeltRestLength")' in mechanical
+          and 'folder:SetAttribute("BeltRestLength",spec.beltRestLength)' in mechanical
+          and 'BeltVisual.new(folder)' in mechanical
+          and 'Instance.new("Beam")' in belt_visual
+          and 'session.Belts=BeltTransmission.new(graph,copies,runtime)' in simulation
+          and 'session.Belts:Step(dt)' in simulation)
+
     check("Runtime gear engagement matches real face overlap",
           'function GearMath.AutoMeshStatus(' in gear_math
           and 'MESH_PITCH_TOLERANCE=0.09' in gear_math
@@ -352,7 +386,7 @@ def main() -> int:
           and 'NOT in assembly' in simulation)
     check("Legacy authored K edges do not join registered assemblies",
           'or kind == "Fixed" or kind == "Gear"' not in simulation
-          and 'if edge.kind == "Gear" then' in simulation)
+          and 'if edge.kind == "Gear" or edge.kind=="Belt" then' in simulation)
     check("Multiple coaxial gears share a rigid shaft torque body",
           'edge.kind=="Weld" or edge.kind=="Fixed" or edge.kind=="Bolt"' in gears
           and 'table.insert(group.Gears,entry)' in gears
@@ -621,7 +655,7 @@ def main() -> int:
           and 'Alignment.ReversePlan(members,opening,shaft,units,roll)' in smart_place
           and 'local units=math.clamp(snapped,loSnap,hiSnap)' in smart_place)
     check("Gear-on-shaft placement also preserves real cursor depth",
-          'if isGear and Alignment.IsShaft(target) then' in smart_place
+          'if isHub and Alignment.IsShaft(target) then' in smart_place
           and 'local cursorDepth=shaftCursorDepth(aimRay,target)' in smart_place
           and 'near=stationary.Position' in smart_place
           and 'Smart.HubPose(source,target,near)' in smart_place
