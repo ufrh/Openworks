@@ -55,7 +55,7 @@ function Belt.Points(path)
     end
     local points={at(path.A,path.RadiusA,path.Theta),
         at(path.B,path.RadiusB,path.Theta)}
-    local divisions=14
+    local divisions=15
     for k=1,divisions do
         table.insert(points,at(path.B,path.RadiusB,
             path.Theta-2*path.Theta*k/divisions))
