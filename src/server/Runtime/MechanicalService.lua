@@ -1249,16 +1249,50 @@ function Mechanical:CreateBelt(player,request)
             end
         end
     end
+    -- Preload is explicit, never inferred from a client-sent world length.
+    -- A zero-preload loop is slack and cannot transmit torque until stretched.
+    local preload=if request.preloadPercent==nil then 1.5
+        else request.preloadPercent
+    if type(preload)~="number" or preload~=preload or preload<0
+        or preload>8 or math.abs(preload*2-math.round(preload*2))>0.0001 then
+        return false,"Belt preload must be 0–8% in 0.5% steps"
+    end
     local spec={
         relationId=HttpService:GenerateGUID(false),kind="Belt",
         ownerUserId=player.UserId,sourceId=request.sourceId,
-        targetId=request.targetId,beltRestLength=path.Length*0.985,
+        targetId=request.targetId,beltRestLength=path.Length*(1-preload*0.01),
     }
     local ok,why=self:Restore(player,spec)
     if not ok then return false,why end
     self.D.commitAssembly(player,{},{},spec)
     return true,string.format(
-        "Belt fitted • %.2f U circumference • 1.5%% preload",path.Length/0.25)
+        "Belt fitted • %.2f U circumference • %.1f%% preload",path.Length/0.25,preload)
+end
+
+-- Explicit pair removal prevents Shift+Delete from accidentally removing
+-- the pulley-to-shaft Weld instead of the desired belt.
+function Mechanical:RemoveBelt(player,request)
+    if type(request)~="table"
+        or type(request.sourceId)~="string"
+        or type(request.targetId)~="string" then
+        return false,"Select two belt pulleys"
+    end
+    if not self.D.findOwned(player,request.sourceId)
+        or not self.D.findOwned(player,request.targetId) then
+        return false,"Both pulleys must belong to your plot"
+    end
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:GetAttribute("OwnerUserId")==player.UserId
+            and relation:GetAttribute("Kind")=="Belt" then
+            local a,b=relation:GetAttribute("SourceId"),
+                relation:GetAttribute("TargetId")
+            if (a==request.sourceId and b==request.targetId)
+                or (a==request.targetId and b==request.sourceId) then
+                return self:Remove(player,{relationId=relation:GetAttribute("RelationId")})
+            end
+        end
+    end
+    return false,"These pulleys have no belt to remove"
 end
 
 function Mechanical:CreateSpring(player,request)
