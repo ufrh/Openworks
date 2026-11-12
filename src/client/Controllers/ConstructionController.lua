@@ -502,6 +502,7 @@ function Controller:SelectBank(id)
     self.Mode="Build"
     if self.Layered then self.Layered:OnModeChanged("Build") end
     self.CurrentBank=data
+    self.CurrentDisplayName=data.name
     self.CurrentId=nil
     self.CurrentSize=anchorSize
     self.Steps={x=0,y=0,z=0}
@@ -540,6 +541,7 @@ function Controller:ShowCatalog(visible)
     self:RefreshPointer()
 
     if self.CatalogOpen then
+        self:RefreshBankEntries()
         self:RefreshCatalog()
     end
     self:RefreshHUD()
@@ -557,8 +559,8 @@ function Controller:RefreshHUD()
     if not self.Gui.Enabled then return end
 
     local mode = self.Mode
-    local current = if self.CurrentBank then self.CurrentBank.name
-        else self.CurrentId or "Choose a primitive"
+    local current = self.CurrentDisplayName
+        or self.CurrentId or "Choose a primitive"
     local size = self.CurrentSize
 
     self.TitleLabel.Text = "OPENWORKS  /  "
@@ -622,8 +624,8 @@ function Controller:RefreshHUD()
                 dimensions.Z / Grid.Unit) else "")
         self.HelpLabel.Text = "Tab depth • Shift+Tab reverse • X X-ray • I isolate"
     elseif self.CatalogOpen then
-        self.DetailLabel.Text="PRIMITIVES / choose a new construction part"
-        self.HelpLabel.Text="Click a catalog entry to place • B / Enter close"
+        self.DetailLabel.Text="BUILD LIBRARY / parts and saved components"
+        self.HelpLabel.Text="Search or expand groups • choose a part • Enter close"
     elseif self.PivotSetting then
         self.DetailLabel.Text="FIT ORIGIN / "..FitPivotSnap.Modes[self.PivotModeIndex]
         self.HelpLabel.Text="Aim + click set • Q/E: cursor, face, edge, corner • Enter / Shift+O"
@@ -697,6 +699,7 @@ function Controller:SelectPrimitive(id)
     if not entry then return end
 
     self.CurrentBank=nil
+    self.CurrentDisplayName=entry.DisplayName
     self.CurrentId = id
     self.CurrentSize = entry.Model.PrimaryPart.Size
     self.Steps = { x = 0, y = 0, z = 0 }
@@ -710,6 +713,7 @@ function Controller:StopPlacement()
     self:ClearSmartMatch()
     self:ClearPreview()
     self.CurrentBank=nil
+    self.CurrentDisplayName=nil
     self.Mode="Edit" -- selection context; never requires another hotbar tool
     if self.Layered then self.Layered:OnModeChanged("Edit") end
     self:RefreshHUD()
