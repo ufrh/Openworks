@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS client bootstrap: native tools, Forge, editor and simulation controllers.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.12.UI-V2-LEFT-KEYBINDS"
+local BUILD = "2026.11.12.UI-V2-CONTEXT-CREATOR"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -15,7 +15,7 @@ local ToolController = require(controllers:WaitForChild("ToolController"))
 local ConstructionController = require(controllers:WaitForChild("ConstructionController"))
 local AssemblyController = require(controllers:WaitForChild("AssemblyController"))
 local AssemblyToolController=require(controllers:WaitForChild("AssemblyToolController"))
-local UnifiedExplorer = require(controllers:WaitForChild("UnifiedExplorer"))
+local ContextEditor = require(controllers:WaitForChild("ContextEditor"))
 local ToolPalette = require(controllers:WaitForChild("ToolPalette"))
 local WorldVisuals = require(controllers:WaitForChild("WorldVisuals"))
 local VisualFeedback = require(controllers:WaitForChild("VisualFeedback"))
@@ -64,7 +64,7 @@ end)
 -- Publish the unified owner BEFORE domain controllers start, so
 -- Assembly Editor and Mechanics never allocate their retired HUDs.
 -- Start the dock only AFTER those controllers initialize their remotes.
-local unifiedExplorer=UnifiedExplorer.new(tools,
+local unifiedExplorer=ContextEditor.new(tools,
     constructionController,assemblyController,assemblyToolController,feedback)
 constructionController.UnifiedExplorer=unifiedExplorer
 assemblyController.UnifiedExplorer=unifiedExplorer
@@ -98,4 +98,4 @@ else
     print(string.format("[OPENWORKS] Registered %d Studio primitive templates", #entries))
 end
 
-print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 / left subtool palette and contextual keybinds", BUILD, tostring(FORGE.Version)))
+print(string.format("[OPENWORKS] %s | FORGE %s | UI v2 / contextual relationship editor and centered assembly creator", BUILD, tostring(FORGE.Version)))
