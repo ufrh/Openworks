@@ -7,6 +7,7 @@ local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local construction=ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("Construction")
 local Alignment=require(construction:WaitForChild("AlignmentMath"))
 local HandCrankMath=require(construction:WaitForChild("HandCrankMath"))
+local BeltMath=require(construction:WaitForChild("BeltMath"))
 local Catalog={}
 
 local LABELS={
@@ -17,15 +18,14 @@ local LABELS={
     Weld="Rigid weld",
     Spring="Spring",
     CrankCoupling="Couple hand crank",
-    Rotation="Independent gear mount",
-    Rigid="Rigid gear mount",
+    Rigid="Weld gear / pulley to shaft",
+    Belt="Friction belt between pulleys",
     Adjust="Adjust depth / roll",
 }
 Catalog.Labels=table.freeze(LABELS)
 
 function Catalog.Fit(kind)
     if kind=="Hub" then return {
-        {id="Rotation",label=LABELS.Rotation},
         {id="Rigid",label=LABELS.Rigid},
     } end
     return {
@@ -48,13 +48,14 @@ function Catalog.Pair(first,second)
     local hole=if shaft==first then second else first
     local bore=shaft~=nil and hole~=nil
         and Alignment.TargetAxis(hole)~=nil
-    local gear=if first:GetAttribute("GearTeeth")~=nil then first
-        else if second:GetAttribute("GearTeeth")~=nil then second else nil
+    local gear=if first:GetAttribute("GearTeeth")~=nil
+        or BeltMath.IsPulley(first) then first
+        else if second:GetAttribute("GearTeeth")~=nil
+            or BeltMath.IsPulley(second) then second else nil
     local axle=if gear==first then second else first
     local hub=gear~=nil and axle~=nil and Alignment.IsShaft(axle)
     -- One physically selected pair; prioritize types for matching hardware.
     if hub then
-        add("Rotation")
         add("Rigid")
     elseif bore then
         add("Cylindrical")
@@ -66,6 +67,9 @@ function Catalog.Pair(first,second)
         else if HandCrankMath.IsCrank(second) then second else nil
     if crank and Alignment.IsShaft(if crank==first then second else first) then
         add("CrankCoupling")
+    end
+    if BeltMath.IsPulley(first) and BeltMath.IsPulley(second) then
+        add("Belt")
     end
     if not crank then
         -- A hub's Rigid mount already creates its validated physical Weld.
@@ -80,8 +84,10 @@ function Catalog.Roles(first,second)
     local shaft=if Alignment.IsShaft(first) then first
         else if Alignment.IsShaft(second) then second else nil
     local opening=if shaft==first then second else first
-    local gear=if first:GetAttribute("GearTeeth")~=nil then first
-        else if second:GetAttribute("GearTeeth")~=nil then second else nil
+    local gear=if first:GetAttribute("GearTeeth")~=nil
+        or BeltMath.IsPulley(first) then first
+        else if second:GetAttribute("GearTeeth")~=nil
+            or BeltMath.IsPulley(second) then second else nil
     local axle=if gear==first then second else first
     local crank=if HandCrankMath.IsCrank(first) then first
         else if HandCrankMath.IsCrank(second) then second else nil
