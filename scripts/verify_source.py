@@ -136,7 +136,7 @@ def main() -> int:
               'action="SetGrounded"', 'action="RemoveRelation"',
           )))
     check("Context actions are filtered by equipped tool and simulation state",
-          'function Actions.List(node,tools,simulating,assemblyStage)' in context_actions
+          'function Actions.List(node,tools,simulating,assemblyStage,runningAssemblyId)' in context_actions
           and 'function Panel:OpenMenu(node,position)' in unified_panel
           and 'function Panel:RunAction(action,node)' in unified_panel
           and 'if not allowed then' in unified_panel
@@ -197,6 +197,59 @@ def main() -> int:
           and '(mode=="Hub" and (kind=="Rotation" or kind=="Rigid"))' in mechanic_authority
           and 'not approved or not hasEquippedTool(player,"Mechanics")' in mechanic_authority
           and 'mechanical:SmartMate(player,payload,false)' in mechanic_authority)
+
+    assembly_tool_v2 = read("src/client/Controllers/AssemblyToolController.lua")
+    simulate_ui_v2 = read("src/client/Controllers/AssemblyController.lua")
+    explorer_v2 = read("src/client/Controllers/UnifiedExplorer.lua")
+    crank_ui_v2 = read("src/client/Controllers/HandCrankController.lua")
+    rack_ui_v2 = read("src/client/Controllers/RackControlController.lua")
+    motor_ui_v2 = read("src/client/Controllers/MotorControlController.lua")
+    context_v2 = read("src/client/Controllers/ContextActionRegistry.lua")
+    check("UI v2 Phase 5 drafts are usable without an inspected object",
+          'function Panel:RenderAssemblyDraft(node)' in explorer_v2
+          and 'function Panel:ApplyDraftName()' in explorer_v2
+          and 'function Panel:FocusAssemblyName()' in explorer_v2
+          and 'self:RenderAssemblyDraft(node)' in explorer_v2
+          and 'self:Value("Selection","None")' in explorer_v2
+          and 'self:OnAssemblyDraftChanged()' in assembly_tool_v2
+          and 'self.NewAssemblyButton.Visible=editing' in explorer_v2)
+    check("UI v2 Phase 5 assembly names and exact members commit through original service",
+          'draft.Name=name' in explorer_v2
+          and 'self.UnifiedExplorer:ApplyDraftName()' in assembly_tool_v2
+          and 'action=if self.EditingId then "UpdateAssembly" else "CreateAssembly"' in assembly_tool_v2
+          and 'memberIds=ids' in assembly_tool_v2
+          and 'self:ToggleMember(model)' in assembly_tool_v2
+          and 'function Tool:ToggleMember(model,forceSingle)' in assembly_tool_v2)
+    check("UI v2 Phase 5 simulation start stop share a registered-assembly lifecycle",
+          'function Controller:StartRegisteredAssembly(seed)' in simulate_ui_v2
+          and 'function Controller:StopRegisteredAssembly()' in simulate_ui_v2
+          and 'self:StartRegisteredAssembly(seed or self:Pick())' in simulate_ui_v2
+          and 'self.Mechanics:StartRegisteredAssembly(seed)' in explorer_v2
+          and 'self.Mechanics:StopRegisteredAssembly()' in explorer_v2
+          and 'grounded=false' in simulate_ui_v2)
+    check("UI v2 Phase 5 run pause reset telemetry are unified in Properties",
+          'function Panel:RenderSimulationControls(node)' in explorer_v2
+          and 'function Panel:RunSimulationAction(action,node)' in explorer_v2
+          and 'action="GetMechanismInfo",seedId=id' in explorer_v2
+          and '"PauseSimulation"' in explorer_v2
+          and '"ResetSimulation"' in explorer_v2
+          and 'self.UnifiedExplorer:RunSimulationAction("pause"' in simulate_ui_v2
+          and 'self.UnifiedExplorer:RunSimulationAction("reset"' in simulate_ui_v2
+          and 'self.UnifiedExplorer:RunSimulationAction("telemetry"' in simulate_ui_v2)
+    check("UI v2 Phase 5 actuator holds release on Explorer focus",
+          all('OPENWORKS_ExplorerOpen' in controller for controller in (
+              crank_ui_v2,rack_ui_v2,motor_ui_v2))
+          and 'self:Release()' in crank_ui_v2
+          and 'self:Release()' in rack_ui_v2
+          and 'self:Release()' in motor_ui_v2)
+    check("UI v2 Phase 5 editing blocked during simulation while Stop remains available",
+          'and id=="AssemblyEditor"' in native_tool_controller
+          and 'OPENWORKS_Simulating' in native_tool_controller
+          and 'OPENWORKS_Simulating' in assembly_tool_v2
+          and 'if action~="stop"' in explorer_v2
+          and 'elseif simulation and simulation:IsRunning(player) then' in
+            read("src/server/Runtime/ConstructionService.lua")
+          and 'node.id==runningAssemblyId' in context_v2)
 
     rokit = read("rokit.toml")
     aftman = read("aftman.toml")
@@ -306,7 +359,7 @@ def main() -> int:
           'Grounded = payload.grounded == true' in simulation
           and 'if member:GetAttribute("Grounded") == true then' in simulation
           and 'if not hasExplicitGround and session.Grounded then' in simulation
-          and 'grounded = false' in read("src/client/Controllers/AssemblyController.lua")
+          and 'action="StartSimulation",seedId=id,grounded=false' in read("src/client/Controllers/AssemblyController.lua")
           and 'Shift+P free' not in read("src/client/Controllers/AssemblyController.lua"))
     check("Assembly only accepts explicit owned primitive ID lists",
           "payload.memberIds" in assembly
