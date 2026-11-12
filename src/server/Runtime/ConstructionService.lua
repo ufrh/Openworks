@@ -715,9 +715,27 @@ local function update(player, payload)
             ignore[member]=true
         end
     end
+    local fitMap=nil
+    if stillAligned and opening then
+        -- Length/diameter edits must continue to recognize OTHER genuine
+        -- hinge lugs penetrated by the same shaft, not just the primary.
+        local all={}
+        for _,candidate in ipairs(folder:GetChildren()) do
+            if candidate:IsA("Model")
+                and candidate:GetAttribute("OwnerUserId")==player.UserId
+                and candidate~=model then table.insert(all,candidate) end
+        end
+        local stations=MultiFit.StationarySet({model},opening,all)
+        local matches=MultiFit.Find({model},stations)
+        if matches then
+            local valid=MultiFit.Unique(matches,before.instanceId,
+                opening:GetAttribute("InstanceId"))
+            fitMap=MultiFit.AllowMap(valid)
+        end
+    end
     if intersectsConstructed(model,ignore,
         if stillAligned then opening else nil,
-        if stillAligned then before.instanceId else nil) then
+        if stillAligned then before.instanceId else nil,fitMap) then
         applyState(model,before)
         return false,"Edit intersects another piece"
     end

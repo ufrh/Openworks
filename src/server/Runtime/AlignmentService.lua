@@ -2,10 +2,10 @@
 -- Phase 04 server-validated shaft-to-hole positioning.
 -- Uses the precompiled collision geometry; does NOT create a joint.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Alignment = require(
-    ReplicatedStorage:WaitForChild("Openworks")
-        :WaitForChild("Construction"):WaitForChild("AlignmentMath")
-)
+local shared=ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction")
+local Alignment=require(shared:WaitForChild("AlignmentMath"))
+local MultiFit=require(shared:WaitForChild("MultiFitMath"))
 
 local Service = {}
 Service.__index = Service
@@ -98,9 +98,30 @@ function Service:Align(player, request)
         d.applyState(plan.items[i].model, planned[i])
     end
 
+    local all={}
+    for _,candidate in ipairs(d.folder:GetChildren()) do
+        if candidate:IsA("Model")
+            and candidate:GetAttribute("OwnerUserId")==player.UserId
+            and not ignored[candidate] then
+            table.insert(all,candidate)
+        end
+    end
+    local stations=MultiFit.StationarySet(members,target,all)
+    local contacts=MultiFit.Find(members,stations)
+    local selected=contacts and MultiFit.Unique(contacts,
+        shaft:GetAttribute("InstanceId"),
+        target:GetAttribute("InstanceId")) or {}
+    if not MultiFit.Contains(selected,shaft:GetAttribute("InstanceId"),
+        target:GetAttribute("InstanceId")) then
+        for i,old in ipairs(before) do
+            d.applyState(plan.items[i].model,old)
+        end
+        return false,"Shaft is not physically engaged in the selected hole"
+    end
+    local fitMap=MultiFit.AllowMap(selected)
     for _, item in ipairs(plan.items) do
         if d.intersectsConstructed(item.model, ignored, target,
-            shaft:GetAttribute("InstanceId")) then
+            shaft:GetAttribute("InstanceId"),fitMap) then
             for i, original in ipairs(before) do
                 d.applyState(plan.items[i].model, original)
             end
