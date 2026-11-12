@@ -132,6 +132,13 @@ function Panel:Focus(value)
     if self.FocusButton then
         self.FocusButton.Text=if self.Focused then "LOCK" else "OPEN"
     end
+    if self.Crosshair then
+        self.Crosshair.Visible=not self.Focused and not self.MenuOpen
+            and not self.ConnectionChoiceOpen
+            and (self.Tools.PrimaryId=="Mechanics"
+                or (self.Tools.PrimaryId=="AssemblySimulation"
+                    and self.Tools.SubtoolId=="Simulation"))
+    end
 end
 
 function Panel:CloseMenu()
@@ -215,6 +222,18 @@ function Panel:MakeUI()
         DisplayOrder=93,Enabled=true,
     })
     self.Gui=gui
+    self.Crosshair=mk("TextLabel",gui,{
+        Name="SharedConnectCrosshair",Text="+",
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.fromScale(0.5,0.5),
+        Size=UDim2.fromOffset(20,20),
+        BackgroundTransparency=1,
+        TextColor3=Theme.Text,TextSize=21,
+        Font=Enum.Font.GothamMedium,
+        TextXAlignment=Enum.TextXAlignment.Center,
+        TextYAlignment=Enum.TextYAlignment.Center,
+        Visible=false,ZIndex=4,
+    })
     local main=style(mk("Frame",gui,{
         Name="UnifiedExplorerProperties",
         AnchorPoint=Vector2.new(1,0),
@@ -1152,6 +1171,7 @@ function Panel:Start()
     end))
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
         if input.KeyCode==Enum.KeyCode.Tab and not processed
+            and not self.ConnectionChoiceOpen
             and not self.Build.SmartMatch
             and not self.Build.LockedAlignment
             and not self.Build.PendingMateChoice
