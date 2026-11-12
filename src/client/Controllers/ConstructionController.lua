@@ -435,7 +435,8 @@ end
 function Controller:RefreshPointer()
     -- Locked-mouse freecam uses center aiming unless a GUI explicitly
     -- needs cursor interaction. Scale and construction share center aim.
-    local unlocked=self.CatalogOpen or self.PendingMateChoice~=nil
+    local unlocked=self.CatalogOpen or (self.BankModal and self.BankModal.Visible)
+        or self.PendingMateChoice~=nil
     -- The click-only relationship picker owns its own full-screen modal
     -- surface; never show the catalog's invisible hitbox over the dialog.
     self.Unlock.Visible = self.CatalogOpen
@@ -478,7 +479,8 @@ function Controller:RefreshHUD()
     if not self.Gui.Enabled then return end
 
     local mode = self.Mode
-    local current = self.CurrentId or "Choose a primitive"
+    local current = if self.CurrentBank then self.CurrentBank.name
+        else self.CurrentId or "Choose a primitive"
     local size = self.CurrentSize
 
     self.TitleLabel.Text = "OPENWORKS  /  "
@@ -616,6 +618,7 @@ function Controller:SelectPrimitive(id)
     local entry = Registry.Get(id)
     if not entry then return end
 
+    self.CurrentBank=nil
     self.CurrentId = id
     self.CurrentSize = entry.Model.PrimaryPart.Size
     self.Steps = { x = 0, y = 0, z = 0 }
@@ -628,6 +631,7 @@ function Controller:StopPlacement()
     if self.Mode~="Build" then return end
     self:ClearSmartMatch()
     self:ClearPreview()
+    self.CurrentBank=nil
     self.Mode="Edit" -- selection context; never requires another hotbar tool
     if self.Layered then self.Layered:OnModeChanged("Edit") end
     self:RefreshHUD()
@@ -1151,6 +1155,8 @@ function Controller:RebuildPreview()
         source = self.Selected
     elseif self.Pending == "Copy" and self.Selected then
         source = self.Selected
+    elseif self.Mode=="Build" and self.CurrentBank then
+        source=ComponentBankPreview.Create(self.CurrentBank)
     elseif self.Mode == "Build" and self.CurrentId then
         local entry = Registry.Get(self.CurrentId)
         source = entry and entry.Model
@@ -1203,7 +1209,7 @@ function Controller:RebuildPreview()
         DepthMode=Enum.HighlightDepthMode.Occluded,
     },ghost)
 
-    if self.Mode=="Build" and self.CurrentId then
+    if self.Mode=="Build" and self.CurrentId and not self.CurrentBank then
         ghost:SetAttribute("TemplateId",self.CurrentId)
         ghost:SetAttribute("InstanceId","OPENWORKS_Preflight")
     end
@@ -1360,6 +1366,8 @@ function Controller:OnModeChanged(mode)
     self.DirectDragActive = false
     self:EndScale()
     self:CancelPending()
+    self:CloseBankSave()
+    self.CurrentBank=nil
     self.Mode = mode
     if self.MateChoice then self.MateChoice:Hide() end
     self.PendingMateChoice=nil
@@ -1533,6 +1541,12 @@ function Controller:UpdatePreview()
         if not alt and self.Pending~="Copy"
             and self.Pending~="ComponentCopy" then
             match=self:RecognizeAttachment(cf,hit)
+            -- A bank blueprint has its OWN internal mechanical relations.
+            -- It can align two explicit pivots, but cannot silently attach
+            -- external shafts/bearings that the server will not author.
+            if self.CurrentBank and match and match.kind~="Pivot" then
+                match=nil
+            end
         end
     end
     self.SmartMatch=match
@@ -1669,6 +1683,10 @@ function Controller:Request(payload)
 end
 
 function Controller:Place(chosenKind)
+    if self.Mode=="Build" and self.CurrentBank then
+        self:PlaceSavedComponent()
+        return
+    end
     if not self.PreviewCF or not self.CurrentId or not self.CurrentSize then return end
     if not self.PreviewValid then
         self:Message("Red preview: construction intersects existing geometry")
@@ -2445,6 +2463,7 @@ end
 
 function Controller:OnInput(input, processed)
     if self.PendingMateChoice then return end
+    if self.BankModal and self.BankModal.Visible then return end
     if self.Numeric and self.Numeric.Active then
         -- The focused numeric dialog owns Enter-to-confirm.
         return
@@ -2669,6 +2688,7 @@ function Controller:Start()
             local open=self.CatalogOpen or self.PendingMateChoice~=nil
                 or (self.Numeric and self.Numeric.Active)
                 or (self.MaterialPicker and self.MaterialPicker.Visible)
+                or (self.BankModal and self.BankModal.Visible)
 
             if player:GetAttribute("OPENWORKS_CursorUIOpen")~=open then
                 player:SetAttribute("OPENWORKS_CursorUIOpen",open)
