@@ -211,7 +211,7 @@ def main() -> int:
           and 'function Panel:FocusAssemblyName()' in explorer_v2
           and 'self:RenderAssemblyDraft(node)' in explorer_v2
           and 'self:Value("Selection","None")' in explorer_v2
-          and 'self:OnAssemblyDraftChanged()' in assembly_tool_v2
+          and 'self.UnifiedExplorer:OnAssemblyDraftChanged()' in assembly_tool_v2
           and 'self.NewAssemblyButton.Visible=editing' in explorer_v2)
     check("UI v2 Phase 5 assembly names and exact members commit through original service",
           'draft.Name=name' in explorer_v2
