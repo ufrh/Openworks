@@ -63,7 +63,7 @@ def main() -> int:
             'Id="Connect"', 'Id="Configure"',
             'Id="AssemblyEditor"', 'Id="Simulation"',
         ))
-        and len(re.findall(r'\\{Id="(?:Place|Edit|Resize|Paint|Connect|Configure|AssemblyEditor|Simulation)"',
+        and len(re.findall(r'\{Id="(?:Place|Edit|Resize|Paint|Connect|Configure|AssemblyEditor|Simulation)"',
                            subtool_definitions)) == 8,
     )
     check(
