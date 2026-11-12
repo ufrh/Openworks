@@ -1453,7 +1453,8 @@ local function handle(player, payload)
         or action=="SetGrounded"
     -- Mark dirty BEFORE optional geometry rebuild: a rebuild error must
     -- not silently discard the already-committed edit from autosaving.
-    if result and persistence and not simulationAction and not bankAction
+    if result and persistence and not simulationAction
+        and (not bankAction or action=="PlaceComponentBank")
         and action~="GetMechanismInfo" then
         persistence:MarkDirty(player)
     end
