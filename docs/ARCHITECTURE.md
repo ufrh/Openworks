@@ -123,3 +123,6 @@ The shared Studio-style UI design lives in `StudioTheme.lua`. Normal Simulate re
 
 ### 90-degree bevel gears
 `GearLibrary` includes matching `Bevel90_12T` and `Bevel90_20T` gear templates whose pitch cones have 45° half angles, so fitted shafts may intersect at a right angle. The same verified axle/apex/pitch predicate is shared between smart snapping and kinematic simulation; mixed 45°/90° pairs are not accepted. Equal tooth counts provide 1:1 speed transfer and explicitly modeled toothed annuli with a physical shaft bore. Gear transmission is currently the deterministic simulation kinematics system, not native tooth contact physics.
+
+### Key-bound motor on physical bearing
+The retired PoweredHinge shortcut does not remove power: an existing, physically fitted shaft/bore Rotation Only relationship can be configured with **Simulate > Properties > the Bearing relationship > HOLD-KEY MOTOR**. This sets an optional motor on the native hinge constraint using a hold-to-run key, angular velocity, max torque and acceleration. Unlike arbitrary axis creation, it does not manufacture a magical pivot. Server ownership and saved relationship settings are authoritative; motor inputs stop on release or missing heartbeats. Validation in Studio is still required, particularly when the gear kinematic solver owns the driven shaft.

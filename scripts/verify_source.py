@@ -206,6 +206,17 @@ def main() -> int:
     check("Retired joints skipped in old plot saves",
           'skipped+=1' in persistence
           and 'retired arbitrary-axis joint(s)' in persistence)
+    check("Motor settings are edited only on physical bearings",
+          'function Properties:ApplyMotor()' in
+              read("src/client/Controllers/RelationshipProperties.lua")
+          and 'action="TuneBearingMotor"' in
+              read("src/client/Controllers/RelationshipProperties.lua")
+          and 'motorEnabled=self.MotorOn' in
+              read("src/client/Controllers/RelationshipProperties.lua")
+          and 'function Mechanical:TuneBearingMotor(' in mechanical
+          and 'MotorEnabled' in mechanical
+          and 'kind=="Bearing"' in simulation
+          and 'function Simulation:InputMotor(player,key,holding)' in simulation)
     check("Assembly server authorization",
           'hasEquippedTool(player,"Assembly")' in service
           and 'action=="CreateAssembly"' in service

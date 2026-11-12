@@ -53,7 +53,7 @@ end
 function Properties.new(controller)
     return setmetatable({Controller=controller,Open=false,
         SelectedId=nil,SelectedName=nil,SelectedRelation=nil,
-        Fields={},LimitsOn=false,Looking=false,Connections={}},Properties)
+        Fields={},LimitsOn=false,MotorOn=false,Looking=false,Connections={}},Properties)
 end
 function Properties:Relations()
     local root=workspace:FindFirstChild("OPENWORKS_Relationships")
@@ -227,6 +227,31 @@ function Properties:Apply()
     -- Preserve typed values until attribute replication catches up. Immediate
     -- rebuild could display stale pre-request values after a successful edit.
 end
+function Properties:ApplyMotor()
+    local relation=self.SelectedRelation
+    if not relation or not relation.Parent
+        or relation:GetAttribute("Kind")~="Bearing" then return end
+    local key=self.Fields["Motor key"]
+    local function value(name)
+        return self.Fields[name] and tonumber(self.Fields[name].Text)
+    end
+    local request={
+        action="TuneBearingMotor",
+        relationId=relation:GetAttribute("RelationId"),
+        motorEnabled=self.MotorOn,
+        motorKey=key and key.Text:gsub("%s+","") or "",
+        motorSpeed=value("Speed (rad/s)"),
+        motorTorque=value("Max torque"),
+        motorAcceleration=value("Acceleration"),
+    }
+    if not request.motorSpeed or not request.motorTorque
+        or not request.motorAcceleration then
+        self.Status.Text="Enter valid speed, torque and acceleration"
+        return
+    end
+    local _,result=self.Controller:Request(request)
+    self.Status.Text=result and tostring(result.message) or "Motor request failed"
+end
 function Properties:Refresh()
     if not self.Gui then return end
     if self.SelectedOutline
@@ -269,6 +294,7 @@ function Properties:Refresh()
         end
         item.Activated:Connect(function()
             self.SelectedRelation=r
+            self.MotorOn=r:GetAttribute("MotorEnabled")==true
             self:Refresh()
         end)
     end
@@ -298,6 +324,22 @@ function Properties:Refresh()
     local apply=button(self.Editor,"APPLY SETTINGS",38)
     apply.BackgroundColor3=Color3.fromRGB(32,102,115)
     apply.Activated:Connect(function() self:Apply() end)
+    if kind=="Bearing" then
+        label(self.Editor,"MOTOR / PHYSICAL SHAFT BEARING",26)
+        local motorToggle=button(self.Editor,
+            "HOLD-KEY MOTOR  /  "..(if self.MotorOn then "ON" else "OFF"))
+        motorToggle.Activated:Connect(function()
+            self.MotorOn=not self.MotorOn
+            motorToggle.Text="HOLD-KEY MOTOR  /  "
+                ..(if self.MotorOn then "ON" else "OFF")
+        end)
+        self:Field("Motor key",r:GetAttribute("MotorKey") or "F")
+        self:Field("Speed (rad/s)",r:GetAttribute("MotorSpeed") or 3)
+        self:Field("Max torque",r:GetAttribute("MotorTorque") or 3000)
+        self:Field("Acceleration",r:GetAttribute("MotorAcceleration") or 40)
+        local saveMotor=button(self.Editor,"SAVE BEARING MOTOR",38)
+        saveMotor.Activated:Connect(function() self:ApplyMotor() end)
+    end
 end
 function Properties:Show(open)
     self.Open=open
