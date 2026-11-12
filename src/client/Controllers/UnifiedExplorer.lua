@@ -1441,9 +1441,11 @@ function Panel:Start()
         table.insert(self.Connections,
             player:GetAttributeChangedSignal(attribute):Connect(function()
                 if self.Tools.PrimaryId=="AssemblySimulation" or simulating() then
-                    self:OnSimulationSessionChanged()
+                self:OnSimulationSessionChanged()
+                if not UIS:GetFocusedTextBox() then
                     self:RenderProperties()
                 end
+            end
             end))
     end
     table.insert(self.Connections,RunService.Heartbeat:Connect(function()
