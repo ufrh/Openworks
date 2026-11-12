@@ -285,7 +285,8 @@ function Bank:Place(player,payload)
     if not entry then return false,"Bank component no longer exists" end
     local targetCF=payload.origin
     if typeof(targetCF)~="CFrame"
-        or not self.D.Grid.ValidPosition(targetCF.Position) then
+        or not self.D.Grid.ValidPosition(targetCF.Position)
+        or not Codec.ReadPose(Codec.Pose(targetCF)) then
         return false,"Aim at a valid build surface"
     end
     if self.D.ownedCount(player)+#entry.parts>self.D.Config.MaxPartsPerPlayer then
@@ -325,8 +326,12 @@ function Bank:Place(player,payload)
             resizePrecision=part.resizePrecision==true,
             numericPrecision=part.numericPrecision==true,
             freePosition=true,grounded=false,
-            alignedOffsetU=part.alignedOffsetU or 0,
-            shaftRollDegrees=part.shaftRollDegrees or 0,
+            alignedOffsetU=if part.alignedOpening
+                and idMap[part.alignedOpening] then part.alignedOffsetU or 0
+                else 0,
+            shaftRollDegrees=if part.alignedOpening
+                and idMap[part.alignedOpening] then part.shaftRollDegrees or 0
+                else 0,
             materialId=part.material or "Steel",
             paintFinish=part.paintFinish or "Factory",
             paintColorHex=part.paintHex,
@@ -362,13 +367,21 @@ function Bank:Place(player,payload)
     for _,model in ipairs(staged) do model.Parent=d.folder end
     local created={}
     for _,spec in ipairs(joints) do
-        local ok,reason=d.mechanical:Restore(player,spec)
-        if not ok then
+        local called,ok,reason=pcall(function()
+            return d.mechanical:Restore(player,spec)
+        end)
+        if not called or not ok then
+            -- A thrown native constraint error must be as atomic as a
+            -- returned validation failure; nothing leaks into the plot.
+            local partial=d.mechanical:OwnedRelation(player,spec.relationId)
+            if partial then d.mechanical:DestroyRelation(partial) end
             for _,id in ipairs(created) do
-                d.mechanical:DestroyRelation(d.mechanical:OwnedRelation(player,id))
+                local relation=d.mechanical:OwnedRelation(player,id)
+                if relation then d.mechanical:DestroyRelation(relation) end
             end
             discard()
-            return false,"Could not restore blueprint relationship: "..tostring(reason)
+            return false,"Could not restore blueprint relationship: "
+                ..tostring(if called then reason else ok)
         end
         table.insert(created,spec.relationId)
     end
