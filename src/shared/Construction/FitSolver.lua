@@ -16,9 +16,9 @@ end
 function Solver.PivotCandidate(ghost,target,aimRay,aimed,allTargets)
     local feature=Features.Describe(target)
     if not feature then return nil end
-    local targetPosition=if feature.HasOrigin then feature.Origin else nil
+    local targetPosition=nil
     local componentId=target:GetAttribute("ComponentId")
-    if componentId and not targetPosition then
+    if componentId then
         local members={}
         for _,model in ipairs(allTargets or {}) do
             if model:GetAttribute("ComponentId")==componentId then
@@ -30,6 +30,9 @@ function Solver.PivotCandidate(ghost,target,aimRay,aimed,allTargets)
             targetPosition=component.Origin
         end
     end
+    -- A grouped body origin intentionally supersedes individual member
+    -- pivots when the user aligns the whole component.
+    targetPosition=targetPosition or (if feature.HasOrigin then feature.Origin else nil)
     if not targetPosition then return nil end
     local sourceLocal=Origin.PreviewLocal(ghost)
     local mouseDistance=rayDistance(aimRay,targetPosition)
