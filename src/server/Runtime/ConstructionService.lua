@@ -1478,10 +1478,11 @@ function Service.Start()
 
     Players.PlayerRemoving:Connect(function(player)
         if persistence and persistence.Dirty[player] then
-            local ok,why=persistence:Flush(player,"Exit")
-            if not ok then
+            local called,ok,why=pcall(persistence.Flush,
+                persistence,player,"Exit")
+            if not called or not ok then
                 warn("[OPENWORKS] Exit save for "..player.Name
-                    .." failed: "..tostring(why))
+                    .." failed: "..tostring(if called then why else ok))
             end
         end
         if simulation then simulation:ClearPlayer(player) end
@@ -1506,10 +1507,11 @@ function Service.Start()
             if persistence.Dirty[player] then
                 remaining+=1
                 task.spawn(function()
-                    local ok,why=persistence:Flush(player,"Shutdown")
-                    if not ok then
+                    local called,ok,why=pcall(persistence.Flush,
+                        persistence,player,"Shutdown")
+                    if not called or not ok then
                         warn("[OPENWORKS] Shutdown save for "..player.Name
-                            .." failed: "..tostring(why))
+                            .." failed: "..tostring(if called then why else ok))
                     end
                     remaining-=1
                 end)

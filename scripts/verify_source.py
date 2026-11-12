@@ -682,14 +682,17 @@ def main() -> int:
           and 'self:ShouldAutoSave(player)' in persistence
           and 'persistence:StartAutoSave()' in service)
     check("Save on exit and shutdown happens before deleting authored plot",
-          'persistence:Flush(player,"Exit")' in service
-          and 'persistence:Flush(player,"Shutdown")' in service
+          'pcall(persistence.Flush,' in service
+          and 'persistence,player,"Exit"' in service
+          and 'persistence,player,"Shutdown"' in service
           and 'game:BindToClose(function()' in service
-          and service.index('persistence:Flush(player,"Exit")')
+          and service.index('persistence,player,"Exit"')
               <service.index('if simulation then simulation:ClearPlayer(player) end')
           and 'self:Save(player,mode or "Exit")' in persistence)
     check("F6 plot panel shows autosave status and unsaved edits",
-          'OPENWORKS_LastSaveMode' in plot_ui
+          'SAVE UNAVAILABLE' in plot_ui
+          and 'if failed then message else "Autosave pending"' in plot_ui
+          and 'OPENWORKS_LastSaveMode' in plot_ui
           and 'OPENWORKS_AutoSavePending' in plot_ui
           and 'LAST SAVED  /' in plot_ui
           and 'Autosave pending' in plot_ui)

@@ -74,12 +74,20 @@ function UI:Refresh()
     self.Saved.Text="LAST SAVED  /  "..stamp
         ..(if mode~="" and mode~="None" then "  •  "..mode else "")
     local pending=player:GetAttribute("OPENWORKS_AutoSavePending")==true
+    local low=string.lower(message)
+    local failed=string.find(low,"failed",1,true)~=nil
+        or string.find(low,"blocked",1,true)~=nil
     self.State.Text=if self.Busy then "WORKING..."
         elseif state=="Ready" and pending then
-            "UNSAVED EDITS  ·  Autosave pending"
+            "UNSAVED EDITS  ·  "..(if failed then message else "Autosave pending")
         else string.upper(state).."  ·  "..message
-    self.State.TextColor3=if state=="Error" then Color3.fromRGB(251,140,124)
+    self.State.TextColor3=if state=="Error" or (pending and failed)
+        then Color3.fromRGB(251,140,124)
         elseif state=="Ready" then Color3.fromRGB(124,219,192) else MUTED
+    if self.Header then
+        self.Header.Text=if state=="Error" then "MY PLOT  /  SAVE UNAVAILABLE"
+            else "MY PLOT  /  AUTOSAVE ON"
+    end
     self.Save.Text=if self.Busy then "SAVING / LOADING…"
         else "SAVE PLOT"
     self.Save.Active=state=="Ready" and not self.Busy
@@ -164,7 +172,7 @@ function UI:Start()
         BorderSizePixel=0,Visible=false,ZIndex=3,
     }),10)
     self.Panel=panel
-    text(panel,"MY PLOT  /  AUTOSAVE ON",11,26,13,true)
+    self.Header=text(panel,"MY PLOT  /  AUTOSAVE ON",11,26,13,true)
     text(panel,"Autosaves every ~2 min while building; saves on exit.",39,35,12,false,MUTED)
     self.Save=button(panel,"SAVE PLOT",83,ACCENT)
     self.Load=button(panel,"LOAD LATEST SAVED PLOT",133,PANEL)
