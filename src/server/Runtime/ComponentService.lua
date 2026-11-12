@@ -252,7 +252,10 @@ end
 function ComponentService:RotateWorld(player, payload)
     local members, reason = self:RequireMembers(player, payload.componentId)
     if not members then return false, reason end
-    local center = ComponentGeometry.Bounds(members)
+    local anchor=FitOrigin.ComponentAnchor(members)
+    local center=if anchor and FitOrigin.HasComponent(anchor)
+        then FitOrigin.World(anchor,"Component")
+        else ComponentGeometry.Bounds(members)
     local delta = center and RotationMath.Delta(payload.axis, payload.direction, center)
     if not delta then return false, "Choose X, Y or Z rotation" end
     local d = self.D
