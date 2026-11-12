@@ -14,6 +14,8 @@ local Smart = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SmartPlacement"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
+local FitFeatures = require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("FitFeatureRegistry"))
 local BeltMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("BeltMath"))
 local BeltVisual = require(script.Parent:WaitForChild("BeltVisual"))
@@ -603,6 +605,10 @@ function Mechanical:SmartMate(player, request, newSource)
     if mode~="Bore" and mode~="Gear"
         and mode~="Hub" and mode~="Surface" then
         return false,"Unsupported attachment"
+    end
+    if (mode=="Bore" or mode=="Hub" or mode=="Gear")
+        and FitFeatures.Pair(source,target)~=mode then
+        return false,"These parts do not expose compatible fitting features"
     end
     local reverse=mode=="Bore" and request.reverse==true
     local shaft=if mode=="Hub" then
