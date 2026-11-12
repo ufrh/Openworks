@@ -927,20 +927,19 @@ function Controller:Start()
             return
         end
 
-        -- Mechanics / Connect owns mechanical authoring; Build/Edit owns
-        -- world selection and geometry manipulation.
-        if self.Mode~="Mechanics"
-            or self.Tools.SubtoolId~="Connect" or processed then return end
+        -- Mechanics owns authoring history in both Connect and Configure.
+        -- Build/Edit remains responsible for construction geometry.
+        if self.Mode~="Mechanics" or processed then return end
         local control=UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
-        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
         if control and (key==Enum.KeyCode.Z or key==Enum.KeyCode.Y) then
             self:Request({action=if key==Enum.KeyCode.Z then "Undo" else "Redo"})
-            self:Reset()
             if self.Tools.SubtoolId=="Connect" then self:StartManualJoint() end
             return
         end
+        if self.Tools.SubtoolId~="Connect" then return end
+        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
         -- F enters the legacy validated two-solid weld workflow. W remains
         -- the universal freecam forward key, so it cannot be a weld shortcut.
         if key==Enum.KeyCode.F and not control then
@@ -968,7 +967,7 @@ function Controller:Start()
         end
         if not self.ManualActive then return end
 
-        if key==Enum.KeyCode.Escape then self:Reset()
+        if key==Enum.KeyCode.Escape then self:StartManualJoint()
         elseif key==Enum.KeyCode.R and self.Stage~="JointSettings" then
             self:CycleType()
         elseif key==Enum.KeyCode.LeftBracket or key==Enum.KeyCode.RightBracket then
