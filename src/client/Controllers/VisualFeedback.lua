@@ -3,6 +3,7 @@
 -- All boxes are twelve LineHandleAdornments attached to existing authored
 -- primitives. No helper Parts, Highlights, fill, shadows or world text.
 local RunService=game:GetService("RunService")
+local GhostWireframe=require(script.Parent:WaitForChild("GhostWireframe"))
 
 local Feedback={}
 Feedback.__index=Feedback
@@ -96,6 +97,7 @@ function Feedback.new()
     root.Parent=workspace
     return setmetatable({
         Root=root,Layers={},Connections={},LastUpdate=0,
+        Ghost=GhostWireframe.new(root),
     },Feedback)
 end
 
@@ -138,6 +140,15 @@ function Feedback:Clear(owner)
     local layer=self.Layers[owner]
     if not layer then return end
     for key in pairs(layer) do self:Remove(owner,key) end
+end
+
+function Feedback:SetGhost(model,valid)
+    self.Ghost:Bind(model)
+    self.Ghost:SetValid(valid)
+end
+
+function Feedback:SetGhostValid(valid)
+    self.Ghost:SetValid(valid)
 end
 
 function Feedback:FlashSuccess(models)
@@ -220,6 +231,7 @@ function Feedback:Update()
     local now=os.clock()
     if now-self.LastUpdate<0.08 then return end
     self.LastUpdate=now
+    self.Ghost:Update()
     for owner,layer in pairs(self.Layers) do
         for key,entry in pairs(layer) do
             if (entry.Expires and now>=entry.Expires)
@@ -242,6 +254,7 @@ function Feedback:Destroy()
         connection:Disconnect()
     end
     for owner in pairs(self.Layers) do self:Clear(owner) end
+    self.Ghost:Destroy()
     self.Root:Destroy()
 end
 
