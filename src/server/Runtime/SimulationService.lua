@@ -6,6 +6,7 @@
 -- Stop destroys clones and restores all original visibility/collision.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local PhysicsService=game:GetService("PhysicsService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Alignment = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
@@ -17,7 +18,7 @@ local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GridMath"))
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
-local GearKinematics = require(script.Parent:WaitForChild("GearKinematics"))
+local GearTransmission=require(script.Parent:WaitForChild("GearTransmission"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
 
@@ -33,8 +34,17 @@ local CRANK_HOLD_TIMEOUT = 0.5
 local RACK_HOLD_TIMEOUT = 0.5
 local RACK_MANUAL_SPEED = 1.5 -- studs/s; server chooses direction and power
 
--- Gears and all rigidly welded members rotate kinematically.
--- Native physics is reserved for mechanisms OUTSIDE gear rigid bodies.
+-- Physical gear mesh torques act on real welded shaft assemblies.
+local GEAR_GROUP="OPENWORKS_MeshedGear"
+local RACK_GROUP="OPENWORKS_MeshedRack"
+local function configureTransmissionCollisions()
+    for _,name in ipairs({GEAR_GROUP,RACK_GROUP}) do
+        pcall(function() PhysicsService:RegisterCollisionGroup(name) end)
+    end
+    PhysicsService:CollisionGroupSetCollidable(GEAR_GROUP,GEAR_GROUP,false)
+    PhysicsService:CollisionGroupSetCollidable(GEAR_GROUP,RACK_GROUP,false)
+    PhysicsService:CollisionGroupSetCollidable(RACK_GROUP,RACK_GROUP,false)
+end
 local function bodyKey(model)
     -- ComponentId is only an editor grouping; NEVER a physical joint.
     return "p:" .. tostring(model:GetAttribute("InstanceId"))
@@ -97,6 +107,7 @@ function Simulation.new(deps)
         world.Name = "OPENWORKS_Simulated"
         world.Parent = workspace
     end
+    configureTransmissionCollisions()
     local self=setmetatable({ D=deps,World=world,Sessions={} },Simulation)
     self.ActuatorHeartbeat=RunService.Heartbeat:Connect(function(dt)
         self:StepCranks(dt)
@@ -564,23 +575,24 @@ function Simulation:Start(player, payload)
             if not clone.PrimaryPart then
                 error("Source component has no PrimaryPart: " .. original.Name)
             end
-            for _, part in ipairs(allParts(clone)) do
-                part.Anchored = true
-                -- The GearLibrary root is only a transform/pivot, not metal.
-                -- Keep the through-bore physically open in simulation.
-                part.CanCollide = part:GetAttribute("GearPivotOnly") ~= true
-                -- Needed for mouse selection of running physics clones.
-                part.CanQuery = part:GetAttribute("GearPivotOnly") ~= true
-                part.CanTouch = false
+            local kind=GearMath.Kind(original)
+            for _,part in ipairs(allParts(clone)) do
+                part.Anchored=true -- temporary while assembling constraints
+                part.CanCollide=part:GetAttribute("GearPivotOnly")~=true
+                part.CanQuery=part:GetAttribute("GearPivotOnly")~=true
+                part.CanTouch=false
+                if kind=="Spur" or kind=="Bevel45" or kind=="Bevel90" then
+                    part.CollisionGroup=GEAR_GROUP
+                elseif kind=="Rack" then
+                    part.CollisionGroup=RACK_GROUP
+                end
             end
             copies[id] = clone
             copyParts[id] = allParts(clone)
         end
 
-        -- Identify all fully kinematic gear/shaft/crank bodies BEFORE
-        -- constructing any native prefab joints. A kinematic gear has
-        -- ZERO Roblox physical constraints, including internal welds.
-        session.Gears=GearKinematics.new(graph,copies)
+        -- Build the torque transfer map, not a scripted animation graph.
+        session.Gears=GearTransmission.new(graph,copies,runtime)
 
         -- A prefab is a physical primitive even if it has several geometry
         -- Parts (bolt heads / gear teeth). Only those INTERNAL parts are welded.
@@ -594,7 +606,7 @@ function Simulation:Start(player, payload)
                 if not anchor then error("Primitive has no physics root") end
                 bodyAnchors[key]=anchor
                 for _,part in ipairs(copyParts[id]) do
-                    if part~=anchor and not session.Gears:IsKinematic(id) then
+                    if part~=anchor then
                         local weld=Instance.new("WeldConstraint")
                         weld.Name="PrefabInternalPart"
                         weld.Part0=anchor
@@ -618,12 +630,6 @@ function Simulation:Start(player, payload)
             if edge.kind == "Gear" then
                 -- Legacy K relationships are OPTIONAL metadata.
                 -- Meshing and transmission use geometry every frame.
-                continue
-            elseif session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))
-                or session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")) then
-                -- No native hinge/bearing/spring/rigid constraint may
-                -- exert ANY physical influence on geared rigid bodies.
-                -- Rigid members move cohesively under GearKinematics.
                 continue
             elseif edge.kind == "Fixed" or edge.kind=="Weld"
                 or edge.kind=="Bolt" then
@@ -833,21 +839,17 @@ function Simulation:Start(player, payload)
                 else model.PrimaryPart
             local drivenId=if coupledShaft then
                 coupledShaft:GetAttribute("InstanceId") else id
-            local kinematic=session.Gears:IsKinematic(drivenId)
-            local drive=nil
-            if not kinematic then
-                local attachment=Instance.new("Attachment")
-                attachment.Name="ControlledCrankShaftAxis"
-                attachment.Parent=root
-                drive=Instance.new("AngularVelocity")
-                drive.Name="HandCrank_ControlledRotation"
-                drive.Attachment0=attachment
-                drive.RelativeTo=Enum.ActuatorRelativeTo.World
-                drive.MaxTorque=HandCrankMath.MaxTorque
-                drive.AngularVelocity=Vector3.zero
-                drive.Enabled=false
-                drive.Parent=runtime
-            end
+            local attachment=Instance.new("Attachment")
+            attachment.Name="ControlledCrankShaftAxis"
+            attachment.Parent=root
+            local drive=Instance.new("AngularVelocity")
+            drive.Name="HandCrank_ControlledRotation"
+            drive.Attachment0=attachment
+            drive.RelativeTo=Enum.ActuatorRelativeTo.World
+            drive.MaxTorque=HandCrankMath.MaxTorque
+            drive.AngularVelocity=Vector3.zero
+            drive.Enabled=false
+            drive.Parent=runtime
 
             local axis=root.CFrame.RightVector.Unit
             model:SetAttribute("OPENWORKS_CrankRunning",false)
@@ -936,19 +938,8 @@ function Simulation:Start(player, payload)
                 local rootAnchor = bodyAnchors[key]
                 for _, original in ipairs(originals) do
                     for _, part in ipairs(copyParts[original:GetAttribute("InstanceId")] or {}) do
-                        if session.Gears:IsKinematic(
-                            original:GetAttribute("InstanceId")) then
-                            -- These parts have no Roblox physics influence:
-                            -- bearing constraints were skipped above and
-                            -- collisions cannot push or jam a gear train.
-                            part.Anchored=true
-                            part.CanCollide=false
-                            part.CanTouch=false
-                            part.CanQuery=part:GetAttribute("GearPivotOnly")~=true
-                        else
-                            part.Anchored=session.GroundKeys[key]==true
-                                and part==rootAnchor
-                        end
+                        part.Anchored=session.GroundKeys[key]==true
+                            and part==rootAnchor
                     end
                 end
             end
