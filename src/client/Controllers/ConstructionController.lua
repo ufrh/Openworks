@@ -567,7 +567,10 @@ function Controller:RefreshHUD()
     local size = self.CurrentSize
 
     self.TitleLabel.Text = "OPENWORKS / BUILD / " .. string.upper(self.Tools.SubtoolId or tostring(mode))
-    if self.SmartMatch and not (self.Layered and self.Layered.Alignment)
+    if self.PivotSetting then
+        self.DetailLabel.Text="FIT ORIGIN / "..FitPivotSnap.Modes[self.PivotModeIndex]
+        self.HelpLabel.Text="Aim and click • Q/E origin position • Esc cancel • Shift+O reset"
+    elseif self.SmartMatch and not (self.Layered and self.Layered.Alignment)
         and (self.Mode == "Build" or self.Pending) then
         local match=self.SmartMatch
         self.DetailLabel.Text=string.upper(match.relationKind)
@@ -1303,6 +1306,7 @@ function Controller:RefreshSelectionHighlights()
 end
 
 function Controller:SetSelection(model)
+    self.PivotSetting=false
     if self.Selected == model and not self.SelectedComponentId and #self.SelectedParts <= 1 then return end
     self:CancelPending()
     self.Selected = model
@@ -1348,6 +1352,7 @@ function Controller:ComponentMembers(componentId)
 end
 
 function Controller:SetComponentSelection(componentId, membersOverride)
+    self.PivotSetting=false
     self:CancelPending()
     self.Selected = nil
     self.SelectedComponentId = componentId
@@ -1419,6 +1424,8 @@ function Controller:CancelPending()
 end
 
 function Controller:OnModeChanged(mode)
+    self.PivotSetting=false
+    if self.Tools.PrimaryId~="Build" then self.CurrentBank=nil end
     if self.Feedback then self.Feedback:Clear("hover") end
     self.DirectDragCandidate = nil
     self.DirectDragActive = false
@@ -1458,6 +1465,7 @@ end
 function Controller:OnSubtoolChanged(primary,subtool,_previous)
     if primary~="Build" then return end
     if subtool~="Resize" and self.ScaleMode then self:EndScale() end
+    if subtool~="Edit" then self.PivotSetting=false end
     if subtool=="Resize" then self:BeginScale() end
     self:RefreshHUD()
 end
@@ -1976,7 +1984,75 @@ function Controller:ConfirmComponentPlacement()
     self:FinishPendingHandoff(handoff,goal,models,ok)
 end
 
+function Controller:EditFitPivot(reset)
+    local anchor=if self.SelectedComponentId then self.GroupAnchor else self.Selected
+    if not anchor or not anchor.Parent then
+        self:Message("Select a primitive or component first")
+        return
+    end
+    if reset then
+        self.PivotSetting=false
+        self:Request({
+            action="SetFitPivot",reset=true,
+            scope=if self.SelectedComponentId then "Component" else "Primitive",
+            id=if self.SelectedComponentId then self.SelectedComponentId
+                else anchor:GetAttribute("InstanceId"),
+        })
+        self:RefreshHUD()
+        return
+    end
+    self.PivotSetting=true
+    self.PivotModeIndex=1
+    self:Message("Choose the alignment origin • aim at a selected surface and click")
+end
+
+function Controller:PivotHit()
+    local camera=workspace.CurrentCamera
+    if not camera then return nil end
+    local members=if self.SelectedComponentId then self.SelectedParts
+        else (if self.Selected then {self.Selected} else {})
+    if #members==0 then return nil end
+    local ray=CameraAimRay.Ray(camera)
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Include
+    params.FilterDescendantsInstances=members
+    params.IgnoreWater=true
+    local hit=workspace:Raycast(ray.Origin,ray.Direction*Grid.MaxDistance,params)
+    if not hit then return nil end
+    local selected=topBuiltModel(hit.Instance,
+        workspace:FindFirstChild(Config.FolderName))
+    if not selected or not table.find(members,selected) then return nil end
+    return selected,FitPivotSnap.Point(hit.Instance,hit.Position,
+        FitPivotSnap.Modes[self.PivotModeIndex])
+end
+
+function Controller:CommitFitPivot()
+    if not self.PivotSetting or self.Busy then return end
+    local selected,position=self:PivotHit()
+    if not selected then
+        self:Message("Aim at a surface belonging to the selected construction")
+        return
+    end
+    local anchor=if self.SelectedComponentId then self.GroupAnchor else self.Selected
+    local succeeded=self:Request({
+        action="SetFitPivot",
+        scope=if self.SelectedComponentId then "Component" else "Primitive",
+        id=if self.SelectedComponentId then self.SelectedComponentId
+            else anchor:GetAttribute("InstanceId"),
+        hitId=selected:GetAttribute("InstanceId"),
+        position=position,
+    })
+    if succeeded then
+        self.PivotSetting=false
+        self:RefreshHUD()
+    end
+end
+
 function Controller:Activate(mode)
+    if self.PivotSetting and mode=="Edit" then
+        self:CommitFitPivot()
+        return
+    end
     -- Only Build subtools activate construction geometry.
     if mode~="Build" and mode~="Edit" and mode~="Inspect" then return end
     if self.PendingMateChoice or (self.Numeric and self.Numeric.Active) then return end
@@ -2558,6 +2634,10 @@ end
 function Controller:OnInput(input, processed)
     if self.Tools:WasConsumed(input) then return end
     if player:GetAttribute("OPENWORKS_ExplorerOpen")==true then return end
+    if self.BankModal and self.BankModal.Visible then
+        if input.KeyCode==Enum.KeyCode.Escape then self:CloseBankSave() end
+        return
+    end
     if self.PendingMateChoice then return end
     if self.Numeric and self.Numeric.Active then
         if input.KeyCode==Enum.KeyCode.Escape then
@@ -2572,6 +2652,30 @@ function Controller:OnInput(input, processed)
     if self.Assembly and self.Assembly:IsEditingJoint() then return end
     local shiftHeld=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    if self.PivotSetting then
+        if key==Enum.KeyCode.Escape then
+            self.PivotSetting=false
+            self:RefreshHUD()
+        elseif not processed and (key==Enum.KeyCode.Q or key==Enum.KeyCode.E) then
+            local delta=if key==Enum.KeyCode.E then 1 else -1
+            self.PivotModeIndex=(self.PivotModeIndex-1+delta
+                +#FitPivotSnap.Modes)%#FitPivotSnap.Modes+1
+            self:RefreshHUD()
+        end
+        return
+    end
+    if not processed and self.Mode=="Edit"
+        and self.Tools.PrimaryId=="Build" and self.Tools.SubtoolId=="Edit"
+        and key==Enum.KeyCode.O then
+        self:EditFitPivot(shiftHeld)
+        return
+    end
+    if not processed and self.Mode=="Edit"
+        and self.Tools.PrimaryId=="Build" and self.Tools.SubtoolId=="Edit"
+        and shiftHeld and key==Enum.KeyCode.B then
+        self:OpenBankSave()
+        return
+    end
     if self.Mode=="Edit" and shiftHeld
         and (key==Enum.KeyCode.Delete or key==Enum.KeyCode.Backspace) then
         -- Shift+Delete removes only the aimed relationship, handled by
@@ -2683,6 +2787,7 @@ end
 function Controller:Start()
     if self.Started then return end
     self.Started = true
+    self.FitPivotHandle=FitPivotHandle.new()
     self:MakeUI()
     table.insert(self.Connections,Theme.Attach(self.Gui))
     self.Layered = LayeredEditingController.new(self)
@@ -2839,6 +2944,26 @@ function Controller:Start()
         if stale then self:SetSelection(nil) end
         self:UpdateDirectDrag()
         self:UpdateHover()
+        if self.FitPivotHandle then
+            local anchor=if self.SelectedComponentId then self.GroupAnchor
+                else self.Selected
+            if self.PivotSetting then
+                local _,point=self:PivotHit()
+                if point then
+                    self.FitPivotHandle:UpdateCandidate(anchor,point,
+                        if self.SelectedComponentId then "Component" else "Primitive")
+                else
+                    self.FitPivotHandle:Update(anchor,
+                        if self.SelectedComponentId then "Component" else "Primitive",true)
+                end
+            elseif self.Pending and self.Preview then
+                self.FitPivotHandle:UpdatePreview(self.Preview)
+            else
+                self.FitPivotHandle:Update(anchor,
+                    if self.SelectedComponentId then "Component" else "Primitive",
+                    self.Mode=="Edit")
+            end
+        end
         if not self.PendingMateChoice
             and (self.Mode == "Build" or
                 (self.Mode == "Edit" and self.Pending)) then
@@ -2856,6 +2981,7 @@ function Controller:Start()
 end
 
 function Controller:Destroy()
+    if self.FitPivotHandle then self.FitPivotHandle:Destroy() end
     if self.Numeric then self.Numeric:Destroy() end
     self:EndScale()
     if self.Layered then self.Layered:Destroy() end
