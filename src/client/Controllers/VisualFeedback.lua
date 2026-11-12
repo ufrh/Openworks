@@ -151,6 +151,10 @@ function Feedback:SetGhostValid(valid)
     self.Ghost:SetValid(valid)
 end
 
+function Feedback:SetGhostPending(pending)
+    self.Ghost:SetPending(pending)
+end
+
 function Feedback:FlashSuccess(models)
     self:Clear("confirmation")
     for i,model in ipairs(models or {}) do
