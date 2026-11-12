@@ -12,6 +12,8 @@ local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("C
 local Config = require(construction:WaitForChild("BuildConfig"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local AlignmentMath = require(construction:WaitForChild("AlignmentMath"))
+local Bore = require(construction:WaitForChild("BoreClearance"))
+local MultiFit = require(construction:WaitForChild("MultiFitMath"))
 local PreviewFeedback = require(construction:WaitForChild("PreviewFeedback"))
 local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local INSERTION_INCREMENT_U = 0.5
@@ -261,6 +263,33 @@ function Layered:CycleDepth(backward)
     self.Parent:Message("Depth " .. tostring(self.DepthIndex + 1) .. "/" .. tostring(#layers))
 end
 
+-- Raycasts miss the EMPTY center of a drilled opening. The centerline
+-- fallback targets the nearest owned bore within a small aim radius,
+-- even when the ray passes through a hinge lug into the background.
+function Layered:AimedOpening(excluded)
+    local folder=self:Built()
+    local camera=workspace.CurrentCamera
+    if not folder or not camera then return nil end
+    local origin=camera.CFrame.Position
+    local direction=camera.CFrame.LookVector.Unit
+    local best,bestAlong=nil,math.huge
+    for _,model in ipairs(folder:GetChildren()) do
+        if not owned(model) or (excluded and excluded[model])
+            or not AlignmentMath.TargetAxis(model) then continue end
+        local diameter=Bore.OpeningDiameter(model)
+        if not diameter then continue end
+        local delta=model:GetPivot().Position-origin
+        local along=delta:Dot(direction)
+        if along<=0 or along>Grid.MaxDistance then continue end
+        local distance=(delta-direction*along).Magnitude
+        local radius=math.clamp(diameter*0.5+0.075,0.12,0.32)
+        if distance<=radius and along<bestAlong then
+            best,bestAlong=model,along
+        end
+    end
+    return best
+end
+
 function Layered:RefreshTargetCue()
     local align = self.Alignment
     if not align or align.Stage ~= "PickTarget" then return end
@@ -272,6 +301,9 @@ function Layered:RefreshTargetCue()
     for _, member in ipairs(align.Members) do excluded[member] = true end
     local layers = self:DepthModels(excluded)
     local target = layers[(self.TargetDepthIndex % math.max(1, #layers)) + 1]
+    if not target or not AlignmentMath.TargetAxis(target) then
+        target=self:AimedOpening(excluded) or target
+    end
     if target == self.HoveredCandidate then return end
 
     self.HoveredCandidate = target
@@ -368,9 +400,42 @@ function Layered:UpdateAlignPreview()
         align.Preview:PivotTo(goal)
         local ignore = {}
         for _, member in ipairs(align.Members) do ignore[member] = true end
-        align.Valid, align.ConflictReason = PreviewFeedback.Check(
-            align.Preview, ignore, align.Shaft:GetAttribute("InstanceId"), align.Target
-        )
+        local all={}
+        local folder=self:Built()
+        if folder then
+            for _,candidate in ipairs(folder:GetChildren()) do
+                if owned(candidate) and not ignore[candidate] then
+                    table.insert(all,candidate)
+                end
+            end
+        end
+        local moving={}
+        for _,candidate in ipairs(align.Preview:GetChildren()) do
+            if candidate:IsA("Model") then table.insert(moving,candidate) end
+        end
+        local targets=MultiFit.StationarySet(
+            moving,align.Target,all,nil,ignore)
+        local contacts,why=MultiFit.Find(moving,targets)
+        local fitted=contacts and MultiFit.Unique(contacts,
+            align.Shaft:GetAttribute("InstanceId"),
+            align.Target:GetAttribute("InstanceId")) or {}
+        align.FittedCount=#fitted
+        local primary=MultiFit.Contains(fitted,
+            align.Shaft:GetAttribute("InstanceId"),
+            align.Target:GetAttribute("InstanceId"))
+        local complete,reason=MultiFit.Completeness(
+            moving,targets,fitted,false)
+        if not primary then
+            align.Valid=false
+            align.ConflictReason=why
+                or "Shaft is not coaxial, too short, or too wide for the opening"
+        elseif not complete then
+            align.Valid=false
+            align.ConflictReason=reason
+        else
+            align.Valid,align.ConflictReason=PreviewFeedback.Check(
+                align.Preview,ignore,nil,nil,MultiFit.AllowMap(fitted))
+        end
         PreviewFeedback.Paint(align.Preview, align.Valid)
         align.TargetPose = goal
         align.VisualPose = visual
@@ -421,6 +486,9 @@ function Layered:ChooseTarget()
     for _, member in ipairs(align.Members) do excluded[member] = true end
     local layers = self:DepthModels(excluded)
     local target = layers[(self.TargetDepthIndex % math.max(1, #layers)) + 1]
+    if not target or not AlignmentMath.TargetAxis(target) then
+        target=self:AimedOpening(excluded) or target
+    end
 
     if not target then
         self.Parent:Message("Aim at a constructed opening")
@@ -567,6 +635,10 @@ function Layered:ConfirmAlignment()
         -- This creates a validated unpowered hinge or rigid shaft weld.
         local approach=selected.Target:GetPivot().Position
             +selected.Target:GetPivot().RightVector*offset*Grid.Unit
+        -- All manual shaft/bores now go through the same atomic,
+        -- server-verified multi-opening transaction as drag fitting.
+        -- The old CreateRelation/Align path moved only one shaft/hole.
+        local exact=selected.Plan.delta*selected.Shaft:GetPivot()
         local ok=parent:Request(if isGear then {
             action="SmartMate",
             mateKind="Hub",
@@ -575,13 +647,15 @@ function Layered:ConfirmAlignment()
             targetId=targetId,
             approach=approach,
         } else {
-            action=if choice=="FreeFit" then "Align" else "CreateRelation",
-            kind=if choice=="FreeFit" then nil else choice,
+            action="SmartMate",
+            mateKind="Bore",
+            relationKind=choice,
             sourceId=sourceId,
-            componentId=componentId,
             targetId=targetId,
             offsetUnits=offset,
             rollDegrees=roll,
+            position=exact.Position,
+            orientation=exact.Rotation,
         })
         if ok then
             if selected.Preview then selected.Preview:Destroy() end
@@ -593,7 +667,7 @@ function Layered:ConfirmAlignment()
         end
         parent:RefreshPointer()
         parent:RefreshHUD()
-    end,1,isGear)
+    end,selected.FittedCount or 1,isGear)
 end
 
 function Layered:Click()
