@@ -11,8 +11,10 @@
 - `UnifiedExplorer.lua` owns the persistent right-side Explorer and Properties panel. Tab toggles the cursor between locked freecam and editable dock; the OPEN button in the dock also toggles focus when already unlocked.
 - **Objects view**: real registered assemblies, editor components, primitives and unassigned objects. **Connections view**: actual server-authored mechanical relations, with real source/target endpoints and no fake component parenting.
 - Components that span different assembly membership sets appear only through their **actual included primitives** beneath each assembly. The panel also displays the complete component-member count where the selected node is a partial slice.
+- Partial component entries are read-only as components, preventing whole-component Delete, Duplicate, Ungroup, Paint, or membership toggles from affecting members in other assemblies. A world-selected full component gets its own whole-component selection. Individual primitives can still be edited in the appropriate tool.
 - Search filters names and IDs. Explorer rows have explicit expand/collapse and contextual action buttons.
 - Selection in Build/Edit updates the dock; selecting a primitive/component from the dock selects the existing construction model. World clicks under Mechanics/Configure or Simulation inspect the same dock, including mapped live simulated clones. Assembly Editor selection is also mirrored.
+- A reactive snapshot notices replicated grounding, material/paint, transform, spring, joint limit and motor changes without wiping actively focused text fields. Redraw removes obsolete hover tooltips.
 - Visual selection is delegated to Phase 2's shared `VisualFeedback` manager. No second Highlight overlay system is introduced.
 
 ### Inline Properties
@@ -67,5 +69,6 @@
 8. In Simulation, select a registered assembly from Explorer and Run/Stop. Verify no simulation of unregistered members; test grounding changes only while stopped. Select running models in-world and ensure Properties maps back to authored IDs.
 9. Open/close numeric sizing, relationship choice, assembly naming and plot Save/Load modals. Verify cursor ownership, freecam, tool input, double-click selection, and Escape cancellation.
 10. Test two players, >100 components, dynamic relationship changes, rapid tool switching, respawn, deletion and plot reload. Check CPU/FPS, stale UI rows and leaks. Follow [UI v2 regression matrix](UI_V2_REGRESSION_MATRIX.md) and [full QA regression](QA_REGRESSION.md).
+11. Specifically split an editor component across two assemblies: partial Explorer entries must never offer whole-component destructive operations; selecting the full component in the world must retain its complete membership. Verify that changing material, grounding, limits or a motor refreshes Properties after replication without erasing a focused input.
 
 **Static contract pass is not Studio proof.** The feature remains isolated until interactive validation is complete.
