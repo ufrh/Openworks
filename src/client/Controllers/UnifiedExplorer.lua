@@ -1377,7 +1377,10 @@ function Panel:Start()
         else
             self:Focus(false)
         end
-        if self.Selected then self:Select(self.Selected,false) end
+        if self.Selected then self:Select(self.Selected,false)
+        else self:RenderProperties() end
+        self:OnAssemblyDraftChanged()
+        self:OnSimulationSessionChanged()
     end))
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
         if input.KeyCode==Enum.KeyCode.Tab and not processed
@@ -1418,10 +1421,23 @@ function Panel:Start()
             end
         end
     end))
+    for _,attribute in ipairs({
+        "OPENWORKS_Simulating","OPENWORKS_SimulationPaused",
+    }) do
+        table.insert(self.Connections,
+            player:GetAttributeChangedSignal(attribute):Connect(function()
+                if self.Tools.PrimaryId=="AssemblySimulation" then
+                    self:OnSimulationSessionChanged()
+                    self:RenderProperties()
+                end
+            end))
+    end
     table.insert(self.Connections,RunService.Heartbeat:Connect(function()
         self:Scan(false)
     end))
     self:Scan(true)
+    self:OnAssemblyDraftChanged()
+    self:OnSimulationSessionChanged()
 end
 
 function Panel:Destroy()
