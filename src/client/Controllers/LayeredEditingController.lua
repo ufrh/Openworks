@@ -610,9 +610,8 @@ function Layered:ConfirmAlignment()
         return
     end
 
-    -- Manual L > Align must ask for the actual relationship too. A plain
-    -- Align/FreeFit only adjusts geometry; other choices create their real
-    -- server-validated, passive native joint. Never infer a hidden weld.
+    -- Manual shaft/hole alignment keeps its joint picker. Gear bores are
+    -- different: they ALWAYS weld to the shaft without extra prompts.
     local selected=align
     local sourceId=align.Shaft:GetAttribute("InstanceId")
     local targetId=align.Target:GetAttribute("InstanceId")
@@ -621,7 +620,7 @@ function Layered:ConfirmAlignment()
     local roll=align.RollDegrees
     local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"
     parent.PendingMateChoice="ManualAlign"
-    parent.MateChoice:Show(function(choice)
+    local function applyChoice(choice)
         parent.PendingMateChoice=nil
         parent.IgnoreClickUntil=os.clock()+0.22
         if self.Alignment~=selected or selected.Stage~="Preview" then
@@ -635,8 +634,7 @@ function Layered:ConfirmAlignment()
             parent:RefreshHUD()
             return
         end
-        -- The gear uses the same atomic Hub transaction as drag-snap.
-        -- This creates a validated unpowered hinge or rigid shaft weld.
+        -- Gear hubs create the same validated Weld as ordinary drag fitting.
         local approach=selected.Target:GetPivot().Position
             +selected.Target:GetPivot().RightVector*offset*Grid.Unit
         -- All manual shaft/bores now go through the same atomic,
@@ -671,7 +669,12 @@ function Layered:ConfirmAlignment()
         end
         parent:RefreshPointer()
         parent:RefreshHUD()
-    end,selected.FittedCount or 1,isGear)
+    end
+    if isGear then
+        applyChoice("Weld")
+    else
+        parent.MateChoice:Show(applyChoice,selected.FittedCount or 1,false)
+    end
 end
 
 function Layered:Click()
