@@ -37,8 +37,8 @@ function Features.PairDescriptors(left,right)
         or (left.ShaftAxis and right.Hub) then
         return "Hub"
     end
-    if (left.ShaftAxis and right.OpeningAxis)
-        or (left.OpeningAxis and right.ShaftAxis) then
+    if (left.ShaftAxis and right.OpeningAxis and not right.ShaftAxis)
+        or (left.OpeningAxis and not left.ShaftAxis and right.ShaftAxis) then
         return "Bore"
     end
     if left.Gear and right.Gear then return "Gear" end
