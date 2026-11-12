@@ -22,6 +22,7 @@ local HandCrankController=require(script.Parent:WaitForChild("HandCrankControlle
 local RackControlController=require(script.Parent:WaitForChild("RackControlController"))
 local MotorControlController=require(script.Parent:WaitForChild("MotorControlController"))
 local HandCrankMath=require(construction:WaitForChild("HandCrankMath"))
+local ConnectionCatalog=require(script.Parent:WaitForChild("ConnectionCatalog"))
 local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 local INSERTION_STEP_U = 0.5
 
@@ -115,6 +116,7 @@ function Controller.new(tools)
         WeldCandidate = nil,
         WeldValid = true,
         PairKind = nil,
+        ConnectFirst=nil,ConnectSecond=nil,ConnectInvalid=false,
         Joint = nil,
         LastRollSend = 0,
         PreviewModel = nil,
@@ -172,6 +174,7 @@ function Controller:ToggleSimulation()
 end
 
 function Controller:Message(message)
+    if self.UnifiedExplorer then self.UnifiedExplorer:Message(message) end
     self.LastMessage = message
     self.MessageUntil = os.clock() + 2.5
     self:RefreshHUD()
@@ -183,14 +186,20 @@ function Controller:SyncConnectionFeedback()
         self.Feedback:Clear("connection")
         return
     end
-    local first=if self.WeldMode then self.WeldFirst
+    local first=if self.Stage=="ChooseSecond" or self.Stage=="Choice"
+        or self.Stage=="ChoiceRejected" then self.ConnectFirst
+        elseif self.WeldMode then self.WeldFirst
         elseif self.Stage=="PairSecond" then self.PairFirst
         elseif self.Stage=="GearSecond" then self.GearFirst
         else self.Housing
-    local second=if self.WeldMode then self.WeldCandidate
+    local second=if self.Stage=="Choice" or self.Stage=="ChoiceRejected"
+        then self.ConnectSecond
+        elseif self.WeldMode then self.WeldCandidate
         elseif self.Stage=="PairSecond" then self.PairCandidate
         elseif self.Stage=="Preview" then self.Source else nil
-    local valid=if self.WeldMode then self.WeldValid
+    local valid=if self.Stage=="Choice" or self.Stage=="ChoiceRejected"
+        then not self.ConnectInvalid
+        elseif self.WeldMode then self.WeldValid
         elseif self.Stage=="PairSecond" then self.PairValid
         else self.PreviewValid
     if first and first.Parent then
@@ -350,6 +359,12 @@ function Controller:Reset()
     self.PairKind = nil
     self.Joint = nil
     self.WeldFirst=nil
+    self.ConnectFirst=nil
+    self.ConnectSecond=nil
+    self.ConnectInvalid=false
+    if self.UnifiedExplorer then
+        self.UnifiedExplorer:CloseConnectionChoice(false)
+    end
     self:RefreshHUD()
 end
 
@@ -895,7 +910,7 @@ function Controller:OnModeChanged(mode)
     self.WeldMode=false
     if self.Properties then self.Properties:Show(false) end
     if mode=="Mechanics" and self.Tools.SubtoolId=="Connect" then
-        self:StartManualJoint()
+        self:StartConnect()
     end
     self:RefreshHUD()
 end
@@ -905,7 +920,7 @@ function Controller:OnSubtoolChanged(primary,subtool,_previous)
     self:Reset()
     self.WeldMode=false
     if self.Properties then self.Properties:Show(false) end
-    if subtool=="Connect" then self:StartManualJoint() end
+    if subtool=="Connect" then self:StartConnect() end
     self:RefreshHUD()
 end
 
