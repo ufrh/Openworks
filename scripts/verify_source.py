@@ -426,7 +426,8 @@ def main() -> int:
           and 'FitSolver.SurfacePose(' in construction_ui
           and 'self.FitPivotHandle:UpdatePreview(self.Preview)' in construction_ui
           and 'Instance.new("SphereHandleAdornment")' in pivot_handle
-          and 'Set origin' in keybinds)
+          and 'Set its shared fitting / rotation origin' in keybinds
+          and 'Reset pivot to default' in keybinds)
     check("World rotations use the authored origin on client and server",
           'FitOrigin.World(self.GroupAnchor,"Component")' in construction_ui
           and 'FitOrigin.World(self.Selected,"Primitive")' in construction_ui
