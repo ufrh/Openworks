@@ -335,14 +335,29 @@ def main() -> int:
           and 'commitMetadata = commitMetadata,' in service[
               service.index('components = ComponentService.new({'):
               service.index('alignmentService = AlignmentService.new({')])
-    check("Edit multiselect outlines every actual primitive, not group bounding box",
-          'for _,model in ipairs(self.SelectedParts) do' in selection
-          and 'Name="OPENWORKS_SelectionOutline"' in selection
-          and 'self.ComponentOutline=ComponentOutline.new(' not in selection)
-    check("Assembly selection highlights each primitive without phantom bounds",
-          'for _,id in ipairs(ids) do' in tool_ui
-          and 'Name="AssemblyPrimitive",Adornee=model' in tool_ui
-          and 'ComponentOutline.new(' not in tool_ui)
+    feedback = read("src/client/Controllers/VisualFeedback.lua")
+    ghost_edges = read("src/client/Controllers/GhostWireframe.lua")
+    check("UI v2 uses one oriented twelve-edge selection renderer",
+          'for i=1,12 do' in feedback
+          and 'LineHandleAdornment' in feedback
+          and 'self.Feedback:Set("selection","component",self.SelectedParts,"selection",true)' in selection
+          and 'self.Feedback:Set("selection",tostring(i),{model},"selection",false)' in selection
+          and 'Instance.new("Highlight")' not in feedback)
+    check("UI v2 assembly boxes use whole-selection and member semantics",
+          'self.Feedback:Set("assembly",id,{byId[id]},"assembly",false)' in tool_ui
+          and 'self.Feedback:Set("assembly","outer",ordered,"assembly",true)' in tool_ui
+          and 'Name="AssemblyPrimitive",Adornee=model' not in tool_ui)
+    check("UI v2 orange/red/green connection feedback is server-confirmed",
+          'self.Feedback:Set("connection","first",{first},"pending",false)' in alignment_editor
+          and 'if self.PreviewValid then "pending" else "invalid"' in alignment_editor
+          and 'if self:Request(request) then' in alignment_editor
+          and 'self.Feedback:FlashSuccess({first,second})' in alignment_editor
+          and 'self.Feedback:FlashSuccess({self.WeldFirst,picked})' in alignment_editor)
+    check("UI v2 geometry ghost edges are client-only with CSG fallback",
+          'Instance.new("LineHandleAdornment")' in ghost_edges
+          and 'MAX_EDGES=384' in ghost_edges
+          and 'part:IsA("Part") and part.Shape==Enum.PartType.Cylinder' in ghost_edges
+          and 'self.Feedback:SetGhost(ghost,true)' in selection)
     check("Components are selection groups, not implicit welds",
           'return "p:" .. tostring(model:GetAttribute("InstanceId"))' in simulation
           and "PrefabInternalPart" in simulation)
@@ -849,19 +864,23 @@ def main() -> int:
     check("Retired assembly number counter is not accessed",
           "assemblies.NextNumber" not in persistence)
 
-    check("Single local 3D assembly-preview owner",
-          'Name="OPENWORKS_LocalAssemblyPreview"' in tool_ui
-          and 'make("Folder",workspace,' in tool_ui)
+    check("UI v2 assembly feedback is owned by one shared manager",
+          'self.Feedback:Clear("assembly")' in tool_ui
+          and 'Name="OPENWORKS_UIV2_Feedback"' in feedback
+          and 'function Feedback:Destroy()' in feedback)
     check("Selection and inspector visuals are client Workspace-owned",
           'Name="OPENWORKS_LocalSelectionVisuals"' in selection
           and 'Name="OPENWORKS_LocalInspectorSelection"' in inspector)
-    check("World mechanical guides use adornments, not helper Parts",
+    check("UI v2 mechanical guides use line/sphere adornments, not Parts",
           'Instance.new("Part")' not in world
-          and "CylinderHandleAdornment" in world
-          and "SphereHandleAdornment" in world)
-    check("Highlight budget reserves purple preview",
-          "MAX_HIGHLIGHTS=64" in world
-          and "Color3.fromRGB(179,115,255)" in tool_ui)
+          and '"LineHandleAdornment"' in world
+          and '"SphereHandleAdornment"' in world
+          and 'if kind~="Bearing" and kind~="Slider"' in world)
+    check("Ground and assembly feedback avoid the Highlight budget",
+          'MAX_BODIES=64' in world
+          and 'self.Feedback:Set("ground",id,{model}' in world
+          and 'Color3.fromRGB(162,102,237)' in feedback
+          and 'Instance.new("Highlight")' not in world)
     handles=read("src/client/Controllers/PhysicalHandles.lua")
     motion=read("src/client/Controllers/WorldMotion.lua")
     gizmo=read("src/client/Controllers/ResizeGizmo.lua")
@@ -935,11 +954,12 @@ def main() -> int:
           and 'part.LocalTransparencyModifier=item.previous' in motion
           and 'partCount>MAX_ANIMATED_PARTS' in motion
           and 'or distance>WorldMotion.Profile.TeleportDistance' in motion)
-    check("Frame-budgeted placement retains per-render ghost smoothing",
+    check("Frame-budgeted placement retains easing and ghost feedback",
           'visualNow-(self.PreviewComputeTime or 0)<1/30' in selection
           and 'self.PreviewVisualPose=WorldMotion.Step(' in selection
-          and 'outlineNow-(self.OutlineLastUpdate or 0)>=0.1' in selection
-          and 'self.OutlinePreviewing~=previewing' in selection)
+          and 'self.LastPreviewing=previewing' in selection
+          and 'if previewing then self.Feedback:Clear("selection")' in selection
+          and 'if os.clock()-self.LastRender<0.08 then return end' in ghost_edges)
     check("Snapping scans moving geometry once per nearby-target pass",
           'local movingGearMembers={}' in smart_placement
           and 'for _,member in ipairs(Smart.Members(moving)) do' in smart_placement
