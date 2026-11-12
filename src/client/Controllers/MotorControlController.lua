@@ -25,7 +25,8 @@ function Controller:HasMotorKey(key)
     if not folder then return false end
     for _,joint in ipairs(folder:GetChildren()) do
         if joint:GetAttribute("OwnerUserId")==player.UserId
-            and joint:GetAttribute("Kind")=="PoweredHinge"
+            and joint:GetAttribute("Kind")=="Bearing"
+            and joint:GetAttribute("MotorEnabled")==true
             and joint:GetAttribute("MotorKey")==key then return true end
     end
     return false

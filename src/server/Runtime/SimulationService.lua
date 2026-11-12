@@ -751,9 +751,25 @@ function Simulation:Start(player, payload)
                     constraint.UpperAngle =
                         edge.relation:GetAttribute("UpperLimit") or 180
                 end
-                -- Native relationships permit the selected degrees of
-                -- freedom but never actuate them.
+                -- Optional motor drive applies ONLY to a validated physical
+                -- shaft/housing bearing; all other relationships are passive.
                 if constraint:IsA("HingeConstraint")
+                    and edge.kind=="Bearing"
+                    and edge.relation:GetAttribute("MotorEnabled")==true then
+                    constraint.ActuatorType=Enum.ActuatorType.Motor
+                    constraint.AngularVelocity=0
+                    constraint.MotorMaxTorque=math.clamp(
+                        edge.relation:GetAttribute("MotorTorque") or 3000,1,100000)
+                    constraint.MotorMaxAcceleration=math.clamp(
+                        edge.relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
+                    table.insert(session.Motors,{
+                        Constraint=constraint,
+                        RelationId=edge.relation:GetAttribute("RelationId"),
+                        Key=edge.relation:GetAttribute("MotorKey") or "F",
+                        Speed=edge.relation:GetAttribute("MotorSpeed") or 3,
+                        LastInput=0,Held=false,
+                    })
+                elseif constraint:IsA("HingeConstraint")
                     or constraint:IsA("PrismaticConstraint")
                     or constraint:IsA("CylindricalConstraint") then
                     constraint.ActuatorType=Enum.ActuatorType.None
@@ -1002,6 +1018,39 @@ function Simulation:SyncRelationship(player,relation)
                 constraint.LimitsEnabled=relation:GetAttribute("LimitsEnabled")==true
                 constraint.LowerAngle=relation:GetAttribute("LowerLimit") or -180
                 constraint.UpperAngle=relation:GetAttribute("UpperLimit") or 180
+                local enabled=relation:GetAttribute("MotorEnabled")==true
+                constraint.ActuatorType=if enabled then Enum.ActuatorType.Motor
+                    else Enum.ActuatorType.None
+                constraint.AngularVelocity=0
+                constraint.MotorMaxTorque=math.clamp(
+                    relation:GetAttribute("MotorTorque") or 3000,1,100000)
+                constraint.MotorMaxAcceleration=math.clamp(
+                    relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
+                local found=nil
+                for _,motor in ipairs(session.Motors) do
+                    if motor.RelationId==id then found=motor break end
+                end
+                if found then
+                    found.Key=relation:GetAttribute("MotorKey") or "F"
+                    found.Speed=relation:GetAttribute("MotorSpeed") or 3
+                    found.Held=false
+                    found.LastInput=0
+                    if not enabled then
+                        for index=#session.Motors,1,-1 do
+                            if session.Motors[index]==found then
+                                table.remove(session.Motors,index)
+                                break
+                            end
+                        end
+                    end
+                elseif enabled then
+                    table.insert(session.Motors,{
+                        Constraint=constraint,RelationId=id,
+                        Key=relation:GetAttribute("MotorKey") or "F",
+                        Speed=relation:GetAttribute("MotorSpeed") or 3,
+                        Held=false,LastInput=0,
+                    })
+                end
             elseif (kind=="Slider" or kind=="Cylindrical")
                 and (constraint:IsA("PrismaticConstraint")
                     or constraint:IsA("CylindricalConstraint")) then

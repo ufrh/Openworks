@@ -90,6 +90,7 @@ function Mechanical:Snapshot(relation)
         fitSetId = relation:GetAttribute("FitSetId"),
         fitSetIndex = relation:GetAttribute("FitSetIndex"),
         fitSetCount = relation:GetAttribute("FitSetCount"),
+        motorEnabled=relation:GetAttribute("MotorEnabled")==true,
         motorSpeed=relation:GetAttribute("MotorSpeed"),
         motorTorque=relation:GetAttribute("MotorTorque"),
         motorAcceleration=relation:GetAttribute("MotorAcceleration"),
@@ -153,6 +154,7 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("FitSetId",spec.fitSetId)
     folder:SetAttribute("FitSetIndex",spec.fitSetIndex)
     folder:SetAttribute("FitSetCount",spec.fitSetCount)
+    folder:SetAttribute("MotorEnabled",spec.kind=="Bearing" and spec.motorEnabled==true)
     folder:SetAttribute("MotorSpeed",spec.motorSpeed)
     folder:SetAttribute("MotorTorque",spec.motorTorque)
     folder:SetAttribute("MotorAcceleration",spec.motorAcceleration)
@@ -283,9 +285,18 @@ function Mechanical:Restore(player, spec)
         constraint.Attachment0 = attachment0
         constraint.Attachment1 = attachment1
         constraint.Enabled=true
-        -- Relationships permit motion; they do not create motive power.
-        -- Future actuator components will be authored separately.
-        constraint.ActuatorType=Enum.ActuatorType.None
+        -- Only a physical shaft fitted through an opening can be driven.
+        -- The bearing keeps its real rotation axis and no fake joint exists.
+        if constraint:IsA("HingeConstraint") and spec.motorEnabled==true then
+            constraint.ActuatorType=Enum.ActuatorType.Motor
+            constraint.AngularVelocity=0
+            constraint.MotorMaxTorque=math.clamp(
+                tonumber(spec.motorTorque) or 3000,1,100000)
+            constraint.MotorMaxAcceleration=math.clamp(
+                tonumber(spec.motorAcceleration) or 40,0.1,1000)
+        else
+            constraint.ActuatorType=Enum.ActuatorType.None
+        end
         -- A slider/cylinder ALWAYS has hard mechanical travel stops.
         -- User limits can narrow them but can never permit the shaft
         -- to slide entirely clear of its real opening.
@@ -353,6 +364,48 @@ local MOTOR_KEYS={
     B=true,N=true,M=true,V=true,Z=true,X=true,C=true,
     One=true,Two=true,Three=true,Four=true,
 }
+-- Optional motor drive mounted on an existing real shaft-in-hole bearing.
+-- No authoring endpoint, direction or force can be conjured from empty air.
+function Mechanical:TuneBearingMotor(player,request)
+    if type(request)~="table" then return false,"Invalid motor request" end
+    local joint=self:OwnedRelation(player,request.relationId)
+    if not joint or joint:GetAttribute("Kind")~="Bearing" then
+        return false,"Select an actual Rotation Only shaft bearing"
+    end
+    local enabled=request.motorEnabled
+    local key,speed,torque,accel=request.motorKey,
+        request.motorSpeed,request.motorTorque,request.motorAcceleration
+    if type(enabled)~="boolean"
+        or type(key)~="string" or not MOTOR_KEYS[key]
+        or type(speed)~="number" or speed~=speed
+        or math.abs(speed)<0.05 or math.abs(speed)>35
+        or type(torque)~="number" or torque~=torque
+        or torque<1 or torque>100000
+        or type(accel)~="number" or accel~=accel
+        or accel<0.1 or accel>1000 then
+        return false,"Motor requires valid key, speed, torque and acceleration"
+    end
+    local old=self:Snapshot(joint)
+    joint:SetAttribute("MotorEnabled",enabled)
+    joint:SetAttribute("MotorKey",key)
+    joint:SetAttribute("MotorSpeed",speed)
+    joint:SetAttribute("MotorTorque",torque)
+    joint:SetAttribute("MotorAcceleration",accel)
+    local hinge=joint:FindFirstChildOfClass("HingeConstraint")
+    if hinge then
+        hinge.ActuatorType=if enabled then Enum.ActuatorType.Motor
+            else Enum.ActuatorType.None
+        hinge.AngularVelocity=0
+        hinge.MotorMaxTorque=torque
+        hinge.MotorMaxAcceleration=accel
+    end
+    if self.D.commitJointEdit then
+        self.D.commitJointEdit(player,old,self:Snapshot(joint))
+    end
+    return true,if enabled then "Physical bearing motor bound to "..key
+        else "Bearing motor disabled"
+end
+
 function Mechanical:Create(player, request)
     local d = self.D
     -- New spring/bolt/weld mechanisms require their own geometry validation.
@@ -1861,12 +1914,25 @@ function Mechanical:ApplyJointEdit(player, record, undo)
     relation:SetAttribute("LowerLimit",spec.lowerLimit)
     relation:SetAttribute("UpperLimit",spec.upperLimit)
     relation:SetAttribute("LimitsEnabled",spec.limitsEnabled == true)
+    if spec.kind=="Bearing" then
+        relation:SetAttribute("MotorEnabled",spec.motorEnabled==true)
+        relation:SetAttribute("MotorKey",spec.motorKey)
+        relation:SetAttribute("MotorSpeed",spec.motorSpeed)
+        relation:SetAttribute("MotorTorque",spec.motorTorque)
+        relation:SetAttribute("MotorAcceleration",spec.motorAcceleration)
+    end
     local constraint = relation:FindFirstChildWhichIsA("Constraint")
     if constraint then
         constraint.LimitsEnabled = spec.limitsEnabled == true
         if spec.kind == "Bearing" then
             constraint.LowerAngle = spec.lowerLimit or -180
             constraint.UpperAngle = spec.upperLimit or 180
+            constraint.ActuatorType=if spec.motorEnabled then Enum.ActuatorType.Motor
+                else Enum.ActuatorType.None
+            constraint.AngularVelocity=0
+            constraint.MotorMaxTorque=math.clamp(spec.motorTorque or 3000,1,100000)
+            constraint.MotorMaxAcceleration=math.clamp(
+                spec.motorAcceleration or 40,0.1,1000)
         elseif spec.kind == "Slider" or spec.kind == "Cylindrical" then
             local source=self.D.findOwned(player,spec.sourceId)
             local target=self.D.findOwned(player,spec.targetId)

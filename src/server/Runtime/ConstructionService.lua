@@ -1061,9 +1061,10 @@ local function handle(player, payload)
         or action == "SetGrounded" or action == "GetMechanismInfo"
         or action == "CreateSpring" or action == "TuneSpring"
         or action == "CreateWeld" or action == "CreateBolt"
-        or action == "CoupleHandCrank"
+        or action == "CoupleHandCrank" or action == "TuneBearingMotor"
 
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
+        or action=="TuneBearingMotor"
     local simulationAction = action == "StartSimulation"
         or action == "BeginCrank"
         or action == "BeginRack"
@@ -1200,6 +1201,9 @@ local function handle(player, payload)
             return assemblies:Update(player,payload)
         end
         if action == "AdjustJoint" then return mechanical:AdjustJoint(player, payload) end
+        if action == "TuneBearingMotor" then
+            return mechanical:TuneBearingMotor(player,payload)
+        end
         if action == "PoseShaft" then return mechanical:PoseShaft(player, payload) end
         if action == "GetMechanismInfo" then
             return simulation:Info(player, payload)
