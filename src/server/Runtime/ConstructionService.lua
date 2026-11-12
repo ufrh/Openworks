@@ -83,10 +83,9 @@ local function accessFor(player, action)
         -- Assembly edits commit the same safe metadata history as Edit.
         -- Allow undo/redo without equipping an unrelated construction tool.
         return hasEquippedTool(player,"Assembly")
-            or hasEquippedTool(player,"Edit")
             or hasEquippedTool(player,"Build")
     end
-    return hasEquippedTool(player,"Edit") or hasEquippedTool(player,"Build")
+    return hasEquippedTool(player,"Build")
 end
 
 local function nearPlayer(player, position)
@@ -1260,8 +1259,8 @@ local function handle(player, payload)
             end
         elseif action=="SetGrounded" then
             if not hasEquippedTool(player,"Simulate")
-                and not hasEquippedTool(player,"Edit") then
-                return {ok=false,message="Equip Simulate to ground a body"}
+                and not hasEquippedTool(player,"Build") then
+                return {ok=false,message="Equip Simulate or Build to ground a body"}
             end
         elseif action=="CreateBelt" or action=="RemoveBelt" then
             if not hasEquippedTool(player,"Belt") then
@@ -1272,21 +1271,21 @@ local function handle(player, payload)
                 return {ok=false,message="Equip Weld to designate a physical weld"}
             end
         elseif action~="GetMechanismInfo"
-            and not hasEquippedTool(player,"Edit") then
-            return {ok=false,message="Equip Edit to modify relationships"}
+            and not hasEquippedTool(player,"Build") then
+            return {ok=false,message="Equip Build to modify relationships"}
         end
     elseif fitOriginAction then
-        if not hasEquippedTool(player,"Edit") then
-            return {ok=false,message="Equip Edit to set an alignment origin"}
+        if not hasEquippedTool(player,"Build") then
+            return {ok=false,message="Equip Build to set an alignment origin"}
         end
     elseif materialAction then
-        if not hasEquippedTool(player,"Edit") then
-            return {ok=false,message="Equip Edit to apply paint or materials"}
+        if not hasEquippedTool(player,"Build") then
+            return {ok=false,message="Equip Build to apply paint or materials"}
         end
     elseif verticalAction then
         if (payload.scope=="Assembly" and not hasEquippedTool(player,"Assembly"))
-            or (payload.scope~="Assembly" and not hasEquippedTool(player,"Edit")) then
-            return {ok=false,message="Equip Edit for components or Assembly for assemblies"}
+            or (payload.scope~="Assembly" and not hasEquippedTool(player,"Build")) then
+            return {ok=false,message="Equip Build for components or Assembly for assemblies"}
         end
     elseif assemblyAction then
         if not hasEquippedTool(player,"Assembly") then
@@ -1294,10 +1293,10 @@ local function handle(player, payload)
         end
     elseif componentAction or alignmentAction or smartAction then
         if not hasEquippedTool(player, "Edit") then
-            return { ok = false, message = "Equip Edit to modify components" }
+            return { ok = false, message = "Equip Build to modify components" }
         end
     elseif not accessFor(player, action) then
-        return { ok = false, message = "Equip Build or Edit" }
+        return { ok = false, message = "Equip Build" }
     end
 
     local now = os.clock()
