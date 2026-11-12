@@ -79,7 +79,8 @@ function Bank.new(deps)
     return setmetatable({
         D=deps,
         Store=DataStoreService:GetDataStore("OPENWORKS_ComponentBank_v1"),
-        Cache={},
+        -- Weak player keys avoid retaining entire departed sessions.
+        Cache=setmetatable({}, {__mode="k"}),
     },Bank)
 end
 function Bank:Load(player)
@@ -129,9 +130,15 @@ function Bank:Persist(player,mutator)
         return self.Store:UpdateAsync(
             "player_"..tostring(player.UserId),function(current)
                 local doc,why=clean(current)
-                if not doc then reason=why return nil end
+                if not doc then
+                    reason=why
+                    return nil
+                end
                 local nextDoc,err=mutator(doc)
-                if not nextDoc then reason=err return nil end
+                if not nextDoc then
+                    reason=err
+                    return nil
+                end
                 if documentSize(nextDoc)>MAX_BYTES then
                     reason="Component bank storage limit reached"
                     return nil
