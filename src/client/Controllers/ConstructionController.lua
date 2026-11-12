@@ -13,6 +13,11 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("Construction")
 local Registry = require(construction:WaitForChild("PrimitiveRegistry"))
+local ComponentBankPreview=require(script.Parent:WaitForChild("ComponentBankPreview"))
+local FitOrigin=require(construction:WaitForChild("FitOrigin"))
+local FitSolver=require(construction:WaitForChild("FitSolver"))
+local FitPivotSnap=require(script.Parent:WaitForChild("FitPivotSnap"))
+local FitPivotHandle=require(script.Parent:WaitForChild("FitPivotHandle"))
 local CatalogMetadata=require(construction:WaitForChild("PrimitiveCatalogMetadata"))
 local Grid = require(construction:WaitForChild("GridMath"))
 local Config = require(construction:WaitForChild("BuildConfig"))
@@ -124,6 +129,13 @@ function Controller.new(tools)
         CatalogOpen = false,
         CatalogCollapsed={},
         CurrentDisplayName=nil,
+        CurrentBank=nil,
+        BankEntries={},
+        BankModal=nil,
+        BankConfirmRemove=nil,
+        PivotSetting=false,
+        PivotModeIndex=1,
+        FitPivotHandle=nil,
         ScaleMode = false,
         NumericPrecision = false,
         Numeric = nil,
@@ -214,7 +226,7 @@ function Controller:MakeUI()
     local list = create("ScrollingFrame", {
         Name = "Items",
         Position = UDim2.fromOffset(12,116),
-        Size = UDim2.new(1, -24, 1, -129),
+        Size = UDim2.new(1, -24, 1, -173),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 5,
@@ -222,6 +234,39 @@ function Controller:MakeUI()
         CanvasSize = UDim2.fromOffset(0, 0),
     }, catalog)
     create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+
+    local registerButton=button(catalog,"REGISTER SELECTED COMPONENT",
+        UDim2.new(1,-24,0,30),UDim2.new(0,12,1,-39))
+    registerButton.Activated:Connect(function() self:OpenBankSave() end)
+
+    local modal=rounded(create("Frame",{
+        Name="OPENWORKS_BankSave",Visible=false,ZIndex=42,
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.fromScale(0.5,0.43),Size=UDim2.fromOffset(370,172),
+        BackgroundColor3=DARK,BorderSizePixel=0,
+    },gui),10)
+    local modalTitle=label(modal,"SAVE COMPONENT TO BANK",
+        UDim2.fromOffset(342,24),UDim2.fromOffset(15,11),16)
+    modalTitle.ZIndex=43
+    local input=create("TextBox",{
+        Name="ComponentName",ZIndex=43,Text="",PlaceholderText="Component name",
+        ClearTextOnFocus=false,Size=UDim2.fromOffset(340,39),
+        Position=UDim2.fromOffset(15,45),BackgroundColor3=PANEL,
+        TextColor3=TEXT,PlaceholderColor3=MUTED,
+        TextSize=14,Font=Enum.Font.GothamMedium,BorderSizePixel=0,
+    },modal)
+    rounded(input,7)
+    local save=button(modal,"SAVE COMPONENT",
+        UDim2.fromOffset(164,37),UDim2.fromOffset(15,105))
+    local cancel=button(modal,"CANCEL",
+        UDim2.fromOffset(164,37),UDim2.fromOffset(191,105))
+    save.ZIndex=43
+    cancel.ZIndex=43
+    save.Activated:Connect(function() self:ConfirmBankSave() end)
+    cancel.Activated:Connect(function() self:CloseBankSave() end)
+    input.FocusLost:Connect(function(enter)
+        if enter and modal.Visible then self:ConfirmBankSave() end
+    end)
 
     -- The primitive catalog alone unlocks the mouse. Resizing always uses
     -- the center crosshair with a locked first-person pointer.
@@ -245,6 +290,9 @@ function Controller:MakeUI()
     self.HelpLabel = help
     self.Catalog = catalog
     self.List = list
+    self.BankModal=modal
+    self.BankNameInput=input
+    self.BankRegisterButton=registerButton
     self.CatalogSearch=search
     search:GetPropertyChangedSignal("Text"):Connect(function()
         if self.CatalogOpen then self:RefreshCatalog() end
@@ -260,6 +308,23 @@ function Controller:MakeUI()
         self:Message("Resizing " .. ({ "X", "Y", "Z" })[axis]
             .. (if sign > 0 then "+" else "-") .. " — drag to change size")
     end)
+end
+
+function Controller:BankRequest(payload)
+    local ok,result=pcall(function() return self.Remote:InvokeServer(payload) end)
+    if not ok or type(result)~="table" or not result.ok then
+        self:Message(if ok and type(result)=="table"
+            then tostring(result.message) else "Component bank unavailable")
+        return nil
+    end
+    return result.data,result
+end
+
+function Controller:RefreshBankEntries()
+    local data=self:BankRequest({action="ListComponentBank"})
+    self.BankEntries=if data and type(data.entries)=="table"
+        then data.entries else {}
+    self.BankLoaded=true
 end
 
 function Controller:RefreshCatalog()
@@ -297,6 +362,57 @@ function Controller:RefreshCatalog()
         return not collapsed or searching
     end
 
+    local bank={}
+    for _,entry in ipairs(self.BankEntries) do
+        if not searching or (entry.name.." saved component bank")
+            :lower():find(search,1,true) then
+            table.insert(bank,entry)
+        end
+    end
+    if #bank>0 or not searching then
+        if header("My Components",#bank) then
+            if #bank==0 then
+                local empty=label(self.List,
+                    "Nothing saved yet  ·  Select a component, Shift+B",
+                    UDim2.new(1,-8,0,36),UDim2.fromOffset(0,0),12,MUTED)
+                empty.LayoutOrder=advance()
+            end
+            for _,entry in ipairs(bank) do
+                visibleItems+=1
+                local row=create("Frame",{
+                    Size=UDim2.new(1,-7,0,38),
+                    BackgroundTransparency=1,BorderSizePixel=0,
+                    LayoutOrder=advance(),
+                },self.List)
+                local use=button(row,entry.name.."  ·  "..tostring(entry.parts).." parts",
+                    UDim2.new(1,-44,1,0),UDim2.fromOffset(0,0))
+                use.TextXAlignment=Enum.TextXAlignment.Left
+                use.Activated:Connect(function()
+                    self:SelectBank(entry.id)
+                    self:ShowCatalog(false)
+                end)
+                local remove=button(row,
+                    if self.BankConfirmRemove==entry.id then "?" else "×",
+                    UDim2.fromOffset(38,38),UDim2.new(1,-38,0,0))
+                remove.Activated:Connect(function()
+                    if self.BankConfirmRemove~=entry.id then
+                        self.BankConfirmRemove=entry.id
+                        self:Message("Click ? again to remove "..entry.name.." from the bank")
+                        self:RefreshCatalog()
+                        return
+                    end
+                    self.BankConfirmRemove=nil
+                    local _,result=self:BankRequest({
+                        action="RemoveComponentBank",bankId=entry.id,
+                    })
+                    if result then
+                        self:RefreshBankEntries()
+                        self:RefreshCatalog()
+                    end
+                end)
+            end
+        end
+    end
     local grouped={}
     local entries=Registry.List()
     for _,entry in ipairs(entries) do
@@ -336,10 +452,70 @@ function Controller:RefreshCatalog()
     end
 end
 
+function Controller:CloseBankSave()
+    if self.BankModal then self.BankModal.Visible=false end
+    self:RefreshPointer()
+end
+
+function Controller:OpenBankSave()
+    if self.Tools.PrimaryId~="Build" or self.Mode~="Edit"
+        or not self.SelectedComponentId or self.Pending or self.PivotSetting then
+        self:Message("Select a completed component in Build before registering")
+        return
+    end
+    self:ShowCatalog(false)
+    self.BankNameInput.Text=""
+    self.BankModal.Visible=true
+    self.BankNameInput:CaptureFocus()
+    self:RefreshPointer()
+end
+
+function Controller:ConfirmBankSave()
+    if not self.BankModal or not self.BankModal.Visible then return end
+    local name=self.BankNameInput.Text:match("^%s*(.-)%s*$")
+    if #name==0 then self:Message("Enter a component name") return end
+    local _,result=self:BankRequest({
+        action="RegisterComponentBank",
+        componentId=self.SelectedComponentId,name=name,
+    })
+    if not result then return end
+    self:CloseBankSave()
+    self:Message(result.message)
+end
+
+function Controller:SelectBank(id)
+    if self.Tools.PrimaryId~="Build" then return end
+    local data=self:BankRequest({action="GetComponentBank",bankId=id})
+    if not data or type(data.parts)~="table" then return end
+    local test,anchor=ComponentBankPreview.Create(data)
+    if not test then
+        self:Message(tostring(anchor or "Blueprint geometry is unavailable"))
+        return
+    end
+    local anchorSize=anchor.PrimaryPart.Size
+    test:Destroy()
+    if self.Assembly then self.Assembly:Reset() end
+    self:CancelPending()
+    self:SetSelection(nil)
+    self.Tools:SetSubtool("Place")
+    self.Mode="Build"
+    if self.Layered then self.Layered:OnModeChanged("Build") end
+    self.CurrentBank=data
+    self.CurrentDisplayName=data.name
+    self.CurrentId=nil
+    self.CurrentSize=anchorSize
+    self.Steps={x=0,y=0,z=0}
+    self.NumericPrecision=false
+    self:RebuildPreview()
+    self:RefreshHUD()
+end
+
 function Controller:RefreshPointer()
     -- Locked-mouse freecam uses center aiming unless a GUI explicitly
     -- needs cursor interaction. Scale and construction share center aim.
-    local unlocked=self.CatalogOpen or self.PendingMateChoice~=nil
+    local unlocked=self.CatalogOpen
+        or (self.BankModal and self.BankModal.Visible)
+        or self.PendingMateChoice~=nil
         or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
     -- The click-only relationship picker owns its own full-screen modal
     -- surface; never show the catalog's invisible hitbox over the dialog.
@@ -365,6 +541,7 @@ function Controller:ShowCatalog(visible)
     self:RefreshPointer()
 
     if self.CatalogOpen then
+        self:RefreshBankEntries()
         self:RefreshCatalog()
     end
     self:RefreshHUD()
@@ -511,6 +688,7 @@ function Controller:SelectPrimitive(id)
     local entry = Registry.Get(id)
     if not entry then return end
 
+    self.CurrentBank=nil
     self.CurrentId = id
     self.CurrentDisplayName=entry.DisplayName
     self.CurrentSize = entry.Model.PrimaryPart.Size
