@@ -292,8 +292,27 @@ function Panel:Select(node,propagate)
         if node and (self.Tools.PrimaryId~="Build"
             or self.Tools.SubtoolId~="Edit") then
             local members={}
+            local activeRoot
+            if simulating() then
+                local simulations=workspace:FindFirstChild("OPENWORKS_Simulated")
+                activeRoot=simulations and simulations:FindFirstChild(
+                    "Simulation_"..tostring(player.UserId))
+            end
+            local simulatedById={}
+            if activeRoot then
+                for _,candidate in ipairs(activeRoot:GetChildren()) do
+                    local id=entityId(candidate)
+                    if type(id)=="string" then simulatedById[id]=candidate end
+                end
+            end
             for _,m in ipairs(node.members or {}) do
-                if own(m) then table.insert(members,m) end
+                if own(m) then
+                    local visible=if activeRoot then simulatedById[entityId(m)]
+                        else m
+                    if visible and visible.PrimaryPart then
+                        table.insert(members,visible)
+                    end
+                end
             end
             if #members>0 and node.kind~="unassigned" then
                 self.Feedback:Set("explorer-selection","active",
@@ -318,18 +337,29 @@ end
 function Panel:SelectWorldAtCenter()
     local camera=workspace.CurrentCamera
     local root=workspace:FindFirstChild(Config.FolderName)
-    if not camera or not root then return nil end
+    local simulationRoot
+    if simulating() then
+        local simulations=workspace:FindFirstChild("OPENWORKS_Simulated")
+        simulationRoot=simulations and simulations:FindFirstChild(
+            "Simulation_"..tostring(player.UserId))
+    end
+    local castRoot=simulationRoot or root
+    if not camera or not castRoot then return nil end
     local ray=camera:ViewportPointToRay(
         camera.ViewportSize.X*0.5,camera.ViewportSize.Y*0.5)
     local params=RaycastParams.new()
     params.FilterType=Enum.RaycastFilterType.Include
-    params.FilterDescendantsInstances={root}
+    params.FilterDescendantsInstances={castRoot}
     params.IgnoreWater=true
     local hit=workspace:Raycast(ray.Origin,ray.Direction*Grid.MaxDistance,params)
     if not hit then return nil end
     local model=hit.Instance
-    while model and model.Parent~=root do model=model.Parent end
+    while model and model.Parent~=castRoot do model=model.Parent end
     if not own(model) then return nil end
+    if simulationRoot then
+        model=self.Snapshot and self.Snapshot.byId[entityId(model)]
+        if not own(model) then return nil end
+    end
     local node=self:NodeForModel(model)
     self:Select(node,false)
     return node
