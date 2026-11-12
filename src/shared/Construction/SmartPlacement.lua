@@ -355,15 +355,18 @@ local function socketPlan(members, shaft, target, forcedByAim)
     local radial=(delta-worldAxis*depth).Magnitude
     local reach=math.max(0.65,
         math.min(1.6,target.PrimaryPart.Size.Magnitude*0.58))
-    if (radial>reach+0.65 or math.abs(depth)>math.max(2.5,
-        target.PrimaryPart.Size.Magnitude+1.5)) and not forcedByAim then
-        return nil
-    end
+    -- A 10 U pin can be 5 U beyond a housing midpoint and still touch
+    -- the bore. Capture should scale with the shaft's ACTUAL axial reach.
+    local axialReach=math.max(2.5,
+        target.PrimaryPart.Size.Magnitude+1.5,
+        shaft.PrimaryPart.Size.X*0.5
+            +target.PrimaryPart.Size.Magnitude*0.5+0.65)
+    if (radial>reach+0.65 or math.abs(depth)>axialReach)
+        and not forcedByAim then return nil end
     -- A ray passing through an empty drilled hole can hit something far
     -- behind it. Aim recognition still centers the shaft in THAT hole.
     if forcedByAim and (radial>reach+0.65
-        or math.abs(depth)>math.max(2.5,
-            target.PrimaryPart.Size.Magnitude+1.5)) then
+        or math.abs(depth)>axialReach) then
         depth=0
     end
     local low,high=Alignment.InsertionBounds(shaft,target)
@@ -397,13 +400,14 @@ local function reverseSocketPlan(members, opening, shaft, forcedByAim)
     local radial=(delta-axis*axial).Magnitude
     local reach=math.max(0.65,math.min(1.6,
         opening.PrimaryPart.Size.Magnitude*0.58))
-    if (radial>reach+0.65 or math.abs(axial)>math.max(
-        2.5,opening.PrimaryPart.Size.Magnitude+1.5)) and not forcedByAim then
-        return nil
-    end
-    if forcedByAim and (radial>reach+0.65 or
-        math.abs(axial)>math.max(2.5,
-            opening.PrimaryPart.Size.Magnitude+1.5)) then
+    local axialReach=math.max(2.5,
+        opening.PrimaryPart.Size.Magnitude+1.5,
+        shaft.PrimaryPart.Size.X*0.5
+            +opening.PrimaryPart.Size.Magnitude*0.5+0.65)
+    if (radial>reach+0.65 or math.abs(axial)>axialReach)
+        and not forcedByAim then return nil end
+    if forcedByAim and (radial>reach+0.65
+        or math.abs(axial)>axialReach) then
         axial=0
     end
     local low,high=Alignment.InsertionBounds(shaft,opening)
