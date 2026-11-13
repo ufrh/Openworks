@@ -28,7 +28,7 @@ ReplicatedStorage
    │  ├─ GearMesh_08T_S01 .. S05   (and 12T, 20T, 32T)
    │  └─ Bevel90Mesh_08T_S01 .. S05 (and 12T, 20T, 32T)
    └─ Fasteners
-      └─ BoltMesh_060U, _080U, _100U, _120U, _140U
+      └─ BoltMesh_050U, _075U, _100U, _125U, _150U
 ```
 
 All are ordinary cloneable Models with `PrimaryPart`, `ResizeMode=None`,
@@ -51,7 +51,7 @@ cannot enable these APIs, publish the generated meshes as Roblox mesh assets
 and replace the generation path with those persistent asset IDs.
 
 Each visual gear is **one mesh**, with a real empty center bore and
-`PreciseConvexDecomposition` collision fidelity. The bolt is one mesh plus
+visual-only collision until a compatible nonblocking collider is implemented. The bolt is one mesh plus
 an invisible noncollidable shaft-center pivot used by BoltMath. There are
 no tooth-box stacks, visual cylinder caps over the bores, or automatic welds.
 Gear-to-gear motion still uses the existing shaft-centric transmission math.
@@ -81,3 +81,34 @@ registered in replicated storage by the server when the game starts.
   plot/template IDs still load correctly.
 
 This is a prefab-generator integration; it does not replace Smart Fit V2.
+
+## Troubleshooting and verified generator command (v2)
+
+In Studio **Edit mode**, sync `dev` and run the entire
+`scripts/studio/GeneratePrecisionPrefabs.luau` in the Command Bar. The command
+now throws an explicit error if the Rojo module is absent and reports the
+precise failing gear/bolt stage. Successful output must include
+`Ready=true, Count=45, Gallery=true`.
+
+The generator now uses the **Box mesh creation path** from the successful
+five-gear prototype to ensure the mesh visuals are created before any expensive
+convex-decomposition step. **Gear meshes are currently visual-only
+(`CanCollide=false`)**, so a box cannot block their bore. Shaft-centric
+mechanical gear transmission does not depend on tooth-to-tooth collisions.
+`OpenworksCollisionReady=false` explicitly records that full physical gear
+collision is not yet implemented; this needs a separate Studio physics pass.
+Solid bolt meshes retain Box collision as a temporary approximation.
+This is an operational generation fix, not a claim that physical gear geometry
+has been fully validated.
+
+If `Static mesh bake failed` or `CreateEditableMesh` fails, confirm **Allow
+Mesh / Image APIs** in Roblox Studio Experience Settings → Security (and in
+published Experience configuration), plus the appropriate account/experience
+permissions. Those security limitations cannot be bypassed by this script.
+
+At runtime the gallery is created at `Workspace.OPENWORKS_ProceduralPrefabGallery`
+with Z around `-205`, away from construction plots. The player's first-person
+camera does **not** automatically move there during Play. Use the Edit-mode
+Command Bar to view it, or focus it in Explorer using **F**. All generated mesh
+content is session-scoped: it is recreated on each server startup, and does
+not become a permanently uploaded Roblox mesh asset when you save the place.

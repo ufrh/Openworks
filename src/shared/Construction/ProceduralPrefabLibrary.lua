@@ -8,6 +8,7 @@
 local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
 local Prefabs = {}
 local LIBRARY_NAME = "OPENWORKS_PrimitiveLibrary_DRAFT"
@@ -33,6 +34,18 @@ local BOLT_BASE_SHAFT_DIAMETER = 0.25
 
 local installed = false
 local installedList = {}
+local progress = "Not started"
+local lastError = nil
+
+local function stage(message)
+    progress = message
+    print("[OPENWORKS][PREFABS] " .. message)
+end
+
+local function failure(message)
+    lastError = message
+    warn("[OPENWORKS][PREFABS] " .. message)
+end
 
 local function assertFinite(n)
     assert(n == n and math.abs(n) < 1e8, "Non-finite generated coordinate")
@@ -43,22 +56,34 @@ local function createEditable()
         "OPENWORKS cannot create EditableMesh. Enable Mesh / Image APIs in Experience Settings > Security.")
 end
 
-local function bakedPart(mesh, collisionFidelity)
-    local ok, status, content = pcall(function()
+-- Keep prefab baking on the verified five-gear prototype's Box pipeline.
+-- High-detail precise collision decomposition during CreateMeshPartAsync can
+-- fail before ANY models are registered. Gear meshing is governed by shaft-
+-- centric mathematical relationships, not physical tooth contact, so gear
+-- visuals remain noncollidable instead of filling the center bore with a
+-- box. Gear collision proxies are a separate future physics acceptance task.
+local function bakedPart(mesh, desiredFidelity)
+    local bakeOK, bakeStatus, staticContent = pcall(function()
         return AssetService:CreateDataModelContentAsync(Content.fromObject(mesh))
     end)
-    mesh:Destroy()
-    assert(ok and status == Enum.CreateContentResult.Success and content,
-        "Mesh bake failed: " .. tostring(status))
-    local made, part = pcall(function()
-        return AssetService:CreateMeshPartAsync(content, {
-            CollisionFidelity = collisionFidelity,
+    if not bakeOK or bakeStatus ~= Enum.CreateContentResult.Success
+        or not staticContent then
+        mesh:Destroy()
+        error("Static mesh bake failed (Mesh / Image APIs must be enabled): "
+            .. tostring(bakeStatus))
+    end
+    local created, part = pcall(function()
+        return AssetService:CreateMeshPartAsync(staticContent, {
+            CollisionFidelity = Enum.CollisionFidelity.Box,
+            RenderFidelity = Enum.RenderFidelity.Precise,
         })
     end)
-    assert(made and part, "Static MeshPart creation failed: " .. tostring(part))
+    mesh:Destroy()
+    assert(created and part,
+        "Static visual MeshPart creation failed: " .. tostring(part))
+
     part.Name = "Geometry"
     part.Anchored = true
-    part.CanCollide = true
     part.CanQuery = true
     part.CanTouch = false
     part.CastShadow = true
@@ -66,6 +91,14 @@ local function bakedPart(mesh, collisionFidelity)
     part.Material = Enum.Material.Metal
     part.MaterialVariant = ""
     part.Color = Color3.fromRGB(145, 154, 166)
+
+    -- The MeshPart collision geometry must be configured at creation, not by
+    -- assigning CollisionFidelity afterward (read-only during gameplay).
+    -- Box is safe for a bolt's solid shank/head but NOT for a gear's bore.
+    local isGear = desiredFidelity == Enum.CollisionFidelity.PreciseConvexDecomposition
+    part.CanCollide = not isGear
+    part:SetAttribute("OpenworksCollisionReady", not isGear)
+    part:SetAttribute("OpenworksCollisionMode", if isGear then "VisualOnly" else "Box")
     return part
 end
 
@@ -371,7 +404,20 @@ local function addBolt(parent, source, index, details)
 end
 
 function Prefabs.Ensure()
-    if installed then return installedList end
+    if installed then
+        local valid = #installedList == 45
+        for _, model in ipairs(installedList) do
+            if not model.Parent then
+                valid = false
+                break
+            end
+        end
+        if valid then return installedList end
+        installed = false
+        installedList = {}
+    end
+    lastError = nil
+    stage("Preparing 45 precision prefabs")
     local library = folder(ReplicatedStorage, LIBRARY_NAME)
     local transmission = folder(library, "Transmission")
     local fasteners = folder(library, "Fasteners")
@@ -383,6 +429,8 @@ function Prefabs.Ensure()
     local ok, err = pcall(function()
         for _, teeth in ipairs(COUNTS) do
             for _, kind in ipairs({"Spur", "Bevel90"}) do
+                stage(string.format("Baking %dT %s visual mesh (%d of 9)",
+                    teeth, kind, #templates + 1))
                 local base, details = buildGearMesh(teeth, kind == "Bevel90")
                 table.insert(templates, base)
                 for index = 1, #SCALES do
@@ -390,16 +438,20 @@ function Prefabs.Ensure()
                 end
             end
         end
+        stage("Baking threaded hex bolt visual mesh (9 of 9)")
         local boltBase, boltDetails = buildBoltMesh()
         table.insert(templates, boltBase)
         for index = 1, #BOLT_SCALES do
             prepare(fasteners, addBolt(nil, boltBase, index, boltDetails))
         end
+        assert(#pending == 45, "Expected 45 prepared templates, got " .. #pending)
     end)
     for _, template in ipairs(templates) do template:Destroy() end
     if not ok then
         for _, item in ipairs(pending) do item.model:Destroy() end
-        error("OPENWORKS prefab generation failed without changing existing stock: " .. tostring(err))
+        local message = progress .. " FAILED: " .. tostring(err)
+        failure(message)
+        error(message)
     end
     -- Replace only our own generated IDs, never legacy or user-authored assets.
     -- All 45 prefabs are prepared and conflict-checked before replacement.
@@ -417,12 +469,38 @@ function Prefabs.Ensure()
         table.insert(installedList, item.model)
     end
     installed = true
-    print(string.format("[OPENWORKS] Procedural prefabs ready: %d baked gears and bolts (8/12/20/32T, five sizes, bevel90, bolts).", #installedList))
+    stage("Ready: 45 baked prefabs installed in ReplicatedStorage")
     return installedList
+end
+
+function Prefabs.GetStatus()
+    local library = ReplicatedStorage:FindFirstChild(LIBRARY_NAME)
+    local transmission = library and library:FindFirstChild("Transmission")
+    local fasteners = library and library:FindFirstChild("Fasteners")
+    local n = 0
+    for _, group in ipairs({transmission, fasteners}) do
+        if group then
+            for _, item in ipairs(group:GetChildren()) do
+                if item:GetAttribute("ProceduralPrefabVersion") == VERSION then
+                    n += 1
+                end
+            end
+        end
+    end
+    return {
+        Ready = installed and n == 45,
+        Count = n,
+        Progress = progress,
+        LastError = lastError,
+        Gallery = Workspace:FindFirstChild(GALLERY_NAME) ~= nil,
+        Studio = RunService:IsStudio(),
+    }
 end
 
 function Prefabs.BuildGallery(focusCamera)
     local items = Prefabs.Ensure()
+    assert(#items == 45, "Cannot display an incomplete 45-piece gallery")
+    stage("Building Workspace gallery (45 parts)")
     local old = Workspace:FindFirstChild(GALLERY_NAME)
     if old then old:Destroy() end
     local root = Instance.new("Model")
@@ -496,7 +574,8 @@ function Prefabs.BuildGallery(focusCamera)
         local center = origin + Vector3.new(0,0,0)
         camera.CFrame = CFrame.lookAt(center + Vector3.new(0,100,118),center)
     end
-    print("[OPENWORKS] 45 prefabs displayed in Workspace." .. GALLERY_NAME)
+    assert(#root:GetChildren() >= 45, "Incomplete Workspace prefab gallery")
+    stage("Gallery ready at Workspace." .. GALLERY_NAME .. " (Z=-205)")
     return root
 end
 
