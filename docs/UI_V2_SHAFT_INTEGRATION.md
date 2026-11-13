@@ -13,7 +13,7 @@
 | Area | Behavior in integrated source | Location |
 |---|---|---|
 | Component Bank | Build catalog shows saved components; search, delete (two clicks), register selected component, retrieve blueprint and repeatedly stamp; server validates/places geometry and reconstructs only internal relationships | `ConstructionController`, `ConstructionService`, `ComponentBankService` |
-| Build + Edit | One native **Build** tool with **Place** / **Edit** subtools. Enter leaves placement for Edit. No competing native Edit tool | Existing UI V2 tool definitions + modified `ConstructionController` |
+| Unified Build | One native **Build** workspace, no Place/Edit subtool toggles. Choose a catalog item to place; Enter/Esc returns to editing. V/N resize and M appearance stay contextual | `SubtoolDefinitions`, `ConstructionController`, `LayeredEditingController`, `ToolPalette`, `ToolHelpDefinitions` |
 | Alignment origins | Set/reset component or primitive origin, choose cursor/face/edge/corner, preview contextual handle, snap to authored target origins and available surfaces, preserve origins through undo/plot save/component bank | `FitOrigin`, `FitSolver`, `SmartPlacement`, `ConstructionController`, `ConstructionService` |
 | Gear/pulley mounts | Hubs attach to shafts only as validated rigid Welds; no independent rotating gear hub. Shaft bearings establish freedom of motion | `ConnectionCatalog`, `AssemblyController`, `SmartPlacement`, existing `MechanicalService` |
 | Pulley belts | Ensure pulley templates, choose two pulleys with Mechanics > Connect > Belt, validate real shaft mounts, author/remove belt relationships | `ConstructionService`, `AssemblyController`, `ConnectionCatalog`, existing `PulleyLibrary` and `MechanicalService` |
@@ -24,8 +24,8 @@
 
 ### Interaction notes
 
-1. Equip Build > Edit and select an existing **grouped component**. Press **Shift+B** or right-click > **Save to component library**, enter a name, and confirm. Build > Place > **B** displays the catalog including **My Components**. Selecting a saved component starts its placement ghost. Click to place; repeat to stamp; **Enter** returns to Edit. Bank uses `OPENWORKS_ComponentBank_v1` per-player DataStore, separate from plot autosaving.
-2. In Build > Edit, select a primitive/component and press **O**, then aim/click to set the alignment origin; **Q/E** switches snapping mode; **Shift+O** resets. These operations use server metadata history. Origins are not mechanical constraints and alignment alone never implies a Weld.
+1. Equip **Build** and select an existing **grouped component**. Press **Shift+B** or right-click > **Save to component library**, enter a name, and confirm. Press **B** to open the catalog, including **My Components**. Selecting a blueprint starts its placement ghost. Click to place; repeat to stamp; **Enter** or **Esc** returns to editing in the same Build tool. Bank uses `OPENWORKS_ComponentBank_v1` per-player DataStore, separate from plot autosaving.
+2. In **Build**, select a primitive/component and press **O**, then aim/click to set the alignment origin; **Q/E** switches snapping mode; **Shift+O** resets. These operations use server metadata history. Origins are not mechanical constraints and alignment alone never implies a Weld.
 3. Create a gear or pulley, create a shaft, attach via the small central bore snap or Mechanics > Connect > Rigid. Both parts must fit physically; the hub is welded to the shaft. To rotate, attach the shaft to a housing with a **Bearing**.
 4. Add two mounted pulleys and Mechanics > Connect > **Belt** to create a friction belt; both must be on distinct shafts. Belts can be removed via the existing relationship context UI, or the server action `RemoveBelt`.
 5. Register the full mechanism as a named assembly. Use Assembly & Simulation > Simulation to test the transmission. Assemblies containing racks use the UI V2 compatible rack solver; no automatic mixing with native physical belts.
@@ -42,7 +42,7 @@ On the integration commit, static source architecture contracts passed **270/270
 ## Studio acceptance — still required
 
 - [ ] **Boot:** Rojo connects on port 34872; no startup `require`/API errors; exactly three native Tools.
-- [ ] **Bank:** Build > Edit, select a grouped component, save it under a name, close/reopen catalog, search, select, place two independent copies, verify transforms and internal relationships; rejoin and confirm it persists.
+- [ ] **Bank:** In Build, select a grouped component, save it under a name, press B, search, select, place two independent copies, Enter/Esc to resume editing without a tool switch; verify transforms, internal relationships and persistence after rejoin.
 - [ ] **Origin:** Set origin on primitive and grouped component, verify the visible cue, align two authored origins and a world surface, undo/redo, save plot and reload; confirm the origin is not welded.
 - [ ] **Hub:** Fit gear onto shaft using cursor depth; select Rigid; verify a physical weld and the gear rotates with its shaft, not freely around it.
 - [ ] **Pulley:** Fit two pulley hubs to separate shafts, create Belt from Mechanics > Connect, validate geometry and belt visual, attempt invalid duplicate, remove from relationship inspector.

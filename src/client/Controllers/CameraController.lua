@@ -2,7 +2,7 @@
 -- OPENWORKS permanent construction free camera.
 -- Scriptable locked-mouse freecam. Native Roblox
 -- Tools, Backpack and UI remain fully active. Character is immobile on server.
--- Mouse: always look, WASD: fly, Space/Ctrl: elevate, Z/Shift+Z: FOV.
+-- Mouse: always look, WASD: fly, Space/Ctrl: elevate; wheel zooms except while fitting.
 -- Frame-rate independent response curves smooth motion without softening
 -- precise construction aim or dragging the view after a UI opens.
 local Players=game:GetService("Players")
@@ -13,9 +13,10 @@ local GuiService=game:GetService("GuiService")
 local player=Players.LocalPlayer
 local RENDER_BINDING="OPENWORKS_PermanentFreeCamera"
 local DEFAULT_FOV=70
-local MIN_FOV=40
-local MAX_FOV=85
-local FOV_STEP=5
+local MIN_FOV=24
+local MAX_FOV=90
+local FOV_STEP=4
+local CAMERA_RADIUS=0.075 -- close to surfaces without crossing solid geometry
 local MOVE_SPEED=22
 local FAST_SPEED=44
 local LOOK_SENSITIVITY=0.0036
@@ -59,7 +60,7 @@ local function clampToPlot(position)
     local range=math.max(8,half-2)
     return Vector3.new(
         math.clamp(position.X,origin.X-range,origin.X+range),
-        math.clamp(position.Y,origin.Y+2,origin.Y+88),
+        math.clamp(position.Y,origin.Y+0.085,origin.Y+88),
         math.clamp(position.Z,origin.Z-range,origin.Z+range))
 end
 
@@ -120,19 +121,14 @@ function Camera:Start()
             self:ResetPosition()
         end))
 
-    table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
-        if processed or uiCapturesPointer() then return end
-        if input.KeyCode==Enum.KeyCode.Z then
-            if UIS:IsKeyDown(Enum.KeyCode.LeftControl)
-                or UIS:IsKeyDown(Enum.KeyCode.RightControl)
-                or UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
-                or UIS:IsKeyDown(Enum.KeyCode.RightAlt) then return end
-            local outward=UIS:IsKeyDown(Enum.KeyCode.LeftShift)
-                or UIS:IsKeyDown(Enum.KeyCode.RightShift)
-            self.TargetFov=math.clamp(self.TargetFov
-                +(if outward then FOV_STEP else -FOV_STEP),
-                MIN_FOV,MAX_FOV)
-        end
+    table.insert(self.Connections,UIS.InputChanged:Connect(function(input,processed)
+        if input.UserInputType~=Enum.UserInputType.MouseWheel
+            or processed or uiCapturesPointer() then return end
+        -- Fitting owns wheel depth/roll only while its transaction is live.
+        if player:GetAttribute("OPENWORKS_Inserting")==true
+            or player:GetAttribute("OPENWORKS_FitWheelActive")==true then return end
+        self.TargetFov=math.clamp(self.TargetFov-input.Position.Z*FOV_STEP,
+            MIN_FOV,MAX_FOV)
     end))
     RunService:BindToRenderStep(RENDER_BINDING,
         Enum.RenderPriority.Camera.Value+1,function(dt)
@@ -197,15 +193,36 @@ function Camera:Start()
             end
             local proposed=self.Position+self.Velocity*step
             local clamped=clampToPlot(proposed)
-            -- Do not store outward velocity against plot boundaries.
-            self.Velocity=Vector3.new(
-                if math.abs(clamped.X-proposed.X)>0.00001
-                    then 0 else self.Velocity.X,
-                if math.abs(clamped.Y-proposed.Y)>0.00001
-                    then 0 else self.Velocity.Y,
-                if math.abs(clamped.Z-proposed.Z)>0.00001
-                    then 0 else self.Velocity.Z)
-            self.Position=clamped
+            -- A camera is NOT a character controller: never project input
+            -- sideways across a wall/ground, which felt like sliding.
+            -- Stop the whole intended displacement instead of tunneling
+            -- through a solid or staying two studs off the floor.
+            local movement=clamped-self.Position
+            if movement.Magnitude>0.00001 then
+                local params=RaycastParams.new()
+                params.FilterType=Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances=if player.Character
+                    then {player.Character} else {}
+                params.IgnoreWater=true
+                params.RespectCanCollide=true
+                local hit=workspace:Spherecast(self.Position,
+                    CAMERA_RADIUS,movement,params)
+                if hit then
+                    -- No collision sliding; allow approach right up to the
+                    -- surface using a tiny clearance, not Roblox's humanoid
+                    -- two-stud camera offset.
+                    local distance=math.max(0,hit.Distance-0.012)
+                    self.Position+=movement.Unit*distance
+                    self.Velocity=Vector3.zero
+                else
+                    self.Position=clamped
+                    if (clamped-proposed).Magnitude>0.00001 then
+                        self.Velocity=Vector3.zero
+                    end
+                end
+            elseif (clamped-proposed).Magnitude>0.00001 then
+                self.Velocity=Vector3.zero
+            end
         end
         self.CurrentFov+=(self.TargetFov-self.CurrentFov)
             *response(ZOOM_RESPONSE,step)

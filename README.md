@@ -18,24 +18,28 @@ The in-game plot is isolated per player. Published Studio DataStore tests requir
 
 ## Native tools — UI v2
 
-The native Roblox hotbar now contains **exactly three** primary tools. Letter keys change **subtools within the equipped primary tool**; switching primary tools remembers their last subtool.
+The Roblox hotbar has **four** primary tools. **Build** is for placing geometry; **Edit** is its own tool in slot 2 for selecting, manipulating, fitting, resizing, painting and saving reusable components. Mechanics and Assembly & Simulation retain their respective subtools.
 
-| Hotbar | Primary tool | Subtool | Key | Current workflow |
+| Hotbar | Tool | Action | Key | Current workflow |
 |---|---|---|---|---|
-| 1 | **Build** | Place | B | Catalog, placement, snapping, geometry previews |
-| 1 | **Build** | Edit | E | Select, group, drag, duplicate, transform |
-| 1 | **Build** | Resize | V | Neon face resize and precise dimensions |
-| 1 | **Build** | Paint | M | Colors, finishes, physical material presets |
-| 2 | **Mechanics** | Connect | C | Bearing/slider/cylindrical joint, spring, weld, crank coupling |
-| 2 | **Mechanics** | Configure | E | Inspect and adjust joint, spring and bearing motor properties |
-| 3 | **Assembly & Simulation** | Assembly Editor | E | Create/edit named assembly membership |
-| 3 | **Assembly & Simulation** | Simulation | Y | Ground and test registered assembly |
+| 1 | **Build** | Browse / place parts | B / Click | Open primitive and saved-component catalog, then place into the workspace |
+| 1 | **Build** | Finish placing | Enter / Esc | Clear the active placement preview, without editing existing parts |
+| 2 | **Edit** | Select / transform | Click / G / F | Select, group, move, duplicate, rotate or delete geometry |
+| 2 | **Edit** | Fitting | L | Select a shaft or opening-bearing part, then target an opening or shaft and confirm fitting relationship |
+| 2 | **Edit** | Resize / appearance | V / N / M | Neon grips, exact dimensions, and material / finish / color controls |
+| 2 | **Edit** | Component Bank | Shift+B | Save a selected complete component as a reusable blueprint |
+| 3 | **Mechanics** | Connect / configure | C / E | Create and edit mechanical joints, springs, belts and motors |
+| 4 | **Assembly & Simulation** | Assembly / Simulate | E / Y | Group mechanism, ground and run a registered assembly |
+
+The free camera uses **mouse wheel** for FOV zoom, except while actively adjusting shaft insertion depth. See [Edit tool, camera, fitting and save recovery](docs/EDIT_2_FITTING_CAMERA_SAVES.md).
+
+Older [Unified Build workflow](docs/UNIFIED_BUILD_WORKFLOW.md) is historical; use the new Edit/Build guide above for current controls.
 
 **Mechanics / Connect:** select two physical parts, choose a compatible mechanical relationship, then confirm. Orange boxes represent explicitly chosen participants; rejected pairs turn red and accepted connections flash green. Automatic Build shaft/hole and gear/shaft fitting, plus manual L alignment, share the same contextual relationship chooser. **Build > Fasteners** remains the supported physical bolt workflow. The server validates all ownership, clearance, fit and simulation boundaries.
 
-**Left shortcut sidebar:** The compact left **Subtools** column shows B/E/V/M (Build), C/E (Mechanics), or E/Y (Assembly & Simulation), with the active subtool highlighted. A separate **Controls** panel underneath changes with fitting, resizing, assembly drafts and simulation. **F2** unlocks the cursor when UI interaction is needed; **Tab** remains reserved for depth and fit-target cycling where applicable.
+**Left shortcut sidebar:** Build shows a single contextual **Controls** panel (no redundant Place/Edit subtool list). Mechanics shows C/E and Assembly & Simulation shows E/Y with Controls below. The Build controls reflect editing, catalog selection, active placement, movement, resizing and fitting. **F2** unlocks the cursor when UI interaction is needed; **Tab** is reserved for depth and fit-target cycling where applicable.
 
-**Primitive library:** Build's catalog opens on the **right side**, avoiding the left shortcut panels. Press B again or close the catalog to resume placement.
+**Primitive library:** Press **B** while in Build to open the right-side catalog. Choosing a primitive or saved component starts its placement ghost; click to stamp, **Enter** or **Esc** to resume selecting existing geometry, without changing tools. Esc while the library is open closes only the library. **Shift+B** saves a selected grouped component. V and M remain available while editing.
 
 **Right-click editing:** There is **no permanent Explorer or Properties dock**. Right-click an authored primitive or grouped component to open a single floating context panel. The panel lists every authored mechanical relationship involving that object or its component members. Click a relationship to edit its supported limits, spring properties or bearing-motor settings **inside that same panel**, then press **Confirm**. Read-only relationship metadata is also displayed. Material/finish/color changes use their own Confirm action in the same panel. Those changes use existing server APIs; simulation blocks authoring.
 

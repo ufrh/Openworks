@@ -1,3 +1,5 @@
+> **Current controls:** Build = hotbar 1, Edit = hotbar 2, Mechanics = 3, Assembly & Simulation = 4. Legacy unified Build cases below are historical; see [current four-tool acceptance checklist](EDIT_2_FITTING_CAMERA_SAVES.md).
+
 # OPENWORKS — Current Studio regression checklist
 
 Run after changing the shared geometry code, construction services, tool dispatch, input controllers, simulation or persistence. **This is a manual acceptance list**, not a claim the tests have already passed. File a specific bug with Studio Output, build marker and reproduction if any case fails.
@@ -8,7 +10,15 @@ Run after changing the shared geometry code, construction services, tool dispatc
 - [ ] Studio empty plot reaches `Ready` when API access is enabled; if API unavailable, show `Error` (never permanent `Loading`). Building still works; saving stays disabled.
 - [ ] Player plots do not overlap; construction and remote actions cannot edit other players' models.
 
-## Build / Edit / components
+## Unified Build — current UI V2 acceptance gate
+
+- [ ] Build appears as **one contextual workspace**: its left CONTROLS panel is visible; there is no separate Place/Edit/Resize/Paint subtool switch. The three native tools remain Build, Mechanics, and Assembly & Simulation.
+- [ ] Equipped Build starts in selection context: click/select an authored primitive/component, E deep-select, V/N resize, M appearance, G/F transforms, C/U group/ungroup, O/Shift+O authored fit origin, and Shift+B component library saving.
+- [ ] B opens the catalog; choosing a primitive or Component Bank blueprint enters placement in the **same Build tool**. Click stamps parts; Enter/Esc returns to editing immediately. Escape closes the open catalog only.
+- [ ] While placing, V/N edit the ghost; smart bore, hub, and multi-hole fit remains available. Right-click Select / resize on an existing part ends placement and selects it without switching subtools.
+- [ ] Switching Build ↔ Mechanics ↔ Assembly & Simulation during placement/selection clears ghosts and temporary UI but preserves authored geometry, relationships, and persisted bank contents.
+
+### Historical Build / Edit regression scenarios (run via unified Build context)
 - [ ] Place block, cylinder, shaft, drilled block, gear, bolt and hand crank from the primitive bank. Preview fits and placement match final server geometry.
 - [ ] Resize a primitive with Neon scale grips; numeric sizing and snapping work; no leftover scale handle/ghost after cancel or tool switch.
 - [ ] Select several primitives and combine with C; component highlights as **one outer boundary** with no shadow doubles.

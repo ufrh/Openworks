@@ -49,22 +49,26 @@ def main() -> int:
     tool_ids = re.findall(r'\{\s*Id\s*=\s*"([^"]+)"', definitions)
     check(
         "Native tool inventory and order",
-        tool_ids == ["Build", "Mechanics", "AssemblySimulation"],
+        tool_ids == ["Build", "Edit", "Mechanics", "AssemblySimulation"],
         str(tool_ids),
     )
 
     subtool_definitions = read("src/shared/Construction/SubtoolDefinitions.lua")
     native_tool_controller = read("src/client/Controllers/ToolController.lua")
     check(
-        "UI v2 exactly eight subtools across three primary tools",
+        "Build (1) and Edit (2) are separate tools; Mechanics and Simulation keep subtools",
         all(name in subtool_definitions for name in (
-            'Default="Place"', 'Default="Connect"', 'Default="AssemblyEditor"',
-            'Id="Place"', 'Id="Edit"', 'Id="Resize"', 'Id="Paint"',
+            'Default="Build"', 'Id="Build",Key=Enum.KeyCode.B,LegacyMode="Build"',
+            'Default="Edit"', 'Id="Edit",Key=Enum.KeyCode.E,LegacyMode="Edit"',
+            'Default="Connect"', 'Default="AssemblyEditor"',
             'Id="Connect"', 'Id="Configure"',
             'Id="AssemblyEditor"', 'Id="Simulation"',
         ))
-        and len(re.findall(r'\{Id="(?:Place|Edit|Resize|Paint|Connect|Configure|AssemblyEditor|Simulation)"',
-                           subtool_definitions)) == 8,
+        and len(re.findall(
+            r'\{Id="(?:Build|Edit|Connect|Configure|AssemblyEditor|Simulation)"',
+            subtool_definitions)) == 6
+        and not any(f'Id="{old}"' in subtool_definitions
+                    for old in ('Place', 'Resize', 'Paint')),
     )
     check(
         "UI v2 subtool state and shortcut guards are active",
@@ -291,9 +295,10 @@ def main() -> int:
           and 'function Palette:RenderControls(info)' in left_panel
           and all(t in tool_defs for t in (
               'Key=Enum.KeyCode.B','Key=Enum.KeyCode.E',
-              'Key=Enum.KeyCode.V','Key=Enum.KeyCode.M',
               'Key=Enum.KeyCode.C','Key=Enum.KeyCode.Y',
-          )))
+          ))
+          and 'self.SubtoolsPanel.Visible=visible and primary~="Build"' in left_panel
+          and 'tostring(self.Build.Mode or "")' in left_panel)
     check("Left contextual controls follow live fitting, draft, and simulation state",
           'function Help.Context(tools,build,mechanics,assemblyTool,player)' in contextual_keys
           and all(v in contextual_keys for v in (
@@ -310,12 +315,12 @@ def main() -> int:
           and 'player:GetAttribute("OPENWORKS_Simulating")==true' in left_panel
           and 'Name="ContextualKeybindRows"' in left_panel
           and 'toolPalette:Start()' in client_entry)
-    check("F2 cursor shortcut preserves Build Edit Tab depth selection",
+    check("F2 cursor shortcut preserves dedicated Edit depth selection",
           'key==Enum.KeyCode.F2' in unified_panel
           and 'key==Enum.KeyCode.Tab' not in unified_panel
           and 'if key == Enum.KeyCode.Tab then' in
               read("src/client/Controllers/LayeredEditingController.lua")
-          and 'parent.Tools.SubtoolId~="Edit"' in
+          and 'parent.Tools.PrimaryId~="Edit"' in
               read("src/client/Controllers/LayeredEditingController.lua"))
 
     check("Primitive library no longer overlaps left-side tool panels",
@@ -413,7 +418,9 @@ def main() -> int:
           and 'self.TargetYaw=self.Yaw' in camera
           and 'self.TargetPitch=self.Pitch' in camera
           and 'local clamped=clampToPlot(proposed)' in camera
-          and 'if math.abs(clamped.X-proposed.X)>0.00001' in camera
+          and 'workspace:Spherecast(self.Position' in camera
+          and 'CAMERA_RADIUS=0.075' in camera
+          and 'origin.Y+0.085' in camera
           and 'self.TargetYaw=self.Yaw+shortestAngle(self.Yaw,self.TargetYaw)' in camera
           and 'OPENWORKS_CameraSpawnReady' not in camera)
     check("Character remains invisible, anchored and immobile with native tools",
@@ -518,9 +525,13 @@ def main() -> int:
           and 'Instance.new("HingeConstraint")' in mechanical
           and 'edge.kind == "Bearing"' in simulation
           and 'JointFrames.ForOpening(edge.target)' in simulation)
-    check("Retired joints skipped in old plot saves",
-          'skipped+=1' in persistence
-          and 'retired arbitrary-axis joint(s)' in persistence)
+    check("Unavailable templates and retired joints preserved for recovery",
+          'Preserved={}' in persistence
+          and 'table.insert(preserved.parts,record)' in persistence
+          and 'table.insert(preserved.joints,spec)' in persistence
+          and 'for _,record in ipairs(preserved.parts) do' in persistence
+          and 'for _,spec in ipairs(preserved.joints) do' in persistence
+          and 'no data discarded' in persistence)
     check("Motor settings are edited only on physical bearings",
           'function Panel:RenderRelation(node)' in unified_panel
           and 'action="TuneBearingMotor"' in unified_panel
@@ -978,7 +989,7 @@ def main() -> int:
           and 'MultiFit.StationarySet(\n                    members,target,' in smart_place)
     check("Manual L selects empty bore centers and validates all penetrations",
           'function Layered:AimedOpening(excluded)' in layered
-          and 'target=self:AimedOpening(excluded) or target' in layered
+          and 'else self:AimedOpening(excluded)) or target' in layered
           and 'MultiFit.StationarySet(' in layered
           and 'MultiFit.AllowMap(fitted)' in layered
           and 'mateKind="Bore"' in layered
@@ -1102,13 +1113,72 @@ def main() -> int:
           and 'BeltTransmission.new(graph,copies,runtime)' in physical_simulation
           and 'GearKinematics.new(graph,copies)' in simulation
           and 'function Unified:BeginRack(player,request)' in unified_simulation)
-    check("UI v2 keeps one Build native tool and contextual Component Bank actions",
-          'tool_ids == ["Build", "Mechanics", "AssemblySimulation"]' not in definitions
-          and 'Id = "Build"' in definitions
-          and 'self.Tools:SetSubtool("Edit")' in selection
-          and 'self.Tools:SetSubtool("Place")' in selection
+    check("Build placement and Edit selection preserve Component Bank",
+          'Id = "Build"' in definitions
+          and 'Id = "Edit"' in definitions
+          and 'function Controller:BeginPlacement()' in selection
+          and 'function Controller:StopPlacement()' in selection
+          and 'self.Mode="Build"' in selection
+          and 'self:BeginPlacement()' in selection
+          and 'if self.Tools.PrimaryId=="Build" or self.Tools.PrimaryId=="Edit" then' in selection
+          and 'self.Tools:SetSubtool("Place")' not in selection
           and 'Save to component library' in unified_panel
           and 'Set alignment origin' in unified_panel)
+
+    check("Unified Build enters placement from catalog and saved blueprints",
+          'self:BeginPlacement()' in selection
+          and 'function Controller:SelectPrimitive(id)' in selection
+          and 'function Controller:SelectBank(id)' in selection
+          and 'self.CurrentBank=data' in selection
+          and 'self:PlaceSavedComponent()' in selection
+          and 'self:StopPlacement()' in selection
+          and 'self:RebuildPreview()' in selection)
+    check("Edit retains direct dragging, fitting, resizing and paint",
+          'self.Tools.PrimaryId=="Edit" and self.Mode=="Edit"' in selection
+          and 'self:BeginScale()' in selection
+          and 'self.UnifiedExplorer:OpenSelectedContext()' in selection
+          and 'self.Layered:OnModeChanged(mode)' in selection
+          and 'and self.Build.Mode=="Edit" then' in unified_panel)
+    check("Build/Edit hotbars have distinct help and no phantom subtools",
+          'stage="BUILD / PLACE"' in contextual_keys
+          and 'stage="EDIT / SELECT"' in contextual_keys
+          and 'stage="BUILD / LIBRARY"' in contextual_keys
+          and 'stage="RESIZE"' in contextual_keys
+          and 'Stop placement (Edit = hotbar 2)' in contextual_keys
+          and 'self.SubtoolsPanel.Visible=visible and primary~="Build"' in left_panel
+          and 'and primary~="Edit"' in left_panel)
+
+    check("Edit tool is explicitly authorized for fine-fit and pose",
+          'elseif action=="FitShaft" or action=="PoseShaft" then' in service
+          and 'hasEquippedTool(player,"Edit")' in service
+          and 'action = "FitShaft"' in layered
+          and 'action="PoseShaft"' in layered)
+    check("Manual fitting works shaft-to-hole and hole-to-shaft",
+          'function Layered:AimedShaft(excluded)' in layered
+          and 'function Layered:CompatibleTarget(model,reverse)' in layered
+          and 'AlignmentMath.ReversePlan(' in layered
+          and 'reverse=selected.Reverse' in layered
+          and 'MultiFit.Completeness(' in layered
+          and 'align.Reverse)' in layered)
+    check("Invalid manual fit cannot submit a missing plan",
+          'align.Plan=nil' in layered
+          and 'align.Valid=false' in layered
+          and 'if align.Valid~=true or not align.Plan then' in layered)
+    check("Camera scroll zoom yields to fitting and stops on solid collision",
+          'input.UserInputType~=Enum.UserInputType.MouseWheel' in camera
+          and 'OPENWORKS_Inserting' in camera
+          and 'OPENWORKS_FitWheelActive' in camera
+          and 'self.TargetFov=math.clamp(' in camera
+          and 'params.RespectCanCollide=true' in camera
+          and 'self.Velocity=Vector3.zero' in camera)
+    check("Plot load quarantines incompatible parts instead of losing them",
+          'issue="Missing Studio template: "' in persistence
+          and 'issue="Invalid geometry metadata: "' in persistence
+          and 'issue="Out-of-range/changed geometry: "' in persistence
+          and 'player:SetAttribute("OPENWORKS_SaveRecoveryCount"' in persistence
+          and 'self.Preserved[player]=preserved' in persistence
+          and 'table.insert(preserved.joints,spec)' in persistence
+          and 'self.Preserved[player]=nil' in persistence)
 
     save_writes = []
     for file in SRC.rglob("*.lua"):

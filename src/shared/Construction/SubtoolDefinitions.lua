@@ -1,16 +1,15 @@
 --!strict
--- UI v2 primary tools -> contextual subtools. LegacyMode is strictly a
--- client compatibility adapter while existing controllers migrate; it is NOT
--- an authorization token and must never be sent to the server as authority.
+-- Hotbar 1 Build places; hotbar 2 Edit manipulates existing authored parts.
+-- Mechanics and Assembly/Simulation retain their contextual subtools.
+-- LegacyMode is an internal compatibility adapter, never server authority.
 local definitions={
     Build={
-        Default="Place",
-        Items={
-            {Id="Place",Key=Enum.KeyCode.B,LegacyMode="Build"},
-            {Id="Edit",Key=Enum.KeyCode.E,LegacyMode="Edit"},
-            {Id="Resize",Key=Enum.KeyCode.V,LegacyMode="Edit"},
-            {Id="Paint",Key=Enum.KeyCode.M,LegacyMode="Edit"},
-        },
+        Default="Build",
+        Items={{Id="Build",Key=Enum.KeyCode.B,LegacyMode="Build"}},
+    },
+    Edit={
+        Default="Edit",
+        Items={{Id="Edit",Key=Enum.KeyCode.E,LegacyMode="Edit"}},
     },
     Mechanics={
         Default="Connect",

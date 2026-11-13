@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS client bootstrap: native tools, Forge, editor and simulation controllers.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.12.UI-V2-CONTEXT-CREATOR"
+local BUILD = "2026.11.13.UI-V2-EDIT-2-FIT-CAMERA-PERSISTENCE"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -38,8 +38,8 @@ local assemblyToolController=AssemblyToolController.new(tools)
 constructionController.Feedback=feedback
 assemblyController.Feedback=feedback
 assemblyToolController.Feedback=feedback
--- Edit authors geometry/joints, Assembly names and chooses member sets,
--- and Simulate exclusively runs registered assemblies.
+-- Build places; Edit (native tool 2) authors geometry and precision fits;
+-- Mechanics connects parts, Assembly/Simulation registers and tests machines.
 constructionController.Assembly = assemblyController
 assemblyController.Construction = constructionController
 

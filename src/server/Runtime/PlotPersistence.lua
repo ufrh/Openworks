@@ -76,6 +76,9 @@ function Persistence.new(deps)
         DirtySince={},
         LastAttemptAt={},
         AutoSaveActive=false,
+        -- Keep unrenderable records in every future save verbatim. Existing
+        -- cloud data must never disappear because Studio lacks a template.
+        Preserved={},
     },Persistence)
 end
 
@@ -197,6 +200,19 @@ function Persistence:Encode(player)
             table.insert(parts,record)
         end
     end
+    -- A previous save may contain templates this Studio place no longer
+    -- provides. Keep those raw JSON records intact when the user edits and
+    -- saves the rest of the plot; never turn a partial load into data loss.
+    local preserved=self.Preserved[player]
+    if preserved then
+        for _,record in ipairs(preserved.parts) do
+            if ids[record.id] then
+                return nil,"Recovered part ID conflicts with current construction"
+            end
+            ids[record.id]=true
+            table.insert(parts,record)
+        end
+    end
     table.sort(parts,function(a,b) return a.id<b.id end)
     local joints={}
     for _,relation in ipairs(d.mechanical.Folder:GetChildren()) do
@@ -205,6 +221,15 @@ function Persistence:Encode(player)
             if not ids[spec.sourceId] or not ids[spec.targetId]
                 or (spec.secondTargetId and not ids[spec.secondTargetId]) then
                 return nil,"A mechanical relationship has a missing part"
+            end
+            table.insert(joints,spec)
+        end
+    end
+    if preserved then
+        for _,spec in ipairs(preserved.joints) do
+            if not ids[spec.sourceId] or not ids[spec.targetId]
+                or (spec.secondTargetId and not ids[spec.secondTargetId]) then
+                return nil,"Recovered relationship has a missing saved part"
             end
             table.insert(joints,spec)
         end
@@ -236,7 +261,14 @@ function Persistence:Decode(player,document)
         or #document.joints>MAX_JOINTS then
         return nil,"Save exceeds construction or relationship limits"
     end
-    local parsed,ids={},{}
+    local parsed,ids,readyIds={},{},{}
+    local preserved={parts={},joints={},reasons={}}
+    local function quarantine(record,reason)
+        table.insert(preserved.parts,record)
+        if #preserved.reasons<5 then
+            table.insert(preserved.reasons,reason)
+        end
+    end
     for _,record in ipairs(document.parts) do
         if type(record)~="table"
             or type(record.id)~="string" or #record.id>64
@@ -260,28 +292,39 @@ function Persistence:Decode(player,document)
             then readVec3(record.fitPivot) else nil
         local componentPivot=if record.componentFitPivot~=nil
             then readVec3(record.componentFitPivot) else nil
-        if not entry or not pos or not size
-            or (record.rotation~=nil and not cf)
+        local issue=nil
+        if not entry then
+            issue="Missing Studio template: "..record.template
+        elseif not pos or not size or (record.rotation~=nil and not cf)
             or not d.grid.ValidSteps(record.steps)
             or (record.fitPivot~=nil and not FitOrigin.Valid(pivot))
             or (record.componentFitPivot~=nil
                 and not FitOrigin.Valid(componentPivot)) then
-            return nil,"Invalid saved template, size, position or orientation"
-        end
-        pos+=plot.origin
-        if not d.grid.ValidPosition(pos)
-            or not (if HandCrankMath.IsCrank(entry.Model)
-                then HandCrankMath.ValidSize(entry.Model.PrimaryPart.Size,size)
-                else d.grid.ValidSize(entry.Model.PrimaryPart.Size,size,
-                    entry.ResizeMode,record.fitPrecision==true,
-                    record.numericPrecision==true))
-            or not d.plots:Contains(player,pos,size) then
-            return nil,"Saved construction is outside plot or has invalid geometry"
+            issue="Invalid geometry metadata: "..record.template
+        else
+            pos+=plot.origin
+            if not d.grid.ValidPosition(pos)
+                or not (if HandCrankMath.IsCrank(entry.Model)
+                    then HandCrankMath.ValidSize(entry.Model.PrimaryPart.Size,size)
+                    else d.grid.ValidSize(entry.Model.PrimaryPart.Size,size,
+                        entry.ResizeMode,record.fitPrecision==true,
+                        record.numericPrecision==true))
+                or not d.plots:Contains(player,pos,size) then
+                issue="Out-of-range/changed geometry: "..record.template
+            end
         end
         if not finite(record.roll or 0) or not finite(record.offset or 0) then
-            return nil,"Invalid saved alignment"
+            issue="Invalid saved alignment: "..record.template
         end
+        -- Skip rendering this part if its generator/template/size is gone,
+        -- but preserve the exact source document for future restoration.
+        -- Never silently replace it with another arbitrary primitive.
         ids[record.id]=true
+        if issue then
+            quarantine(record,issue)
+            continue
+        end
+        readyIds[record.id]=true
         table.insert(parsed,{
             instanceId=record.id,templateId=record.template,
             position=pos,size=size,steps=record.steps,orientation=cf,
@@ -313,29 +356,24 @@ function Persistence:Decode(player,document)
         end
         seen[spec.relationId]=true
     end
-    -- Retired arbitrary-joint types can appear in older manual saves.
-    -- Keep physical construction and valid relationships loadable instead
-    -- of failing the entire plot on a deleted imaginary joint.
     local supported={}
-    local skipped=0
     for _,spec in ipairs(document.joints) do
-        if spec.kind=="AxisHinge" or spec.kind=="AxisBall"
-            or spec.kind=="AxisUniversal" or spec.kind=="PoweredHinge" then
-            skipped+=1
+        local unsupported=spec.kind=="AxisHinge" or spec.kind=="AxisBall"
+            or spec.kind=="AxisUniversal" or spec.kind=="PoweredHinge"
+        if unsupported or not readyIds[spec.sourceId]
+            or not readyIds[spec.targetId]
+            or (spec.secondTargetId and not readyIds[spec.secondTargetId]) then
+            table.insert(preserved.joints,spec)
         else
             table.insert(supported,spec)
         end
     end
-    if skipped>0 then
-        warn("[OPENWORKS] Skipped "..skipped..
-            " retired arbitrary-axis joint(s) during plot load")
-    end
-    return parsed,supported
+    return parsed,supported,preserved
 end
 
 function Persistence:Apply(player,document)
     local d=self.D
-    local states,specs=self:Decode(player,document)
+    local states,specs,preserved=self:Decode(player,document)
     if not states then return false,specs end
     local staged={}
     for _,state in ipairs(states) do
@@ -371,8 +409,20 @@ function Persistence:Apply(player,document)
     local success,err=pcall(function()
         for _,spec in ipairs(specs) do
             local ok,message=d.mechanical:Restore(player,spec)
-            if not ok then error(message) end
-            table.insert(restored,spec.relationId)
+            if ok then
+                table.insert(restored,spec.relationId)
+            else
+                -- A pre-reorganization joint may no longer satisfy the
+                -- current clearance or relationship rules. Keep the raw
+                -- spec for future recovery and load the other mechanisms.
+                table.insert(preserved.joints,spec)
+                if #preserved.reasons<5 then
+                    table.insert(preserved.reasons,"Relationship "
+                        ..tostring(spec.kind)..": "..tostring(message))
+                end
+                warn("[OPENWORKS] Preserved outdated relationship "
+                    ..tostring(spec.relationId)..": "..tostring(message))
+            end
         end
     end)
     if not success then
@@ -391,13 +441,25 @@ function Persistence:Apply(player,document)
         return false,"Could not restore the saved mechanism: "..tostring(err)
     end
     for _,model in ipairs(oldParts) do model:Destroy() end
+    self.Preserved[player]=preserved
+    player:SetAttribute("OPENWORKS_SaveRecoveryCount",#preserved.parts)
+    if #preserved.parts>0 or #preserved.joints>0 then
+        warn("[OPENWORKS] Preserved "..#preserved.parts
+            .." incompatible part(s) and "..#preserved.joints
+            .." relationship(s) in cloud save; no data discarded. "
+            ..table.concat(preserved.reasons,"; "))
+    end
     local history=d.histories[player]
     if history then table.clear(history.undo) table.clear(history.redo) end
     -- Named assemblies are now explicitly authored; their IDs and names
     -- already live on each restored primitive. The retired NextNumber
     -- counter no longer exists and must not be touched during plot load.
+    if #preserved.parts>0 or #preserved.joints>0 then
+        return true,string.format("Loaded %d parts; kept %d unavailable part(s) and %d joint(s) safe in the save. See Output",
+            #states,#preserved.parts,#preserved.joints)
+    end
     return true,string.format("Loaded %d parts and %d relationships",
-        #states,#specs)
+        #states,#restored)
 end
 
 -- Read-only load. Never write back failed, malformed or missing data.
@@ -582,6 +644,7 @@ function Persistence:Clear(player)
     self.Dirty[player]=nil
     self.DirtySince[player]=nil
     self.LastAttemptAt[player]=nil
+    self.Preserved[player]=nil
 end
 
 return Persistence

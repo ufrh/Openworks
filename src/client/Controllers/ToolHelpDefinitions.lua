@@ -18,15 +18,15 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
     local stage=""
     if not primary then return {title="CONTROLS",rows={}} end
 
-    if primary=="Build" then
+    if primary=="Build" or primary=="Edit" then
         local pending=build.Pending
         local layered=build.Layered and build.Layered.Alignment
         local smart=build.SmartMatch
         if layered then
             stage=if layered.Stage=="Fit" then "SHAFT FIT"
-                elseif layered.Stage=="PickTarget" then "CHOOSE OPENING"
+                elseif layered.Stage=="PickTarget" then (if layered.Reverse then "CHOOSE SHAFT" else "CHOOSE OPENING")
                 else "ALIGNMENT"
-            put(rows,"Click",if layered.Stage=="PickTarget" then "Select opening"
+            put(rows,"Click",if layered.Stage=="PickTarget" then (if layered.Reverse then "Select shaft" else "Select opening")
                 elseif layered.Stage=="Fit" then "Finish fitting"
                 else "Confirm fit")
             if layered.Stage~="PickTarget" then
@@ -41,55 +41,52 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             put(rows,"Q / E","Shaft roll")
             put(rows,"Click","Choose connection")
             put(rows,"Esc","Cancel fit")
-        elseif sub=="Place" then
-            stage="PLACE"
-            put(rows,"Click","Place primitive")
-            put(rows,"B","Primitive catalog")
-            put(rows,"R / T / Y","Rotate axes")
+        elseif build.CatalogOpen then
+            stage="BUILD / LIBRARY"
+            put(rows,"Click","Choose primitive / blueprint")
+            put(rows,"B / Esc","Close library")
+        elseif build.ScaleMode then
+            stage="RESIZE"
+            put(rows,"Drag","Resize face grips")
             put(rows,"N","Exact dimensions")
+            put(rows,"V / Esc","Exit resize")
+        elseif primary=="Build" then
+            stage="BUILD / PLACE"
+            put(rows,"Click",if build.CurrentBank then "Place saved component"
+                else "Place primitive")
+            put(rows,"B","Primitive / component library")
+            put(rows,"R / T / Y","Rotate axes")
+            put(rows,"V / N","Resize / exact dimensions")
             if smart then
                 put(rows,"Tab","Cycle fit target")
                 put(rows,"Shift+Tab","Previous target")
             else
                 put(rows,"Alt","Free placement")
             end
-            put(rows,"Esc","Cancel placement")
-        elseif sub=="Edit" then
-            stage=if pending then "TRANSFORM" else "EDIT"
-            if pending then
-                put(rows,"Click","Confirm move")
-                put(rows,"R / T / Y","Rotate axes")
-                put(rows,"Alt+Arrows","Nudge")
-                put(rows,"Esc","Cancel move")
-            else
-                put(rows,"Click","Select primitive")
-                put(rows,"Double click","Select inside component")
-                put(rows,"Drag / G","Move")
-                put(rows,"F / Ctrl+D","Duplicate")
-                put(rows,"R / T / Y","Rotate axes")
-                put(rows,"N","Exact dimensions")
-                put(rows,"Alt+Arrows","Nudge position")
-                put(rows,"Shift+Alt","Fine arrow nudge")
-                put(rows,"C / U","Group / ungroup")
-                put(rows,"L","Align shaft")
-                put(rows,"X / I","X-ray / isolate")
-                put(rows,"Tab","Select behind")
-                put(rows,"Delete","Delete selected")
-            end
-        elseif sub=="Resize" then
-            stage="RESIZE"
-            put(rows,"Drag","Resize face handles")
-            put(rows,"N","Exact dimensions")
-            put(rows,"Esc","Exit resize")
-        elseif sub=="Paint" then
-            stage="APPEARANCE"
-            put(rows,"Click","Select object")
-            put(rows,"M","Open Properties")
-            put(rows,"F2","Unlock cursor")
+            put(rows,"Enter / Esc","Stop placement (Edit = hotbar 2)")
+        elseif pending then
+            stage="EDIT / TRANSFORM"
+            put(rows,"Click","Confirm move / duplicate")
+            put(rows,"R / T / Y","Rotate axes")
+            put(rows,"Esc","Cancel transform")
+        else
+            stage="EDIT / SELECT"
+            put(rows,"Click","Select authored geometry")
+            put(rows,"Shift+B","Save selected component")
+            put(rows,"Double click","Select inside component")
+            put(rows,"Drag / G","Move selected")
+            put(rows,"F / Ctrl+D","Duplicate")
+            put(rows,"V / N","Resize / exact dimensions")
+            put(rows,"M","Appearance / properties")
+            put(rows,"R / T / Y","Rotate axes")
+            put(rows,"Alt+Arrows","Nudge position")
+            put(rows,"C / U","Group / ungroup")
+            put(rows,"L","Align shaft")
+            put(rows,"X / I","X-ray / isolate")
+            put(rows,"Tab","Select behind")
+            put(rows,"Delete","Delete selected")
         end
-        if sub~="Paint" then
-            put(rows,"Ctrl+Z / Y","Undo / redo")
-        end
+        put(rows,"Ctrl+Z / Y","Undo / redo")
     elseif primary=="Mechanics" then
         if sub=="Connect" then
             local state=mechanics.Stage
@@ -154,7 +151,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             end
         end
     end
-    local fitActive=(primary=="Build" and
+    local fitActive=((primary=="Build" or primary=="Edit") and
         (build.SmartMatch~=nil or stage=="SHAFT FIT"
             or stage=="ALIGNMENT" or stage=="SMART FIT"
             or stage=="CHOOSE OPENING"))
@@ -170,7 +167,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
     put(rows,"WASD","Fly camera")
     put(rows,"Space / Ctrl","Up / down")
     put(rows,"Shift","Fly faster")
-    put(rows,"Z / Shift+Z","FOV zoom")
+    put(rows,"Wheel","Zoom camera (unless fitting)")
     return {title=stage~="" and stage or "CONTROLS",rows=rows}
 end
 

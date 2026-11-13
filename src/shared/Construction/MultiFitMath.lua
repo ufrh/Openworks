@@ -171,6 +171,27 @@ function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
         if Alignment.IsShaft(member) then table.insert(shafts,member) end
         if Alignment.TargetAxis(member) then movingHoles+=1 end
     end
+    if movingHoles>0 and #shafts==0 then
+        for _,candidate in ipairs(all or {}) do
+            if not known[candidate] and not (ignored and ignored[candidate])
+                and candidate:GetAttribute("OwnerUserId")
+                    ==primary:GetAttribute("OwnerUserId")
+                and Alignment.IsShaft(candidate) then
+                local matched=false
+                for _,hole in ipairs(movingMembers) do
+                    if Alignment.TargetAxis(hole)
+                        and Fit.Check(hole,candidate,delta) then
+                        matched=true
+                        break
+                    end
+                end
+                if matched then
+                    table.insert(result,candidate)
+                    known[candidate]=true
+                end
+            end
+        end
+    end
     if #shafts==1 and movingHoles==0 then
         for _,candidate in ipairs(all or {}) do
             if not known[candidate] and not (ignored and ignored[candidate])

@@ -461,9 +461,9 @@ function Controller:CloseBankSave()
 end
 
 function Controller:OpenBankSave()
-    if self.Tools.PrimaryId~="Build" or self.Mode~="Edit"
+    if self.Tools.PrimaryId~="Edit" or self.Mode~="Edit"
         or not self.SelectedComponentId or self.Pending or self.PivotSetting then
-        self:Message("Select a completed component in Build before registering")
+        self:Message("Select a completed component in Edit before registering")
         return
     end
     self:ShowCatalog(false)
@@ -501,9 +501,7 @@ function Controller:SelectBank(id)
     if self.Assembly then self.Assembly:Reset() end
     self:CancelPending()
     self:SetSelection(nil)
-    if self.Tools.SubtoolId~="Place" then self.Tools:SetSubtool("Place") end
-    self.Mode="Build"
-    if self.Layered then self.Layered:OnModeChanged("Build") end
+    self:BeginPlacement()
     self.CurrentBank=data
     self.CurrentDisplayName=data.name
     self.CurrentId=nil
@@ -569,7 +567,7 @@ function Controller:RefreshHUD()
     local current = self.CurrentDisplayName or self.CurrentId or "Choose a primitive"
     local size = self.CurrentSize
 
-    self.TitleLabel.Text = "OPENWORKS / BUILD / " .. string.upper(self.Tools.SubtoolId or tostring(mode))
+    self.TitleLabel.Text = "OPENWORKS / BUILD"
     if self.PivotSetting then
         self.DetailLabel.Text="ALIGNMENT ORIGIN / "..FitPivotSnap.Modes[self.PivotModeIndex]
         self.HelpLabel.Text="Aim at selected surface • Q/E point mode • click set • Enter exit • Shift+O reset"
@@ -693,14 +691,28 @@ function Controller:RefreshHUD()
     end
 end
 
+-- Build and Edit are separate native tools. Keep legacy Mode strings for
+-- the placement, layered editing and fitting controllers.
+function Controller:BeginPlacement()
+    if self.Tools.PrimaryId~="Build" then return end
+    if self.Mode~="Build" then
+        self:EndScale()
+        self:CancelPending()
+        self:ClearSmartMatch()
+        self:SetSelection(nil)
+        self.EditingComponentId=nil
+        self.Mode="Build"
+        if self.Layered then self.Layered:OnModeChanged("Build") end
+    end
+    self:RefreshHUD()
+end
+
 function Controller:SelectPrimitive(id)
     self.NumericPrecision=false
     self.CurrentBank=nil
-    if self.Tools.PrimaryId=="Build" and self.Tools.SubtoolId~="Place" then
-        self.Tools:SetSubtool("Place")
-    end
     local entry = Registry.Get(id)
     if not entry then return end
+    self:BeginPlacement()
 
     self.CurrentId = id
     self.CurrentDisplayName=entry.DisplayName
@@ -717,8 +729,12 @@ function Controller:StopPlacement()
     self:ClearPreview()
     self.CurrentBank=nil
     self.CurrentDisplayName=nil
-    -- The same native Build tool now switches to selection/edit context.
-    self.Tools:SetSubtool("Edit")
+    -- Return to idle Build, NOT to Edit. Equip hotbar 2 to manipulate.
+    self.CurrentId=nil
+    self.CurrentSize=nil
+    self.Mode="Build"
+    if self.Layered then self.Layered:OnModeChanged("Build") end
+    self:RefreshHUD()
 end
 
 function Controller:ClearPreview()
@@ -1346,12 +1362,12 @@ function Controller:SetSelection(model)
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshHUD()
     if self.UnifiedExplorer then self.UnifiedExplorer:OnConstructionSelection() end
-    if model and self.Tools.PrimaryId == "Build"
+    if model and self.Tools.PrimaryId == "Edit"
         and self.Tools.SubtoolId == "Resize"
         and not self.ScaleMode then
         task.defer(function()
             if self.Started and self.Selected == model
-                and self.Tools.PrimaryId == "Build"
+                and self.Tools.PrimaryId == "Edit"
                 and self.Tools.SubtoolId == "Resize"
                 and not self.ScaleMode then
                 self:BeginScale()
@@ -1458,8 +1474,7 @@ function Controller:OnModeChanged(mode)
     if self.Numeric then self.Numeric:Hide() end
     self:ShowCatalog(false)
     self:ClearPreview()
-    if mode ~= "Edit" and mode ~= "Inspect"
-        and self.Tools.PrimaryId ~= "Build" then
+    if mode ~= "Edit" and mode ~= "Inspect" then
         self.EditingComponentId = nil
         self:SetSelection(nil)
     elseif mode == "Edit" then
@@ -1484,12 +1499,12 @@ function Controller:OnModeChanged(mode)
     self:RefreshHUD()
 end
 
--- Subtool-only changes can retain the same compatibility mode ("Edit").
+-- Subtool-only changes do not change which native tool is equipped.
 -- Apply the subtool lifecycle without reinitializing construction geometry.
 function Controller:OnSubtoolChanged(primary,subtool,_previous)
     if primary~="Build" then return end
     if subtool~="Resize" and self.ScaleMode then self:EndScale() end
-    if subtool=="Resize" then self:BeginScale() end
+    -- V manages resize in Edit or the Build placement preview.
     self:RefreshHUD()
 end
 
@@ -2079,11 +2094,13 @@ function Controller:CommitFitPivot()
 end
 
 function Controller:Activate(mode)
-    if mode=="Edit" and self.PivotSetting then
+    if self.Mode=="Edit" and self.PivotSetting then
         self:CommitFitPivot()
         return
     end
-    -- Only Build subtools activate construction geometry.
+    -- The same equipped Build tool handles both placement and selection.
+    -- Resolve against our local interaction context, not the Tool's legacy ID.
+    mode=self.Mode
     if mode~="Build" and mode~="Edit" and mode~="Inspect" then return end
     if self.PendingMateChoice or (self.Numeric and self.Numeric.Active) then return end
     if mode=="Edit" and self.Assembly
@@ -2503,7 +2520,7 @@ function Controller:BeginDirectDrag()
     if self.PendingMateChoice
         or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
         or (self.Assembly and self.Assembly:IsEditingJoint())
-        or self.Tools.PrimaryId ~= "Build" or self.Tools.SubtoolId ~= "Edit"
+        or self.Tools.PrimaryId ~= "Edit" or self.Tools.SubtoolId ~= "Edit"
         or self.Mode ~= "Edit" or self.Pending
         or self.ScaleMode or self.CatalogOpen then return end
     local hit = self:CastCenter(false)
@@ -2581,7 +2598,7 @@ end
 function Controller:CanNudge()
     local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-    return alt and self.Tools.PrimaryId=="Build" and self.Tools.SubtoolId=="Edit" and self.Mode=="Edit"
+    return alt and self.Tools.PrimaryId=="Edit" and self.Mode=="Edit"
         and not self.Busy and not self.Pending and not self.ScaleMode
         and not self.CatalogOpen and not self.PendingMateChoice
         and player:GetAttribute("OPENWORKS_CursorUIOpen")~=true
@@ -2754,9 +2771,20 @@ function Controller:OnInput(input, processed)
             self:RefreshHUD()
             return
         end
-        if self.ScaleMode then self:EndScale() end
-        if self.CatalogOpen then self:ShowCatalog(false) end
-        if self.Pending then self:CancelPending() self:RefreshHUD() end
+        if self.CatalogOpen then
+            self:ShowCatalog(false)
+            return -- Close the library without ending an active placement.
+        end
+        if self.ScaleMode then
+            self:EndScale()
+            return
+        end
+        if self.Pending then
+            self:CancelPending()
+            self:RefreshHUD()
+        elseif self.Mode=="Build" then
+            self:StopPlacement()
+        end
         return
     end
     if key==Enum.KeyCode.M and self.Mode=="Edit" and not processed then
@@ -2775,8 +2803,6 @@ function Controller:OnInput(input, processed)
         return
     end
     if self.ScaleMode or self.Mode == "Inspect" then return end
-    if self.Mode=="Edit" and self.Tools.PrimaryId=="Build"
-        and self.Tools.SubtoolId~="Edit" then return end
     if processed then return end
 
     local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
@@ -2792,11 +2818,11 @@ function Controller:OnInput(input, processed)
     -- High-priority ContextActionService capture owns Alt+arrow nudging.
     -- Ordinary Roblox arrows still pass through without Build selection.
 
-    if key==Enum.KeyCode.B and shiftHeld and self.Tools.PrimaryId=="Build" then
+    if key==Enum.KeyCode.B and shiftHeld and self.Tools.PrimaryId=="Edit" then
         self:OpenBankSave()
         return
     end
-    if key == Enum.KeyCode.B and (self.Mode=="Build" or self.Mode=="Edit") then
+    if key == Enum.KeyCode.B and self.Mode=="Build" then
         self:ShowCatalog(not self.CatalogOpen)
         return
     end
@@ -2846,8 +2872,10 @@ function Controller:Start()
         "OPENWORKS_Simulating"):Connect(function()
             self:OnModeChanged(self.Tools.ActiveId)
         end))
-    table.insert(self.Connections, self.Tools.Activated.Event:Connect(function(mode)
-        self:Activate(mode)
+    table.insert(self.Connections, self.Tools.Activated.Event:Connect(function(_mode)
+        if self.Tools.PrimaryId=="Build" or self.Tools.PrimaryId=="Edit" then
+            self:Activate(self.Mode)
+        end
     end))
     -- Capture Alt+arrows before Roblox's camera consumes them, but return
     -- immediately: all server validation runs in a spawned request.
@@ -2908,6 +2936,15 @@ function Controller:Start()
     end))
     RunService:BindToRenderStep("OPENWORKS_CursorUnlock",
         Enum.RenderPriority.Camera.Value + 2, function()
+            local fitWheel=not self.PendingMateChoice
+                and self.SmartMatch~=nil
+                and (self.SmartMatch.kind=="Hub"
+                    or (self.SmartMatch.kind=="Bore"
+                        and self.LockedAlignment~=nil))
+                and (self.Mode=="Build" or self.Pending~=nil)
+            if player:GetAttribute("OPENWORKS_FitWheelActive")~=fitWheel then
+                player:SetAttribute("OPENWORKS_FitWheelActive",fitWheel)
+            end
             local open=self.CatalogOpen or (self.BankModal and self.BankModal.Visible)
                 or self.PendingMateChoice~=nil
                 or (self.Numeric and self.Numeric.Active)
@@ -3024,7 +3061,7 @@ function Controller:Start()
 
     self:OnModeChanged(self.Tools.ActiveId)
     self:OnSubtoolChanged(self.Tools.PrimaryId,self.Tools.SubtoolId,nil)
-    print("[OPENWORKS] Build geometry controller ready; subtool routing enabled")
+    print("[OPENWORKS] Build (1) places; Edit (2) reshapes, fits and paints")
 end
 
 function Controller:Destroy()

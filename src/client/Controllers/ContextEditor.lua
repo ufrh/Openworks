@@ -127,7 +127,7 @@ function Panel:Focus(value)
         else Enum.MouseBehavior.LockCenter
     UIS.MouseIconEnabled=claimed
     if self.Crosshair then self.Crosshair.Visible=not claimed
-        and self.Tools.PrimaryId~="Build" end
+        and self.Tools.PrimaryId~="Edit" end
     if self.Build and self.Build.Gui then self.Build:RefreshPointer() end
 end
 
@@ -427,8 +427,7 @@ function Panel:Select(node,propagate)
     self.Selected=node
     if self.Feedback then
         self.Feedback:Clear("context-selection")
-        if self.Tools.PrimaryId~="Build"
-            or self.Tools.SubtoolId=="Place" then
+        if self.Tools.PrimaryId~="Edit" then
             local members={}
             for _,model in ipairs(node.members or {}) do
                 if own(model) then table.insert(members,model) end
@@ -451,8 +450,8 @@ function Panel:Select(node,propagate)
             end
         end
     end
-    if propagate and self.Tools.PrimaryId=="Build"
-        and self.Tools.SubtoolId~="Place" then
+    if propagate and self.Tools.PrimaryId=="Edit"
+        and self.Build.Mode=="Edit" then
         if node.kind=="primitive" and own(node.model) then
             self.Build:SetSelection(node.model)
         elseif node.kind=="component" and #node.members>0 then
@@ -463,7 +462,7 @@ end
 
 function Panel:OnConstructionSelection()
     local build=self.Build
-    if self.Tools.PrimaryId~="Build" then return end
+    if self.Tools.PrimaryId~="Edit" then return end
     local node
     if build.SelectedComponentId and #build.SelectedParts>0 then
         node=self:NodeForModel(build.SelectedParts[1],true)
@@ -879,13 +878,13 @@ function Panel:RenderObject(node)
             end)
         self:ActionButton("Select / resize",
             "Select actual authored geometry in Build",function()
-                if self.Tools.PrimaryId=="Build" then
+                if self.Tools.PrimaryId=="Edit" then
                     self:Select(node,true)
                     self:CloseContext()
-                else self:Message("Equip Build to resize") end
+                else self:Message("Equip Edit (hotbar 2) to resize") end
             end)
-        if self.Tools.PrimaryId=="Build"
-            and self.Tools.SubtoolId=="Edit" then
+        if self.Tools.PrimaryId=="Edit"
+            and self.Build.Mode=="Edit" then
             if node.kind=="component" then
                 self:ActionButton("Save to component library",
                     "Register this assembled component as a reusable blueprint",function()
@@ -1168,11 +1167,8 @@ function Panel:Start()
         self:OnAssemblyDraftChanged()
         self:OnSimulationSessionChanged()
         if self.Feedback then self.Feedback:Clear("context-selection") end
-            if self.Tools.PrimaryId=="Build"
-            and self.Tools.SubtoolId=="Paint"
-            and self.Selected then
-            self:OpenSelectedContext()
-        end
+        -- Appearance is opened with M in the same Build workspace.
+        -- No Paint subtool transition or unsolicited context popup.
     end))
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
         local key=input.KeyCode

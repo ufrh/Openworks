@@ -266,6 +266,44 @@ end
 -- Raycasts miss the EMPTY center of a drilled opening. The centerline
 -- fallback targets the nearest owned bore within a small aim radius,
 -- even when the ray passes through a hinge lug into the background.
+function Layered:AimedShaft(excluded)
+    local folder=self:Built()
+    local camera=workspace.CurrentCamera
+    if not folder or not camera then return nil end
+    local origin=camera.CFrame.Position
+    local ray=camera.CFrame.LookVector.Unit
+    local best,bestAlong=nil,math.huge
+    for _,model in ipairs(folder:GetChildren()) do
+        if not owned(model) or (excluded and excluded[model])
+            or not AlignmentMath.IsShaft(model) then continue end
+        local pivot=model:GetPivot()
+        local length=model.PrimaryPart.Size.X
+        local direction=pivot.RightVector
+        -- The player can aim at either exposed end of a long shaft, not
+        -- just its center. Don't require a ray hit on the rounded tip.
+        local center=pivot.Position
+        local closest=(center-origin):Dot(ray)
+        if closest<=0 or closest>Grid.MaxDistance then continue end
+        local axial=math.clamp((origin+ray*closest-center):Dot(direction),
+            -length*0.5,length*0.5)
+        local target=center+direction*axial
+        local along=(target-origin):Dot(ray)
+        local radial=((target-origin)-ray*along).Magnitude
+        local diameter=math.max(model.PrimaryPart.Size.Y,
+            model.PrimaryPart.Size.Z)
+        if along>0 and radial<=math.max(0.17,diameter*0.5+0.11)
+            and along<bestAlong then
+            best,bestAlong=model,along
+        end
+    end
+    return best
+end
+
+function Layered:CompatibleTarget(model,reverse)
+    return if reverse then AlignmentMath.IsShaft(model)
+        else AlignmentMath.TargetAxis(model)~=nil
+end
+
 function Layered:AimedOpening(excluded)
     local folder=self:Built()
     local camera=workspace.CurrentCamera
@@ -301,9 +339,11 @@ function Layered:RefreshTargetCue()
     for _, member in ipairs(align.Members) do excluded[member] = true end
     local layers = self:DepthModels(excluded)
     local target = layers[(self.TargetDepthIndex % math.max(1, #layers)) + 1]
-    if not target or not AlignmentMath.TargetAxis(target) then
-        target=self:AimedOpening(excluded) or target
+    if not self:CompatibleTarget(target,align.Reverse) then
+        target=(if align.Reverse then self:AimedShaft(excluded)
+            else self:AimedOpening(excluded)) or target
     end
+    if not self:CompatibleTarget(target,align.Reverse) then target=nil end
     if target == self.HoveredCandidate then return end
 
     self.HoveredCandidate = target
@@ -377,12 +417,24 @@ function Layered:UpdateAlignPreview()
         return
     end
 
-    local plan, reason = AlignmentMath.Plan(
-        align.Members, align.Shaft, align.Target, align.OffsetUnits,
-        align.RollDegrees
-    )
+    local plan, reason
+    if align.Reverse then
+        plan,reason=AlignmentMath.ReversePlan(
+            align.Members,align.Shaft,align.Target,
+            align.OffsetUnits,align.RollDegrees)
+    else
+        plan,reason=AlignmentMath.Plan(
+            align.Members,align.Shaft,align.Target,
+            align.OffsetUnits,align.RollDegrees)
+    end
     if not plan then
-        self.Parent:Message(tostring(reason))
+        align.Plan=nil
+        align.Valid=false
+        align.ConflictReason=tostring(reason or "The geometry cannot be aligned")
+        if self.Parent.Feedback then
+            self.Parent.Feedback:SetGhostValid(false)
+        end
+        self.Parent:Message(align.ConflictReason)
         return
     end
 
@@ -417,7 +469,7 @@ function Layered:UpdateAlignPreview()
             align.Shaft:GetAttribute("InstanceId"),
             align.Target:GetAttribute("InstanceId"))
         local complete,reason=MultiFit.Completeness(
-            moving,targets,fitted,false)
+            moving,targets,fitted,align.Reverse)
         if not primary then
             align.Valid=false
             align.ConflictReason=why
@@ -449,9 +501,20 @@ function Layered:StartAlignment()
         table.clone(parent.SelectedParts)
         elseif parent.Selected then { parent.Selected } else {}
     local shaft = AlignmentMath.ShaftIn(members)
-
+    local reverse=false
     if not shaft then
-        parent:Message("Select a Cylinder shaft or a component containing one")
+        -- Moving a hole or plate onto a fixed shaft uses the same server
+        -- verified fit transaction, with the moving assembly reversed.
+        for _,member in ipairs(members) do
+            if AlignmentMath.TargetAxis(member) then
+                shaft=member
+                reverse=true
+                break
+            end
+        end
+    end
+    if not shaft then
+        parent:Message("Select a shaft or a hole-bearing component")
         return
     end
 
@@ -459,7 +522,8 @@ function Layered:StartAlignment()
     self.Isolated = false
     self.Alignment = {
         Stage = "PickTarget",
-        Shaft = shaft,
+        Shaft = shaft, -- moving fit source (shaft or opening)
+        Reverse = reverse,
         Members = members,
         ComponentId = parent.SelectedComponentId,
         OffsetUnits = 0,
@@ -471,7 +535,8 @@ function Layered:StartAlignment()
     self.HoveredCandidate = nil
     self.LastHoverRefresh = 0
     self:RefreshVisuals()
-    parent:Message("Aim at a tube, drilled opening or gear bore, then click")
+    parent:Message(if reverse then "Aim at a fixed shaft, then click"
+        else "Aim at a tube, drilled opening or gear bore, then click")
 end
 
 function Layered:ChooseTarget()
@@ -482,16 +547,15 @@ function Layered:ChooseTarget()
     for _, member in ipairs(align.Members) do excluded[member] = true end
     local layers = self:DepthModels(excluded)
     local target = layers[(self.TargetDepthIndex % math.max(1, #layers)) + 1]
-    if not target or not AlignmentMath.TargetAxis(target) then
-        target=self:AimedOpening(excluded) or target
+    if not self:CompatibleTarget(target,align.Reverse) then
+        target=(if align.Reverse then self:AimedShaft(excluded)
+            else self:AimedOpening(excluded)) or target
     end
 
-    if not target then
-        self.Parent:Message("Aim at a constructed opening")
-        return
-    end
-    if not AlignmentMath.TargetAxis(target) then
-        self.Parent:Message("Choose a tube, DrilledBlock or gear center opening")
+    if not self:CompatibleTarget(target,align.Reverse) then
+        self.Parent:Message(if align.Reverse
+            then "Choose a fixed cylinder shaft"
+            else "Choose a tube, DrilledBlock or gear center opening")
         return
     end
 
@@ -601,8 +665,8 @@ function Layered:ConfirmAlignment()
     local align=self.Alignment
     local parent=self.Parent
     if not align or align.Stage~="Preview" or parent.PendingMateChoice then return end
-    if align.Valid==false then
-        parent:Message(align.ConflictReason or "Red preview: solid interference")
+    if align.Valid~=true or not align.Plan then
+        parent:Message(align.ConflictReason or "No valid shaft/hole fit yet")
         return
     end
 
@@ -616,6 +680,9 @@ function Layered:ConfirmAlignment()
     local offset=align.OffsetUnits
     local roll=align.RollDegrees
     local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"
+        or type(align.Shaft:GetAttribute("GearTeeth"))=="number"
+        or align.Target:GetAttribute("PrimitiveFamily")=="Pulley"
+        or align.Shaft:GetAttribute("PrimitiveFamily")=="Pulley"
     parent.PendingMateChoice="ManualAlign"
     local function onChoice(choice)
         parent.PendingMateChoice=nil
@@ -654,16 +721,24 @@ function Layered:ConfirmAlignment()
             targetId=targetId,
             offsetUnits=offset,
             rollDegrees=roll,
+            reverse=selected.Reverse,
             position=exact.Position,
             orientation=exact.Rotation,
         })
         if ok then
-            if selected.Preview then selected.Preview:Destroy() end
-            selected.Preview=nil
-            selected.Stage="Fit"
-            self:RefreshVisuals()
-            player:SetAttribute("OPENWORKS_Inserting",true)
-            parent:Message("Aligned • scroll to fine-fit shaft • click/Esc to finish")
+            if isGear or selected.Reverse then
+                -- The moved object is not the shaft, so old FitShaft
+                -- commands are inapplicable. End this fit cleanly.
+                self:CancelAlignment()
+                parent:Message("Fit completed • select another part in Edit")
+            else
+                if selected.Preview then selected.Preview:Destroy() end
+                selected.Preview=nil
+                selected.Stage="Fit"
+                self:RefreshVisuals()
+                player:SetAttribute("OPENWORKS_Inserting",true)
+                parent:Message("Aligned • scroll to fine-fit shaft • click/Esc to finish")
+            end
         end
         parent:RefreshPointer()
         parent:RefreshHUD()
@@ -720,11 +795,10 @@ end
 function Layered:OnInput(input, processed)
     local parent = self.Parent
     if parent.Mode ~= "Edit" and parent.Mode ~= "Inspect" then return false end
-    -- Tab cycles depth only in the actual Edit subtool. Resize and Paint
-    -- share the legacy Edit compatibility mode but not its layer commands.
-    if parent.Tools.PrimaryId=="Build"
-        and parent.Tools.SubtoolId~="Edit"
-        and not self.Alignment then return false end
+    -- Edit is now an actual native tool in slot 2. The layered selector
+    -- must never activate while Build is equipped for placement.
+    if parent.Tools.PrimaryId~="Edit"
+        and parent.Mode~="Inspect" then return false end
     local key = input.KeyCode
     if key == Enum.KeyCode.Escape and self.Alignment then
         self:CancelAlignment()

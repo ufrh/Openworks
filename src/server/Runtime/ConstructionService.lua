@@ -87,8 +87,11 @@ local function accessFor(player, action)
         return hasEquippedTool(player,"AssemblySimulation")
             or hasEquippedTool(player,"Mechanics")
             or hasEquippedTool(player,"Build")
+            or hasEquippedTool(player,"Edit")
     end
-    return hasEquippedTool(player,"Build")
+    -- Construct while Build is equipped, mutate only in Edit.
+    return if action=="Place" then hasEquippedTool(player,"Build")
+        else hasEquippedTool(player,"Edit")
 end
 
 local function nearPlayer(player, position)
@@ -1285,12 +1288,18 @@ local function handle(player, payload)
             -- checks remain server-authoritative in MechanicalService.
             if not hasEquippedTool(player,"Mechanics")
                 and not hasEquippedTool(player,"Build")
+                and not hasEquippedTool(player,"Edit")
                 and not hasEquippedTool(player,"AssemblySimulation") then
                 return {ok=false,message="Equip an OPENWORKS tool to edit relationships"}
             end
         elseif action=="SetGrounded" then
             if not hasEquippedTool(player,"AssemblySimulation") then
                 return {ok=false,message="Use Assembly & Simulation to ground a body"}
+            end
+        elseif action=="FitShaft" or action=="PoseShaft" then
+            if not hasEquippedTool(player,"Mechanics")
+                and not hasEquippedTool(player,"Edit") then
+                return {ok=false,message="Equip Edit (2) or Mechanics to fine-fit a shaft"}
             end
         elseif action=="CreateWeld" then
             if not hasEquippedTool(player,"Mechanics") then
@@ -1301,48 +1310,57 @@ local function handle(player, payload)
             return {ok=false,message="Use Mechanics to modify relationships"}
         end
     elseif bankAction then
-        if not hasEquippedTool(player,"Build") then
-            return {ok=false,message="Equip Build to use the component bank"}
+        local writing=action=="RegisterComponentBank"
+            or action=="RemoveComponentBank"
+        local allowed=if writing then hasEquippedTool(player,"Edit")
+            else hasEquippedTool(player,"Build")
+                or hasEquippedTool(player,"Edit")
+        if action=="PlaceComponentBank" then
+            allowed=hasEquippedTool(player,"Build")
+        end
+        if not allowed then
+            return {ok=false,message=if writing then "Equip Edit to save components"
+                else "Equip Build to place saved components"}
         end
     elseif fitOriginAction then
-        if not hasEquippedTool(player,"Build") then
-            return {ok=false,message="Equip Build to edit alignment origins"}
+        if not hasEquippedTool(player,"Edit") then
+            return {ok=false,message="Equip Edit to change alignment origins"}
         end
     elseif materialAction then
-        if not hasEquippedTool(player,"Build")
+        if not hasEquippedTool(player,"Edit")
+            and not hasEquippedTool(player,"Build")
             and not hasEquippedTool(player,"Mechanics")
             and not hasEquippedTool(player,"AssemblySimulation") then
             return {ok=false,message="Equip an OPENWORKS tool to edit appearance"}
         end
     elseif verticalAction then
         if (payload.scope=="Assembly" and not hasEquippedTool(player,"AssemblySimulation"))
-            or (payload.scope~="Assembly" and not hasEquippedTool(player,"Build")) then
-            return {ok=false,message="Use Build for components or Assembly & Simulation for assemblies"}
+            or (payload.scope~="Assembly" and not hasEquippedTool(player,"Edit")) then
+            return {ok=false,message="Use Edit for components or Assembly & Simulation for assemblies"}
         end
     elseif assemblyAction then
         if not hasEquippedTool(player,"AssemblySimulation") then
             return {ok=false,message="Use Assembly Editor to create or edit assemblies"}
         end
     elseif componentAction or alignmentAction or smartAction then
-        if componentAction and not hasEquippedTool(player,"Build") then
-            return {ok=false,message="Use Build to modify construction"}
+        if componentAction and not hasEquippedTool(player,"Edit") then
+            return {ok=false,message="Use Edit to modify construction"}
         end
-        if smartAction and not hasEquippedTool(player,"Build") then
-            -- Mechanics/Connect may invoke ONLY a validated Bore fit-only
-            -- or Hub-to-shaft mount. Other smart placement, gears and racks
-            -- remain Build-only, and ALL mechanical geometry validation in
-            -- MechanicalService:SmartMate still applies unchanged.
+        if smartAction and not hasEquippedTool(player,"Build")
+            and not hasEquippedTool(player,"Edit") then
+            -- In Mechanics, only explicit free coaxial fits or rigid hub
+            -- mounts are allowed. Real geometry remains server-validated.
             local mode=payload.mateKind
             local kind=payload.relationKind
             local approved=(mode=="Bore" and kind=="FreeFit")
                 or (mode=="Hub" and (kind=="Weld" or kind=="Rigid"))
             if not approved or not hasEquippedTool(player,"Mechanics") then
-                return {ok=false,message="Use Build for automatic placement"}
+                return {ok=false,message="Equip Edit to fit authored geometry"}
             end
         end
-        if alignmentAction and not hasEquippedTool(player,"Build")
+        if alignmentAction and not hasEquippedTool(player,"Edit")
             and not hasEquippedTool(player,"Mechanics") then
-            return {ok=false,message="Use Build or Mechanics to align objects"}
+            return {ok=false,message="Use Edit or Mechanics to align objects"}
         end
     elseif not accessFor(player, action) then
         return { ok = false, message = "Equip Build" }

@@ -22,11 +22,12 @@ local TITLE_H=49
 
 local TOOL_NAMES={
     Build="BUILD",
+    Edit="EDIT",
     Mechanics="MECHANICS",
     AssemblySimulation="ASSEMBLY / SIM",
 }
 local SUBTOOL_NAMES={
-    Place="Place",Edit="Edit",Resize="Resize",Paint="Paint",
+    Build="Build",Edit="Edit",
     Connect="Connect",Configure="Configure",
     AssemblyEditor="Assembly Editor",Simulation="Simulation",
 }
@@ -214,6 +215,10 @@ function Palette:SignatureOf()
     local parts={
         tostring(tools.PrimaryId or ""),
         tostring(tools.SubtoolId or ""),
+        tostring(self.Build.Mode or ""),
+        tostring(self.Build.ScaleMode),
+        tostring(self.Build.CatalogOpen),
+        tostring(self.Build.CurrentBank and self.Build.CurrentBank.id or ""),
         tostring(self.Build.Pending or ""),
         tostring(self.Build.PendingMateChoice or ""),
         tostring(self.Build.LockedAlignment or ""),
@@ -232,13 +237,18 @@ function Palette:Refresh(force)
     if not self.Gui then return end
     local primary=self.Tools.PrimaryId
     local visible=primary~=nil
-    self.SubtoolsPanel.Visible=visible
+    -- Build has no Place/Edit switch: show the contextual controls directly.
+    self.SubtoolsPanel.Visible=visible and primary~="Build" and primary~="Edit"
     self.ControlsPanel.Visible=visible
     if not visible then self.Signature="" return end
     local signature=self:SignatureOf()
     if not force and signature==self.Signature then return end
     self.Signature=signature
     if primary~=self.CachedPrimary then self:RenderSubtools() end
+    if primary=="Build" or primary=="Edit" then
+        self.ControlsPanel.Position=UDim2.fromOffset(LEFT,TOP)
+        self.ControlsPanel.Size=UDim2.new(0,PANEL_W,1,-TOP-14)
+    end
     -- Subtools remain stable when only the active row changes.
     for id,record in pairs(self.PrimaryButtons) do
         local active=id==self.Tools.SubtoolId

@@ -1,5 +1,5 @@
 --!strict
--- Three native Roblox tools; contextual subtools provide compatibility modes
+-- Four native Roblox tools; contextual subtools provide compatibility modes
 -- for the existing controllers until each UI v2 phase is migrated.
 -- Server authority is always the *equipped native tool*, not this client state.
 local Players=game:GetService("Players")

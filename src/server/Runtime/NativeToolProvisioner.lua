@@ -63,7 +63,7 @@ function Provisioner.Start()
     -- Clean up legacy Assemble tool copies from the pre-named-Assembly
     -- workflow; native Assembly now occupies its own hotbar slot.
     local legacyIds = {
-        Assemble=true,Edit=true,Assembly=true,
+        Assemble=true,Assembly=true,
         Simulate=true,Inspect=true,Weld=true,
     }
     local function removeLegacy(container)
@@ -71,7 +71,7 @@ function Provisioner.Start()
         for _, tool in ipairs(container:GetChildren()) do
             if tool:IsA("Tool") then
                 local id=tool:GetAttribute("OpenworksToolId")
-                if legacyIds[id] or (id==nil and legacyIds[tool.Name]) then
+                if legacyIds[id] or (id==nil and (legacyIds[tool.Name] or tool.Name=="Edit")) then
                     tool:Destroy()
                 end
             end
@@ -110,7 +110,7 @@ function Provisioner.Start()
         end)
     end
 
-    print("[OPENWORKS] StarterPack native tools provisioned: Build, Mechanics, Assembly & Simulation")
+    print("[OPENWORKS] StarterPack native tools provisioned: Build, Edit, Mechanics, Assembly & Simulation")
 end
 
 return Provisioner
