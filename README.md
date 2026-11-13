@@ -4,6 +4,8 @@
 
 > **Development branch:** `dev` now contains the UI V2 + shaft-centric integration, matching the implementation initially prepared on `integration/ui-v2-shaft-systems`. The integrated systems include (Component Bank, alignment origins, welded hubs, pulley belts and physical gear/belt simulation). See [integration notes and acceptance tests](docs/UI_V2_SHAFT_INTEGRATION.md). **State:** Experimental. Do not assume a feature is Studio-verified merely because it is committed. See [current regression checks](docs/QA_REGRESSION.md) and [known limitations](docs/ARCHITECTURE.md#known-limitations).
 
+**Publish the integrated build to GitHub:** Run `PUBLISH_DEV.bat` from this extracted folder. It verifies that local `dev` contains the integration, pushes it to `ufrh/Openworks`, and checks the remote SHA afterward. The standard `PUSH_OPENWORKS.bat` also now pushes existing commits when there are no uncommitted changes.
+
 ## Start developing
 
 1. Check out `dev` to work on the integrated UI V2 build; install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
