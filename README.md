@@ -2,7 +2,7 @@
 
 **OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The stable pre-UI-v2 implementation lives on `dev`. UI v2 Phases 1–6 are isolated on `feature/ui-reorganization-v2`. Both use **Rojo** and **FORGE/Reforge** and still require Roblox Studio validation.
 
-> **State:** Experimental. Do not assume a feature is Studio-verified merely because it is committed. See [current regression checks](docs/QA_REGRESSION.md) and [known limitations](docs/ARCHITECTURE.md#known-limitations).
+> **Integrated branch:** `integration/ui-v2-shaft-systems` combines UI V2 with the shaft-centric branch's accessible systems (Component Bank, alignment origins, welded hubs, pulley belts and physical gear/belt simulation). See [integration notes and acceptance tests](docs/UI_V2_SHAFT_INTEGRATION.md). **State:** Experimental. Do not assume a feature is Studio-verified merely because it is committed. See [current regression checks](docs/QA_REGRESSION.md) and [known limitations](docs/ARCHITECTURE.md#known-limitations).
 
 ## Start developing
 

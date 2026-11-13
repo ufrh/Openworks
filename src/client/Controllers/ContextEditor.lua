@@ -189,7 +189,7 @@ end
 
 function Panel:ChooseFit(kind,callback,count)
     local options=ConnectionCatalog.Fit(kind)
-    local title=if kind=="Hub" then "GEAR / SHAFT"
+    local title=if kind=="Hub" then "GEAR OR PULLEY / SHAFT"
         elseif (count or 0)>1 then
             tostring(count).." OPENINGS / SHAFT"
         else "SHAFT / HOLE"
@@ -884,6 +884,29 @@ function Panel:RenderObject(node)
                     self:CloseContext()
                 else self:Message("Equip Build to resize") end
             end)
+        if self.Tools.PrimaryId=="Build"
+            and self.Tools.SubtoolId=="Edit" then
+            if node.kind=="component" then
+                self:ActionButton("Save to component library",
+                    "Register this assembled component as a reusable blueprint",function()
+                        self.Build:SetComponentSelection(node.componentId,node.members)
+                        self:CloseContext()
+                        self.Build:OpenBankSave()
+                    end)
+            end
+            self:ActionButton("Set alignment origin",
+                "Author a custom snap origin on selected geometry",function()
+                    self:Select(node,true)
+                    self:CloseContext()
+                    self.Build:EditFitPivot(false)
+                end)
+            self:ActionButton("Reset alignment origin",
+                "Remove the custom origin without changing geometry",function()
+                    self:Select(node,true)
+                    self:CloseContext()
+                    self.Build:EditFitPivot(true)
+                end)
+        end
         if self.Tools.PrimaryId=="AssemblySimulation" then
             self:ActionButton(
                 if member:GetAttribute("Grounded")==true then

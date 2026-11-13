@@ -4,6 +4,9 @@
 -- not a two-click relationship selection or a compulsory world grid.
 local Alignment = require(script.Parent:WaitForChild("AlignmentMath"))
 local GearMath = require(script.Parent:WaitForChild("GearMath"))
+local BeltMath = require(script.Parent:WaitForChild("BeltMath"))
+local FitOrigin = require(script.Parent:WaitForChild("FitOrigin"))
+local FitSolver = require(script.Parent:WaitForChild("FitSolver"))
 local Bore = require(script.Parent:WaitForChild("BoreClearance"))
 local HandCrankMath = require(script.Parent:WaitForChild("HandCrankMath"))
 local Grid = require(script.Parent:WaitForChild("GridMath"))
@@ -22,6 +25,9 @@ Smart.PreviewInterval = 0.08
 
 local function gear(model)
     return model and type(model:GetAttribute("GearTeeth")) == "number"
+end
+local function hub(model)
+    return gear(model) or BeltMath.IsPulley(model)
 end
 local function rack(model)
     return GearMath.Kind(model)=="Rack"
@@ -277,15 +283,15 @@ function Smart.MultiGearPose(source:Model,target:Model,near:Vector3,
     return bestPose,bestError,bestCount
 end
 
--- Gear bores are real open centers. Dragging a gear onto a shaft (or
--- vice versa) aligns the hub; the user must explicitly choose a free
--- rotational hinge or a rigid weld before the mount is committed.
+-- Gear and pulley bores are real open centers. Dragging either hub onto
+-- a shaft (or vice versa) aligns the geometry. Hubs always weld rigidly
+-- to the shaft; the shaft's bearing determines rotational freedom.
 function Smart.HubFits(source: Model, target: Model)
-    local gearBody=if gear(source) then source else if gear(target) then target else nil
+    local gearBody=if hub(source) then source else if hub(target) then target else nil
     local shaft=if Alignment.IsShaft(source) then source
         else if Alignment.IsShaft(target) then target else nil
     if not gearBody or not shaft or not shaft.PrimaryPart then
-        return false,"Hub requires one gear and one cylindrical shaft"
+        return false,"Hub requires one gear/pulley and one cylindrical shaft"
     end
     -- A gear hub is truly concentric, not merely somewhere within
     -- its clearance cavity. Keep a precise centered mount (including
@@ -296,7 +302,7 @@ function Smart.HubFits(source: Model, target: Model)
     local separation=gcf.Position-scf.Position
     local eccentricity=(separation-direction*separation:Dot(direction)).Magnitude
     if eccentricity>0.012 then
-        return false,"Gear hub must be centered on the shaft axis"
+        return false,"Gear/pulley hub must be centered on the shaft axis"
     end
     -- One authoritative clearance predicate for gears, tubes and holes.
     -- Also checks shaft diameter, coaxial orientation and engagement.
@@ -304,10 +310,10 @@ function Smart.HubFits(source: Model, target: Model)
 end
 
 function Smart.HubPose(source: Model, target: Model, near: Vector3)
-    if not ((gear(source) and Alignment.IsShaft(target))
-        or (Alignment.IsShaft(source) and gear(target))) then return nil end
+    if not ((hub(source) and Alignment.IsShaft(target))
+        or (Alignment.IsShaft(source) and hub(target))) then return nil end
     local shaft=if Alignment.IsShaft(source) then source else target
-    local gearBody=if gear(source) then source else target
+    local gearBody=if hub(source) then source else target
     local bore=gearBody:GetAttribute("BoreRadiusStuds")
     if type(bore)~="number" or bore<=0 then return nil end
     local diameter=math.max(shaft.PrimaryPart.Size.Y,shaft.PrimaryPart.Size.Z)
@@ -611,15 +617,19 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
         return group
     end
     local best,bestScore=nil,math.huge
+    local pivotAnchor=FitOrigin.ComponentAnchor(members)
+    local _,movingHasOrigin=FitOrigin.PreviewLocal(ghost)
     local matches={}
     for _,source in ipairs(members) do
         local isShaft=Alignment.IsShaft(source)
         local isGear=gear(source)
+        local isHub=hub(source)
         local isRack=rack(source)
         local isGuide=guide(source)
         local isOpening=Alignment.TargetAxis(source)~=nil
-        if not isShaft and not isGear and not isRack
-            and not isGuide and not isOpening then continue end
+        if not isShaft and not isHub and not isRack
+            and not isGuide and not isOpening
+            and not (movingHasOrigin and source==pivotAnchor) then continue end
         for _,target in ipairs(targets) do
             if not target or not target.Parent or not target.PrimaryPart
                 or (ignored and ignored[target]) then continue end
@@ -642,7 +652,15 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
             local aimReach=math.clamp(target.PrimaryPart.Size.Magnitude*0.38,0.48,1.5)
             local aimed=rayError<=aimReach
             local kind,cf,offset,roll,score,approach
-            if HandCrankMath.IsCrank(source)
+            local pivot=if movingHasOrigin and source==pivotAnchor
+                then FitSolver.PivotCandidate(ghost,target,aimRay,
+                    aimedModel,allTargets or targets) else nil
+            if pivot then
+                kind="Pivot"
+                cf=pivot.cf
+                approach=pivot.approach
+                score=pivot.score
+            elseif HandCrankMath.IsCrank(source)
                 and HandCrankMath.IsOutputShaft(target) then
                 local pose,dist=HandCrankMath.Snap(source,target)
                 if pose and (dist<Smart.SnapDistance+1.0 or aimed) then
@@ -650,8 +668,8 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     cf=(pose*source:GetPivot():Inverse())*ghost:GetPivot()
                     score=if aimed then rayError+0.04 else dist
                 end
-            elseif (isGear and Alignment.IsShaft(target))
-                or (isShaft and gear(target)) then
+            elseif (isHub and Alignment.IsShaft(target))
+                or (isShaft and hub(target)) then
                 -- A broad aim on the rim or tooth must never magnetize
                 -- into the hub. Only a tight ray near the actual gear bore
                 -- (or a visibly aimed shaft segment) can override proximity.
@@ -660,8 +678,8 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 local near=source:GetPivot().Position
                 if hubAimed then
                     local stationary=target:GetPivot()
-                    if isGear and Alignment.IsShaft(target) then
-                        -- Gears also have real bores: while dragging a
+                    if isHub and Alignment.IsShaft(target) then
+                        -- Gears and pulleys also have real bores: while dragging a
                         -- gear onto a long fixed shaft, preserve the
                         -- crosshair's axial location, not shaft midpoint.
                         local cursorDepth=shaftCursorDepth(aimRay,target)
@@ -867,7 +885,8 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     cf=cf,offsetUnits=offset or 0,rollDegrees=roll or 0,
                     relationKind=if kind=="Bore" then "Cylindrical"
                         elseif kind=="CrankCoupling" then "Weld"
-                        elseif kind=="Hub" then "Rotation"
+                        elseif kind=="Hub" then "Weld"
+                        elseif kind=="Pivot" then "FitOnly"
                         elseif kind=="Rack" then "Rack"
                         elseif kind=="Guide" then "Guide" else "Gear",
                     reverse=kind=="Bore" and isOpening,
@@ -921,14 +940,15 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
             and not (ignored and ignored[model]) then
             local size=model.PrimaryPart.Size.Magnitude
             local isGear=gear(model)
+            local isHub=hub(model)
             local hubRay=hubAimDistance(aimRay,model)
             -- Do not use the large tooth bounds to pick a gear. Gears
             -- remain discoverable within a small central radius, even
             -- though their actual empty bores have no raycast hitbox.
-            local range=if isGear then Smart.HubSnapRadius
+            local range=if isHub then Smart.HubSnapRadius
                 else Smart.SnapDistance+math.min(3,size)
                     +math.clamp(extraReach or 0,0,24)
-            local aimThreshold=if isGear then Smart.HubAimRadius
+            local aimThreshold=if isHub then Smart.HubAimRadius
                 else math.clamp(size*0.38,0.48,1.5)
             local gearPlacement=false
             local movingGear=hasMovingGear

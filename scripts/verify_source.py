@@ -150,9 +150,9 @@ def main() -> int:
           and all(('id="'+kind+'"') in connection_catalog or
                   ('add("'+kind+'")') in connection_catalog for kind in (
                      'Cylindrical','Slider','Bearing','FreeFit','Weld',
-                     'Spring','CrankCoupling','Rotation','Rigid'))
+                     'Spring','CrankCoupling','Rigid','Belt'))
           and 'add("Bolt")' not in connection_catalog
-          and 'if not hub then add("Weld") end' in connection_catalog)
+          and 'if not hub and not belt then add("Weld") end' in connection_catalog)
     check("Build auto fit and Mechanics pairs use the SAME contextual picker",
           'self.UnifiedExplorer:ChooseFit(' in build_connect
           and 'function Panel:ChooseFit(kind,callback,count)' in unified_panel
@@ -167,7 +167,7 @@ def main() -> int:
               'self.Feedback:FlashSuccess({first,second})',
               'self.ConnectInvalid=true',
               'action="SmartMate",mateKind="Bore",relationKind="FreeFit"',
-              'action="SmartMate",mateKind="Hub",relationKind=kind',
+              'action="SmartMate",mateKind="Hub",relationKind="Weld"',
               'action="CreateSpring"',
               'action="CoupleHandCrank"',
               'action="CreateWeld"',
@@ -181,7 +181,7 @@ def main() -> int:
           and 'self:StartConnect()' in mechanics_connect)
     check("Mechanics SmartMate authorization narrowly allows only bore fit and hub",
           'local approved=(mode=="Bore" and kind=="FreeFit")' in mechanic_authority
-          and '(mode=="Hub" and (kind=="Rotation" or kind=="Rigid"))' in mechanic_authority
+          and '(mode=="Hub" and (kind=="Weld" or kind=="Rigid"))' in mechanic_authority
           and 'not approved or not hasEquippedTool(player,"Mechanics")' in mechanic_authority
           and 'mechanical:SmartMate(player,payload,false)' in mechanic_authority)
 
@@ -458,7 +458,7 @@ def main() -> int:
           and 'local model=findOwned(player,id)' in service
           and 'if axis~="X" and axis~="Y" and axis~="Z" then' in service
           and 'local delta=(if axis=="X" then Vector3.xAxis' in service
-          and 'if model and not model:GetAttribute("ComponentId") then' in service)
+          and 'if model then selected={model} end' in service)
     check("Vertical move is one validated atomic undoable transaction",
           'local ok,reason=validState(player,entry,nextState)' in service
           and 'intersectsConstructed(model,ignored)' in service
@@ -737,11 +737,12 @@ def main() -> int:
           "HandCrankMath.ApplySize(model,data.size)" in service
           and "HandCrankMath.ValidSize" in persistence
           and "HandCrankMath.ShaftSize(source,target)" in mechanical)
-    check("Gear hub choice creates only physical hinge or weld",
-          '{id="Rotation",label=LABELS.Rotation}' in connection_catalog
-          and '{id="Rigid",label=LABELS.Rigid}' in connection_catalog
-          and 'request.relationKind=="Rotation" then "Bearing" else "Weld"' in mechanical
-          and 'kind=="Hub" then "Rotation"' in read("src/shared/Construction/SmartPlacement.lua"))
+    check("Gear/pulley hubs rigidly weld onto free-spinning shafts",
+          '{id="Rigid",label=LABELS.Rigid}' in connection_catalog
+          and '{id="Rotation",label=LABELS.Rotation}' not in connection_catalog
+          and 'mode=="Hub" and request.relationKind~="Weld"' in mechanical
+          and 'elseif kind=="Hub" then "Weld"' in read("src/shared/Construction/SmartPlacement.lua")
+          and 'elseif kind=="Rigid" then' in mechanics_connect)
     gear_clearance=read("src/shared/Construction/BoreClearance.lua")
     smart_placement=read("src/shared/Construction/SmartPlacement.lua")
     preview=read("src/shared/Construction/PreviewFeedback.lua")
@@ -911,8 +912,8 @@ def main() -> int:
           'Smart.HubSnapRadius = 0.34' in smart_placement
           and 'Smart.HubAimRadius = 0.24' in smart_placement
           and 'hubAimDistance(aimRay,target)' in smart_placement
-          and 'local range=if isGear then Smart.HubSnapRadius' in smart_placement
-          and 'local aimThreshold=if isGear then Smart.HubAimRadius' in smart_placement
+          and 'local range=if isHub then Smart.HubSnapRadius' in smart_placement
+          and 'local aimThreshold=if isHub then Smart.HubAimRadius' in smart_placement
           and 'if hubAimed then boreAim*0.25+0.015' in smart_placement)
     check("All stock gear bores accept standard minimum shaft",
           'math.max(0.215, bodyRadius * 0.33)' in gear_templates
@@ -956,7 +957,7 @@ def main() -> int:
           and 'Alignment.ReversePlan(members,opening,shaft,units,roll)' in smart_place
           and 'local units=math.clamp(snapped,loSnap,hiSnap)' in smart_place)
     check("Gear-on-shaft placement also preserves real cursor depth",
-          'if isGear and Alignment.IsShaft(target) then' in smart_place
+          'if isHub and Alignment.IsShaft(target) then' in smart_place
           and 'local cursorDepth=shaftCursorDepth(aimRay,target)' in smart_place
           and 'near=stationary.Position' in smart_place
           and 'Smart.HubPose(source,target,near)' in smart_place
@@ -1055,6 +1056,60 @@ def main() -> int:
     check("Component grouping/grounding uses metadata history",
           component.count("commitMetadata(player, before, after)") >= 3)
 
+    bank_service=read("src/server/Runtime/ComponentBankService.lua")
+    bank_preview=read("src/client/Controllers/ComponentBankPreview.lua")
+    unified_simulation=read("src/server/Runtime/UnifiedSimulationService.lua")
+    physical_simulation=read("src/server/Runtime/PhysicalSimulationService.lua")
+    fit_solver=read("src/shared/Construction/FitSolver.lua")
+    check("Component Bank integrated end-to-end in existing Build tool",
+          all('action=="'+a+'"' in service for a in (
+              "ListComponentBank","GetComponentBank","RegisterComponentBank",
+              "PlaceComponentBank","RemoveComponentBank"))
+          and 'componentBank:Handle(player,action,payload)' in service
+          and 'componentBank=ComponentBankService.new(' in service
+          and 'function Controller:RefreshBankEntries()' in selection
+          and 'function Controller:SelectBank(id)' in selection
+          and 'function Controller:PlaceSavedComponent()' in selection
+          and 'ComponentBankPreview.Create(' in selection
+          and 'function Bank:Persist(player,mutator)' in bank_service
+          and 'function Preview.Create(entry)' in bank_preview)
+    check("Authorable alignment origins remain metadata and undoable",
+          'if action=="SetFitPivot" then return setFitPivot(player,payload)' in service
+          and 'commitMetadata(player,{prior},{snapshot(anchor)})' in service
+          and 'function Controller:EditFitPivot(reset)' in selection
+          and 'function Controller:CommitFitPivot()' in selection
+          and 'FitSolver.PivotCandidate(' in smart_placement
+          and 'if match.kind=="Pivot" then return false end' in selection
+          and 'self.SmartMatch.kind~="Pivot"' in selection
+          and 'function Solver.SurfacePose(' in fit_solver)
+    check("Pulley and belt authoring is server-validated and reachable",
+          'PulleyLibrary.Ensure()' in service
+          and 'action == "CreateBelt" or action == "RemoveBelt"' in service
+          and 'mechanical:CreateBelt(player,payload)' in service
+          and 'mechanical:RemoveBelt(player,payload)' in service
+          and 'function Mechanical:CreateBelt(player,request)' in mechanical
+          and 'function Mechanical:RemoveBelt(player,request)' in mechanical
+          and 'BeltMath.IsPulley(first)' in connection_catalog
+          and 'elseif kind=="Belt" then' in mechanics_connect
+          and 'action="CreateBelt",sourceId=firstId,targetId=secondId' in mechanics_connect)
+    check("UI v2 retains rack simulator while physical gears/belts run natively",
+          'require(script.Parent:WaitForChild("UnifiedSimulationService"))' in service
+          and 'RackSimulationService.new(deps)' in unified_simulation
+          and 'PhysicalSimulationService.new(deps)' in unified_simulation
+          and 'kind=="Rack" or kind=="RackGuide"' in unified_simulation
+          and 'if rack and hasBelt then' in unified_simulation
+          and 'GearTransmission.new(graph,copies,runtime)' in physical_simulation
+          and 'BeltTransmission.new(graph,copies,runtime)' in physical_simulation
+          and 'GearKinematics.new(graph,copies)' in simulation
+          and 'function Unified:BeginRack(player,request)' in unified_simulation)
+    check("UI v2 keeps one Build native tool and contextual Component Bank actions",
+          'tool_ids == ["Build", "Mechanics", "AssemblySimulation"]' not in definitions
+          and 'Id = "Build"' in definitions
+          and 'self.Tools:SetSubtool("Edit")' in selection
+          and 'self.Tools:SetSubtool("Place")' in selection
+          and 'Save to component library' in unified_panel
+          and 'Set alignment origin' in unified_panel)
+
     save_writes = []
     for file in SRC.rglob("*.lua"):
         if "forge-" in file.as_posix():
@@ -1062,9 +1117,11 @@ def main() -> int:
         text = file.read_text(encoding="utf-8")
         if ":SetAsync(" in text or ":UpdateAsync(" in text:
             save_writes.append(file.relative_to(ROOT).as_posix())
-    check("Exactly one DataStore write location",
-          save_writes == ["src/server/Runtime/PlotPersistence.lua"],
-          str(save_writes))
+    check("Only plot persistence and the independent component bank write DataStores",
+          set(save_writes)=={
+              "src/server/Runtime/PlotPersistence.lua",
+              "src/server/Runtime/ComponentBankService.lua",
+          },str(save_writes))
     plot_ui=read("src/client/Controllers/PlotSaveController.lua")
     config=read("src/shared/Construction/BuildConfig.lua")
     check("Autosave and manual SavePlot use one revision-protected write path",
