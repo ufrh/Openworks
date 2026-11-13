@@ -124,7 +124,7 @@ local function run(updateVersion)
                     entry.Name = key
                     entry.Parent = manifest
                 end
-                entry.Value = tostring(id)
+                entry.Value = string.format("%.0f", id) -- Never save scientific notation
                 return id
             end)
         end)
