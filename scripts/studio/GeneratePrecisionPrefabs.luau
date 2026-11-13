@@ -231,94 +231,130 @@ end
 -- smooth shoulder, tapered tip and a helical thread relief in the shaft.
 -- Local +X follows the shaft, matching BoltMath and existing bolt prefabs.
 local function buildBoltMesh()
+    local SHAFT_LENGTH = BOLT_BASE_SHAFT_LENGTH
+    local SHAFT_DIAMETER = BOLT_BASE_SHAFT_DIAMETER
+    local HEAD_LENGTH = 0.17
+    local THREAD_TURNS = 11
+    local THREAD_DEPTH = 0.24
+    local SIDES = 60
+    local SAMPLES_PER_TURN = 12
     local mesh = createEditable()
     local vertices = {}
     local rings = {}
-    local sides = 72 -- divisible by 6 for actual flat hex faces
-    local shaftLength = BOLT_BASE_SHAFT_LENGTH
-    local shaftRadius = BOLT_BASE_SHAFT_DIAMETER / 2
-    local headLength = 0.17
-    local headRadius = shaftRadius * 1.86
-    local headStart = -shaftLength / 2 - headLength
-    local shaftStart = -shaftLength / 2
-    local shaftEnd = shaftLength / 2
-    local threadStart = shaftStart + shaftLength * 0.25
-    local threadEnd = shaftEnd - shaftLength * 0.08
-    local turns = 11
+    local triangles = 0
+    local normals = 0
+    local shaftRadius = SHAFT_DIAMETER / 2
+    local hexRadius = shaftRadius * 1.86
+    local headBack = -SHAFT_LENGTH / 2 - HEAD_LENGTH
+    local headFront = -SHAFT_LENGTH / 2
+    local tipX = SHAFT_LENGTH / 2
+    local threadStart = headFront + 0.31
+    local threadEnd = tipX - 0.065
+    local pitch = (threadEnd - threadStart) / THREAD_TURNS
 
-    local function hexRadius(a)
+    -- True hexagonal prism: six flat sides, and planar back/front surfaces.
+    local function hexEdgeRadius(theta)
         local sector = math.pi / 3
-        local difference = ((a % sector) - sector / 2)
-        return headRadius * math.cos(math.pi / 6) / math.cos(difference)
+        local delta = (theta % sector) - sector / 2
+        return hexRadius * math.cos(math.pi / 6) / math.cos(delta)
     end
-    local function threadRadius(x, angle)
-        if x < threadStart then return shaftRadius end
-        local fade = math.clamp((x - threadStart) / (shaftLength * 0.07), 0, 1)
-        local phase = ((x - threadStart) / (threadEnd - threadStart)
-            * turns - angle / (2 * math.pi)) % 1
-        local ridge = 1 - math.abs(phase * 2 - 1) -- one helical triangular ridge
-        local tip = math.clamp((shaftEnd - x) / (shaftLength * 0.08), 0.3, 1)
-        return shaftRadius * (1 - 0.14 * fade * (1 - ridge)) * tip
+
+    -- Square crest, sharp planar flanks and narrow flat root.
+    -- Phase depends on both shaft location and angle: one continuous helix.
+    local function cutDepth(phase)
+        if phase < 0.10 or phase >= 0.90 then return 0 end
+        if phase < 0.45 then return (phase - 0.10) / 0.35 end
+        if phase <= 0.55 then return 1 end
+        return (0.90 - phase) / 0.35
     end
+
+    local function radiusAt(x, theta)
+        local phase = ((x - threadStart) / pitch - theta / (2 * math.pi)) % 1
+        local fadeIn = math.clamp((x - threadStart) / (pitch * 0.55), 0, 1)
+        local fadeOut = math.clamp((threadEnd - x) / (pitch * 0.55), 0, 1)
+        return shaftRadius * (1 - THREAD_DEPTH * cutDepth(phase) * math.min(fadeIn, fadeOut))
+    end
+
     local sections = {
-        {x = headStart, mode = "hex", k = 0.94},
-        {x = headStart + 0.025, mode = "hex", k = 1.0},
-        {x = shaftStart - 0.027, mode = "hex", k = 1.0},
-        {x = shaftStart, mode = "hex", k = 0.94},
-        {x = shaftStart, mode = "shaft"}, -- actual radial head shoulder
-        {x = shaftStart + 0.015, mode = "shaft"},
+        {x = headBack, kind = "hex"},
+        {x = headFront, kind = "hex"},
+        {x = headFront, kind = "shaft"}, -- planar hex shoulder, not a rounded collar
+        {x = threadStart - pitch * 0.5, kind = "shaft"},
+        {x = threadStart, kind = "shaft"},
     }
-    local steps = 68
-    for i = 1, steps do
-        local x = shaftStart + 0.015 + (shaftEnd - shaftStart - 0.015) * i / steps
-        table.insert(sections, {x = x, mode = "shaft"})
+    for i = 1, THREAD_TURNS * SAMPLES_PER_TURN do
+        local t = i / (THREAD_TURNS * SAMPLES_PER_TURN)
+        table.insert(sections, {x = threadStart + (threadEnd - threadStart) * t, kind = "thread"})
     end
-    local function vertex(v)
+    -- A SHORT 0.025 stud machined chamfer, not an exaggerated conical nose.
+    table.insert(sections, {x = tipX - 0.025, kind = "shaft"})
+    table.insert(sections, {x = tipX, kind = "tip"})
+
+    local function addVertex(v)
         local id = mesh:AddVertex(v)
         vertices[id] = v
         return id
     end
-    local count = 0
-    local function tri(a, b, c)
-        local pa, pb, pc = vertices[a], vertices[b], vertices[c]
-        assert((pb-pa):Cross(pc-pa).Magnitude > 1e-9,
-            "Bolt mesh contains a degenerate face")
-        mesh:AddTriangle(a, b, c)
-        count += 1
-    end
-    for si, section in ipairs(sections) do
-        rings[si] = {}
-        for i = 0, sides - 1 do
-            local a = 2 * math.pi * i / sides
-            local r = if section.mode == "hex"
-                then hexRadius(a) * section.k
-                else threadRadius(section.x, a)
-            rings[si][i + 1] = vertex(Vector3.new(
-                section.x, r * math.cos(a), r * math.sin(a)))
-        end
-    end
-    for si = 1, #rings - 1 do
-        for i = 1, sides do
-            local j = i % sides + 1
-            local a,b = rings[si][i],rings[si][j]
-            local c,d = rings[si+1][i],rings[si+1][j]
-            tri(a,b,c)
-            tri(b,d,c)
-        end
-    end
-    local headCenter = vertex(Vector3.new(headStart,0,0))
-    local tipCenter = vertex(Vector3.new(shaftEnd,0,0))
-    for i = 1, sides do
-        local j = i % sides + 1
-        tri(headCenter, rings[1][j],rings[1][i])
-        tri(tipCenter, rings[#rings][i],rings[#rings][j])
-    end
-    assert(count <= 20000, "Bolt exceeds Roblox 20k-triangle limit")
-    local part = bakedPart(mesh, Enum.CollisionFidelity.PreciseConvexDecomposition)
-    return part, {triangles = count, vertices = #sections * sides + 2,
-        headLength = headLength}
-end
 
+    local function triangle(a, b, c)
+        local pa, pb, pc = vertices[a], vertices[b], vertices[c]
+        local cross = (pb - pa):Cross(pc - pa)
+        assert(cross.Magnitude > 1e-10, "Degenerate bolt triangle")
+        local face = mesh:AddTriangle(a, b, c)
+        -- Separate normal on every face: no smoothing across threads,
+        -- hex sides, shoulder, chamfer or the flat tip.
+        local normal = mesh:AddNormal(cross.Unit)
+        mesh:SetFaceNormals(face, {normal, normal, normal})
+        triangles += 1
+        normals += 1
+    end
+
+    for si, section in ipairs(sections) do
+        local ring = {}
+        for n = 0, SIDES - 1 do
+            local theta = n * 2 * math.pi / SIDES
+            local radius
+            if section.kind == "hex" then
+                radius = hexEdgeRadius(theta)
+            elseif section.kind == "thread" then
+                radius = radiusAt(section.x, theta)
+            elseif section.kind == "tip" then
+                radius = shaftRadius * 0.84
+            else
+                radius = shaftRadius
+            end
+            ring[n + 1] = addVertex(Vector3.new(section.x,
+                radius * math.cos(theta), radius * math.sin(theta)))
+        end
+        rings[si] = ring
+    end
+
+    for si = 1, #rings - 1 do
+        local back = rings[si]
+        local front = rings[si + 1]
+        for n = 1, SIDES do
+            local nextN = n % SIDES + 1
+            triangle(back[n], back[nextN], front[n])
+            triangle(back[nextN], front[nextN], front[n])
+        end
+    end
+
+    local backCenter = addVertex(Vector3.new(headBack, 0, 0))
+    local tipCenter = addVertex(Vector3.new(tipX, 0, 0))
+    for n = 1, SIDES do
+        local nextN = n % SIDES + 1
+        triangle(backCenter, rings[1][nextN], rings[1][n])
+        triangle(tipCenter, rings[#rings][n], rings[#rings][nextN])
+    end
+
+    assert(triangles < 20000, "Exceeded 20,000 triangle budget: " .. triangles)
+    mesh:RemoveUnused() -- discard auto-created soft normals; keep hard face normals
+    print(string.format("[OPENWORKS][BOLTS] Generated hard-surface mesh: %d triangles / %d normals", triangles, normals))
+
+    local part = bakedPart(mesh, Enum.CollisionFidelity.PreciseConvexDecomposition)
+    return part, {triangles = triangles, vertices = #sections * SIDES + 2,
+        headLength = HEAD_LENGTH, pitch = pitch}
+end
 local function folder(parent, name)
     local found = parent:FindFirstChild(name)
     if not found then
@@ -377,15 +413,17 @@ local function addBolt(parent, source, index, details)
     model:SetAttribute("ProceduralPrefabVersion", VERSION)
     model:SetAttribute("PrimitiveFamily", "Bolt")
     model:SetAttribute("CatalogGroup", "Fasteners")
-    model:SetAttribute("CatalogName", string.format("Precision Hex Bolt  ·  Ø%.2f × %.1f U",
+    model:SetAttribute("CatalogName", string.format("Sharp Hex Bolt  ·  Ø%.2f × %.1f U",
         diameterU, lengthU))
     model:SetAttribute("ResizeMode", "None")
     model:SetAttribute("BoltDiameterU", diameterU)
     model:SetAttribute("BoltLengthU", lengthU)
     model:SetAttribute("AxialAxis", "X")
-    model:SetAttribute("GeometryVersion", 4)
+    model:SetAttribute("GeometryVersion", 5)
     model:SetAttribute("Threaded", true)
     model:SetAttribute("ThreadTurns", 11)
+    model:SetAttribute("ThreadPitchStuds", details.pitch * scale)
+    model:SetAttribute("FlatShaded", true)
     model:SetAttribute("StaticDataModelMesh", true)
     model:SetAttribute("Triangles", details.triangles)
     local shape = source:Clone()
