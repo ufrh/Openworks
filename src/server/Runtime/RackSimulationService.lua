@@ -21,6 +21,8 @@ local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
 local GearKinematics = require(script.Parent:WaitForChild("GearKinematics"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
+local PrefabCollision=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("PrefabCollision"))
 
 local Simulation = {}
 Simulation.__index = Simulation
@@ -567,12 +569,9 @@ function Simulation:Start(player, payload)
             end
             for _, part in ipairs(allParts(clone)) do
                 part.Anchored = true
-                -- The GearLibrary root is only a transform/pivot, not metal.
-                -- Keep the through-bore physically open in simulation.
-                part.CanCollide = part:GetAttribute("GearPivotOnly") ~= true
-                -- Needed for mouse selection of running physics clones.
-                part.CanQuery = part:GetAttribute("GearPivotOnly") ~= true
-                part.CanTouch = false
+                -- Preserve the authored hollow-rim collision proxies;
+                -- never re-enable visual MeshPart box collisions in rack mode.
+                PrefabCollision.Configure(part)
             end
             copies[id] = clone
             copyParts[id] = allParts(clone)
@@ -945,7 +944,10 @@ function Simulation:Start(player, payload)
                             part.Anchored=true
                             part.CanCollide=false
                             part.CanTouch=false
-                            part.CanQuery=part:GetAttribute("GearPivotOnly")~=true
+                            local mode=part:GetAttribute("OpenworksCollisionMode")
+                            part.CanQuery=mode~="VisualOnly"
+                                and mode~="PivotOnly"
+                                and part:GetAttribute("GearPivotOnly")~=true
                         else
                             part.Anchored=session.GroundKeys[key]==true
                                 and part==rootAnchor

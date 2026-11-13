@@ -22,6 +22,8 @@ local GearTransmission=require(script.Parent:WaitForChild("GearTransmission"))
 local BeltTransmission=require(script.Parent:WaitForChild("BeltTransmission"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
+local PrefabCollision=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("PrefabCollision"))
 
 local Simulation = {}
 Simulation.__index = Simulation
@@ -481,9 +483,7 @@ function Simulation:Start(player, payload)
             local kind=GearMath.Kind(original)
             for _,part in ipairs(allParts(clone)) do
                 part.Anchored=true -- temporary while assembling constraints
-                part.CanCollide=part:GetAttribute("GearPivotOnly")~=true
-                part.CanQuery=part:GetAttribute("GearPivotOnly")~=true
-                part.CanTouch=false
+                PrefabCollision.Configure(part)
                 if kind=="Spur" or kind=="Bevel45" or kind=="Bevel90" then
                     part.CollisionGroup=GEAR_GROUP
                 end

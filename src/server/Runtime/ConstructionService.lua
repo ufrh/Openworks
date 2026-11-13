@@ -37,6 +37,7 @@ local HandCrankMath = require(construction:WaitForChild("HandCrankMath"))
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
 local MaterialCatalog=require(construction:WaitForChild("MaterialCatalog"))
 local PaintCatalog=require(construction:WaitForChild("PaintCatalog"))
+local PrefabCollision=require(construction:WaitForChild("PrefabCollision"))
 
 local Service = {}
 local folder
@@ -183,12 +184,11 @@ local function createFromTemplate(player, templateId, instanceId, bypassLimit)
                 descendant.UsePartColor = true
             end
             descendant.Anchored = true
-            local pivotOnly = descendant:GetAttribute("GearPivotOnly") == true
-            descendant.CanCollide = not pivotOnly
-            descendant.CanQuery = not pivotOnly
-            descendant.CanTouch = false
-            descendant.Reflectance = if pivotOnly then 0 else 0.045
-            if pivotOnly then descendant.Transparency = 1 end
+            PrefabCollision.Configure(descendant)
+            local isHidden=descendant:GetAttribute("GearPivotOnly")==true
+                or descendant:GetAttribute("OpenworksCollisionMode")=="PivotOnly"
+                or descendant:GetAttribute("OpenworksCollisionMode")=="Proxy"
+            descendant.Reflectance=if isHidden then 0 else 0.045
         end
     end
 

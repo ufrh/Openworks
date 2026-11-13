@@ -103,10 +103,11 @@ local function bakedPart(mesh, desiredFidelity)
     -- The MeshPart collision geometry must be configured at creation, not by
     -- assigning CollisionFidelity afterward (read-only during gameplay).
     -- Box is safe for a bolt's solid shank/head but NOT for a gear's bore.
-    local isGear = desiredFidelity == Enum.CollisionFidelity.PreciseConvexDecomposition
-    part.CanCollide = not isGear
-    part:SetAttribute("OpenworksCollisionReady", not isGear)
-    part:SetAttribute("OpenworksCollisionMode", if isGear then "VisualOnly" else "Box")
+    part.CanCollide=false
+    part.CanQuery=false
+    part.Massless=true
+    part:SetAttribute("OpenworksCollisionReady",true)
+    part:SetAttribute("OpenworksCollisionMode","VisualOnly")
     return part
 end
 
@@ -366,6 +367,42 @@ local function folder(parent, name)
     return found
 end
 
+-- Twelve lightweight annular colliders approximate the gear's metal rim.
+-- They stay completely OUTSIDE the actual through-bore and never collide
+-- with the visual MeshPart's conservative baking-time box collider.
+local function ringCollision(model, scale, rootRadius, pitch, bevel)
+    local bore=BORE_RADIUS*scale
+    local root=if bevel then
+        rootRadius*scale*(1-FACE_WIDTH*BEVEL_SLOPE/(2*pitch))
+        else rootRadius*scale
+    local inner=bore+0.018*scale
+    assert(root>inner+0.01*scale, "Gear collision ring has no wall")
+    local middle=(root+inner)*0.5
+    local width=root-inner
+    local sectors=12
+    local toothWidth=(2*math.pi*middle/sectors)*0.94
+    for sector=1,sectors do
+        local theta=(sector-0.5)*2*math.pi/sectors
+        local radial=Vector3.new(0,math.cos(theta),math.sin(theta))
+        local tangent=Vector3.xAxis:Cross(radial)
+        local collider=Instance.new("Part")
+        collider.Name=string.format("RimCollider_%02d",sector)
+        collider.Size=Vector3.new(FACE_WIDTH*scale*0.88,width,toothWidth)
+        collider.CFrame=CFrame.fromMatrix(radial*middle,
+            Vector3.xAxis,radial,tangent)
+        collider.Material=Enum.Material.Metal
+        collider.Anchored=true
+        collider.CanCollide=true
+        collider.CanQuery=true
+        collider.CanTouch=false
+        collider.Transparency=1
+        collider.CastShadow=false
+        collider.Massless=true
+        collider:SetAttribute("OpenworksCollisionMode","Proxy")
+        collider.Parent=model
+    end
+end
+
 local function addGear(parent, source, kind, teeth, index, details)
     local scale = SCALES[index]
     local bevel = kind == "Bevel90"
@@ -399,8 +436,13 @@ local function addGear(parent, source, kind, teeth, index, details)
     local mesh = source:Clone()
     mesh.Name = "Geometry"
     mesh.Size = source.Size * scale
+    -- Keep a non-massless physics root; the invisible rim proxies are
+    -- massless and welded internally during simulation.
+    mesh.Massless=false
     mesh.Parent = model
     model.PrimaryPart = mesh
+    ringCollision(model,scale,details.root,details.pitch,bevel)
+    model:SetAttribute("OpenworksCollisionVersion",2)
     model.Parent = parent
     return model
 end
@@ -429,6 +471,10 @@ local function addBolt(parent, source, index, details)
     local shape = source:Clone()
     shape.Name = "BoltSolid"
     shape.Size = source.Size * scale
+    shape.CanCollide=false
+    shape.CanQuery=false
+    shape.Massless=true
+    shape:SetAttribute("OpenworksCollisionMode","VisualOnly")
     shape.Parent = model
     -- BoltMath uses the primary part as the exact shank reference;
     -- the hex head is outside the shank's -X end. Keep this standard.
@@ -438,12 +484,32 @@ local function addBolt(parent, source, index, details)
     pivot.Size = Vector3.new(BOLT_BASE_SHAFT_LENGTH * scale,
         BOLT_BASE_SHAFT_DIAMETER * scale, BOLT_BASE_SHAFT_DIAMETER * scale)
     pivot.Anchored = true
-    pivot.CanCollide = false
-    pivot.CanQuery = false
+    pivot.CanCollide = true
+    pivot.CanQuery = true
     pivot.CanTouch = false
     pivot.Transparency = 1
     pivot.CastShadow = false
+    pivot:SetAttribute("OpenworksCollisionMode","Proxy")
     pivot.Parent = model
+    local head=Instance.new("Part")
+    head.Name="HeadCollider"
+    head.Shape=Enum.PartType.Cylinder
+    head.Size=Vector3.new(details.headLength*scale*0.94,
+        BOLT_BASE_SHAFT_DIAMETER*scale*1.86,
+        BOLT_BASE_SHAFT_DIAMETER*scale*1.86)
+    head.CFrame=CFrame.new(-BOLT_BASE_SHAFT_LENGTH*scale*0.5
+        -details.headLength*scale*0.5,0,0)
+    head.Anchored=true
+    head.CanCollide=true
+    head.CanQuery=true
+    head.CanTouch=false
+    head.Transparency=1
+    head.CastShadow=false
+    head.Massless=true
+    head:SetAttribute("OpenworksCollisionMode","Proxy")
+    head.Parent=model
+    model:SetAttribute("BoltHeadLengthStuds",details.headLength*scale)
+    model:SetAttribute("OpenworksCollisionVersion",2)
     model.PrimaryPart = pivot
     model.Parent = parent
     return model

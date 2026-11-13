@@ -134,6 +134,24 @@ function Mechanical:Restore(player, spec)
     if not source or not target or source == target then
         return false, "Relationship parts were deleted"
     end
+    -- Pre-integration CreateBolt saves linked two holes and stored the
+    -- physical bolt only as BoltId. Repair that relationship in-memory
+    -- without deleting the original saved bolt or modifying DataStores.
+    if spec.kind=="Bolt" and not BoltMath.IsBolt(source)
+        and type(spec.boltId)=="string" then
+        local physicalBolt=self.D.findOwned(player,spec.boltId)
+        if physicalBolt and BoltMath.IsBolt(physicalBolt) then
+            spec=table.clone(spec)
+            spec.secondTargetId=spec.targetId
+            spec.targetId=spec.sourceId
+            spec.sourceId=spec.boltId
+            source=physicalBolt
+            target=self.D.findOwned(player,spec.targetId)
+            if not target then
+                return false,"Legacy bolt hole is missing"
+            end
+        end
+    end
     -- Upgrade legacy free-spinning gear hubs during plot restore. Every
     -- gear/shaft interface is now a rigid weld, regardless of save version.
     if spec.kind=="Bearing" and type(target:GetAttribute("GearTeeth"))=="number"
@@ -216,6 +234,10 @@ function Mechanical:Restore(player, spec)
         -- never falsely represented as a native Roblox GearConstraint.
     elseif spec.kind == "Fixed" or spec.kind=="Weld"
         or spec.kind=="Bolt" then
+        if spec.kind=="Bolt" and not BoltMath.Fits(source,target) then
+            folder:Destroy()
+            return false,"Bolt shank does not pass through its first opening"
+        end
         local weld = Instance.new("WeldConstraint")
         weld.Name = "Fixed"
         weld.Part0 = targetPart
@@ -1709,27 +1731,38 @@ function Mechanical:CreateBolt(player,request)
     if not hole0 or not hole1 then
         return false,"Hole geometry has no measurable bolt clearance"
     end
-    local bestId,bestDiameter,bestLen
-    for _,entry in ipairs({
-        {id="Bolt_050U",u=0.5,length=4},
-        {id="Bolt_100U",u=1,length=8},
-        {id="Bolt_150U",u=1.5,length=12},
-    }) do
-        local diameter=entry.u*self.D.Grid.Unit
-        local length=entry.length*self.D.Grid.Unit
-        if diameter<=math.min(hole0,hole1)-0.002
-            and length>=math.abs(distance)
-                +(math.abs(axis0.X)*first.PrimaryPart.Size.X
-                    +math.abs(axis0.Y)*first.PrimaryPart.Size.Y
-                    +math.abs(axis0.Z)*first.PrimaryPart.Size.Z)*0.5
-                +(math.abs(axis1.X)*second.PrimaryPart.Size.X
-                    +math.abs(axis1.Y)*second.PrimaryPart.Size.Y
-                    +math.abs(axis1.Z)*second.PrimaryPart.Size.Z)*0.5
-                +self.D.Grid.Unit*0.1
-            and (not bestDiameter or diameter>bestDiameter) then
-            bestId=entry.id
-            bestDiameter=diameter
-            bestLen=length
+    -- Select from ALL registered fasteners, preferring the five new precision
+    -- bolts but retaining legacy IDs for old saves and disabled Mesh APIs.
+    local thickness0=math.abs(axis0.X)*first.PrimaryPart.Size.X
+        +math.abs(axis0.Y)*first.PrimaryPart.Size.Y
+        +math.abs(axis0.Z)*first.PrimaryPart.Size.Z
+    local thickness1=math.abs(axis1.X)*second.PrimaryPart.Size.X
+        +math.abs(axis1.Y)*second.PrimaryPart.Size.Y
+        +math.abs(axis1.Z)*second.PrimaryPart.Size.Z
+    local minimumReach=math.abs(distance)
+        +thickness0*0.5+thickness1*0.5+self.D.Grid.Unit*0.1
+    local bestId,bestDiameter,bestLen,bestNew=nil,nil,nil,false
+    for _,entry in ipairs(self.D.Registry.List()) do
+        local model=entry.Model
+        if model:GetAttribute("PrimitiveFamily")=="Bolt" then
+            local diameterU=model:GetAttribute("BoltDiameterU")
+            local lengthU=model:GetAttribute("BoltLengthU")
+            if type(diameterU)=="number" and type(lengthU)=="number"
+                and diameterU>0 and lengthU>0 then
+                local diameter=diameterU*self.D.Grid.Unit
+                local length=lengthU*self.D.Grid.Unit
+                local precision=model:GetAttribute("StaticDataModelMesh")==true
+                if diameter<=math.min(hole0,hole1)-0.002
+                    and length>=minimumReach
+                    and (bestDiameter==nil
+                        or (precision and not bestNew)
+                        or (precision==bestNew and diameter>bestDiameter)) then
+                    bestId=entry.Id
+                    bestDiameter=diameter
+                    bestLen=length
+                    bestNew=precision
+                end
+            end
         end
     end
     if not bestId then
@@ -1745,7 +1778,10 @@ function Mechanical:CreateBolt(player,request)
         first:SetAttribute("ComponentId",group)
         first:SetAttribute("ComponentAnchorId",first:GetAttribute("InstanceId"))
     end
-    local origin=cf0.Position+direction*math.abs(distance)*0.5
+    -- Put the head OUTSIDE the entry face, rather than at the midpoint
+    -- between two holes (which previously buried it inside solid metal).
+    local origin=cf0.Position-direction*(thickness0*0.5+0.005)
+        +direction*(bestLen*0.5)
     local reference=if math.abs(direction:Dot(Vector3.yAxis))<0.9
         then Vector3.yAxis else Vector3.zAxis
     local up=(reference-direction*direction:Dot(reference)).Unit
@@ -1764,6 +1800,11 @@ function Mechanical:CreateBolt(player,request)
         freePosition=true,
     }
     self.D.applyState(bolt,state)
+    if not BoltMath.Fits(bolt,first) or not BoltMath.Fits(bolt,second) then
+        bolt:Destroy()
+        if #before>0 then self.D.applyState(first,before[1]) end
+        return false,"Bolt does not fully pass through both openings"
+    end
     local ignored={[first]=true,[second]=true}
     if self.D.intersectsConstructed(bolt,ignored) then
         bolt:Destroy()
@@ -1775,7 +1816,11 @@ function Mechanical:CreateBolt(player,request)
     local spec={
         relationId=HttpService:GenerateGUID(false),
         ownerUserId=player.UserId,kind="Bolt",
-        sourceId=request.sourceId,targetId=request.targetId,
+        -- The bolt is the source of BOTH welds: fastening two plates to
+        -- each other without the physical bolt was a dangling-body bug.
+        sourceId=bolt:GetAttribute("InstanceId"),
+        targetId=first:GetAttribute("InstanceId"),
+        secondTargetId=second:GetAttribute("InstanceId"),
         componentId=group,boltId=bolt:GetAttribute("InstanceId"),
     }
     local success,err=self:Restore(player,spec)
@@ -1907,25 +1952,9 @@ function Mechanical:CreateGearMesh(player, request)
         or not d.nearPlayer(player, second:GetPivot().Position) then
         return false, "Gear is outside build range"
     end
-    local module1 = first:GetAttribute("GearModuleStuds")
-    local module2 = second:GetAttribute("GearModuleStuds")
-    if type(module1) ~= "number" or math.abs(module1 - module2) > 0.001 then
-        return false, "Gears have different tooth pitches"
-    end
-    local a, b = first:GetPivot(), second:GetPivot()
-    local axis = a.RightVector
-    if math.abs(axis:Dot(b.RightVector)) < 0.999 then
-        return false, "Gear shafts must be parallel"
-    end
-    local diff = b.Position - a.Position
-    local axial = math.abs(diff:Dot(axis))
-    local radial = (diff - axis * diff:Dot(axis)).Magnitude
-    local targetDistance = (n1 + n2) * module1 / (2 * math.pi)
-    if math.abs(radial - targetDistance) > 0.09 or axial > 0.18 then
-        return false, string.format(
-            "Place gear centers %.2f studs apart in their shared plane",
-            targetDistance
-        )
+    local compatible,reason=GearMath.AutoMeshStatus(first,second)
+    if not compatible then
+        return false,reason or "Gear teeth are not in a valid mesh"
     end
     for _, relation in ipairs(self.Folder:GetChildren()) do
         if relation:GetAttribute("OwnerUserId") == player.UserId

@@ -169,7 +169,8 @@ local function makeBoltSource()
     source.Name = "BoltSolid"
     source.Anchored = true
     source.CanCollide = false -- no oversized box collider inside fitted holes
-    source.CanQuery = true
+    source.CanQuery = false
+    source:SetAttribute("OpenworksCollisionMode","VisualOnly")
     source.CanTouch = false
     source.Material = Enum.Material.Metal
     source.MaterialVariant = ""
@@ -202,6 +203,10 @@ local function makePrefab(source, triangles, pitch, scale)
     local visual = source:Clone()
     visual.Name = "BoltSolid"
     visual.Size = source.Size * scale
+    visual.CanCollide=false
+    visual.CanQuery=false
+    visual.Massless=true
+    visual:SetAttribute("OpenworksCollisionMode","VisualOnly")
     visual.Parent = model
 
     -- Keep the same invisible shaft origin, exact dimensions, and model
@@ -212,12 +217,31 @@ local function makePrefab(source, triangles, pitch, scale)
     pivot.Size = Vector3.new(SHAFT_LENGTH * scale,
         SHAFT_DIAMETER * scale, SHAFT_DIAMETER * scale)
     pivot.Anchored = true
-    pivot.CanCollide = false
-    pivot.CanQuery = false
+    pivot.CanCollide = true
+    pivot.CanQuery = true
     pivot.CanTouch = false
     pivot.CastShadow = false
     pivot.Transparency = 1
+    pivot:SetAttribute("OpenworksCollisionMode","Proxy")
     pivot.Parent = model
+    local head=Instance.new("Part")
+    head.Name="HeadCollider"
+    head.Shape=Enum.PartType.Cylinder
+    head.Size=Vector3.new(HEAD_LENGTH*scale*0.94,
+        SHAFT_DIAMETER*scale*1.86,SHAFT_DIAMETER*scale*1.86)
+    head.CFrame=CFrame.new(-SHAFT_LENGTH*scale*0.5
+        -HEAD_LENGTH*scale*0.5,0,0)
+    head.Anchored=true
+    head.CanCollide=true
+    head.CanQuery=true
+    head.CanTouch=false
+    head.Transparency=1
+    head.CastShadow=false
+    head.Massless=true
+    head:SetAttribute("OpenworksCollisionMode","Proxy")
+    head.Parent=model
+    model:SetAttribute("BoltHeadLengthStuds",HEAD_LENGTH*scale)
+    model:SetAttribute("OpenworksCollisionVersion",2)
     model.PrimaryPart = pivot
     return model
 end
