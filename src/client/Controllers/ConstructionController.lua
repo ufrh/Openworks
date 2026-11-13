@@ -1867,9 +1867,13 @@ function Controller:Place(chosenKind)
             and (self.Pending~="Copy"
                 or self.SmartMatch.kind=="Gear"
                 or self.SmartMatch.kind=="Rack"
-                or self.SmartMatch.kind=="Guide") then {
-            -- Gear/Rack/Guide snaps only position geometry. All physical
-            -- bearing/weld/mount relationships are omitted on an F-copy.
+                or self.SmartMatch.kind=="Guide"
+                or self.SmartMatch.kind=="Hub"
+                or self.SmartMatch.kind=="BoltHole"
+                or self.SmartMatch.kind=="CrankCoupling") then {
+            -- A copied gear/bolt/crank fitted to a shaft or opening is
+            -- still an actual mount. Only ambiguous Bore fits refrain
+            -- from authoring mechanical relationships during F-copy.
             kind=self.SmartMatch.kind,
             targetId=self.SmartMatch.target:GetAttribute("InstanceId"),
             relationKind=chosenKind or self.SmartMatch.relationKind,

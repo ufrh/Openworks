@@ -154,8 +154,15 @@ function Mechanical:Restore(player, spec)
     end
     -- Upgrade legacy free-spinning gear hubs during plot restore. Every
     -- gear/shaft interface is now a rigid weld, regardless of save version.
-    if spec.kind=="Bearing" and type(target:GetAttribute("GearTeeth"))=="number"
-        and Alignment.IsShaft(source) then
+    local oldHubMotion=spec.kind=="Bearing" or spec.kind=="Slider"
+        or spec.kind=="Cylindrical"
+    local oldGearHub=(type(source:GetAttribute("GearTeeth"))=="number"
+        and Alignment.IsShaft(target))
+        or (type(target:GetAttribute("GearTeeth"))=="number"
+            and Alignment.IsShaft(source))
+    if oldHubMotion and oldGearHub then
+        -- Old saves allowed a gear to spin independently from its shaft.
+        -- Both insertion directions now resolve to a rigid shaft weld.
         spec=table.clone(spec)
         spec.kind="Weld"
     end

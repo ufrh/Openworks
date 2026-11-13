@@ -812,28 +812,30 @@ function Simulation:Start(player, payload)
         local hasExplicitGround = next(explicitGround) ~= nil
         session.GroundKeys = explicitGround
         if not hasExplicitGround and session.Grounded then
-            -- Aim-at-crank must not ground the actuator you're about to
-            -- turn. Prefer the BEARING HOUSING of a crank mechanism.
-            local hasCrank=false
-            for _,model in ipairs(graph.models) do
-                if HandCrankMath.IsCrank(model) then hasCrank=true break end
-            end
-            local groundedKey=if hasCrank then nil else graph.rootKey
-            if hasCrank then
-                for _,edge in ipairs(graph.edges) do
-                    if (edge.kind=="Bearing" or edge.kind=="Slider"
-                            or edge.kind=="Cylindrical")
-                        and Alignment.TargetAxis(edge.target)
-                        and not HandCrankMath.IsCrank(edge.target)
-                        and type(edge.target:GetAttribute("GearTeeth"))~="number" then
-                        groundedKey=edge.b
-                        break
-                    end
+            -- Never anchor the clicked shaft/gear just because it was used
+            -- as the Simulation seed. That silently locks the input shaft
+            -- and makes a correctly meshed gear train appear broken.
+            -- Only a stationary housing behind a genuine passive bearing
+            -- is a safe automatic support candidate. A welded housing is
+            -- NOT a support if it shares the rotating shaft's rigid body.
+            for _,edge in ipairs(graph.edges) do
+                if (edge.kind=="Bearing" or edge.kind=="Slider"
+                        or edge.kind=="Cylindrical")
+                    and Alignment.TargetAxis(edge.target)
+                    and not Alignment.IsShaft(edge.target)
+                    and not HandCrankMath.IsCrank(edge.target)
+                    and type(edge.target:GetAttribute("GearTeeth"))~="number"
+                    and not session.Gears:IsGeared(
+                        edge.target:GetAttribute("InstanceId")) then
+                    session.GroundKeys[edge.b]=true
+                    break
                 end
             end
-            -- Without a real bearing housing and without explicit ground,
-            -- a crank mechanism is FREE rather than freezing the crank.
-            if groundedKey then session.GroundKeys[groundedKey]=true end
+            if next(session.GroundKeys)==nil then
+                session.SupportWarning="No stationary bearing housing to "
+                    .."ground; shafts remain free. Ground the housing "
+                    .."explicitly for a stable transmission."
+            end
         end
 
         -- Native shaft bearings remain active and enforce rotational freedom.
@@ -891,6 +893,7 @@ function Simulation:Start(player, payload)
                 and #session.Gears.Unmeshed>0 then
                     " • "..session.Gears.Unmeshed[1].Gear..": "
                         ..session.Gears.Unmeshed[1].Reason else "")
+        .. (session.SupportWarning and " • "..session.SupportWarning or "")
 end
 
 -- Keep runtime native constraints synchronized with authored property edits.
@@ -1058,6 +1061,11 @@ function Simulation:Info(player,payload)
         end
         if session.Gears and session.Gears:IsGeared(id) then
             table.insert(lines,session.Gears:Explain(id))
+        elseif session.Gears and type(model:GetAttribute("GearTeeth"))=="number" then
+            table.insert(lines,"Gear was not included in the active transmission")
+        end
+        if session.SupportWarning then
+            table.insert(lines,session.SupportWarning)
         end
         if session.UnregisteredGears and session.UnregisteredGears>0 then
             table.insert(lines,string.format(

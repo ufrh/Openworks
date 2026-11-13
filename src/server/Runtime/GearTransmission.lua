@@ -109,6 +109,7 @@ function Transmission.new(graph,copies,runtime)
             attachment.Parent=group.Root
             local torque=Instance.new("Torque")
             torque.Name="OPENWORKS_GearMeshTorque"
+            torque.Enabled=true
             torque.Attachment0=attachment
             torque.RelativeTo=Enum.ActuatorRelativeTo.World
             torque.Torque=Vector3.zero
@@ -181,10 +182,18 @@ function Transmission:Detect()
     for _,entry in ipairs(self.Gears) do
         if contacted[entry] then continue end
         local reason,best=nil,math.huge
-        for _,other in ipairs(self.Gears) do
-            if other~=entry and other.Group~=entry.Group then
-                local _,why,distance=GearMath.AutoMeshStatus(entry.Model,other.Model)
-                if distance<best then best=distance;reason=why end
+        if not entry.Group.AxisSource then
+            reason="Gear has no rigidly welded shaft; use a Hub fit first"
+        else
+            for _,other in ipairs(self.Gears) do
+                if other~=entry then
+                    if other.Group==entry.Group then
+                        reason=reason or "Gears are welded to the same shaft (no relative motion)"
+                    else
+                        local _,why,distance=GearMath.AutoMeshStatus(entry.Model,other.Model)
+                        if distance<best then best=distance;reason=why end
+                    end
+                end
             end
         end
         table.insert(unmeshed,{Gear=entry.Model.Name,
@@ -203,13 +212,24 @@ function Transmission:Explain(id)
     for _,link in ipairs(self.Links) do
         if link.A==group or link.B==group then count+=1 end
     end
-    if count>0 then return tostring(count).." physical torque mesh(es)" end
+    local root=group.Root
+    local speed=if root and root.Parent then
+        root.AssemblyAngularVelocity:Dot(axis(group)) else 0
+    local live=string.format("%s / %.2f rad/s",if group.Grounded then
+        "GROUNDED" else "FREE",speed)
+    if count>0 then
+        return string.format("%d torque mesh(es) / %s / %s%s",count,
+            if group.AxisSource then "shaft mounted" else "NO SHAFT WELD",live,
+            if group.Grounded then " / shaft anchored (cannot rotate)"
+                elseif math.abs(speed)<0.035 then " / idle: drive the shaft"
+                else "")
+    end
     for _,info in ipairs(self.Unmeshed) do
         if self.ById[info.Id]==group then
-            return "Not engaged: "..info.Reason
+            return "Not engaged: "..info.Reason.." / "..live
         end
     end
-    return "No meshing teeth in this assembly"
+    return "No meshing teeth in this assembly / "..live
 end
 
 function Transmission:Step(dt)
