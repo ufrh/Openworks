@@ -150,7 +150,7 @@ def main() -> int:
           and all(('id="'+kind+'"') in connection_catalog or
                   ('add("'+kind+'")') in connection_catalog for kind in (
                      'Cylindrical','Slider','Bearing','FreeFit','Weld',
-                     'Spring','CrankCoupling','Rigid','Belt'))
+                     'Spring','CrankCoupling','Rotation','Rigid'))
           and 'add("Bolt")' not in connection_catalog
           and 'if not hub then add("Weld") end' in connection_catalog)
     check("Build auto fit and Mechanics pairs use the SAME contextual picker",
@@ -167,9 +167,8 @@ def main() -> int:
               'self.Feedback:FlashSuccess({first,second})',
               'self.ConnectInvalid=true',
               'action="SmartMate",mateKind="Bore",relationKind="FreeFit"',
-              'action="SmartMate",mateKind="Hub",relationKind="Rigid"',
-              'action="CreateBelt"',
-               'action="CreateSpring"',
+              'action="SmartMate",mateKind="Hub",relationKind=kind',
+              'action="CreateSpring"',
               'action="CoupleHandCrank"',
               'action="CreateWeld"',
           ))
@@ -228,7 +227,7 @@ def main() -> int:
           and 'OPENWORKS_Simulating' in native_tool_controller
           and 'OPENWORKS_Simulating' in assembly_tool_v2
           and 'if action~="stop"' in explorer_v2
-          and 'elseif simulation and simulation:IsRunning(player)' in
+          and 'elseif simulation and simulation:IsRunning(player) then' in
               read("src/server/Runtime/ConstructionService.lua"))
 
     selection_ui_v2 = read("src/client/Controllers/ConstructionController.lua")
@@ -335,7 +334,7 @@ def main() -> int:
           and 'hasEquippedTool(player,"Build")' in mechanic_authority
           and 'hasEquippedTool(player,"Mechanics")' in mechanic_authority
           and 'hasEquippedTool(player,"AssemblySimulation")' in mechanic_authority
-          and 'elseif simulation and simulation:IsRunning(player)' in mechanic_authority)
+          and 'elseif simulation and simulation:IsRunning(player) then' in mechanic_authority)
     rokit = read("rokit.toml")
     aftman = read("aftman.toml")
     for name in ("rojo", "stylua", "selene"):
@@ -452,16 +451,14 @@ def main() -> int:
         s in assembly for s in ("function Service:Create(", "function Service:Update(",
                                "MAX_NAME=48", "MAX_MEMBERS=128")))
     assembly_tool=read("src/client/Controllers/AssemblyToolController.lua")
-    check("Cardinal X/Y/Z nudge covers owned assemblies, groups and selected primitives",
+    check("Cardinal X/Y/Z nudge is scoped to owned registered members",
           'local function verticalMove(player,payload)' in service
           and 'selected=components:Members(player,id)' in service
           and 'selected=assemblies:Members(player,id)' in service
           and 'local model=findOwned(player,id)' in service
           and 'if axis~="X" and axis~="Y" and axis~="Z" then' in service
           and 'local delta=(if axis=="X" then Vector3.xAxis' in service
-          and 'if model then selected={model} end' in service
-          and 'if scope=="Primitives" then' in service
-          and 'if not model or model:GetAttribute("ComponentId") then' in service)
+          and 'if model and not model:GetAttribute("ComponentId") then' in service)
     check("Vertical move is one validated atomic undoable transaction",
           'local ok,reason=validState(player,entry,nextState)' in service
           and 'intersectsConstructed(model,ignored)' in service
@@ -622,17 +619,15 @@ def main() -> int:
     check("No per-component completeness requirement",
           "An editor component has members outside this assembly" not in simulation)
     gears=read("src/server/Runtime/GearKinematics.lua")
-    shaft_gears=read("src/server/Runtime/GearTransmission.lua")
-    belts=read("src/server/Runtime/BeltTransmission.lua")
-    rack_sim=read("src/server/Runtime/RackSimulationService.lua")
     gear_math=read("src/shared/Construction/GearMath.lua")
-    check("Shaft-centric gears keep native physics bearings and gear torque",
-          'session.Gears=GearTransmission.new(graph,copies,runtime)' in simulation
-          and 'session.Belts=BeltTransmission.new(graph,copies,runtime)' in simulation
-          and 'local weld=Instance.new("WeldConstraint")' in simulation
-          and 'Instance.new("HingeConstraint")' in simulation
-          and 'motor.Name="AuthoredGearRatioDrive"' not in simulation
-          and 'torque.Name="OPENWORKS_GearMeshTorque"' in shaft_gears)
+    check("Kinematic gears no longer receive native bearings or prefab joints",
+          'session.Gears=GearKinematics.new(graph,copies)' in simulation
+          and 'not session.Gears:IsKinematic(id)' in simulation
+          and 'session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))' in simulation
+          and 'session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId"))' in simulation
+          and 'part.Anchored=true' in simulation
+          and 'part.CanCollide=false' in simulation
+          and 'motor.Name="AuthoredGearRatioDrive"' not in simulation)
     check("Automatic gear meshes are independent of K authoring",
           'GearMath.AutoMeshable(left.Model,right.Model)' in gears
           and 'if left.Group==right.Group then continue end' in gears
@@ -659,12 +654,10 @@ def main() -> int:
           and 'countNearbyUnregisteredGears(' in simulation
           and 'session.UnregisteredGears' in simulation
           and 'NOT in assembly' in simulation)
-    check("Rack-specific legacy solver remains isolated from shaft-centric gearbox",
+    check("Obsolete explicit K edge does not force registered assembly expansion",
           'or kind == "Fixed" or kind == "Gear"' not in simulation
-          and 'GearMath.Kind(model)=="Rack"' in simulation
-          and 'return self.Rack:Start(player,payload)' in simulation
-          and 'RackSimulationService.new(deps)' in simulation
-          and 'session.Gears=GearKinematics.new(graph,copies)' in rack_sim)
+          and 'or kind == "Cylindrical" or kind == "Fixed"' in simulation
+          and 'if edge.kind == "Gear" then' in simulation)
     check("Kinematic gear train respects tooth ratios and rigid grouping",
           'edge.kind=="Weld" or edge.kind=="Fixed" or edge.kind=="Bolt"' in gears
           and 'ratio=-left.Teeth/right.Teeth*orientation' in gears
@@ -672,23 +665,24 @@ def main() -> int:
           and 'model:PivotTo(delta*model:GetPivot())' in gears
           and 'local stalled=false' in gears
           and 'if group.Grounded then stalled=true end' in gears)
-    check("Shaft-centric gear teeth remain selectable with noncolliding tooth peers",
-          'configureTransmissionCollisions()' in simulation
-          and 'part.CollisionGroup=GEAR_GROUP' in simulation
+    check("Gear bodies are physics-free but remain selectable",
+          'model:SetAttribute("OPENWORKS_GearKinematic",true)' in gears
           and 'part.CanQuery=part:GetAttribute("GearPivotOnly")~=true' in simulation
-          and 'PhysicsService:CollisionGroupSetCollidable(GEAR_GROUP,GEAR_GROUP,false)' in simulation)
-    check("Hand crank drives physically constrained shafts and bidirectional gear torque",
-          'drive.AngularVelocity=crank.Axis*crank.NativeSpeed' in simulation
-          and 'session.Gears:Step(dt)' in simulation
-          and 'session.Belts:Step(dt)' in simulation
-          and 'function Transmission:Step(dt)' in shaft_gears
-          and 'function Transmission:Step(dt)' in belts)
-    check("Welded shaft gears use Roblox gravity and symmetric mesh torque",
-          'local weld=Instance.new("WeldConstraint")' in simulation
-          and 'torque.Name="OPENWORKS_GearMeshTorque"' in shaft_gears
-          and 'group.Torque.Torque=group.Pending' in shaft_gears
-          and 'ratio' in shaft_gears
-          and 'AssemblyAngularVelocity' in shaft_gears)
+          and 'session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,' in simulation
+          and 'not session.Gears:IsKinematic(id)' in simulation)
+    check("Crank powers kinematic gears without native motors",
+          'local kinematic=session.Gears:IsKinematic(drivenId)' in simulation
+          and 'if not kinematic then' in simulation
+          and 'session.Gears:Step(dt,' in simulation
+          and 'if crank.Drive then crank.Drive.Enabled=false end' in simulation
+          and 'crank.NativeSpeed+=(HandCrankMath.FixedAngularSpeed' in simulation)
+    check("Gear and rigid shaft fall as one kinematic body, no native gear forces",
+          'function Kinematics:Translate(dt)' in gears
+          and 'group.FallVelocity-workspace.Gravity*maxStep' in gears
+          and 'shiftGroup(group,Vector3.new(0,offset,0))' in gears
+          and 'part.Anchored=true' in simulation
+          and 'part.CanCollide=false' in simulation
+          and 'not session.Gears:IsKinematic(id)' in simulation)
     check("Grounded bearing housing supports axle without native hinge forces",
           'function Kinematics:ConfigureSupport(' in gears
           and 'sg.Supported=true' in gears
@@ -743,12 +737,11 @@ def main() -> int:
           "HandCrankMath.ApplySize(model,data.size)" in service
           and "HandCrankMath.ValidSize" in persistence
           and "HandCrankMath.ShaftSize(source,target)" in mechanical)
-    check("Gear and pulley hubs expose ONLY explicit physical shaft welds",
-          '{id="Rigid",label=LABELS.Rigid}' in connection_catalog
-          and 'add("Rotation")' not in connection_catalog
-          and 'Belt="Friction belt between pulleys"' in connection_catalog
-          and 'mode=="Hub" then "Weld"' in mechanical
-          and 'kind=="Hub" then "Weld"' in read("src/shared/Construction/SmartPlacement.lua"))
+    check("Gear hub choice creates only physical hinge or weld",
+          '{id="Rotation",label=LABELS.Rotation}' in connection_catalog
+          and '{id="Rigid",label=LABELS.Rigid}' in connection_catalog
+          and 'request.relationKind=="Rotation" then "Bearing" else "Weld"' in mechanical
+          and 'kind=="Hub" then "Rotation"' in read("src/shared/Construction/SmartPlacement.lua"))
     gear_clearance=read("src/shared/Construction/BoreClearance.lua")
     smart_placement=read("src/shared/Construction/SmartPlacement.lua")
     preview=read("src/shared/Construction/PreviewFeedback.lua")
@@ -845,8 +838,7 @@ def main() -> int:
           and 'Enum.KeyCode.E' in rack_client
           and 'function Simulation:BeginRack(' in simulation
           and 'function Simulation:InputRack(' in simulation
-          and 'local RACK_MANUAL_SPEED = 1.5' in rack_sim
-          and 'return self.Rack:BeginRack(player,request)' in simulation
+          and 'local RACK_MANUAL_SPEED = 1.5' in simulation
           and 'OPENWORKS_RackControl' in service)
     check("Component duplication gives new IDs and preserves internal alignments",
           'idMap[part.instanceId] = HttpService:GenerateGUID(false)' in component
@@ -931,13 +923,12 @@ def main() -> int:
           and 'Smart.HubFits(candidate,target)' in service
           and 'local opening=if mode=="Hub" then' in mechanical
           and 'local fitted,why=Smart.HubFits(source,target)' in mechanical)
-    check("Manual L gear and pulley mounts auto-weld without alternate hub mode",
-          'local isHub=type(align.Target:GetAttribute("GearTeeth"))=="number"' in layered
-          and 'or align.Target:GetAttribute("PrimitiveFamily")=="Pulley"' in layered
+    check("Manual L gear alignment chooses real Rotation or Rigid",
+          'local isGear=type(align.Target:GetAttribute("GearTeeth"))=="number"' in layered
           and 'mateKind="Hub"' in layered
           and 'relationKind=choice' in layered
-          and 'onChoice("Rigid")' in layered
-          and 'parent.UnifiedExplorer:ChooseFit(' in layered)
+          and 'parent.UnifiedExplorer:ChooseFit(' in layered
+          and 'selected.FittedCount or 1))' in layered)
     check("Simulation uses gear center axis for physical hinge",
           'JointFrames.ForOpening(edge.target)' in simulation
           and 'local explicit = axisOverride(model)' in read("src/shared/Construction/AlignmentMath.lua")
@@ -965,7 +956,7 @@ def main() -> int:
           and 'Alignment.ReversePlan(members,opening,shaft,units,roll)' in smart_place
           and 'local units=math.clamp(snapped,loSnap,hiSnap)' in smart_place)
     check("Gear-on-shaft placement also preserves real cursor depth",
-          'if isHub and Alignment.IsShaft(target) then' in smart_place
+          'if isGear and Alignment.IsShaft(target) then' in smart_place
           and 'local cursorDepth=shaftCursorDepth(aimRay,target)' in smart_place
           and 'near=stationary.Position' in smart_place
           and 'Smart.HubPose(source,target,near)' in smart_place
@@ -1071,14 +1062,8 @@ def main() -> int:
         text = file.read_text(encoding="utf-8")
         if ":SetAsync(" in text or ":UpdateAsync(" in text:
             save_writes.append(file.relative_to(ROOT).as_posix())
-    check("Only plot autosave and independent per-player Component Bank persist",
-          sorted(save_writes) == sorted([
-              "src/server/Runtime/PlotPersistence.lua",
-              "src/server/Runtime/ComponentBankService.lua",
-          ])
-          and 'GetDataStore("OPENWORKS_ComponentBank_v1")' in read(
-              "src/server/Runtime/ComponentBankService.lua")
-          and 'GetDataStore(' in persistence,
+    check("Exactly one DataStore write location",
+          save_writes == ["src/server/Runtime/PlotPersistence.lua"],
           str(save_writes))
     plot_ui=read("src/client/Controllers/PlotSaveController.lua")
     config=read("src/shared/Construction/BuildConfig.lua")
@@ -1303,80 +1288,6 @@ def main() -> int:
           and 'self:Confirm()' in assembly_tool
           and 'self:Cancel()' in assembly_tool
           and 'Enum.KeyCode.G' not in assembly_tool)
-    # UI v2 integration contracts: preserve the new physics features without
-    # importing old-branch native tools, panels, or persistence assumptions.
-    bank_service=read("src/server/Runtime/ComponentBankService.lua")
-    bank_preview=read("src/client/Controllers/ComponentBankPreview.lua")
-    fit_origin=read("src/shared/Construction/FitOrigin.lua")
-    fit_solver=read("src/shared/Construction/FitSolver.lua")
-    catalog_meta=read("src/shared/Construction/PrimitiveCatalogMetadata.lua")
-    registry=read("src/shared/Construction/PrimitiveRegistry.lua")
-    help_v2=read("src/client/Controllers/ToolHelpDefinitions.lua")
-    panel_v2=read("src/client/Controllers/ContextEditor.lua")
-    check("UI v2 primitive catalog is grouped, searchable and ID-stable",
-          'Id = model.Name' in registry
-          and 'DisplayName=presentation.DisplayName' in registry
-          and 'function Catalog.Describe(' in catalog_meta
-          and 'self.CatalogSearch.Text' in selection
-          and 'CatalogMetadata.Categories' in selection
-          and 'self.CatalogCollapsed[name]' in selection)
-    check("UI v2 persistent bank is browsable, named and usable as blueprint",
-          'function Controller:RefreshBankEntries()' in selection
-          and 'function Controller:SelectBank(id)' in selection
-          and 'function Controller:PlaceSavedComponent()' in selection
-          and 'source=ComponentBankPreview.Create(self.CurrentBank)' in selection
-          and 'action="PlaceComponentBank"' in selection
-          and 'function Bank:Register(player,payload)' in bank_service
-          and 'function Bank:Place(player,payload)' in bank_service
-          and 'function Preview.Create(entry)' in bank_preview)
-    check("Placing saved components triggers plot autosave, not repeated bank writes",
-          'and (not bankAction or action=="PlaceComponentBank")' in service
-          and 'persistence:MarkDirty(player)' in service
-          and 'bankAction=action=="ListComponentBank"' in service
-          and 'DataStoreService:GetDataStore("OPENWORKS_ComponentBank_v1")'
-              in bank_service)
-    check("UI v2 bank modal owns mouse during text input",
-          'or (self.BankModal and self.BankModal.Visible)' in selection
-          and 'Name="OPENWORKS_BankSave"' in selection
-          and 'self.BankNameInput:CaptureFocus()' in selection
-          and 'self:CloseBankSave()' in selection)
-    check("UI v2 authored origins persist through preview and native geometry",
-          'function Origin.PreviewLocal(ghost)' in fit_origin
-          and 'function Solver.SurfacePose(' in fit_solver
-          and 'FitSolver.SurfacePose(' in selection
-          and 'function Controller:EditFitPivot(reset)' in selection
-          and 'action="SetFitPivot"' in selection
-          and 'function Controller:CommitFitPivot()' in selection
-          and 'fitPivotLocal=model:GetAttribute("FitPivotLocal")' in service)
-    check("UI v2 connects belts and never offers free-floating gear mounts",
-          'Belt="Friction belt between pulleys"' in connection_catalog
-          and 'add("Belt")' in connection_catalog
-          and 'add("Rotation")' not in connection_catalog
-          and 'action="CreateBelt"' in mechanics_connect
-          and 'kind=="Rigid"' in mechanics_connect
-          and 'action=="CreateBelt" or action=="RemoveBelt"' in service)
-    check("Alt+arrow nudges use UI v2 Edit scope and one atomic server batch",
-          'function Controller:CanNudge()' in selection
-          and 'self.Tools.PrimaryId=="Build"' in selection
-          and 'self.Tools.SubtoolId=="Edit"' in selection
-          and 'ContextActionService:BindActionAtPriority(' in selection
-          and 'scope,ids="Primitives",{}' in selection
-          and 'if scope=="Primitives" then' in service
-          and 'commitBatch(player,before,after)' in service)
-    check("Context editor exposes component bank and manual fitting origins",
-          'function Panel:BeginBuildOperation(node,action)' in panel_v2
-          and 'self.Build:OpenBankSave()' in panel_v2
-          and 'self.Build:EditFitPivot(false)' in panel_v2
-          and 'self.Build:EditFitPivot(true)' in panel_v2
-          and 'Shift+B' in help_v2
-          and 'O / Shift+O' in help_v2)
-    check("UI v2 rack fallback is isolated; pure gear and belt shafts use torque",
-          'RackSimulationService.new(deps)' in simulation
-          and 'return self.Rack:Start(player,payload)' in simulation
-          and 'session.Gears=GearTransmission.new(graph,copies,runtime)' in simulation
-          and 'session.Belts=BeltTransmission.new(graph,copies,runtime)' in simulation
-          and 'function Transmission:Step(dt)' in shaft_gears
-          and 'function Transmission:Step(dt)' in belts)
     check("Current docs and regressions documented",
           (ROOT / "docs/ARCHITECTURE.md").is_file()
           and (ROOT / "docs/QA_REGRESSION.md").is_file()

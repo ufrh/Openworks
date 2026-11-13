@@ -661,17 +661,12 @@ function Controller:CommitConnect(kind,first,second)
             targetId=roles.opening:GetAttribute("InstanceId"),
             offsetUnits=0,rollDegrees=0,reverse=false,
         }
-    elseif kind=="Rigid" then
+    elseif kind=="Rotation" or kind=="Rigid" then
         request={
-            action="SmartMate",mateKind="Hub",relationKind="Rigid",
+            action="SmartMate",mateKind="Hub",relationKind=kind,
             sourceId=roles.gear:GetAttribute("InstanceId"),
             targetId=roles.axle:GetAttribute("InstanceId"),
             approach=roles.gear:GetPivot().Position,
-        }
-    elseif kind=="Belt" then
-        request={
-            action="CreateBelt",
-            sourceId=firstId,targetId=secondId,
         }
     elseif kind=="CrankCoupling" then
         request={

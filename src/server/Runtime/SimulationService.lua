@@ -6,7 +6,6 @@
 -- Stop destroys clones and restores all original visibility/collision.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local PhysicsService=game:GetService("PhysicsService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Alignment = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
@@ -18,9 +17,7 @@ local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GridMath"))
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
-local GearTransmission=require(script.Parent:WaitForChild("GearTransmission"))
-local RackSimulationService=require(script.Parent:WaitForChild("RackSimulationService"))
-local BeltTransmission=require(script.Parent:WaitForChild("BeltTransmission"))
+local GearKinematics = require(script.Parent:WaitForChild("GearKinematics"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
 
@@ -33,13 +30,11 @@ local MAX_COLLISION_PAIRS = 1200
 -- If the client disappears or drops its held-input stream, never leave a
 -- running motor behind. The client pulses every 0.1s during LMB hold.
 local CRANK_HOLD_TIMEOUT = 0.5
+local RACK_HOLD_TIMEOUT = 0.5
+local RACK_MANUAL_SPEED = 1.5 -- studs/s; server chooses direction and power
 
--- Physical gear mesh torques act on real welded shaft assemblies.
-local GEAR_GROUP="OPENWORKS_MeshedGear"
-local function configureTransmissionCollisions()
-    pcall(function() PhysicsService:RegisterCollisionGroup(GEAR_GROUP) end)
-    PhysicsService:CollisionGroupSetCollidable(GEAR_GROUP,GEAR_GROUP,false)
-end
+-- Gears and all rigidly welded members rotate kinematically.
+-- Native physics is reserved for mechanisms OUTSIDE gear rigid bodies.
 local function bodyKey(model)
     -- ComponentId is only an editor grouping; NEVER a physical joint.
     return "p:" .. tostring(model:GetAttribute("InstanceId"))
@@ -102,13 +97,7 @@ function Simulation.new(deps)
         world.Name = "OPENWORKS_Simulated"
         world.Parent = workspace
     end
-    configureTransmissionCollisions()
     local self=setmetatable({ D=deps,World=world,Sessions={} },Simulation)
-    -- The UI v2 rack solver is isolated to assemblies containing a rack.
-    -- Pure gear/belt assemblies use native bidirectional shaft torque.
-    -- Keeping the rack runtime separate avoids replacing proven constrained
-    -- rack slide behavior with an unvalidated torque/translation hybrid.
-    self.Rack=RackSimulationService.new(deps)
     self.ActuatorHeartbeat=RunService.Heartbeat:Connect(function(dt)
         self:StepCranks(dt)
     end)
@@ -116,11 +105,11 @@ function Simulation.new(deps)
 end
 
 function Simulation:IsRunning(player)
-    return self.Sessions[player]~=nil
-        or self.Rack.Sessions[player]~=nil
+    return self.Sessions[player] ~= nil
 end
 
--- Cranks act on welded shafts with torque-limited native actuators.
+-- Gear groups receive purely deterministic CFrame rotation; other
+-- crank-driven shafts can retain their bounded native AngularVelocity.
 -- Held LMB authorizes movement; packets are liveness only.
 function Simulation:StopCrank(session,id)
     local crank=session.Cranks and session.Cranks[id]
@@ -128,7 +117,8 @@ function Simulation:StopCrank(session,id)
     crank.Running=false
     crank.LastInput=0
     crank.NativeSpeed=0
-    -- The native drive is shared by geared and ungeared shafts.
+    -- Ordinary non-geared shafts keep their bounded native drive.
+    -- Kinematic geared shafts have NO native motor to stop.
     if crank.Drive then crank.Drive.Enabled=false end
     if crank.Model and crank.Model.Parent then
         crank.Model:SetAttribute("OPENWORKS_CrankRunning",false)
@@ -136,12 +126,15 @@ function Simulation:StopCrank(session,id)
     if session.ActiveCrankId==id then session.ActiveCrankId=nil end
 end
 
+function Simulation:StopRack(session)
+    session.ActiveRackId=nil
+    session.RackLastInput=0
+    session.RackDirection=0
+end
+
 -- Only liveness/key state is accepted from the client. Speed and
 -- torque always come from saved, owner-verified relationship attributes.
 function Simulation:InputMotor(player,key,holding)
-    if self.Rack.Sessions[player] then
-        return self.Rack:InputMotor(player,key,holding)
-    end
     local session=self.Sessions[player]
     if not session or session.Paused or type(key)~="string"
         or #key>20 or type(holding)~="boolean" then return end
@@ -188,21 +181,40 @@ function Simulation:StepCranks(dt)
                 drive.AngularVelocity=crank.Axis*crank.NativeSpeed
             end
         end
-        -- Meshing transfers torque to both welded shaft assemblies.
+        -- Kinematic solver owns rotational gear/bevel groups AND
+        -- translating rack groups. Either a crank can drive a pinion
+        -- or a manually pushed rack can BACKDRIVE the same graph.
         if session.Gears and not session.Paused then
-            session.Gears:Step(dt)
-        end
-        if session.Belts and not session.Paused then
-            session.Belts:Step(dt)
+            local active=session.ActiveCrankId
+            local crank=active and session.Cranks[active] or nil
+            local powered=crank and crank.Running
+            local rackId=session.ActiveRackId
+            local rackModel=rackId and session.Gears:RackModel(rackId) or nil
+            if rackId and (not session.Gears:CanDriveRack(rackId)
+                or not rackModel or not rackModel.Parent
+                or not playerRoot
+                or not self.D.nearPlayer(owner,rackModel:GetPivot().Position)
+                or os.clock()-(session.RackLastInput or 0)>RACK_HOLD_TIMEOUT) then
+                self:StopRack(session)
+                rackId=nil
+            end
+            local rackDriven=not powered and rackId~=nil
+            session.Gears:Step(dt,
+                if powered then crank.DrivenId
+                    elseif rackDriven then rackId else nil,
+                if powered then crank.Axis
+                    elseif rackDriven then session.Gears:RackAxis(rackId)
+                    else nil,
+                if powered then HandCrankMath.FixedAngularSpeed
+                    elseif rackDriven then session.RackDirection*RACK_MANUAL_SPEED
+                    else 0)
         end
     end
 end
 
--- One held input runs the native crank shaft motor.
+-- Begin is one hold-start request. For kinematic geared assemblies no
+-- Roblox force or torque is applied; a server-owned speed input is used.
 function Simulation:BeginCrank(player,request)
-    if self.Rack.Sessions[player] then
-        return self.Rack:BeginCrank(player,request)
-    end
     local session=self.Sessions[player]
     if not session then return false,"Start simulation (P) before turning a crank" end
     if session.Paused then return false,"Resume simulation (O) first" end
@@ -229,13 +241,23 @@ function Simulation:BeginCrank(player,request)
     if not root or not self.D.nearPlayer(player,crank.Root.Position) then
         return false,"Crank must remain on your own plot"
     end
+    -- If a different crank now backdrives this gear graph, reset the
+    -- previous input's coast to avoid a sudden gearbox direction jump.
+    if session.Gears and session.Gears.LastDrivenId
+        and session.Gears.LastDrivenId~=crank.DrivenId then
+        session.Gears:StopMotion()
+    end
+    self:StopRack(session)
     for previousId in pairs(session.Cranks) do
         self:StopCrank(session,previousId)
     end
     session.ActiveCrankId=id
     crank.Running=true
     crank.LastInput=os.clock()
-    -- All cranks run their own torque-limited motor on the shaft.
+    -- A geared output is intentionally MOTOR-FREE; the kinematic
+    -- gearbox advances this same shaft and its connected gears during
+    -- StepCranks. Ungeared shafts retain their native torque-limited
+    -- AngularVelocity drive.
     if crank.Drive then
         crank.NativeSpeed=0
         crank.Drive.AngularVelocity=Vector3.zero
@@ -245,12 +267,62 @@ function Simulation:BeginCrank(player,request)
     return true,"Hand crank running • release LMB to stop"
 end
 
+-- Backdrive rack-and-pinion trains by holding an explicit linear
+-- control on a physically guided rack. No arbitrary client force, speed
+-- or WorldCFrame may reach the kinematic mechanism.
+function Simulation:BeginRack(player,request)
+    local session=self.Sessions[player]
+    if not session then return false,"Start an assembly simulation first" end
+    if session.Paused or not session.Gears then
+        return false,"Resume simulation before moving a rack"
+    end
+    local id=type(request)=="table" and request.rackId or nil
+    local direction=type(request)=="table" and request.direction or nil
+    if type(id)~="string" or #id>64
+        or (direction~=-1 and direction~=1) then
+        return false,"Select a rack and choose a push direction"
+    end
+    if not session.Gears:CanDriveRack(id) then
+        return false,"Rack must be inside a grounded guide to slide"
+    end
+    local rack=session.Gears:RackModel(id)
+    local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not rack or not rack.Parent or not root
+        or not self.D.nearPlayer(player,rack:GetPivot().Position) then
+        return false,"Guided rack must remain on your own plot"
+    end
+    if session.ActiveRackId~=id
+        or session.RackDirection~=direction then
+        session.Gears:StopMotion()
+    end
+    for crankId in pairs(session.Cranks) do
+        self:StopCrank(session,crankId)
+    end
+    session.ActiveRackId=id
+    session.RackDirection=direction
+    session.RackLastInput=os.clock()
+    return true,"Rack push active • release Q/E to stop"
+end
+
+function Simulation:InputRack(player,id,direction,holding,release)
+    local session=self.Sessions[player]
+    if not session or session.ActiveRackId~=id then return end
+    if release==true or holding~=true then
+        self:StopRack(session)
+        return
+    end
+    if direction~=session.RackDirection
+        or not session.Gears or not session.Gears:CanDriveRack(id)
+        or session.Paused then
+        self:StopRack(session)
+        return
+    end
+    session.RackLastInput=os.clock()
+end
+
 -- The remote is a held-input watchdog, never a speed command. Client
 -- values other than release or held state have no effect on crank power.
 function Simulation:InputCrank(player,id,_desired,holding,release)
-    if self.Rack.Sessions[player] then
-        return self.Rack:InputCrank(player,id,_desired,holding,release)
-    end
     local session=self.Sessions[player]
     if not session or session.ActiveCrankId~=id then return end
     local crank=session.Cranks and session.Cranks[id]
@@ -271,7 +343,8 @@ end
 function Simulation:SetStatus(player,running,grounded)
     player:SetAttribute("OPENWORKS_Simulating",running)
     player:SetAttribute("OPENWORKS_Grounded",grounded~=false)
-    -- No geared shaft is anchored unless the builder explicitly grounded it.
+    -- Native motion joints remain passive. Geared rigid bodies are
+    -- scripted/anchored; ordinary free shafts may use native crank torque.
 end
 
 function Simulation:Graph(player, seed)
@@ -318,7 +391,7 @@ function Simulation:Graph(player, seed)
                 and (kind == "Bearing" or kind == "Slider"
                     or kind == "Cylindrical" or kind == "Fixed"
                     or kind == "Spring" or kind == "Weld" or kind == "Bolt"
-                    or kind == "Belt") then
+) then
                 local a, b = bodyKey(source), bodyKey(target)
                 if a ~= b then
                     local edge = {source = source, target = target, kind = kind,
@@ -403,7 +476,6 @@ function Simulation:Graph(player, seed)
 end
 
 function Simulation:Stop(player)
-    if self.Rack.Sessions[player] then return self.Rack:Stop(player) end
     local session = self.Sessions[player]
     if not session then
         self:SetStatus(player,false)
@@ -413,9 +485,6 @@ function Simulation:Stop(player)
     self.Sessions[player] = nil
     -- Remove live physics first, THEN bring edit geometry back.
     if session.World then session.World:Destroy() end
-    for _,beam in ipairs(session.BeltVisuals or {}) do
-        if beam.Parent then beam.Enabled=true end
-    end
     for _, saved in ipairs(session.Originals) do
         if saved.Part and saved.Part.Parent then
             saved.Part.Transparency = saved.Transparency
@@ -449,13 +518,6 @@ function Simulation:Start(player, payload)
 
     local graph, reason = self:Graph(player, seed)
     if not graph then return false, reason end
-    -- Preserve UI v2 rack-and-guide simulation, including Q/E backdrive.
-    -- No geometry in the rack path is silently converted into shaft torque.
-    for _,model in ipairs(graph.models) do
-        if GearMath.Kind(model)=="Rack" then
-            return self.Rack:Start(player,payload)
-        end
-    end
     local unregisteredGears=countNearbyUnregisteredGears(
         player,graph,d.folder)
 
@@ -471,9 +533,9 @@ function Simulation:Start(player, payload)
         ActiveRelations={},
         Cranks={},
         ActiveCrankId=nil,
+        ActiveRackId=nil,
+        RackDirection=0,RackLastInput=0,
         Gears=nil,
-        Belts=nil,
-        BeltVisuals={},
         Motors={},
         UnregisteredGears=unregisteredGears,
     }
@@ -502,23 +564,23 @@ function Simulation:Start(player, payload)
             if not clone.PrimaryPart then
                 error("Source component has no PrimaryPart: " .. original.Name)
             end
-            local kind=GearMath.Kind(original)
-            for _,part in ipairs(allParts(clone)) do
-                part.Anchored=true -- temporary while assembling constraints
-                part.CanCollide=part:GetAttribute("GearPivotOnly")~=true
-                part.CanQuery=part:GetAttribute("GearPivotOnly")~=true
-                part.CanTouch=false
-                if kind=="Spur" or kind=="Bevel45" or kind=="Bevel90" then
-                    part.CollisionGroup=GEAR_GROUP
-                end
+            for _, part in ipairs(allParts(clone)) do
+                part.Anchored = true
+                -- The GearLibrary root is only a transform/pivot, not metal.
+                -- Keep the through-bore physically open in simulation.
+                part.CanCollide = part:GetAttribute("GearPivotOnly") ~= true
+                -- Needed for mouse selection of running physics clones.
+                part.CanQuery = part:GetAttribute("GearPivotOnly") ~= true
+                part.CanTouch = false
             end
             copies[id] = clone
             copyParts[id] = allParts(clone)
         end
 
-        -- Build the torque transfer map, not a scripted animation graph.
-        session.Gears=GearTransmission.new(graph,copies,runtime)
-        session.Belts=BeltTransmission.new(graph,copies,runtime)
+        -- Identify all fully kinematic gear/shaft/crank bodies BEFORE
+        -- constructing any native prefab joints. A kinematic gear has
+        -- ZERO Roblox physical constraints, including internal welds.
+        session.Gears=GearKinematics.new(graph,copies)
 
         -- A prefab is a physical primitive even if it has several geometry
         -- Parts (bolt heads / gear teeth). Only those INTERNAL parts are welded.
@@ -532,7 +594,7 @@ function Simulation:Start(player, payload)
                 if not anchor then error("Primitive has no physics root") end
                 bodyAnchors[key]=anchor
                 for _,part in ipairs(copyParts[id]) do
-                    if part~=anchor then
+                    if part~=anchor and not session.Gears:IsKinematic(id) then
                         local weld=Instance.new("WeldConstraint")
                         weld.Name="PrefabInternalPart"
                         weld.Part0=anchor
@@ -553,9 +615,15 @@ function Simulation:Start(player, payload)
             local source = copies[edge.source:GetAttribute("InstanceId")]
             if not target or not source then error("Missing joint endpoint") end
             local p0, p1 = target.PrimaryPart, source.PrimaryPart
-            if edge.kind == "Gear" or edge.kind=="Belt" then
+            if edge.kind == "Gear" then
                 -- Legacy K relationships are OPTIONAL metadata.
                 -- Meshing and transmission use geometry every frame.
+                continue
+            elseif session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))
+                or session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")) then
+                -- No native hinge/bearing/spring/rigid constraint may
+                -- exert ANY physical influence on geared rigid bodies.
+                -- Rigid members move cohesively under GearKinematics.
                 continue
             elseif edge.kind == "Fixed" or edge.kind=="Weld"
                 or edge.kind=="Bolt" then
@@ -733,7 +801,9 @@ function Simulation:Start(player, payload)
             end
         end
 
-        -- HandCranks always drive the native shaft, even with mounted gears.
+        -- Only standalone, ungeared crank shafts receive a native
+        -- AngularVelocity drive. Geared shafts have no motor, bearing
+        -- forces, collisions or physical joints; GearKinematics owns them.
         for _,original in ipairs(graph.models) do
             if not HandCrankMath.IsCrank(original) then continue end
             local id=original:GetAttribute("InstanceId")
@@ -763,17 +833,21 @@ function Simulation:Start(player, payload)
                 else model.PrimaryPart
             local drivenId=if coupledShaft then
                 coupledShaft:GetAttribute("InstanceId") else id
-            local attachment=Instance.new("Attachment")
-            attachment.Name="ControlledCrankShaftAxis"
-            attachment.Parent=root
-            local drive=Instance.new("AngularVelocity")
-            drive.Name="HandCrank_ControlledRotation"
-            drive.Attachment0=attachment
-            drive.RelativeTo=Enum.ActuatorRelativeTo.World
-            drive.MaxTorque=HandCrankMath.MaxTorque
-            drive.AngularVelocity=Vector3.zero
-            drive.Enabled=false
-            drive.Parent=runtime
+            local kinematic=session.Gears:IsKinematic(drivenId)
+            local drive=nil
+            if not kinematic then
+                local attachment=Instance.new("Attachment")
+                attachment.Name="ControlledCrankShaftAxis"
+                attachment.Parent=root
+                drive=Instance.new("AngularVelocity")
+                drive.Name="HandCrank_ControlledRotation"
+                drive.Attachment0=attachment
+                drive.RelativeTo=Enum.ActuatorRelativeTo.World
+                drive.MaxTorque=HandCrankMath.MaxTorque
+                drive.AngularVelocity=Vector3.zero
+                drive.Enabled=false
+                drive.Parent=runtime
+            end
 
             local axis=root.CFrame.RightVector.Unit
             model:SetAttribute("OPENWORKS_CrankRunning",false)
@@ -785,19 +859,6 @@ function Simulation:Start(player, payload)
                     else bodyKey(original),
                 Running=false,NativeSpeed=0,LastInput=0,LastPacket=0,
             }
-        end
-
-        -- Hide authored belt graphics while the simulation visual follows
-        -- the actual moving shaft centers, restoring them when it stops.
-        for _,edge in ipairs(graph.edges) do
-            if edge.kind=="Belt" then
-                for _,object in ipairs(edge.relation:GetDescendants()) do
-                    if object:IsA("Beam") then
-                        object.Enabled=false
-                        table.insert(session.BeltVisuals,object)
-                    end
-                end
-            end
         end
 
         -- 4. Hide originals but preserve every authored transform/material.
@@ -823,7 +884,7 @@ function Simulation:Start(player, payload)
         local explicitGround = {}
         -- Ungrounded-by-default means no IMPLICIT grounding of the
         -- aimed body. Player-authored Grounded supports always remain
-        -- grounded, so a deliberate bearing housing works.
+        -- grounded, so a deliberate bearing housing / rack guide works.
         for key, originals in pairs(graph.bodies) do
             if graph.included[key] then
                 for _, member in ipairs(originals) do
@@ -860,7 +921,10 @@ function Simulation:Start(player, payload)
             if groundedKey then session.GroundKeys[groundedKey]=true end
         end
 
-        -- Native shaft bearings remain active and enforce rotational freedom.
+        -- Bearing housings support geared axles translationally without
+        -- applying any native Roblox hinge force to gear rotation. Loose
+        -- geared shafts instead fall as one scripted rigid body; a free
+        -- bearing-mounted gear follows the shaft's movement.
         session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,
             created,player.Character,d.folder)
 
@@ -872,8 +936,19 @@ function Simulation:Start(player, payload)
                 local rootAnchor = bodyAnchors[key]
                 for _, original in ipairs(originals) do
                     for _, part in ipairs(copyParts[original:GetAttribute("InstanceId")] or {}) do
-                        part.Anchored=session.GroundKeys[key]==true
-                            and part==rootAnchor
+                        if session.Gears:IsKinematic(
+                            original:GetAttribute("InstanceId")) then
+                            -- These parts have no Roblox physics influence:
+                            -- bearing constraints were skipped above and
+                            -- collisions cannot push or jam a gear train.
+                            part.Anchored=true
+                            part.CanCollide=false
+                            part.CanTouch=false
+                            part.CanQuery=part:GetAttribute("GearPivotOnly")~=true
+                        else
+                            part.Anchored=session.GroundKeys[key]==true
+                                and part==rootAnchor
+                        end
                     end
                 end
             end
@@ -904,11 +979,11 @@ function Simulation:Start(player, payload)
         .. (if next(session.GroundKeys)
             then "green grounded / orange movable • P stop"
             else "free assembly • orange bodies • P stop")
-        .. (if session.Belts and #session.Belts.Loops>0 then
-            string.format(" • %d friction belt(s)",#session.Belts.Loops) else "")
-        .. (if session.Gears and #session.Gears.Gears>0 then
-            string.format(" • %d gears / %d automatic contact(s)",
-                #session.Gears.Gears,session.Gears.Contacts) else "")
+        .. (if session.Gears
+            and (#session.Gears.Gears>0 or #session.Gears.Racks>0) then
+            string.format(" • %d gears / %d racks / %d automatic contact(s)",
+                #session.Gears.Gears,#session.Gears.Racks,
+                session.Gears.Contacts) else "")
         .. (if unregisteredGears>0 then
             string.format(" • WARNING: %d nearby gear(s) NOT in assembly",
                 unregisteredGears) elseif session.Gears
@@ -920,16 +995,10 @@ end
 -- Keep runtime native constraints synchronized with authored property edits.
 -- Only the owning player's active simulation may receive live changes.
 function Simulation:HasRelationship(player,id)
-    if self.Rack.Sessions[player] then
-        return self.Rack:HasRelationship(player,id)
-    end
     local session=self.Sessions[player]
     return session~=nil and session.ActiveRelations[id]==true
 end
 function Simulation:SyncRelationship(player,relation)
-    if self.Rack.Sessions[player] then
-        return self.Rack:SyncRelationship(player,relation)
-    end
     local session=self.Sessions[player]
     if not session then return true end
     local id=relation:GetAttribute("RelationId")
@@ -1001,7 +1070,6 @@ function Simulation:SyncRelationship(player,relation)
 end
 
 function Simulation:Pause(player)
-    if self.Rack.Sessions[player] then return self.Rack:Pause(player) end
     local session = self.Sessions[player]
     if not session then return false, "Start simulation first" end
     if session.Paused then
@@ -1023,12 +1091,12 @@ function Simulation:Pause(player)
     for crankId in pairs(session.Cranks) do
         self:StopCrank(session,crankId)
     end
+    self:StopRack(session)
     for _,motor in ipairs(session.Motors or {}) do
         motor.Held=false
         if motor.Constraint.Parent then motor.Constraint.AngularVelocity=0 end
     end
     if session.Gears then session.Gears:StopMotion() end
-    if session.Belts then session.Belts:StopMotion() end
     local state = {}
     for _, item in ipairs(session.World:GetDescendants()) do
         if item:IsA("BasePart") then
@@ -1047,7 +1115,6 @@ function Simulation:Pause(player)
 end
 
 function Simulation:Reset(player)
-    if self.Rack.Sessions[player] then return self.Rack:Reset(player) end
     local session = self.Sessions[player]
     if not session then return false,"Start simulation first" end
     local seedId = session.SeedId
@@ -1057,7 +1124,6 @@ function Simulation:Reset(player)
 end
 
 function Simulation:Info(player,payload)
-    if self.Rack.Sessions[player] then return self.Rack:Info(player,payload) end
     local id = payload.seedId
     if type(id) ~= "string" then return false,"Aim at a body to inspect" end
     local model = self.D.findOwned(player,id)
@@ -1082,14 +1148,16 @@ function Simulation:Info(player,payload)
     table.insert(lines, tostring(current) .. " direct relationships")
     if session then
         table.insert(lines,if session.Paused then "PAUSED"
-            elseif session.Gears and session.Gears:IsGeared(id)
-                then "PHYSICAL SHAFT TRANSMISSION" else "LIVE PHYSICS")
-        if session.Gears and #session.Gears.Gears>0 then
+            elseif session.Gears and session.Gears:IsKinematic(id)
+                then "KINEMATIC TRANSMISSION" else "LIVE PHYSICS")
+        if session.Gears
+            and (#session.Gears.Gears>0 or #session.Gears.Racks>0) then
             table.insert(lines,string.format(
-                "%d transmission contact(s) • %d gears",
-                session.Gears.Contacts,#session.Gears.Gears))
+                "%d transmission contact(s) • %d gears • %d racks",
+                session.Gears.Contacts,#session.Gears.Gears,
+                #session.Gears.Racks))
         end
-        if session.Gears and session.Gears:IsGeared(id) then
+        if session.Gears and session.Gears:IsKinematic(id) then
             table.insert(lines,session.Gears:Explain(id))
         end
         if session.UnregisteredGears and session.UnregisteredGears>0 then
@@ -1111,23 +1179,7 @@ end
 
 function Simulation:ClearPlayer(player)
     if self:IsRunning(player) then self:Stop(player) end
-    self.Rack:ClearPlayer(player)
     self:SetStatus(player,false)
-end
-
--- Rack input is only available while the isolated UI v2 rack engine is live.
--- It never accepts arbitrary client velocities or positions.
-function Simulation:BeginRack(player,request)
-    if not self.Rack.Sessions[player] then
-        return false,"A guided rack is required in the simulated assembly"
-    end
-    return self.Rack:BeginRack(player,request)
-end
-
-function Simulation:InputRack(player,id,direction,holding,release)
-    if self.Rack.Sessions[player] then
-        self.Rack:InputRack(player,id,direction,holding,release)
-    end
 end
 
 return Simulation

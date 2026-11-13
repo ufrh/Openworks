@@ -1,0 +1,256 @@
+2026-11-12 17:47:46 -0600 | 9c3066d | test(ui-v2): verify manual hub auto-weld and exact catalog/fit solver contracts
+2026-11-12 17:46:55 -0600 | 831a899 | fix(ui-v2): manual gear/pulley-to-shaft alignment creates an automatic rigid weld
+2026-11-12 17:45:36 -0600 | 14104ce | test(ui-v2): assert bank, belt, pivot, catalog, nudge and rack-compatibility contracts
+2026-11-12 17:45:02 -0600 | 4f56f51 | chore(ui-v2): identify canonical integration branch and build marker in sync startup
+2026-11-12 17:44:59 -0600 | 260f28f | chore(ui-v2): identify canonical integration branch and build marker in sync startup
+2026-11-12 17:44:30 -0600 | 24d4bca | fix(ui-v2): Component Bank footer leads to selectable Edit context instead of invalid save
+2026-11-12 17:44:17 -0600 | 7de0e80 | docs: UI v2 full mechanics integration workflows and Studio acceptance matrix
+2026-11-12 17:41:33 -0600 | e91cdf3 | test(ui-v2): enforce shaft-centric gearbox and separate rack, pulley and Component Bank persistence contracts
+2026-11-12 17:38:07 -0600 | faf8b9f | docs(ui-v2): show bank, fit origin, pulley belt and primitive nudge controls
+2026-11-12 17:36:52 -0600 | dbb4fb8 | fix(ui-v2 integration): bank modal capture and plot autosave after reusable component placement
+2026-11-12 17:36:50 -0600 | 3fbd7aa | fix(ui-v2 integration): bank modal capture and plot autosave after reusable component placement
+2026-11-12 17:35:24 -0600 | b702e72 | integrate(ui-v2): contextual Component Bank save and precision fit-origin controls
+2026-11-12 17:34:47 -0600 | 51fd0b8 | integrate(ui-v2): create pulley belts from Connect pairing, weld gear hubs unconditionally
+2026-11-12 17:34:37 -0600 | 832b7a2 | integrate(ui-v2): belt connection option and rigid-only gear/pulley shaft mounts
+2026-11-12 17:31:45 -0600 | 74ca2f5 | integrate(ui-v2): explicit primitive/component fit origins, pivot editing hotkeys and local handles
+2026-11-12 17:31:03 -0600 | 00888eb | integrate(ui-v2): bank blueprint ghost placement and safe custom fit-origin preview
+2026-11-12 17:30:10 -0600 | 7a52363 | integrate(ui-v2): persistent Component Bank browser, save modal and reusable blueprint selection
+2026-11-12 17:28:18 -0600 | de159ec | integrate(placement): custom fitting origins, pulley shaft hubs and GearBlocks rack placement coexist
+2026-11-12 17:27:13 -0600 | ccfc3f0 | integrate(server): component bank, precision origins, pulleys and belts with UI-v2 three-tool auth and rack remotes
+2026-11-12 17:26:30 -0600 | 4828767 | integrate(simulation): shaft-centric gears and belts with preserved UI-v2 guided rack simulation/backdrive
+2026-11-12 17:25:48 -0600 | 0831a83 | preserve(ui-v2): isolate legacy rack-and-pinion simulation as rack-specific compatible fallback
+2026-11-12 17:23:39 -0600 | 2314331 | integrate(mechanics): shaft-welded gear hubs, friction belts, fitting and preserve UI v2 rack/guide mating
+2026-11-12 17:22:48 -0600 | 09e19fd | port: preserve component metadata and fitted geometry during persistence on UI v2
+2026-11-12 17:22:45 -0600 | e3fa72d | port: preserve component metadata and fitted geometry during persistence on UI v2
+2026-11-12 17:22:41 -0600 | 2ef8675 | port: preserve component metadata and fitted geometry during persistence on UI v2
+2026-11-12 17:21:34 -0600 | 2c38a59 | port(mechanics): add ComponentBankService.lua on UI v2
+2026-11-12 17:21:31 -0600 | 74a59ae | port(mechanics): add FitPivotSnap.lua on UI v2
+2026-11-12 17:21:29 -0600 | 23201e8 | port(mechanics): add FitPivotHandle.lua on UI v2
+2026-11-12 17:21:26 -0600 | 67b7abb | port(mechanics): add ComponentBankPreview.lua on UI v2
+2026-11-12 17:21:23 -0600 | 0255f25 | port(mechanics): add FitSolver.lua on UI v2
+2026-11-12 17:21:19 -0600 | 8148f19 | port(mechanics): add FitOrigin.lua on UI v2
+2026-11-12 17:21:06 -0600 | dbbd905 | port(mechanics): add FitFeatureRegistry.lua on UI v2
+2026-11-12 17:21:03 -0600 | 12ea463 | port(mechanics): add ComponentBankCodec.lua on UI v2
+2026-11-12 17:21:00 -0600 | 266f38b | port(mechanics): add BeltMath.lua on UI v2
+2026-11-12 17:20:58 -0600 | da0b88b | port(mechanics): add PulleyLibrary.lua on UI v2
+2026-11-12 17:20:56 -0600 | e4c5b54 | port(mechanics): add BeltVisual.lua on UI v2
+2026-11-12 17:20:52 -0600 | 0788b02 | port(mechanics): add BeltTransmission.lua on UI v2
+2026-11-12 17:20:48 -0600 | f15467e | port(mechanics): add GearTransmission.lua on UI v2
+2026-11-12 17:03:53 -0600 | 619b014 | perf(ui-v2): resolve primitive display labels in one registry pass per index snapshot
+2026-11-12 17:03:37 -0600 | e128bb5 | feat(ui-v2): show friendly primitive labels in contextual selection index
+2026-11-12 17:02:51 -0600 | bc68b8a | feat(ui-v2): high-priority Alt+arrow nudging for standalone, deep-selected and multi-selected primitives
+2026-11-12 17:02:20 -0600 | d3bac0a | feat(ui-v2): collision-checked individual and multi-primitive nudge scopes
+2026-11-12 17:01:40 -0600 | 58493e8 | feat(ui-v2): searchable categorized primitive library without changing the right-side UI v2 dock
+2026-11-12 17:01:03 -0600 | 46ee8d3 | feat(ui-v2): group primitive registry by stable human-facing catalog metadata
+2026-11-12 17:00:52 -0600 | ce07921 | feat(ui-v2): add stable human-readable names and ordered mechanical primitive categories
+2026-11-12 12:18:22 -0600 | f7ad12e | docs(ui): update active architecture and Studio regression for context-only editing
+2026-11-12 12:18:18 -0600 | 557cea4 | docs(ui): update active architecture and Studio regression for context-only editing
+2026-11-12 12:18:14 -0600 | 4ad3592 | docs(ui): update active architecture and Studio regression for context-only editing
+2026-11-12 12:17:36 -0600 | 2d499b8 | docs(ui): record context-only relationship inspector, centered assembly wizard and strict selected-box semantics
+2026-11-12 12:15:52 -0600 | 49e9195 | docs(ui): replace obsolete Explorer/dock instructions with right-click relationship editor and centered assembly workflow
+2026-11-12 12:14:41 -0600 | 37c0cd7 | test(ui): assert expanded but simulator-guarded contextual relation permissions
+2026-11-12 12:13:35 -0600 | 7af6a81 | test(ui): retain placement ghost budget while requiring frame-accurate resizing strokes
+2026-11-12 12:12:55 -0600 | 5e9a9b3 | feat(ui): allow explicitly confirmed contextual relationship removal from equipped native tools
+2026-11-12 12:12:43 -0600 | 1983d79 | fix(ui): make component selection bounds anchor-consistent and clear context on empty right-click
+2026-11-12 12:11:58 -0600 | 9f7644d | fix(ui): clean stale contextual selections and keep all relation metadata/resize wires current
+2026-11-12 12:11:53 -0600 | 436e176 | fix(ui): clean stale contextual selections and keep all relation metadata/resize wires current
+2026-11-12 12:09:32 -0600 | 115229b | test(ui): initialize construction source before context acceptance assertions
+2026-11-12 12:08:59 -0600 | c320ee8 | chore(ui): remove obsolete permanent Explorer/Properties hierarchy UI module ContextActionRegistry.lua
+2026-11-12 12:08:55 -0600 | 758b6f3 | chore(ui): remove obsolete permanent Explorer/Properties hierarchy UI module ExplorerData.lua
+2026-11-12 12:08:51 -0600 | 7b5ef0c | chore(ui): remove obsolete permanent Explorer/Properties hierarchy UI module UnifiedExplorer.lua
+2026-11-12 12:08:37 -0600 | bb30c17 | test(ui): replace outdated Explorer assertions with context, centered assembly, selection-only and resize contracts
+2026-11-12 12:07:21 -0600 | 29b8db3 | fix(ui): keep selection outlines deliberate and make F2 expose centered assembly controls
+2026-11-12 12:06:14 -0600 | 168a79e | refactor(ui): contextual editor reads authored relationship index without Explorer hierarchy UI
+2026-11-12 12:06:07 -0600 | 5efbade | refactor(ui): retain relation and assembly lookup as UI-independent authored index
+2026-11-12 12:04:19 -0600 | 7d4b0d1 | feat(ui): authorize context editing of material and mechanical properties across equipped native tools
+2026-11-12 12:03:58 -0600 | 648c013 | feat(ui): bootstrap contextual editor instead of Explorer and open properties only on demand
+2026-11-12 12:03:55 -0600 | e59106c | feat(ui): bootstrap contextual editor instead of Explorer and open properties only on demand
+2026-11-12 12:02:52 -0600 | ed275b9 | feat(ui): replace permanent Explorer/Properties dock with right-click relationship editor and centered assembly creator
+2026-11-12 11:56:49 -0600 | 52b2483 | fix(ui): remove persistent grounded/free world selection boxes
+2026-11-12 11:56:46 -0600 | 6a63893 | fix(ui): eliminate aimed-at assembly outlines; display only explicitly chosen draft members
+2026-11-12 11:56:27 -0600 | a6115ca | fix(ui): real-time selected geometry outlines and deny passive visual boxes
+2026-11-12 11:56:22 -0600 | d2f723c | fix(ui): real-time selected geometry outlines and deny passive visual boxes
+2026-11-12 11:56:03 -0600 | f472212 | cleanup(ui): remove unused hover renderer entirely
+2026-11-12 11:55:49 -0600 | 8594d8f | fix(ui): place primitive library on right and make resize selection track live geometry
+2026-11-12 06:36:32 -0600 | 0e2bd94 | fix(ui-v2): hide unavailable cursor shortcuts while smart fit target is active
+2026-11-12 06:36:07 -0600 | f9a6a2c | feat(ui-v2): include full Edit transforms and compact shared camera shortcuts in contextual panel
+2026-11-12 06:34:37 -0600 | 19a6d67 | docs(ui-v2): record separate left keybind palette and central shortcut ownership
+2026-11-12 06:34:19 -0600 | 6f94460 | test(ui-v2): add left sidebar, shortcut and cursor collision Studio acceptance checks
+2026-11-12 06:33:37 -0600 | ae8aabc | docs(ui-v2): describe left subtool/keybind sidebar and conflict-safe F2 UI cursor shortcut
+2026-11-12 06:32:49 -0600 | 398b51a | test(ui-v2): verify left subtool/keybind panels, live context and conflict-safe cursor focus
+2026-11-12 06:32:13 -0600 | 85c01b4 | fix(ui-v2): scope depth selection shortcuts to Edit, not Resize or Paint
+2026-11-12 06:30:51 -0600 | 11563db | fix(ui-v2): align left-panel shortcuts with live cursor and connection contexts
+2026-11-12 06:30:46 -0600 | 77d0210 | fix(ui-v2): align left-panel shortcuts with live cursor and connection contexts
+2026-11-12 06:29:59 -0600 | 04cdc48 | fix(ui-v2): add universal F2 dock cursor shortcut while reserving Edit Tab for depth selection
+2026-11-12 06:29:14 -0600 | 2b4d60c | feat(ui-v2): bootstrap left subtool/keybind sidebar alongside unified Explorer
+2026-11-12 06:28:48 -0600 | 28f4b5d | feat(ui-v2): add stacked left subtool shortcuts and live tool-specific keybind panels
+2026-11-12 06:26:22 -0600 | c67da29 | feat(ui-v2): contextual tool keybind reference backed by real controller states
+2026-11-12 05:21:26 -0600 | 2fecd75 | docs(ui-v2): index final Phase 6 cleanup and verification handoff
+2026-11-12 05:21:12 -0600 | 134e5c6 | test(ui-v2): add Phase 6 Studio cleanup/compatibility release checklist
+2026-11-12 05:20:36 -0600 | 2b81283 | docs(ui-v2): final Phase 6 cleanup, Luau parser CI and Studio release gates
+2026-11-12 05:19:32 -0600 | f28b34e | chore(ui-v2): mark final Phase 6 cleanup build for Roblox Studio smoke tests
+2026-11-12 05:19:07 -0600 | 354241a | docs(ui-v2): update module boundaries and UI ownership after legacy source removal
+2026-11-12 05:18:17 -0600 | a040985 | docs(ui-v2): align Phase 1-6 user instructions with cleanup and syntax validation
+2026-11-12 05:18:14 -0600 | d6c77db | docs(ui-v2): align Phase 1-6 user instructions with cleanup and syntax validation
+2026-11-12 05:18:12 -0600 | 99378a0 | docs(ui-v2): align Phase 1-6 user instructions with cleanup and syntax validation
+2026-11-12 05:17:22 -0600 | 1c7234d | test(ui-v2): enforce no duplicate HUD allocation and real Luau parser CI gate
+2026-11-12 05:16:29 -0600 | eb79d76 | refactor(ui-v2): prevent allocating legacy Assembly Editor HUD when unified dock is active
+2026-11-12 05:16:26 -0600 | f6a1152 | refactor(ui-v2): prevent allocating legacy Mechanics/Simulation HUD when unified dock is active
+2026-11-12 05:16:06 -0600 | 756f661 | refactor(ui-v2): publish unified dock before controller initialization to skip retired live HUDs
+2026-11-12 05:13:52 -0600 | 8001710 | ci(ui-v2): add real Luau syntax verification alongside Python source contracts
+2026-11-12 05:13:20 -0600 | 64c7c04 | fix(ui-v2): use initialized visual manager in Phase 6 static contract
+2026-11-12 05:13:10 -0600 | f0c60ea | fix(ui-v2): initialize Phase 6 verification sources before checking retired modules
+2026-11-12 05:11:36 -0600 | 695d92f | test(ui-v2): migrate final manual-fit assertion and enforce Phase 6 retired UI ownership
+2026-11-12 05:10:38 -0600 | 45df85c | chore(ui-v2): delete retired standalone UI module RelationshipProperties.lua
+2026-11-12 05:10:35 -0600 | 4ed0d40 | chore(ui-v2): delete retired standalone UI module MaterialPickerController.lua
+2026-11-12 05:10:32 -0600 | 130732d | chore(ui-v2): delete retired standalone UI module MateChoicePanel.lua
+2026-11-12 05:10:30 -0600 | b7c9cbe | chore(ui-v2): delete retired standalone UI module ComponentOutline.lua
+2026-11-12 05:10:24 -0600 | 9022321 | chore(ui-v2): delete retired standalone UI module ContextKeybinds.lua
+2026-11-12 05:10:08 -0600 | 73a27bf | test(ui-v2): enforce single live property/paint/connection UI and remove retired module assumptions
+2026-11-12 05:09:16 -0600 | 4cfe9a0 | refactor(ui-v2): retire standalone RelationshipProperties GUI; inspect in unified dock only
+2026-11-12 05:08:43 -0600 | 78a03f0 | refactor(ui-v2): retire legacy picker/material dialogs, dead outlines and redundant visual folders
+2026-11-12 05:07:30 -0600 | 611e9e5 | refactor(ui-v2): send manual L shaft/gear alignment through shared relationship picker
+2026-11-12 05:07:13 -0600 | 6250085 | fix(ui-v2): remove nonfunctional direct Bolt operation and keep supported Build Fasteners path
+2026-11-12 05:07:08 -0600 | fd43ca7 | fix(ui-v2): remove nonfunctional direct Bolt operation and keep supported Build Fasteners path
+2026-11-12 04:45:04 -0600 | eec7063 | docs(ui-v2): index Phase 5 Assembly/Simulation source implementation
+2026-11-12 04:44:51 -0600 | c7dc7db | docs(ui-v2): document Phase 5 inline assembly drafts and unified simulation controls
+2026-11-12 04:44:23 -0600 | dd950be | test(ui-v2): add Phase 5 assembly/simulation Studio acceptance and document manual Bolt integration gap
+2026-11-12 04:43:43 -0600 | 865c744 | docs(ui-v2): document non-destructive draft preservation across tool switches
+2026-11-12 04:43:30 -0600 | 1429020 | fix(ui-v2): preserve uncommitted assembly membership drafts across temporary tool switches
+2026-11-12 04:42:35 -0600 | 3681d0e | docs(ui-v2): hand off Phase 5 assembly drafts, unified simulation controls and Studio acceptance
+2026-11-12 04:41:24 -0600 | 0235751 | fix(ui-v2): preserve actively edited inputs during remote simulation status updates
+2026-11-12 04:40:32 -0600 | 9085c56 | feat(ui-v2): identify Phase 5 unified assembly/simulation build in Studio Output
+2026-11-12 04:39:28 -0600 | baab787 | test(ui-v2): assert actual assembly-to-Explorer draft publication call
+2026-11-12 04:38:45 -0600 | 04720d4 | test(ui-v2): migrate legacy source checks and cover Phase 5 draft, simulation and actuator input contracts
+2026-11-12 04:37:40 -0600 | e37bef9 | feat(ui-v2): route pause, reset and telemetry hotkeys through unified Simulation controls
+2026-11-12 04:36:45 -0600 | b5b2f56 | fix(ui-v2): keep simulation controls accessible and scope context actions to active assembly
+2026-11-12 04:36:43 -0600 | 279107e | fix(ui-v2): keep simulation controls accessible and scope context actions to active assembly
+2026-11-12 04:36:19 -0600 | 8b60122 | fix(ui-v2): scope simulation actions to the active registered assembly and retain global Stop escape
+2026-11-12 04:36:16 -0600 | baac31a | fix(ui-v2): scope simulation actions to the active registered assembly and retain global Stop escape
+2026-11-12 04:35:23 -0600 | 21edb39 | fix(ui-v2): prevent assembly draft replacement by duplicate create/edit actions
+2026-11-12 04:35:21 -0600 | 78d75fe | fix(ui-v2): prevent assembly draft replacement by duplicate create/edit actions
+2026-11-12 04:34:44 -0600 | cf54f99 | fix(ui-v2): preserve uncommitted assembly name across selection and avoid duplicate modal focus
+2026-11-12 04:33:59 -0600 | b6ba059 | fix(ui-v2): send assembly draft errors to unified status
+2026-11-12 04:33:54 -0600 | 8c79e67 | fix(ui-v2): release and block simulation actuator inputs while Explorer owns focus
+2026-11-12 04:33:50 -0600 | f4efd49 | fix(ui-v2): release and block simulation actuator inputs while Explorer owns focus
+2026-11-12 04:33:44 -0600 | f7df903 | fix(ui-v2): release and block simulation actuator inputs while Explorer owns focus
+2026-11-12 04:33:21 -0600 | 3953d54 | feat(ui-v2): refresh assembly draft and simulation controls on subtool and server session changes
+2026-11-12 04:32:43 -0600 | cc2879e | feat(ui-v2): render draft and simulation lifecycle regardless of inspected selection, remove duplicate control paths
+2026-11-12 04:32:12 -0600 | 89bbedc | feat(ui-v2): share authoritative registered-assembly start/stop lifecycle with unified Simulation panel
+2026-11-12 04:31:25 -0600 | 628737a | feat(ui-v2): add named assembly draft, membership controls and simulation lifecycle panel
+2026-11-12 04:30:03 -0600 | 820ca5e | feat(ui-v2): expose New Assembly in dock and share aiming feedback across Assembly Editor and Simulation
+2026-11-12 04:28:54 -0600 | 587c1f1 | fix(ui-v2): remove unused draft-name placeholder from assembly cancellation
+2026-11-12 04:28:25 -0600 | 5a6fe0f | feat(ui-v2): migrate assembly naming to unified draft, guard simulation edits and sync membership
+2026-11-12 04:22:09 -0600 | 088b7f4 | fix(ui-v2): synchronize construction crosshair and cursor state with connection choice focus
+2026-11-12 04:20:59 -0600 | f53863b | docs(ui-v2): link Phase 4 unified Connect implementation in documentation index
+2026-11-12 04:20:46 -0600 | 2178d57 | fix(ui-v2): avoid opening a second context menu over the connection picker
+2026-11-12 04:20:44 -0600 | f8e6491 | fix(ui-v2): identify Phase 4 build in Studio
+2026-11-12 04:19:58 -0600 | 8a64f7b | docs(ui-v2): describe unified Phase 4 connection workflow, permission scope and Studio acceptance
+2026-11-12 04:19:03 -0600 | bc192b4 | test(ui-v2): add Phase 4 unified Connect and real mechanical-fit Studio regression gates
+2026-11-12 04:18:06 -0600 | d3efcab | docs(ui-v2): document single Phase 4 Connect workflow and retired redundant key paths
+2026-11-12 04:17:37 -0600 | 18d695b | test(ui-v2): enforce shared Phase 4 relationship picker, one Connect path and narrow server authorization
+2026-11-12 04:16:23 -0600 | 9ebb233 | fix(ui-v2): retain minimal crosshair during mechanical authoring and modal-safe Tab
+2026-11-12 04:16:21 -0600 | 0685ceb | fix(ui-v2): avoid redundant Weld choice for physical gear mounts
+2026-11-12 04:16:18 -0600 | 48d380b | fix(ui-v2): show red preview for invalid mechanical geometry
+2026-11-12 04:14:41 -0600 | c34caa8 | feat(ui-v2): allow Explorer primitive selections to participate in the unified two-part Connect workflow
+2026-11-12 04:14:20 -0600 | fa5c05c | feat(ui-v2): share one connect-part selector between 3D clicks and Explorer rows
+2026-11-12 04:11:48 -0600 | 5cca79b | feat(ui-v2): expose context-based Connect entry and safely dismiss picker on tool switch
+2026-11-12 04:11:46 -0600 | 5f54c43 | feat(ui-v2): expose context-based Connect entry and safely dismiss picker on tool switch
+2026-11-12 04:11:04 -0600 | ab745e6 | feat(ui-v2): authorize only physical fit-only and gear-hub smart mating under Mechanics Connect
+2026-11-12 04:10:41 -0600 | cb71550 | refactor(ui-v2): remove redundant mechanical creation shortcuts and route all Connect clicks through pair picker
+2026-11-12 04:10:10 -0600 | 274fc9d | feat(ui-v2): select two parts once and author all supported mechanical connection kinds through one workflow
+2026-11-12 04:09:22 -0600 | 5f2806d | feat(ui-v2): add unified Connect participant state and retire automatic legacy joint start
+2026-11-12 04:08:21 -0600 | 2f57b64 | feat(ui-v2): route automatic shaft and gear fitting through the unified connection picker
+2026-11-12 04:07:58 -0600 | bba64d9 | feat(ui-v2): add one compact connection picker shared by Build smart fits and Mechanics Connect
+2026-11-12 04:07:05 -0600 | 9f26655 | feat(ui-v2): centralize compatible connection options for direct pairs and automatic fits
+2026-11-12 02:26:42 -0600 | fdd88dc | fix(ui-v2): show purple whole-assembly selection from Explorer in every primary tool
+2026-11-12 02:25:36 -0600 | a9144ed | docs(ui-v2): record partial-component safety and replicated-property regression gates
+2026-11-12 02:24:41 -0600 | d19f3c5 | fix(ui-v2): hide old instructional panels immediately after unified dock initialization
+2026-11-12 02:23:58 -0600 | 28dd60c | test(ui-v2): guard partial-component actions and refresh replicated properties
+2026-11-12 02:23:32 -0600 | cf4fe46 | fix(ui-v2): inspect true component anchor and avoid orphan tooltips during dock refresh
+2026-11-12 02:21:54 -0600 | 1524a1e | fix(ui-v2): keep full-component edits separate from read-only partial assembly slices
+2026-11-12 02:20:46 -0600 | d936b51 | fix(ui-v2): suppress destructive whole-component actions on partial Explorer entries
+2026-11-12 02:20:01 -0600 | 77a0f42 | fix(ui-v2): distinguish partial assembly components and refresh dock on replicated properties
+2026-11-12 02:15:26 -0600 | d25ab47 | test(ui-v2): add in-Studio Phase 3 Explorer, inline property, modal and contextual interaction regression gates
+2026-11-12 02:14:35 -0600 | 1b4f55f | docs(ui-v2): index Phase 3 Explorer and clarify Studio validation status
+2026-11-12 02:14:32 -0600 | afd0ec8 | docs(ui-v2): update active Phase 3 branch and UI instructions
+2026-11-12 02:13:50 -0600 | 7f98171 | docs(ui-v2): capture Phase 3 unified Explorer, inline editing and Studio acceptance handoff
+2026-11-12 02:11:59 -0600 | 5895f27 | test(ui-v2): enforce Phase 3 Explorer, Properties, selection, menus and input contracts
+2026-11-12 02:11:33 -0600 | 2b2fe19 | fix(ui-v2): inspect relation endpoints individually and preserve true component-anchor outlines
+2026-11-12 02:09:50 -0600 | e1b0e9b | fix(ui-v2): inspect live simulated bodies while binding Properties to authored identities
+2026-11-12 02:09:04 -0600 | 285fd01 | fix(ui-v2): prevent native Tool.Activated world actions during Explorer interactions
+2026-11-12 02:07:58 -0600 | 014e7ed | feat(ui-v2): link selected primitives to actual connections and focus inline Paint properties
+2026-11-12 02:07:00 -0600 | 22651b2 | feat(ui-v2): suppress legacy instructional HUD in AssemblyController.lua while preserving interactive modals
+2026-11-12 02:06:57 -0600 | 208e142 | feat(ui-v2): suppress legacy instructional HUD in AssemblyToolController.lua while preserving interactive modals
+2026-11-12 02:06:55 -0600 | 60e5582 | feat(ui-v2): suppress legacy instructional HUD in ConstructionController.lua while preserving interactive modals
+2026-11-12 02:04:48 -0600 | 08dafa6 | feat(ui-v2): bootstrap unified Explorer, retire persistent keybind instructions and wire shared selection
+2026-11-12 02:04:15 -0600 | 1e0a500 | feat(ui-v2): respect unified Explorer pointer focus in AssemblyToolController.lua
+2026-11-12 02:04:13 -0600 | c60461b | feat(ui-v2): respect unified Explorer pointer focus in ToolController.lua
+2026-11-12 02:04:10 -0600 | d48582e | feat(ui-v2): respect unified Explorer pointer focus in CameraController.lua
+2026-11-12 02:03:51 -0600 | d19de45 | feat(ui-v2): route Mechanics Configure and Simulation inspection through shared Explorer
+2026-11-12 02:02:59 -0600 | 1eae75e | feat(ui-v2): sync construction selection to Explorer and let dock own Paint/focus input
+2026-11-12 02:02:37 -0600 | 8b19dda | feat(ui-v2): share assembly membership toggling between world selection and Explorer
+2026-11-12 02:02:23 -0600 | 734ea94 | fix(ui-v2): preserve nested Explorer search results, local toggle closure and smart-target Tab routing
+2026-11-12 02:01:14 -0600 | 0eb0f8f | feat(ui-v2): implement synchronized Explorer/Properties, context menus and inline engineering controls
+2026-11-12 01:56:58 -0600 | d917e79 | feat(ui-v2): contextual action registry with tool and simulation permission filtering
+2026-11-12 01:56:05 -0600 | 868f4ed | feat(ui-v2): read-only Explorer model for assemblies, partial components and connections
+2026-11-12 01:48:46 -0600 | 70551a4 | fix(ui-v2): render powered-motor POW callout from PlayerGui and clean it up with its arc
+2026-11-12 01:48:08 -0600 | bc25128 | docs(ui-v2): document automatic fit visual feedback and replication-confirmed participants
+2026-11-12 01:47:51 -0600 | 173cc8d | test(ui-v2): require smart-fit pending visuals and commit-only confirmation on authored parts
+2026-11-12 01:47:22 -0600 | 99a4f61 | fix(ui-v2): confirm smart-mate feedback on real authored models, not moving ghost clones
+2026-11-12 01:46:42 -0600 | efee65e | feat(ui-v2): extend pending/confirmed two-part visuals to automatic Build and Edit smart-mates
+2026-11-12 01:46:10 -0600 | c99f8fe | feat(ui-v2): expose pending smart-fit color through unified ghost manager
+2026-11-12 01:46:00 -0600 | 95fe7ba | feat(ui-v2): support orange smart-mate ghost edge state while retaining red invalid priority
+2026-11-12 01:44:25 -0600 | be1a15d | test(ui-v2): assert component-local anchor ordering for whole-component bounding boxes
+2026-11-12 01:43:54 -0600 | 91c73ae | docs(ui-v2): link Phase 2 visuals and correct active implementation status
+2026-11-12 01:43:52 -0600 | 1971130 | docs(ui-v2): link Phase 2 visuals and correct active implementation status
+2026-11-12 01:43:36 -0600 | 36c5598 | docs(ui-v2): record Phase 2 shared visual implementation, tests and honest CSG limits
+2026-11-12 01:42:37 -0600 | 6d77d5c | refactor(ui-v2): align preview colors and remove obsolete model Highlight painting
+2026-11-12 01:42:16 -0600 | 78473aa | feat(ui-v2): preserve neon scale grips while making resize ghosts use shared wireframe and opacity
+2026-11-12 01:41:47 -0600 | b0d29e3 | docs(ui-v2): record shared visual ownership, semantics and remaining CSG geometry limits
+2026-11-12 01:41:11 -0600 | 9e2f5b4 | perf(ui-v2): replace quadratic visual overlay priority scans with indexed suppression
+2026-11-12 01:40:40 -0600 | 9c17a3c | perf(ui-v2): cache snap target outlines and anchor component bounds to editor pivot
+2026-11-12 01:39:39 -0600 | fde6def | test(ui-v2): document twelve-edge selection, connection states, ghost feedback and remaining CSG validation
+2026-11-12 01:38:51 -0600 | 8631a58 | feat(ui-v2): add contextual aqua primitive and whole-component hover boxes
+2026-11-12 01:38:00 -0600 | 7b18fc7 | test(ui-v2): assert generalized connection rejection state for welds and pairs
+2026-11-12 01:37:28 -0600 | 6cd3e6c | feat(ui-v2): show both welding/spring/coupling participants and retain red rejection feedback
+2026-11-12 01:36:37 -0600 | 25a5126 | fix(ui-v2): initialize mechanical controller source before visual contract assertions
+2026-11-12 01:35:37 -0600 | 47d705c | test(ui-v2): migrate legacy Highlight assertions to the new feedback, ghost and joint contracts
+2026-11-12 01:35:11 -0600 | 15f76d5 | feat(ui-v2): replace manual bore target Highlight with shared cyan target box
+2026-11-12 01:34:48 -0600 | 6d05124 | feat(ui-v2): render mechanical-fitting ghosts through shared geometry wireframe
+2026-11-12 01:34:24 -0600 | ced70f8 | feat(ui-v2): render precision manual shaft-fit ghosts with shared blue/red geometry edges
+2026-11-12 01:34:06 -0600 | 6a003aa | fix(ui-v2): recover ghost geometry edges after temporary no-hit unparenting
+2026-11-12 01:33:56 -0600 | 1c8e483 | feat(ui-v2): attach Build placement and move ghosts to blue/red geometry wireframe renderer
+2026-11-12 01:33:31 -0600 | b1dd718 | feat(ui-v2): manage geometry-edge ghost outlines from shared feedback service
+2026-11-12 01:32:55 -0600 | 409fd71 | feat(ui-v2): add geometry-following ghost edge strokes for primitives with safe CSG fallback
+2026-11-12 01:31:51 -0600 | 0a417a8 | perf(ui-v2): preserve orange connection edges across HUD refreshes without recreating 12-line boxes
+2026-11-12 01:30:13 -0600 | d33ddb5 | feat(ui-v2): migrate mechanical inspector selection to shared cyan bounding-box feedback
+2026-11-12 01:29:56 -0600 | 70f5fd5 | feat(ui-v2): orange two-part relationship selection, red invalid fit and green server-confirmed success
+2026-11-12 01:29:08 -0600 | 4c87650 | feat(ui-v2): unify grounding bounds and replace old mechanism guides with precise minimal joint adornments
+2026-11-12 01:27:48 -0600 | 6112839 | feat(ui-v2): replace assembly Highlights with shared purple whole-assembly and membership boxes
+2026-11-12 01:27:21 -0600 | 15770b0 | feat(ui-v2): create one shared visual feedback manager for construction, mechanics and assembly
+2026-11-12 01:27:06 -0600 | 4807721 | feat(ui-v2): migrate construction selection, snap and ghost opacity
+2026-11-12 01:25:00 -0600 | a133b31 | feat(ui-v2): add shared twelve-edge selection and operation feedback manager
+2026-11-12 01:04:29 -0600 | b7d9cd0 | fix(ui-v2): preserve Mechanics undo in both subtools and safely reset Connect on Escape
+2026-11-12 01:03:07 -0600 | dcd74d3 | docs(ui-v2): link Phase 1 migration handoff from documentation index
+2026-11-12 01:02:53 -0600 | 117bc08 | docs(ui-v2): record Phase 1 implementation, controls and Studio acceptance handoff
+2026-11-12 00:59:24 -0600 | 7a80099 | docs(ui-v2): document three-tool eight-subtool Phase 1 controls and persistence behavior
+2026-11-12 00:57:09 -0600 | 79518c7 | docs(ui-v2): make transitional hotkey HUD accurate for Mechanics subtools
+2026-11-12 00:56:22 -0600 | 55da76d | feat(ui-v2): display active Build subtool in construction HUD
+2026-11-12 00:55:55 -0600 | f5bf89a | fix(ui-v2): retain undo and redo while authoring mechanics
+2026-11-12 00:54:40 -0600 | 8d26f98 | fix(ui-v2): provision displayed tool names without duplicate StarterPack entries
+2026-11-12 00:53:19 -0600 | 77748e2 | ci(ui-v2): run source-contract checks on isolated migration branch
+2026-11-12 00:52:13 -0600 | e4c6360 | feat(ui-v2): restrict simulation action buttons to Simulation subtool
+2026-11-12 00:51:48 -0600 | 155daa6 | fix(ui-v2): correct regex for eight subtool contract assertions
+2026-11-12 00:51:22 -0600 | 36a0caa | test(ui-v2): migrate source contracts to three primary tools and eight subtools
+2026-11-12 00:50:44 -0600 | d3fb2ff | feat(ui-v2): protect live fitting and modal inputs from subtool hotkeys
+2026-11-12 00:49:45 -0600 | fb1df1b | feat(ui-v2): migrate mechanical authoring to Connect, settings to Configure, and retain validated weld flow
+2026-11-12 00:48:47 -0600 | da6b8f9 | feat(ui-v2): bind Build editing, resize, paint and input guards to contextual subtools
+2026-11-12 00:47:01 -0600 | 1e8943e | feat(ui-v2): remap server action and actuator authorization to three native tools
+2026-11-12 00:45:42 -0600 | 8a316f9 | feat(ui-v2): clean up six legacy tools and provision three native tool slots
+2026-11-12 00:45:19 -0600 | 7315ced | feat(ui-v2): route three native tools into eight remembered contextual subtools
+2026-11-12 00:44:16 -0600 | f7c43e9 | feat(ui-v2): define eight contextual subtools and compatibility modes
+2026-11-12 00:44:04 -0600 | d54b274 | feat(ui-v2): provision three primary engineering tools
+2026-11-12 00:39:05 -0600 | efe5e79 | docs(ui-v2): link phase 0 baseline and regression matrix
+2026-11-12 00:38:39 -0600 | 417d16e | docs(ui-v2): define saved-machine fixtures and migration regression gates
+2026-11-12 00:37:12 -0600 | cf82b23 | docs(ui-v2): capture phase 0 frozen tool and architecture baseline

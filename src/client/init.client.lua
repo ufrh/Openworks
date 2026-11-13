@@ -1,7 +1,7 @@
 --!strict
 -- OPENWORKS client bootstrap: native tools, Forge, editor and simulation controllers.
 -- The launcher reads this marker to report the local client build.
-local BUILD = "2026.11.12.UI-V2-MECHANICS-INTEGRATION"
+local BUILD = "2026.11.12.UI-V2-CONTEXT-CREATOR"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
