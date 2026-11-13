@@ -32,6 +32,16 @@ local ROOT_SHOULDER = math.rad(0.55)
 local BOLT_BASE_SHAFT_LENGTH = 2.0
 local BOLT_BASE_SHAFT_DIAMETER = 0.25
 
+-- A Studio *plugin* publishes the nine base EditableMeshes once. This manifest
+-- survives saving/reopening the place; at runtime we use permanent asset IDs
+-- instead of DataModel-scoped temporary geometry. Never modify these keys.
+local PUBLISHED_MANIFEST_NAME = "OPENWORKS_PublishedMeshAssets"
+local PUBLISHED_SCHEMA = 1
+local BOLT_BASE_KEY = "Bolt_SharpThread"
+local function gearBaseKey(teeth, bevel)
+    return string.format("%s_%02dT", if bevel then "Bevel90" else "Spur", teeth)
+end
+
 local installed = false
 local installedList = {}
 local progress = "Not started"
@@ -62,14 +72,34 @@ end
 -- centric mathematical relationships, not physical tooth contact, so gear
 -- visuals remain noncollidable instead of filling the center bore with a
 -- box. Gear collision proxies are a separate future physics acceptance task.
-local function bakedPart(mesh, desiredFidelity)
+local function configureVisualPart(part: MeshPart): MeshPart
+    part.Name = "Geometry"
+    part.Anchored = true
+    part.CanQuery = false
+    part.CanTouch = false
+    part.CanCollide = false
+    part.CastShadow = true
+    part.RenderFidelity = Enum.RenderFidelity.Precise
+    part.Material = Enum.Material.Metal
+    part.MaterialVariant = ""
+    part.Color = Color3.fromRGB(145, 154, 166)
+    -- Physical gear rim / bolt shank collisions are supplied separately.
+    -- A MeshPart with Box fidelity must NEVER block the real shaft bore.
+    part.Massless = true
+    part:SetAttribute("OpenworksCollisionReady", true)
+    part:SetAttribute("OpenworksCollisionMode", "VisualOnly")
+    return part
+end
+
+local function bakedPart(mesh: EditableMesh, _desiredFidelity)
+    -- Temporary preview path ONLY. DataModel-scoped content is not persistent!
     local bakeOK, bakeStatus, staticContent = pcall(function()
         return AssetService:CreateDataModelContentAsync(Content.fromObject(mesh))
     end)
     if not bakeOK or bakeStatus ~= Enum.CreateContentResult.Success
         or not staticContent then
         mesh:Destroy()
-        error("Static mesh bake failed (Mesh / Image APIs must be enabled): "
+        error("Static preview bake failed (Mesh / Image APIs must be enabled): "
             .. tostring(bakeStatus))
     end
     local created, part = pcall(function()
@@ -80,29 +110,52 @@ local function bakedPart(mesh, desiredFidelity)
     end)
     mesh:Destroy()
     assert(created and part,
-        "Static visual MeshPart creation failed: " .. tostring(part))
+        "Static preview MeshPart creation failed: " .. tostring(part))
+    return configureVisualPart(part)
+end
 
-    part.Name = "Geometry"
-    part.Anchored = true
-    part.CanQuery = true
-    part.CanTouch = false
-    part.CastShadow = true
-    part.RenderFidelity = Enum.RenderFidelity.Precise
-    part.Material = Enum.Material.Metal
-    part.MaterialVariant = ""
-    part.Color = Color3.fromRGB(145, 154, 166)
+local function publishedPart(assetId: number, baseKey: string): MeshPart
+    -- Content.fromAssetId references an uploaded Roblox mesh asset and does
+    -- NOT use DataModel-scoped content. No EditableMesh is created in game.
+    local ok, part = pcall(function()
+        return AssetService:CreateMeshPartAsync(Content.fromAssetId(assetId), {
+            CollisionFidelity = Enum.CollisionFidelity.Box,
+            RenderFidelity = Enum.RenderFidelity.Precise,
+        })
+    end)
+    assert(ok and part,
+        string.format("Published mesh %s (asset %s) could not load: %s. "
+            .. "Check mesh moderation / ownership, then retry.",
+            baseKey, tostring(assetId), tostring(part)))
+    return configureVisualPart(part)
+end
 
-    -- The MeshPart collision geometry must be configured at creation, not by
-    -- assigning CollisionFidelity afterward (read-only during gameplay).
-    -- Box is safe for a bolt's solid shank/head but NOT for a gear's bore.
-    -- Both gear and bolt meshes use separate simple collision geometry.
-    -- Never let their baking-time box collider obstruct real shaft openings.
-    part.CanCollide=false
-    part.CanQuery=false
-    part.Massless=true
-    part:SetAttribute("OpenworksCollisionReady", true)
-    part:SetAttribute("OpenworksCollisionMode", "VisualOnly")
-    return part
+local function readPublishedAssets()
+    local manifest = ReplicatedStorage:FindFirstChild(PUBLISHED_MANIFEST_NAME)
+    if not manifest then return nil end
+    assert(manifest:IsA("Folder"), "Published mesh manifest must be a Folder")
+    if manifest:GetAttribute("Ready") ~= true then
+        -- An interrupted publication remains safely resumable; the system
+        -- still uses the temporary fallback until all nine are uploaded.
+        stage("Mesh publication incomplete; using temporary previews until finished")
+        return nil
+    end
+    assert(manifest:GetAttribute("SchemaVersion") == PUBLISHED_SCHEMA,
+        "Unsupported persistent mesh manifest schema; update the publisher plugin")
+    local ids = {}
+    local function readOne(key: string)
+        local value = manifest:FindFirstChild(key)
+        assert(value and value:IsA("StringValue")
+            and value.Value:match("^%d+$") and tonumber(value.Value) > 0,
+            "Permanent mesh manifest is missing a valid asset ID: " .. key)
+        ids[key] = tonumber(value.Value)
+    end
+    for _, teeth in ipairs(COUNTS) do
+        readOne(gearBaseKey(teeth, false))
+        readOne(gearBaseKey(teeth, true))
+    end
+    readOne(BOLT_BASE_KEY)
+    return ids
 end
 
 local function makeOutline(teeth)
@@ -152,7 +205,7 @@ local function makeOutline(teeth)
     return samples, pitch, root, tip
 end
 
-local function buildGearMesh(teeth, bevel)
+local function buildGearMesh(teeth, bevel, onEditable)
     local samples, pitch, root, tip = makeOutline(teeth)
     local mesh = createEditable()
     local rings = {}
@@ -217,15 +270,30 @@ local function buildGearMesh(teeth, bevel)
         tri(b.inf, b.inb, a.inb, innerNormal)
     end
     assert(triangleCount <= 20000, "Gear exceeds Roblox 20k-triangle limit")
-    return bakedPart(mesh, Enum.CollisionFidelity.PreciseConvexDecomposition),
-        {pitch = pitch, root = root, tip = tip, triangles = triangleCount,
-            vertices = #samples * 4}
+    local details = {pitch = pitch, root = root, tip = tip,
+        triangles = triangleCount, vertices = #samples * 4}
+    if onEditable then
+        -- A locally installed Studio plugin supplies onEditable and invokes
+        -- privileged CreateAssetAsync while this EditableMesh is still alive.
+        local ok, result = pcall(onEditable, mesh)
+        mesh:Destroy()
+        if not ok then error(result) end
+        return result, details
+    end
+    return bakedPart(mesh, Enum.CollisionFidelity.PreciseConvexDecomposition), details
+end
+
+local function publishedGearDetails(teeth)
+    local samples, pitch, root, tip = makeOutline(teeth)
+    -- Eight triangles per perimeter sample, independent of the bevel angle.
+    return {pitch = pitch, root = root, tip = tip,
+        triangles = #samples * 8, vertices = #samples * 4}
 end
 
 -- A single continuous watertight hex-head bolt, with a chamfered head,
 -- smooth shoulder, tapered tip and a helical thread relief in the shaft.
 -- Local +X follows the shaft, matching BoltMath and existing bolt prefabs.
-local function buildBoltMesh()
+local function buildBoltMesh(onEditable)
     local SHAFT_LENGTH = BOLT_BASE_SHAFT_LENGTH
     local SHAFT_DIAMETER = BOLT_BASE_SHAFT_DIAMETER
     local HEAD_LENGTH = 0.17
@@ -346,9 +414,25 @@ local function buildBoltMesh()
     mesh:RemoveUnused() -- discard auto-created soft normals; keep hard face normals
     print(string.format("[OPENWORKS][BOLTS] Generated hard-surface mesh: %d triangles / %d normals", triangles, normals))
 
-    local part = bakedPart(mesh, Enum.CollisionFidelity.PreciseConvexDecomposition)
-    return part, {triangles = triangles, vertices = #sections * SIDES + 2,
+    local details = {triangles = triangles, vertices = #sections * SIDES + 2,
         headLength = HEAD_LENGTH, pitch = pitch}
+    if onEditable then
+        local ok, result = pcall(onEditable, mesh)
+        mesh:Destroy()
+        if not ok then error(result) end
+        return result, details
+    end
+    return bakedPart(mesh, Enum.CollisionFidelity.PreciseConvexDecomposition), details
+end
+
+local function publishedBoltDetails()
+    local sides, turns, samplesPerTurn = 60, 11, 12
+    local sections = 5 + turns * samplesPerTurn + 2
+    local threadStart = -BOLT_BASE_SHAFT_LENGTH / 2 + 0.31
+    local threadEnd = BOLT_BASE_SHAFT_LENGTH / 2 - 0.065
+    return {triangles = sections * sides * 2,
+        vertices = sections * sides + 2,
+        headLength = 0.17, pitch = (threadEnd - threadStart) / turns}
 end
 local function folder(parent, name)
     local found = parent:FindFirstChild(name)
@@ -397,7 +481,7 @@ local function ringCollision(model, scale, rootRadius, pitch, bevel)
     end
 end
 
-local function addGear(parent, source, kind, teeth, index, details)
+local function addGear(parent, source, kind, teeth, index, details, assetId)
     local scale = SCALES[index]
     local bevel = kind == "Bevel90"
     local name = string.format("%s_%02dT_S%02d", kind == "Spur" and "GearMesh" or "Bevel90Mesh",
@@ -426,7 +510,8 @@ local function addGear(parent, source, kind, teeth, index, details)
     model:SetAttribute("BoreDiameter", 2 * BORE_RADIUS * scale)
     model:SetAttribute("FaceWidth", FACE_WIDTH * scale)
     model:SetAttribute("Triangles", details.triangles)
-    model:SetAttribute("StaticDataModelMesh", true)
+    model:SetAttribute("StaticDataModelMesh", not assetId)
+    if assetId then model:SetAttribute("PublishedMeshAssetId", tostring(assetId)) end
     local mesh = source:Clone()
     mesh.Name = "Geometry"
     mesh.Size = source.Size * scale
@@ -441,7 +526,7 @@ local function addGear(parent, source, kind, teeth, index, details)
     return model
 end
 
-local function addBolt(parent, source, index, details)
+local function addBolt(parent, source, index, details, assetId)
     local scale = BOLT_SCALES[index]
     local diameterU, lengthU = scale, 8 * scale
     local model = Instance.new("Model")
@@ -460,7 +545,8 @@ local function addBolt(parent, source, index, details)
     model:SetAttribute("ThreadTurns", 11)
     model:SetAttribute("ThreadPitchStuds", details.pitch * scale)
     model:SetAttribute("FlatShaded", true)
-    model:SetAttribute("StaticDataModelMesh", true)
+    model:SetAttribute("StaticDataModelMesh", not assetId)
+    if assetId then model:SetAttribute("PublishedMeshAssetId", tostring(assetId)) end
     model:SetAttribute("Triangles", details.triangles)
     local shape = source:Clone()
     shape.Name = "BoltSolid"
@@ -509,8 +595,38 @@ local function addBolt(parent, source, index, details)
     return model
 end
 
-function Prefabs.Ensure()
-    if installed then
+-- Called ONLY from a locally installed Studio plugin. This module never
+-- directly creates Roblox assets: the plugin callback owns that capability.
+-- Each callback returns a permanent asset ID; nine unique profiles total.
+function Prefabs.PublishBaseAssets(publishEditable)
+    assert(RunService:IsStudio(), "Permanent mesh publishing must run in Roblox Studio")
+    assert(type(publishEditable) == "function", "Expected plugin mesh publishing callback")
+    local ids = {}
+    for _, teeth in ipairs(COUNTS) do
+        for _, kind in ipairs({"Spur", "Bevel90"}) do
+            local bevel = kind == "Bevel90"
+            local key = gearBaseKey(teeth, bevel)
+            stage("Preparing permanent mesh " .. key)
+            local id = buildGearMesh(teeth, bevel, function(mesh)
+                return publishEditable(key, mesh)
+            end)
+            assert(type(id) == "number" and id > 0,
+                "Publisher did not return a mesh asset ID for " .. key)
+            ids[key] = id
+        end
+    end
+    stage("Preparing permanent mesh " .. BOLT_BASE_KEY)
+    local boltId = buildBoltMesh(function(mesh)
+        return publishEditable(BOLT_BASE_KEY, mesh)
+    end)
+    assert(type(boltId) == "number" and boltId > 0,
+        "Publisher did not return a mesh asset ID for " .. BOLT_BASE_KEY)
+    ids[BOLT_BASE_KEY] = boltId
+    return ids
+end
+
+function Prefabs.Ensure(forceRebuild)
+    if installed and not forceRebuild then
         local valid = #installedList == 45
         for _, model in ipairs(installedList) do
             if not model.Parent then
@@ -532,23 +648,42 @@ function Prefabs.Ensure()
     local function prepare(category, model)
         table.insert(pending, {category = category, model = model})
     end
+    local published = readPublishedAssets()
     local ok, err = pcall(function()
         for _, teeth in ipairs(COUNTS) do
             for _, kind in ipairs({"Spur", "Bevel90"}) do
-                stage(string.format("Baking %dT %s visual mesh (%d of 9)",
-                    teeth, kind, #templates + 1))
-                local base, details = buildGearMesh(teeth, kind == "Bevel90")
+                local bevel = kind == "Bevel90"
+                local key = gearBaseKey(teeth, bevel)
+                stage(string.format("Loading %dT %s %s (%d of 9)",
+                    teeth, kind, if published then "published mesh" else "temporary preview",
+                    #templates + 1))
+                local base, details
+                if published then
+                    base = publishedPart(published[key], key)
+                    details = publishedGearDetails(teeth)
+                else
+                    base, details = buildGearMesh(teeth, bevel)
+                end
                 table.insert(templates, base)
                 for index = 1, #SCALES do
-                    prepare(transmission, addGear(nil, base, kind, teeth, index, details))
+                    prepare(transmission, addGear(nil, base, kind, teeth, index,
+                        details, if published then published[key] else nil))
                 end
             end
         end
-        stage("Baking threaded hex bolt visual mesh (9 of 9)")
-        local boltBase, boltDetails = buildBoltMesh()
+        stage(if published then "Loading published bolt mesh (9 of 9)"
+            else "Baking temporary bolt preview (9 of 9)")
+        local boltBase, boltDetails
+        if published then
+            boltBase = publishedPart(published[BOLT_BASE_KEY], BOLT_BASE_KEY)
+            boltDetails = publishedBoltDetails()
+        else
+            boltBase, boltDetails = buildBoltMesh()
+        end
         table.insert(templates, boltBase)
         for index = 1, #BOLT_SCALES do
-            prepare(fasteners, addBolt(nil, boltBase, index, boltDetails))
+            prepare(fasteners, addBolt(nil, boltBase, index, boltDetails,
+                if published then published[BOLT_BASE_KEY] else nil))
         end
         assert(#pending == 45, "Expected 45 prepared templates, got " .. #pending)
     end)
@@ -600,6 +735,7 @@ function Prefabs.GetStatus()
         LastError = lastError,
         Gallery = Workspace:FindFirstChild(GALLERY_NAME) ~= nil,
         Studio = RunService:IsStudio(),
+        Published = readPublishedAssets() ~= nil,
     }
 end
 
