@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify OPENWORKS current architecture
         run: python3 scripts/verify_source.py
+      - name: Verify procedural prefab geometry topology
+        run: python3 scripts/check_prefab_geometry.py
 
   parse-luau:
     name: Parse Luau sources (no formatting gate)

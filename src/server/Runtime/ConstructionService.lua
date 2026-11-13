@@ -4,6 +4,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 
 local construction = ReplicatedStorage:WaitForChild("Openworks"):WaitForChild("Construction")
@@ -21,6 +22,7 @@ local AlignmentService = require(script.Parent:WaitForChild("AlignmentService"))
 local MechanicalService = require(script.Parent:WaitForChild("MechanicalService"))
 local SimulationService = require(script.Parent:WaitForChild("UnifiedSimulationService"))
 local GearLibrary = require(script.Parent:WaitForChild("GearLibrary"))
+local ProceduralPrefabLibrary = require(construction:WaitForChild("ProceduralPrefabLibrary"))
 local PulleyLibrary = require(script.Parent:WaitForChild("PulleyLibrary"))
 local FastenerLibrary = require(script.Parent:WaitForChild("FastenerLibrary"))
 local HandCrankLibrary = require(script.Parent:WaitForChild("HandCrankLibrary"))
@@ -1492,6 +1494,18 @@ function Service.Start()
     HandCrankLibrary.Ensure()
     ShaftLibrary.Ensure()
     CompactHoleLibrary.Ensure()
+    -- Baked procedural gear / bolt templates are session-scoped static mesh
+    -- content; repopulate them for every server before Build catalog access.
+    -- Existing native templates still work if Mesh / Image APIs are disabled.
+    local generated, prefabErr = pcall(ProceduralPrefabLibrary.Ensure)
+    if not generated then
+        warn("[OPENWORKS] Precision prefabs unavailable; using legacy stock: " .. tostring(prefabErr))
+    elseif RunService:IsStudio() then
+        local galleryOK, galleryErr = pcall(ProceduralPrefabLibrary.BuildGallery, false)
+        if not galleryOK then
+            warn("[OPENWORKS] Prefab Studio gallery unavailable: " .. tostring(galleryErr))
+        end
+    end
     folder = workspace:FindFirstChild(Config.FolderName)
     if not folder then
         folder = Instance.new("Folder")
