@@ -308,4 +308,4 @@ Run `python scripts/verify_source.py` from the repository root. This is a static
 - [ ] Right-click an empty area, delete the selected object, undo/redo, F2/plot modal, switch tools, respawn and reload. Verify cleanup of `OPENWORKS_UIV2_Feedback` sublayers and no stale `OPENWORKS_ContextEditor` modal state.
 - [ ] Replay [six saved-build fixtures](UI_V2_REGRESSION_MATRIX.md) on a disposable plot and repeat existing springs/bearings/gears/motors/assembly simulation tests. CI source/StyLua parsing success **does not** constitute an in-engine test pass.
 
-**Status:** Not yet run in Roblox Studio; `dev` remains untouched.
+**Status:** Not yet run in Roblox Studio. The integrated source has now been promoted to local `dev`; gameplay remains unverified.

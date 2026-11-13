@@ -1,12 +1,12 @@
 # OPENWORKS
 
-**OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The stable pre-UI-v2 implementation lives on `dev`. UI v2 Phases 1–6 are isolated on `feature/ui-reorganization-v2`. Both use **Rojo** and **FORGE/Reforge** and still require Roblox Studio validation.
+**OPENWORKS** is a Roblox mechanical construction and engineering sandbox with a GearBlocks-like construction experience, physically meaningful mechanical relationships, and a separate engineering/fabrication direction. The **`dev` branch is the integrated UI V2 + shaft-centric implementation**. The original UI V2 baseline remains on `feature/ui-reorganization-v2`; both use **Rojo** and **FORGE/Reforge** and still require Roblox Studio validation.
 
-> **Integrated branch:** `integration/ui-v2-shaft-systems` combines UI V2 with the shaft-centric branch's accessible systems (Component Bank, alignment origins, welded hubs, pulley belts and physical gear/belt simulation). See [integration notes and acceptance tests](docs/UI_V2_SHAFT_INTEGRATION.md). **State:** Experimental. Do not assume a feature is Studio-verified merely because it is committed. See [current regression checks](docs/QA_REGRESSION.md) and [known limitations](docs/ARCHITECTURE.md#known-limitations).
+> **Development branch:** `dev` now contains the UI V2 + shaft-centric integration, matching the implementation initially prepared on `integration/ui-v2-shaft-systems`. The integrated systems include (Component Bank, alignment origins, welded hubs, pulley belts and physical gear/belt simulation). See [integration notes and acceptance tests](docs/UI_V2_SHAFT_INTEGRATION.md). **State:** Experimental. Do not assume a feature is Studio-verified merely because it is committed. See [current regression checks](docs/QA_REGRESSION.md) and [known limitations](docs/ARCHITECTURE.md#known-limitations).
 
 ## Start developing
 
-1. Check out `feature/ui-reorganization-v2` to test UI v2 Phases 1–6 (`dev` remains the fallback); install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
+1. Check out `dev` to work on the integrated UI V2 build; install the tools in [`rokit.toml`](rokit.toml) (or equivalent versions from [`aftman.toml`](aftman.toml)).
 2. Run `START_OPENWORKS.bat` (Windows) or `scripts/start-dev.ps1` using PowerShell.
 3. Connect the Roblox Studio Rojo plugin to **localhost:34872**. The place ID and Rojo mapping are in `default.project.json`.
 4. The **Studio-generated primitive bank** must exist in `ReplicatedStorage` and be saved with the place. The server only backfills some dynamic prefab families. Restart **Play** after switching code because Roblox caches ModuleScripts.

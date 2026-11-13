@@ -4,7 +4,7 @@
 
 - **Destination:** `feature/ui-reorganization-v2` at `328a3281cdb339df33facdda704f0a60fb54830b`.
 - **Source:** `feature/shaft-centric-gear-transmission` at `f34e29478928dd15d921d6cac32c164bf784b913`.
-- **Result:** `integration/ui-v2-shaft-systems`, based on UI V2, not a replacement of its tools.
+- **Result:** integrated build on `dev` (original integration commit `d3862e5`), based on UI V2, not a replacement of its tools.
 - Preserve UI V2's **three native tools**, contextual floating inspector, multi-selection, rack-and-pinion fallback, and current rack/guide geometry. The source branch's old 6-tool/legacy UI must **not** be used as the destination.
 - Existing shared `ComponentBankService`, `ComponentBankPreview`, `FitOrigin`, `FitSolver`, `GearTransmission`, `BeltTransmission`, `PulleyLibrary`, gear and bore geometry already had mostly matching implementations in UI V2. **They were not fully connected to the active input and server dispatch.** This integration exposes them to players.
 
@@ -57,4 +57,4 @@ On the integration commit, static source architecture contracts passed **270/270
 - No Roblox Studio runtime or Luau compiler was available in this environment. The static checks alone **do not establish that the new GUI and physics work at runtime**.
 - The shaft source branch's older standalone tool UI and replacement WorldVisuals were intentionally not imported; they conflict with the more recent UI V2 architecture.
 - Rack and physical belt systems are not numerically coupled within the same assembly; the router rejects this combination rather than giving incorrect results.
-- Source-only ZIP and Git bundle are supplied; this integration is **not pushed to GitHub**. Review and test locally before merging into `feature/ui-reorganization-v2` or pushing.
+- The integration was fast-forwarded onto local `dev` from existing ancestor `7eef04a`. The supplied ZIP and Git bundle contain the `dev` branch; this update is **not pushed to GitHub**. Review and test locally before pushing `dev`.
