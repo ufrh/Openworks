@@ -36,7 +36,7 @@ check("Crank and bearing motors explicitly supply speed to shaft groups",
     'session.Gears:SetDrive(motor.ShaftId' in sim and
     'ShaftId=edge.source:GetAttribute("InstanceId")' in sim)
 check("Drive-side AngularVelocity motor is not opposed by another motor",
-    'if not self.Drives[group] then' in gear and
+    'if not hasDrive or not self.Drives[group] then' in gear and
     'group.ControlledThisFrame=true' in gear)
 check("Gear hub fitting authorizes rigid welds",
     'kind="Weld"' in mech and 'Smart.HubFits(source,target)' in mech)
