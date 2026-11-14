@@ -42,7 +42,7 @@ test("Crank input drives actual shaft; no second speed actuator fights it",
     'if not hasDrive or not self.Drives[group] then' in gear)
 test("Actuator remains enabled during continuous motion",
     'group.ControlledThisFrame=true' in gear and
-    'not group.ControlledThisFrame' in gear)
+    'if not actuator or group.ControlledThisFrame then continue end' in gear)
 test("Crank held-input safety, live speeds and diagnostics preserved",
     'Crank drive cut: %s' in sim and
     'LIVE DRIVE STALL:' in sim and 'DriveDiagnostics(crank.DrivenId)' in sim)
