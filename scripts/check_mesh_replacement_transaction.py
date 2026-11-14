@@ -23,7 +23,7 @@ test("Normal existing mesh IDs remain live until all candidates load",
 test("Pending IDs persist and retries never repeatedly upload",
     'local pending=pendingIdFor(entry)' in plugin
     and 'if pending then' in plugin
-    and 'entry:GetAttribute("PendingProfileVersion") ~= 5' in plugin)
+    and 'entry:GetAttribute("PendingProfileVersion") ~= 6' in plugin)
 test("Eight gear IDs are validated before promotion",
     'for _,teeth in ipairs({8,12,20,32}) do' in plugin
     and 'for _,kind in ipairs({"Spur","Bevel90"}) do' in plugin
@@ -44,7 +44,7 @@ test("Original bolt mesh ID is always reused",
     'local isGear=key~="Bolt_SharpThread"' in plugin
     and 'not replaceGears or not isGear or upToDate' in plugin)
 test("Gear geometry version only switches to 5 after uploads",
-    'manifest:SetAttribute("GearGeometryVersion",5)' in plugin
+    'manifest:SetAttribute("GearGeometryVersion",6)' in plugin
     and 'model:SetAttribute("GearToothPhaseFraction",toothPhase)' in generator)
 test("Per-gear phase supports mixed old/pending mesh updates",
     'entry:GetAttribute("ProfileVersion")' in generator

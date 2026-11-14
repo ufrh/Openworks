@@ -51,7 +51,8 @@ check("Server checks plot bounds, shape and collision before committing",
     and 'if intersectsConstructed(model) then' in server
     and 'return false,"Duplicate intersects existing geometry"' in server)
 check("Copy is an undoable authored edit, returning its new instance ID",
-    'commitRecord(player,nil,after)' in server
+    'commitRecord(player, nil, after)' in server
+    and 'local function finalizeNewPrimitive(player,model,payload)' in server
     and 'if result and action == "DuplicatePrimitive" then message = "Duplicated" end' in server
     and 'if result and (action == "Place" or action == "DuplicatePrimitive")' in server)
 check("Component copy retains its separate Edit-authorized path",

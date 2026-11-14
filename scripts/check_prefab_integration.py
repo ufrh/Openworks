@@ -33,13 +33,13 @@ check('Visual and physical collision modes',all(x in policy for x in ['mode=="Vi
 check('Construction never re-enables visual mesh collision', 'PrefabCollision.Configure(descendant)' in construction)
 check('Physical simulation honors prefab collision', 'PrefabCollision.Configure(part)' in physical)
 check('Rack simulation honors prefab collision', 'PrefabCollision.Configure(part)' in rack)
-check('All meshes have separate collision proxies', all(x in module for x in ['ringCollision(model,scale,details.root,details.pitch,bevel)','RimCollider_%02d','OpenworksCollisionMode","Proxy"','head.Name="HeadCollider"']))
+check('All meshes have separate collision proxies', all(x in module for x in ['ringCollision(model,scale,details.root,details.pitch,bevel,details.faceWidth)','RimCollider_%02d','OpenworksCollisionMode","Proxy"','head.Name="HeadCollider"']))
 check('Bolt fits use cylinder centered on declared shank',all(x in module for x in ['pivot.Name = "Geometry"','pivot.Shape = Enum.PartType.Cylinder','model.PrimaryPart = pivot','model:SetAttribute("BoltDiameterU", diameterU)','model:SetAttribute("BoltLengthU", lengthU)']))
 check('Game prefabs remain under the stable registry folders',all(x in module for x in ['OPENWORKS_PrimitiveLibrary_DRAFT','folder(library, "Transmission")','folder(library, "Fasteners")']))
 check('Geometry version marks new profile without mislabeling old published meshes',
       all(x in module for x in [
           'model:SetAttribute("ProceduralPrefabVersion", VERSION)',
-          'model:SetAttribute("GeometryVersion",if toothPhase==0.5 then 5 else 4)',
+          'model:SetAttribute("GeometryVersion",if assetId then',
           'model:SetAttribute("GearToothPhaseFraction",toothPhase)',
           'model:SetAttribute("GeometryVersion", 5)']))
 check('Bolt automatic selection searches the whole registry', 'for _,entry in ipairs(self.D.Registry.List()) do' in mechanical and 'bestNew=precision' in mechanical)
@@ -54,24 +54,25 @@ check('Direct bolt-to-hole placement still supported', 'function Mechanical:Fast
 manual_gear=mechanical.split('function Mechanical:CreateGearMesh(player, request)',1)[1].split('function Mechanical:PoseShaft',1)[0]
 check('Manual gear meshing uses shared bevel + spur math', 'GearMath.AutoMeshStatus(first,second)' in manual_gear)
 check('Spur and 90-degree bevel detection remains shaft-centric',all(x in transmission for x in ['GearMath.AutoMeshStatus', 'GearShaftSpeed','ratio=-left.Teeth/right.Teeth','axis(a)']))
-check('Bevel collision ring does not intrude into bore',all(x in module for x in ['rootRadius*scale*(1-FACE_WIDTH*BEVEL_SLOPE/(2*pitch))','inner=bore+0.018*scale']))
-check('Standalone gallery script includes corrected gear/bolt physics',all(x in command for x in ['ringCollision(model,scale,details.root,details.pitch,bevel)','head.Name="HeadCollider"','OpenworksCollisionMode","VisualOnly"']))
+check('Bevel collision ring does not intrude into bore',all(x in module for x in ['rootRadius*scale*(1-faceWidth*BEVEL_SLOPE/(2*pitch))','inner=bore+0.018*scale']))
+check('Standalone gallery script includes corrected gear/bolt physics',all(x in command for x in ['ringCollision(model,scale,details.root,details.pitch,bevel,details.faceWidth)','head.Name="HeadCollider"','OpenworksCollisionMode","VisualOnly"']))
 check('Standalone bolt regenerator includes matching physics',all(x in bolt_command for x in ['pivot:SetAttribute("OpenworksCollisionMode","Proxy")','head.Name="HeadCollider"','visual:SetAttribute("OpenworksCollisionMode","VisualOnly")']))
 check('No DataStore wipe in integration code',all(x not in construction+mechanical+module for x in [':RemoveAsync(', 'ClearAllChildren() -- DATASTORE']))
 
 # The CAD parameter is pitch diameter per tooth. The runtime module stores
 # circular pitch, and GearMath consistently converts it back to pitch radius.
 for teeth in (8,12,20,32):
-    pitch=teeth*.25/2
-    root=pitch-1.25*.25
+    pitch=teeth*.19/2
+    root=pitch-1.25*.19
     for scale in (.6,.8,1.0,1.2,1.4):
         bore=.375*scale
         outer_spur=root*scale
-        outer_bevel=root*scale*(1-.6/(2*pitch))
+        face=.20 if teeth==8 else .40
+        outer_bevel=root*scale*(1-face/(2*pitch))
         inner=bore+.018*scale
         assert outer_spur>inner+.01*scale,(teeth,scale,'spur')
         assert outer_bevel>inner+.01*scale,(teeth,scale,'bevel')
-        stored_module=math.pi*.25*scale
+        stored_module=math.pi*.19*scale
         calculated_pitch=teeth*stored_module/(2*math.pi)
         assert abs(calculated_pitch-pitch*scale)<1e-12
 check('40 gear bores and pitch radii pass scalar bounds',True)

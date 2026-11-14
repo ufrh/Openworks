@@ -8,8 +8,9 @@ from collections import Counter
 
 COUNTS=(8,12,20,32)
 SCALES=(.6,.8,1.0,1.2,1.4)
-MOD=.25
-WIDTH=.6
+MOD=.19
+WIDTH=.40
+SMALL_BEVEL_WIDTH=.20
 BORE=.375
 
 
@@ -35,17 +36,18 @@ def gear(n, bevel):
         samples.append((root,center+hs))
         for j in range(1,4):samples.append((root,center+hs+(step-2*hs)*j/4))
     assert min(b-a for a,b in zip([x[1] for x in samples], [x[1] for x in samples[1:]]))>0
+    width=SMALL_BEVEL_WIDTH if bevel and n==8 else WIDTH
     verts=[]; quads=[]
     def vertex(pos):
         i=len(verts);verts.append(pos);return i
     rings=[]
     for r,angle in samples:
         c,s=math.cos(angle),math.sin(angle)
-        sf=1+WIDTH/(2*rp) if bevel else 1
-        sb=1-WIDTH/(2*rp) if bevel else 1
+        sf=1+width/(2*rp) if bevel else 1
+        sb=1-width/(2*rp) if bevel else 1
         assert root*sb>BORE+.01
-        rings.append((vertex((WIDTH/2,r*sf*c,r*sf*s)),vertex((-WIDTH/2,r*sb*c,r*sb*s)),
-                      vertex((WIDTH/2,BORE*c,BORE*s)),vertex((-WIDTH/2,BORE*c,BORE*s))))
+        rings.append((vertex((width/2,r*sf*c,r*sf*s)),vertex((-width/2,r*sb*c,r*sb*s)),
+                      vertex((width/2,BORE*c,BORE*s)),vertex((-width/2,BORE*c,BORE*s))))
     faces=[]
     def tri(*idx):faces.append(idx)
     for i in range(len(rings)):

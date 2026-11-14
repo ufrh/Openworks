@@ -15,7 +15,7 @@ local busy = false
 
 local toolbar = plugin:CreateToolbar("OpenWorks Meshes")
 local publishButton = toolbar:CreateButton("Publish Missing", "Upload missing permanent gear/bolt meshes and install 45 prefabs", "rbxassetid://0")
-local refreshButton = toolbar:CreateButton("Update Mesh Versions", "Create eight replacement gear mesh assets, stage new IDs and swap only once loadable; preserves bolt and save data", "rbxassetid://0")
+local refreshButton = toolbar:CreateButton("Update Mesh Versions", "Create eight compact v6 gear meshes with original bore sizes; stage new IDs and preserve existing plots", "rbxassetid://0")
 
 local function log(message)
     print("[OPENWORKS][MESH PUBLISHER] " .. message)
@@ -105,7 +105,7 @@ local function uploadMesh(editableMesh, key)
 end
 
 local function pendingIdFor(entry)
-    if not entry or entry:GetAttribute("PendingProfileVersion") ~= 5 then
+    if not entry or entry:GetAttribute("PendingProfileVersion") ~= 6 then
         return nil
     end
     local raw = entry:GetAttribute("PendingAssetId")
@@ -144,8 +144,8 @@ local function run(replaceGears)
         local installedGearVersion=manifest:GetAttribute("GearGeometryVersion")
         if not replaceGears and previouslyReady
             and type(installedGearVersion)=="number"
-            and installedGearVersion<5 then
-            error("Gear profile v5 required: choose OpenWorks Meshes > "
+            and installedGearVersion<6 then
+            error("Compact gear profile v6 required: choose OpenWorks Meshes > "
                 .."Update Mesh Versions. Mesh uploads require NEW IDs; "
                 .."your current published IDs will remain in place until replacements load.")
         end
@@ -162,9 +162,9 @@ local function run(replaceGears)
                 local entry=manifest:FindFirstChild(key)
                 local previousId=assetIdFor(manifest,key)
                 local isGear=key~="Bolt_SharpThread"
-                local upToDate=entry and entry:GetAttribute("ProfileVersion")==5
+                local upToDate=entry and entry:GetAttribute("ProfileVersion")==6
                     and (type(installedGearVersion)=="number"
-                        and installedGearVersion>=5)
+                        and installedGearVersion>=6)
                 -- Bolt geometry is not changing. Publish Missing never
                 -- overwrites any ID; a completed gear update is idempotent.
                 if previousId and (not replaceGears or not isGear or upToDate) then
@@ -190,7 +190,7 @@ local function run(replaceGears)
                     -- are loadable. Retry uses the same IDs (no upload loop).
                     entry:SetAttribute("PendingAssetId",
                         string.format("%.0f",newId))
-                    entry:SetAttribute("PendingProfileVersion",5)
+                    entry:SetAttribute("PendingProfileVersion",6)
                 else
                     if not entry then
                         entry=Instance.new("StringValue")
@@ -198,7 +198,7 @@ local function run(replaceGears)
                         entry.Parent=manifest
                     end
                     entry.Value=string.format("%.0f",newId)
-                    if isGear then entry:SetAttribute("ProfileVersion",5) end
+                    if isGear then entry:SetAttribute("ProfileVersion",6) end
                 end
                 return newId
             end)
@@ -239,7 +239,7 @@ local function run(replaceGears)
                             Version=entry:GetAttribute("ProfileVersion"),
                         }
                         needsSwap=true
-                    elseif entry:GetAttribute("ProfileVersion")~=5 then
+                    elseif entry:GetAttribute("ProfileVersion")~=6 then
                         error("No replacement was staged for "..key
                             .."; old IDs are still active. Retry Update Mesh Versions.")
                     end
@@ -248,21 +248,21 @@ local function run(replaceGears)
 
             if not needsSwap then
                 if type(installedGearVersion)=="number"
-                    and installedGearVersion>=5 then
-                    log("All eight gear profiles are already at geometry v5.")
+                    and installedGearVersion>=6 then
+                    log("All eight gear profiles are already at geometry v6.")
                     return
                 end
                 error("No replacement assets were staged but the active "
-                    .."manifest is still marked older than v5. "
+                    .."manifest is still marked older than v6. "
                     .."Retry Update Mesh Versions; old assets are untouched.")
             end
             local oldVersion=installedGearVersion
             for key in pairs(originals) do
                 local entry=manifest:FindFirstChild(key)
                 entry.Value=string.format("%.0f",ids[key])
-                entry:SetAttribute("ProfileVersion",5)
+                entry:SetAttribute("ProfileVersion",6)
             end
-            manifest:SetAttribute("GearGeometryVersion",5)
+            manifest:SetAttribute("GearGeometryVersion",6)
             manifest:SetAttribute("GeneratedBaseMeshCount",9)
             manifest:SetAttribute("Ready",true)
 
@@ -298,12 +298,12 @@ local function run(replaceGears)
                 entry:SetAttribute("PendingAssetId",nil)
                 entry:SetAttribute("PendingProfileVersion",nil)
             end
-            log("Eight new gear mesh IDs activated; all tooth gaps are v5. "
+            log("Eight new gear mesh IDs activated; compact gear bodies are v6. "
                 .."Original bolt ID and existing constructions preserved.")
         else
             -- First-time publishing, or an incomplete manifest resumed via
             -- Publish Missing. No existing ready asset is ever overridden.
-            manifest:SetAttribute("GearGeometryVersion",5)
+            manifest:SetAttribute("GearGeometryVersion",6)
             manifest:SetAttribute("BoltGeometryVersion",5)
             manifest:SetAttribute("GeneratedBaseMeshCount",9)
             manifest:SetAttribute("Ready",true)
@@ -331,4 +331,4 @@ end)
 refreshButton.Click:Connect(function()
     run(true)
 end)
-log("Ready. Use Update Mesh Versions for v5 gear geometry, then SAVE the Roblox place.")
+log("Ready. Use Update Mesh Versions for compact v6 gear geometry, then SAVE the Roblox place.")

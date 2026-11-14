@@ -525,6 +525,58 @@ local function restoreBatch(player, record, undo)
     return true
 end
 
+-- Build and Edit-copy use one server-authoritative attachment and history
+-- transaction. Copy never inherits old relationships; new fits are explicit.
+local function finalizeNewPrimitive(player,model,payload)
+    -- A single drag can create BOTH the primitive and its relationship.
+    -- SmartMate commits one assembly history entry: undo removes both.
+    if payload.autoMate ~= nil then
+        if type(payload.autoMate) ~= "table" then
+            model:Destroy()
+            return false, "Invalid automatic attachment"
+        end
+        local mate=payload.autoMate
+        if mate.kind=="CrankCoupling" then
+            local ok,why=mechanical:CoupleHandCrank(player,{
+                sourceId=model:GetAttribute("InstanceId"),
+                targetId=mate.targetId,
+            },true)
+            if not ok then model:Destroy() return false,why end
+            return true,model:GetAttribute("InstanceId")
+        end
+        if mate.kind=="BoltHole" then
+            local ok,why=mechanical:FastenBolt(player,{
+                boltId=model:GetAttribute("InstanceId"),
+                targetId=mate.targetId,
+            },true)
+            if not ok then model:Destroy() return false,why end
+            return true,model:GetAttribute("InstanceId")
+        end
+        local ok,why=mechanical:SmartMate(player,{
+            sourceId=model:GetAttribute("InstanceId"),
+            targetId=mate.targetId,
+            mateKind=mate.kind,
+            relationKind=mate.relationKind,
+            offsetUnits=mate.offsetUnits,
+            rollDegrees=mate.rollDegrees,
+            reverse=mate.reverse==true,
+            fitTargets=mate.fitTargets,
+            approach=payload.position,
+            position=payload.position,
+            orientation=payload.orientation,
+        },true)
+        if not ok then
+            model:Destroy()
+            return false,why
+        end
+        return true,model:GetAttribute("InstanceId")
+    end
+
+    local after = snapshot(model)
+    commitRecord(player, nil, after)
+    return true, after.instanceId
+end
+
 local function place(player, payload)
     if type(payload.templateId) ~= "string" then return false, "Missing template ID" end
     local entry = Registry.Get(payload.templateId)
@@ -576,53 +628,7 @@ local function place(player, payload)
 
     model.Parent = folder
 
-    -- A single drag can create BOTH the primitive and its relationship.
-    -- SmartMate commits one assembly history entry: undo removes both.
-    if payload.autoMate ~= nil then
-        if type(payload.autoMate) ~= "table" then
-            model:Destroy()
-            return false, "Invalid automatic attachment"
-        end
-        local mate=payload.autoMate
-        if mate.kind=="CrankCoupling" then
-            local ok,why=mechanical:CoupleHandCrank(player,{
-                sourceId=model:GetAttribute("InstanceId"),
-                targetId=mate.targetId,
-            },true)
-            if not ok then model:Destroy() return false,why end
-            return true,model:GetAttribute("InstanceId")
-        end
-        if mate.kind=="BoltHole" then
-            local ok,why=mechanical:FastenBolt(player,{
-                boltId=model:GetAttribute("InstanceId"),
-                targetId=mate.targetId,
-            },true)
-            if not ok then model:Destroy() return false,why end
-            return true,model:GetAttribute("InstanceId")
-        end
-        local ok,why=mechanical:SmartMate(player,{
-            sourceId=model:GetAttribute("InstanceId"),
-            targetId=mate.targetId,
-            mateKind=mate.kind,
-            relationKind=mate.relationKind,
-            offsetUnits=mate.offsetUnits,
-            rollDegrees=mate.rollDegrees,
-            reverse=mate.reverse==true,
-            fitTargets=mate.fitTargets,
-            approach=payload.position,
-            position=payload.position,
-            orientation=payload.orientation,
-        },true)
-        if not ok then
-            model:Destroy()
-            return false,why
-        end
-        return true,model:GetAttribute("InstanceId")
-    end
-
-    local after = snapshot(model)
-    commitRecord(player, nil, after)
-    return true, after.instanceId
+    return finalizeNewPrimitive(player,model,payload)
 end
 
 -- Edit-mode F / Ctrl+D copies an existing owned primitive. NEVER route
@@ -664,14 +670,14 @@ local function duplicatePrimitive(player,payload)
     local model,why=createFromTemplate(player,original.templateId)
     if not model then return false,why end
     applyState(model,duplicate)
-    if intersectsConstructed(model) then
+    -- Fitted copies use the same collision/clearance validation as fresh
+    -- Build placements, then authorize a real new joint atomically.
+    if payload.autoMate==nil and intersectsConstructed(model) then
         model:Destroy()
         return false,"Duplicate intersects existing geometry"
     end
     model.Parent=folder
-    local after=snapshot(model)
-    commitRecord(player,nil,after)
-    return true,after.instanceId
+    return finalizeNewPrimitive(player,model,payload)
 end
 
 local function update(player, payload)

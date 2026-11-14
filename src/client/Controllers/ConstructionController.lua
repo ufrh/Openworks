@@ -1657,8 +1657,7 @@ function Controller:UpdatePreview()
             self.Preview,cf.Rotation,hit.Position) else nil
         if originPose then cf=originPose end
         self.Preview:PivotTo(cf)
-        if not alt and self.Pending~="Copy"
-            and self.Pending~="ComponentCopy" then
+        if not alt and self.Pending~="ComponentCopy" then
             match=self:RecognizeAttachment(cf,hit)
             -- Reusable blueprints preserve their own internal joints. Do not
             -- silently authorize new external joints on a bank placement.
@@ -1832,10 +1831,9 @@ function Controller:Place(chosenKind)
             or "Red preview: construction intersects existing geometry")
         return
     end
-    -- F duplicates are independent objects, not implicit copies of a
-    -- mechanical connection. Their placement may use geometric snap,
-    -- but never auto-author a new bearing, weld, hub, or crank coupling.
-    if self.Pending~="Copy" and self.SmartMatch
+    -- F-copy never inherits old joints, but may authorize a NEW real
+    -- attachment against the selected target, just like fresh Build.
+    if self.SmartMatch
         and (self.SmartMatch.kind=="Bore" or self.SmartMatch.kind=="Hub")
         and not chosenKind then
         self:OpenMateChoice("Build")
@@ -1874,7 +1872,8 @@ function Controller:Place(chosenKind)
                 or self.SmartMatch.kind=="Guide"
                 or self.SmartMatch.kind=="Hub"
                 or self.SmartMatch.kind=="BoltHole"
-                or self.SmartMatch.kind=="CrankCoupling") then {
+                or self.SmartMatch.kind=="CrankCoupling"
+                or self.SmartMatch.kind=="Bore") then {
             -- A copied gear/bolt/crank fitted to a shaft or opening is
             -- still an actual mount. Only ambiguous Bore fits refrain
             -- from authoring mechanical relationships during F-copy.

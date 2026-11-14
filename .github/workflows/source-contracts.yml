@@ -40,6 +40,8 @@ jobs:
         run: python3 scripts/check_mesh_replacement_transaction.py
       - name: Verify Edit-mode primitive and component duplication
         run: python3 scripts/check_edit_duplication.py
+      - name: Verify compact gear bores, Edit copy fitting and rotation stop
+        run: python3 scripts/check_compact_gears_copy_fit_stop.py
 
   parse-luau:
     name: Parse Luau sources (no formatting gate)

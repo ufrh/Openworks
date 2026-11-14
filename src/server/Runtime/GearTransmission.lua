@@ -24,7 +24,8 @@ local MIN_ANGULAR_ACCEL=18
 local MAX_ANGULAR_ACCEL=85
 local MAX_SPEED=35
 local SPEED_EPS=0.02
-local RELEASE_BRAKE_ACCEL=28 -- rad/s^2; stop in a fraction of a second
+local RELEASE_BRAKE_ACCEL=28 -- retained diagnostic deceleration reference
+local RELEASE_STOP_EPS=0.035 -- residual shaft spin must not linger forever
 local PHASE_RESPONSE=7 -- phase-slip convergence (1/s)
 local PHASE_DEADBAND=0.012 -- fraction of a tooth
 local MAX_PHASE_SPEED=1.2 -- bounded follower correction (rad/s)
@@ -87,7 +88,7 @@ function Transmission.new(graph,copies,runtime)
             if not group then
                 group={Id=key,Models={},Gears={},Root=nil,
                     AxisSource=nil,VelocityActuator=nil,VirtualSpeed=0,
-                    TargetSpeed=0,Grounded=false}
+                    TargetSpeed=0,Grounded=false,Braking=false}
                 groups[key]=group
             end
             table.insert(group.Models,clone)
@@ -403,11 +404,15 @@ function Transmission:Step(dt)
         local hasMotion=hasDrive
         if not hasDrive then
             for _,group in ipairs(component) do
-                if math.abs(group.Root.AssemblyAngularVelocity:Dot(axis(group)))>SPEED_EPS then
+                if group.Braking
+                    or math.abs(group.Root.AssemblyAngularVelocity:Dot(axis(group)))>RELEASE_STOP_EPS then
                     hasMotion=true
                     break
                 end
             end
+        end
+        if hasDrive then
+            for _,group in ipairs(component) do group.Braking=true end
         end
 
         -- Phase-lock real tooth tips against opposite gaps. Only a shaft
@@ -471,6 +476,17 @@ function Transmission:Step(dt)
                 group.VirtualSpeed=speed
                 continue
             end
+            if not hasDrive and math.abs(speed)<=RELEASE_STOP_EPS then
+                -- AngularVelocity switched off below its previous speed
+                -- threshold, leaving a tiny but persistent spin forever.
+                -- Only after the motor is released and physical speed is
+                -- already negligible, settle the AXIAL component to zero.
+                physical.AssemblyAngularVelocity =
+                    physical.AssemblyAngularVelocity-axis(group)*speed
+                group.Braking=false
+                group.VirtualSpeed=0
+                continue
+            end
             local acceleration=math.clamp(DRIVE_BUDGET/math.max(inertia,MIN_INERTIA),
                 MIN_ANGULAR_ACCEL,MAX_ANGULAR_ACCEL)
             local prior=group.VirtualSpeed or speed
@@ -478,11 +494,11 @@ function Transmission:Step(dt)
             local desired=math.clamp(prior+math.clamp(step,
                 -acceleration*dt,acceleration*dt),-MAX_SPEED,MAX_SPEED)
             if not hasDrive then
-                -- Actual inertial speed is used ONLY to calculate braking,
-                -- never as a renewed drive target. Brake the input too:
-                -- its physical crank motor was disabled on mouse release.
-                local magnitude=math.max(0,math.abs(speed)-RELEASE_BRAKE_ACCEL*dt)
-                desired=if magnitude>SPEED_EPS then math.sign(speed)*magnitude else 0
+                -- A real zero-speed native actuator supplies positive
+                -- braking effort. Targeting only (speed - 28*dt) kept
+                -- trailing shafts rotating at that nonzero target.
+                -- Use zero directly; the physical solver handles deceleration.
+                desired=0
             end
             group.VirtualSpeed=desired
             group.TargetSpeed=desired
@@ -505,12 +521,29 @@ function Transmission:Step(dt)
             end
         end
     end
-    -- Leave continuously active output motors enabled between physics steps;
-    -- disable only a shaft that has lost its mesh or external drive.
+    -- Keep braking shafts even when a mesh contact disappears before the
+    -- last rotations have settled. Otherwise the now-isolated output loses
+    -- its motor and freewheels indefinitely despite zero active inputs.
     for _,group in pairs(self.Groups) do
-        if group.VelocityActuator and not group.ControlledThisFrame then
-            group.VelocityActuator.AngularVelocity=Vector3.zero
-            group.VelocityActuator.Enabled=false
+        local actuator=group.VelocityActuator
+        if not actuator or group.ControlledThisFrame then continue end
+        if group.Braking and not self.Drives[group] then
+            local root=group.Root
+            local dir=axis(group)
+            local spin=root.AssemblyAngularVelocity:Dot(dir)
+            if math.abs(spin)>RELEASE_STOP_EPS then
+                actuator.MaxTorque=DRIVE_BUDGET
+                actuator.AngularVelocity=Vector3.zero
+                actuator.Enabled=true
+            else
+                root.AssemblyAngularVelocity=root.AssemblyAngularVelocity-dir*spin
+                group.Braking=false
+                actuator.AngularVelocity=Vector3.zero
+                actuator.Enabled=false
+            end
+        else
+            actuator.AngularVelocity=Vector3.zero
+            actuator.Enabled=false
         end
     end
 end

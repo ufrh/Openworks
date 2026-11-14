@@ -20,9 +20,16 @@ local BOLT_SCALES = {0.5, 0.75, 1.0, 1.25, 1.5}
 -- Geometric involute module (pitch diameter / tooth count).
 -- The rest of OPENWORKS stores CIRCULAR pitch in GearModuleStuds, so
 -- GearModuleStuds = math.pi * this value. Both values are authored below.
-local CAD_MODULE = 0.25
+-- Compact v6: 24% smaller tooth diameter, 33% thinner standard face.
+-- KEEP the physical through-bore at 0.375-stud radius.
+local CAD_MODULE = 0.19
 local PRESSURE_ANGLE = math.rad(20)
-local FACE_WIDTH = 0.60
+local FACE_WIDTH = 0.40
+local SMALL_BEVEL_FACE_WIDTH = 0.20
+local function gearFaceWidth(teeth, bevel)
+    -- 8T bevel needs a narrow face to retain metal around its unchanged bore.
+    return if bevel and teeth==8 then SMALL_BEVEL_FACE_WIDTH else FACE_WIDTH
+end
 local BORE_RADIUS = 0.375 -- 0.75 stud base bore; minimum scaled Ø is 0.45.
 local BEVEL_SLOPE = 1 -- tan(45° pitch cone); 90° equal-tooth bevel pair.
 local FLANK_STEPS = 10
@@ -158,11 +165,12 @@ local function readPublishedAssets()
     return ids
 end
 
-local function makeOutline(teeth)
-    local pitch = teeth * CAD_MODULE / 2
+local function makeOutline(teeth, moduleOverride)
+    local module=moduleOverride or CAD_MODULE
+    local pitch = teeth * module / 2
     local base = pitch * math.cos(PRESSURE_ANGLE)
-    local root = pitch - 1.25 * CAD_MODULE
-    local tip = pitch + CAD_MODULE
+    local root = pitch - 1.25 * module
+    local tip = pitch + module
     assert(root > BORE_RADIUS + 0.1,
         "The smallest gear needs a real rim outside its bore")
     local function involute(r)
@@ -211,6 +219,7 @@ end
 
 local function buildGearMesh(teeth, bevel, onEditable)
     local samples, pitch, root, tip = makeOutline(teeth)
+    local faceWidth=gearFaceWidth(teeth,bevel)
     local mesh = createEditable()
     local rings = {}
     local positions = {}
@@ -236,18 +245,18 @@ local function buildGearMesh(teeth, bevel, onEditable)
     end
     for i, v in ipairs(samples) do
         local cosine, sine = math.cos(v.a), math.sin(v.a)
-        local frontScale = bevel and (1 + FACE_WIDTH * BEVEL_SLOPE / (2 * pitch)) or 1
-        local backScale = bevel and (1 - FACE_WIDTH * BEVEL_SLOPE / (2 * pitch)) or 1
+        local frontScale = bevel and (1 + faceWidth * BEVEL_SLOPE / (2 * pitch)) or 1
+        local backScale = bevel and (1 - faceWidth * BEVEL_SLOPE / (2 * pitch)) or 1
         assert(backScale * root > BORE_RADIUS + 0.01,
             "Bevel small-end rim intersects the shaft bore")
         rings[i] = {
-            of = vertex(Vector3.new(FACE_WIDTH / 2, v.r * frontScale * cosine,
+            of = vertex(Vector3.new(faceWidth / 2, v.r * frontScale * cosine,
                 v.r * frontScale * sine)),
-            ob = vertex(Vector3.new(-FACE_WIDTH / 2, v.r * backScale * cosine,
+            ob = vertex(Vector3.new(-faceWidth / 2, v.r * backScale * cosine,
                 v.r * backScale * sine)),
-            inf = vertex(Vector3.new(FACE_WIDTH / 2, BORE_RADIUS * cosine,
+            inf = vertex(Vector3.new(faceWidth / 2, BORE_RADIUS * cosine,
                 BORE_RADIUS * sine)),
-            inb = vertex(Vector3.new(-FACE_WIDTH / 2, BORE_RADIUS * cosine,
+            inb = vertex(Vector3.new(-faceWidth / 2, BORE_RADIUS * cosine,
                 BORE_RADIUS * sine)),
         }
     end
@@ -275,6 +284,7 @@ local function buildGearMesh(teeth, bevel, onEditable)
     end
     assert(triangleCount <= 20000, "Gear exceeds Roblox 20k-triangle limit")
     local details = {pitch = pitch, root = root, tip = tip,
+        module=CAD_MODULE, faceWidth=faceWidth,
         triangles = triangleCount, vertices = #samples * 4}
     if onEditable then
         -- A locally installed Studio plugin supplies onEditable and invokes
@@ -287,11 +297,14 @@ local function buildGearMesh(teeth, bevel, onEditable)
     return bakedPart(mesh, Enum.CollisionFidelity.PreciseConvexDecomposition), details
 end
 
-local function publishedGearDetails(teeth)
-    local samples, pitch, root, tip = makeOutline(teeth)
-    -- Eight triangles per perimeter sample, independent of the bevel angle.
-    return {pitch = pitch, root = root, tip = tip,
-        triangles = #samples * 8, vertices = #samples * 4}
+local function publishedGearDetails(teeth,bevel,version)
+    -- Staged rev-6 uploads keep OLD active v4/v5 geometry metadata intact.
+    local modern=type(version)=="number" and version>=6
+    local module=if modern then CAD_MODULE else 0.25
+    local faceWidth=if modern then gearFaceWidth(teeth,bevel) else 0.60
+    local samples,pitch,root,tip=makeOutline(teeth,module)
+    return {pitch=pitch,root=root,tip=tip,module=module,
+        faceWidth=faceWidth,triangles=#samples*8,vertices=#samples*4}
 end
 
 -- A single continuous watertight hex-head bolt, with a chamfered head,
@@ -452,10 +465,10 @@ end
 -- Twelve lightweight annular colliders approximate the gear's metal rim.
 -- They stay completely OUTSIDE the actual through-bore and never collide
 -- with the visual MeshPart's conservative baking-time box collider.
-local function ringCollision(model, scale, rootRadius, pitch, bevel)
+local function ringCollision(model, scale, rootRadius, pitch, bevel, faceWidth)
     local bore=BORE_RADIUS*scale
     local root=if bevel then
-        rootRadius*scale*(1-FACE_WIDTH*BEVEL_SLOPE/(2*pitch))
+        rootRadius*scale*(1-faceWidth*BEVEL_SLOPE/(2*pitch))
         else rootRadius*scale
     local inner=bore+0.018*scale
     assert(root>inner+0.01*scale, "Gear collision ring has no wall")
@@ -469,7 +482,7 @@ local function ringCollision(model, scale, rootRadius, pitch, bevel)
         local tangent=Vector3.xAxis:Cross(radial)
         local collider=Instance.new("Part")
         collider.Name=string.format("RimCollider_%02d",sector)
-        collider.Size=Vector3.new(FACE_WIDTH*scale*0.88,width,toothWidth)
+        collider.Size=Vector3.new(faceWidth*scale*0.88,width,toothWidth)
         collider.CFrame=CFrame.fromMatrix(radial*middle,
             Vector3.xAxis,radial,tangent)
         collider.Material=Enum.Material.Metal
@@ -500,7 +513,7 @@ local function addGear(parent, source, kind, teeth, index, details, assetId)
     model:SetAttribute("ResizeMode", "None")
     model:SetAttribute("GearKind", bevel and "Bevel90" or "Spur")
     model:SetAttribute("GearTeeth", teeth)
-    model:SetAttribute("GearModuleStuds", math.pi * CAD_MODULE * scale)
+    model:SetAttribute("GearModuleStuds", math.pi * details.module * scale)
     model:SetAttribute("PitchRadiusStuds", details.pitch * scale)
     model:SetAttribute("BoreRadiusStuds", BORE_RADIUS * scale)
     model:SetAttribute("BevelConeDeg", bevel and 45 or nil)
@@ -520,14 +533,16 @@ local function addGear(parent, source, kind, teeth, index, details, assetId)
     end
     local toothPhase=if assetId and (type(publishedVersion)~="number"
         or publishedVersion<5) then 0 else 0.5
-    model:SetAttribute("GeometryVersion",if toothPhase==0.5 then 5 else 4)
+    model:SetAttribute("GeometryVersion",if assetId then
+        (if type(publishedVersion)=="number" then publishedVersion else 4)
+        else 6)
     model:SetAttribute("GearToothPhaseFraction",toothPhase)
     model:SetAttribute("ToothCount", teeth)
     model:SetAttribute("PitchDiameter", 2 * details.pitch * scale)
     model:SetAttribute("RootDiameter", 2 * details.root * scale)
     model:SetAttribute("TipDiameter", 2 * details.tip * scale)
     model:SetAttribute("BoreDiameter", 2 * BORE_RADIUS * scale)
-    model:SetAttribute("FaceWidth", FACE_WIDTH * scale)
+    model:SetAttribute("FaceWidth", details.faceWidth * scale)
     model:SetAttribute("Triangles", details.triangles)
     model:SetAttribute("StaticDataModelMesh", not assetId)
     if assetId then model:SetAttribute("PublishedMeshAssetId", tostring(assetId)) end
@@ -539,7 +554,7 @@ local function addGear(parent, source, kind, teeth, index, details, assetId)
     mesh.Massless=false
     mesh.Parent = model
     model.PrimaryPart = mesh
-    ringCollision(model,scale,details.root,details.pitch,bevel)
+    ringCollision(model,scale,details.root,details.pitch,bevel,details.faceWidth)
     model:SetAttribute("OpenworksCollisionVersion",2)
     model.Parent = parent
     return model
@@ -679,7 +694,13 @@ function Prefabs.Ensure(forceRebuild)
                 local base, details
                 if published then
                     base = publishedPart(published[key], key)
-                    details = publishedGearDetails(teeth)
+                    local manifest=ReplicatedStorage:FindFirstChild(PUBLISHED_MANIFEST_NAME)
+                    local entry=manifest and manifest:FindFirstChild(key)
+                    local rev=entry and entry:GetAttribute("ProfileVersion")
+                    if type(rev)~="number" then
+                        rev=manifest and manifest:GetAttribute("GearGeometryVersion")
+                    end
+                    details = publishedGearDetails(teeth,bevel,rev)
                 else
                     base, details = buildGearMesh(teeth, bevel)
                 end

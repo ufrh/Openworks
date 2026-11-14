@@ -26,7 +26,7 @@ check("This change preserves every tooth and the original model shaft bore",
 check("Phase source is the actual published base mesh version",
       'entry:GetAttribute("ProfileVersion")' in generator
       and 'model:SetAttribute("GearToothPhaseFraction",toothPhase)' in generator
-      and 'model:SetAttribute("GeometryVersion",if toothPhase==0.5 then 5 else 4)' in generator)
+      and 'model:SetAttribute("GeometryVersion",if assetId then' in generator)
 check("Old and new geometry can mesh with correct tooth phase",
       'shiftA-shiftB' in gear_math
       and 'sourceShift=source:GetAttribute("GearToothPhaseFraction") or 0' in smart
@@ -35,9 +35,9 @@ check("Old and new geometry can mesh with correct tooth phase",
 check("Gear assets are republished as NEW IDs, with delayed manifest promotion",
       "CreateAssetVersionAsync(editableMesh," not in plugin
       and "CreateAssetAsync(editableMesh," in plugin
-      and 'manifest:SetAttribute("GearGeometryVersion",5)' in plugin
+      and 'manifest:SetAttribute("GearGeometryVersion",6)' in plugin
       and 'entry:SetAttribute("PendingAssetId",' in plugin
-      and 'entry:SetAttribute("ProfileVersion",5)' in plugin
+      and 'entry:SetAttribute("ProfileVersion",6)' in plugin
       and 'entry.Value=string.format("%.0f",ids[key])' in plugin)
 check("Old bolts remain untouched in a gear version update",
       'local isGear=key~="Bolt_SharpThread"' in plugin
@@ -45,10 +45,11 @@ check("Old bolts remain untouched in a gear version update",
 check("Studio plugin XML and source are identical",
       xml.split("<![CDATA[",1)[1].split("]]>",1)[0]==plugin)
 
-MODULE=.25
+MODULE=.19
 BORE=.375
 PRESSURE=math.radians(20)
-WIDTH=.60
+WIDTH=.40
+SMALL_BEVEL_WIDTH=.20
 for teeth in (8,12,20,32):
     step=2*math.pi/teeth
     pitch=teeth*MODULE/2
@@ -67,7 +68,8 @@ for teeth in (8,12,20,32):
         check(f"{teeth}T: quadrant {direction} lies inside a true root gap",
               angular_distance-shoulder>0.005)
     for bevel in (False,True):
-        small_end_factor=(1-WIDTH/(2*pitch)) if bevel else 1
+        width=SMALL_BEVEL_WIDTH if bevel and teeth==8 else WIDTH
+        small_end_factor=(1-width/(2*pitch)) if bevel else 1
         check(f"{teeth}T {'90deg bevel' if bevel else 'spur'}: open bore and real rim",
               small_end_factor*root>BORE+.01)
         # Pitch radius is unchanged, so centers of consecutive parallel

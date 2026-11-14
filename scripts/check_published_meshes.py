@@ -37,12 +37,12 @@ check('Legacy temporary preview path retained for unconverted places',
 check('Published gear metadata matches runtime gear math',
     'local function publishedGearDetails(teeth)' in mod and
     'triangles = #samples * 8' in mod and
-    'model:SetAttribute("GearModuleStuds", math.pi * CAD_MODULE * scale)' in mod)
+    'model:SetAttribute("GearModuleStuds", math.pi * details.module * scale)' in mod)
 check('Published bolt metadata matches existing fitting geometry',
     'local function publishedBoltDetails()' in mod and
     'headLength = 0.17' in mod and
     'model.PrimaryPart = pivot' in mod and
-    'ringCollision(model,scale,details.root,details.pitch,bevel)' in mod)
+    'ringCollision(model,scale,details.root,details.pitch,bevel,details.faceWidth)' in mod)
 check('Publisher requires an installed plugin and uses real mesh assets',
     'assert(plugin, "Install this Script as a LOCAL STUDIO PLUGIN first' in plugin and
     'AssetService:CreateAssetAsync(editableMesh,' in plugin and

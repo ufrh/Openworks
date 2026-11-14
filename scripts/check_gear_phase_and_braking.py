@@ -52,7 +52,9 @@ test("No-input phase correction cannot feed itself",
      and 'local phaseCorrections,phaseCounts={},{}' in gear)
 test("No-input physical shafts actively brake, with no new drive source",
      'RELEASE_BRAKE_ACCEL=28' in gear
-     and 'math.max(0,math.abs(speed)-RELEASE_BRAKE_ACCEL*dt)' in gear
+     and 'desired=0' in gear
+     and 'RELEASE_STOP_EPS=0.035' in gear
+     and 'group.Braking and not self.Drives[group]' in gear
      and 'if not hasDrive then' in gear
      and 'group.ControlledThisFrame=true' in gear)
 test("Held crank and powered bearing are the only graph drive inputs",
