@@ -360,6 +360,7 @@ function Persistence:Decode(player,document)
     for _,spec in ipairs(document.joints) do
         local unsupported=spec.kind=="AxisHinge" or spec.kind=="AxisBall"
             or spec.kind=="AxisUniversal" or spec.kind=="PoweredHinge"
+            or spec.kind=="CVAxle" -- Preserve old CV records without re-authoring
         if unsupported or not readyIds[spec.sourceId]
             or not readyIds[spec.targetId]
             or (spec.secondTargetId and not readyIds[spec.secondTargetId]) then

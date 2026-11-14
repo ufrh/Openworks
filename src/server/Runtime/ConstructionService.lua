@@ -1302,7 +1302,7 @@ local function handle(player, payload)
         or action == "CreateBolt"
         or action == "CoupleHandCrank" or action == "TuneBearingMotor"
         or action == "CreateBelt" or action == "RemoveBelt"
-        or action == "CreateCVAxle"
+        or action == "CreateVectorJoint"
 
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
         or action=="TuneBearingMotor"
@@ -1476,8 +1476,8 @@ local function handle(player, payload)
         end
         if action == "CreateGearMesh" then return mechanical:CreateGearMesh(player, payload) end
         if action == "CreateBelt" then return mechanical:CreateBelt(player,payload) end
-        if action == "CreateCVAxle" then
-            return mechanical:CreateCVAxle(player,payload)
+        if action == "CreateVectorJoint" then
+            return mechanical:CreateVectorJoint(player,payload)
         end
         if action == "RemoveBelt" then return mechanical:RemoveBelt(player,payload) end
         if action=="FastenBolt" then

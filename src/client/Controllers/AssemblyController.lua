@@ -676,9 +676,9 @@ function Controller:CommitConnect(kind,first,second)
             sourceId=roles.crank:GetAttribute("InstanceId"),
             targetId=roles.crankShaft:GetAttribute("InstanceId"),
         }
-    elseif kind=="CVAxle" then
+    elseif kind=="VectorJoint" then
         request={
-            action="CreateCVAxle",sourceId=firstId,targetId=secondId,
+            action="CreateVectorJoint",sourceId=firstId,targetId=secondId,
         }
     elseif kind=="Spring" then
         local source,target=first,second

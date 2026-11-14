@@ -20,7 +20,7 @@ local LABELS={
     CrankCoupling="Couple hand crank",
     Rigid="Rigid gear / pulley hub",
     Belt="Connect pulleys with a friction belt",
-    CVAxle="CV axle · self-fitting drive + suspension plunge",
+    VectorJoint="Vector Joint · zero-space elbow drive",
     Adjust="Adjust depth / roll",
 }
 Catalog.Labels=table.freeze(LABELS)
@@ -72,7 +72,7 @@ function Catalog.Pair(first,second)
         add("CrankCoupling")
     end
     if not crank then
-        if pairedShafts then add("CVAxle") end
+        if pairedShafts then add("VectorJoint") end
         -- A hub's Rigid mount creates the validated physical Weld.
         -- Do not expose two separate UI names for the same connection.
         if not hub and not belt then add("Weld") end
