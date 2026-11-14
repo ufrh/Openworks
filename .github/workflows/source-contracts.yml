@@ -30,6 +30,8 @@ jobs:
         run: python3 scripts/check_gear_video_regression.py
       - name: Verify crank-to-gear drive chain and failure diagnostics
         run: python3 scripts/check_crank_to_gear_chain.py
+      - name: Verify torque budget, anchored islands and live drive diagnostics
+        run: python3 scripts/check_gear_torque_budget.py
 
   parse-luau:
     name: Parse Luau sources (no formatting gate)

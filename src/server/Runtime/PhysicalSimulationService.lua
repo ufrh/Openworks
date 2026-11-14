@@ -280,7 +280,10 @@ function Simulation:StopCrank(session,id)
     crank.LastInput=0
     crank.NativeSpeed=0
     -- The native drive is shared by geared and ungeared shafts.
-    if crank.Drive then crank.Drive.Enabled=false end
+    if crank.Drive then
+        crank.Drive.AngularVelocity=Vector3.zero
+        crank.Drive.Enabled=false
+    end
     if crank.Model and crank.Model.Parent then
         crank.Model:SetAttribute("OPENWORKS_CrankRunning",false)
     end
@@ -323,17 +326,52 @@ function Simulation:StepCranks(dt)
                 if crank.Running then self:StopCrank(session,id) end
                 continue
             end
+            local timedOut=os.clock()-(crank.LastInput or 0)>CRANK_HOLD_TIMEOUT
+            local tooFar=playerRoot and not self.D.nearPlayer(owner,root.Position)
             if session.Paused or session.ActiveCrankId~=id
-                or not crank.Running or not playerRoot
-                or not self.D.nearPlayer(owner,root.Position)
-                or os.clock()-(crank.LastInput or 0)>CRANK_HOLD_TIMEOUT then
-                if crank.Running then self:StopCrank(session,id) end
+                or not crank.Running or not playerRoot or tooFar or timedOut then
+                if crank.Running then
+                    -- Make premature cancellation visible. 'Armed' alone says
+                    -- nothing about a sustained motor command on Heartbeat.
+                    if timedOut or tooFar or not playerRoot then
+                        warn(string.format("[OPENWORKS][GEARS] Crank drive cut: %s "
+                            .."(held packets=%d, drive enabled=%s, input speed=%.3f)",
+                            if timedOut then "held-input pulse timeout"
+                                elseif not playerRoot then "player root unavailable"
+                                else "player left construction range",
+                            crank.InputPackets or 0,tostring(drive and drive.Enabled),
+                            root.AssemblyAngularVelocity:Dot(crank.Axis)))
+                    end
+                    self:StopCrank(session,id)
+                end
             elseif drive then
-                -- The standalone native-motor crank also eases into
-                -- speed instead of snapping to 2 rad/s on first press.
+                -- Easing does not remove torque authority; the drive is
+                -- enabled immediately on a valid initial crank press.
                 crank.NativeSpeed+=(HandCrankMath.FixedAngularSpeed
                     -crank.NativeSpeed)*(1-math.exp(-8*math.clamp(dt,0,0.07)))
                 drive.AngularVelocity=crank.Axis*crank.NativeSpeed
+                crank.ActiveSeconds=(crank.ActiveSeconds or 0)+dt
+                if crank.ActiveSeconds>=0.95 and
+                    (crank.LastDiagnosticAt==nil
+                        or os.clock()-crank.LastDiagnosticAt>=2.5) then
+                    local physical=crank.Root.AssemblyRootPart
+                    local speed=root.AssemblyAngularVelocity:Dot(crank.Axis)
+                    local ok=false
+                    local details="no gear transmission"
+                    if session.Gears then
+                        ok,details=session.Gears:DriveDiagnostics(crank.DrivenId)
+                    end
+                    if not ok then
+                        warn(string.format("[OPENWORKS][GEARS] LIVE DRIVE STALL: "
+                            .."motor target %.2f rad/s, actual %.3f rad/s, "
+                            .."motor enabled %s, input pulses %d, "
+                            .."physics root anchored %s. %s",
+                            crank.NativeSpeed,speed,tostring(drive.Enabled),
+                            crank.InputPackets or 0,
+                            tostring(physical and physical.Anchored),details))
+                    end
+                    crank.LastDiagnosticAt=os.clock()
+                end
             end
         end
         -- Meshing transfers torque to both welded shaft assemblies.
@@ -395,14 +433,19 @@ function Simulation:BeginCrank(player,request)
     session.ActiveCrankId=id
     crank.Running=true
     crank.LastInput=os.clock()
+    crank.ActiveSeconds=0
+    crank.LastDiagnosticAt=nil
+    crank.InputPackets=0
     if session.Gears and #session.Gears.Gears>=2 then
         print(string.format("[OPENWORKS][GEARS] Input crank armed: %d gears / %d real torque link(s)",
             #session.Gears.Gears,session.Gears.Contacts))
     end
     -- All cranks run their own torque-limited motor on the shaft.
     if crank.Drive then
-        crank.NativeSpeed=0
-        crank.Drive.AngularVelocity=Vector3.zero
+        -- A motor with target zero exerts no initial driving effort. Arm a
+        -- small but nonzero target now; Heartbeat eases it toward full speed.
+        crank.NativeSpeed=HandCrankMath.FixedAngularSpeed*0.2
+        crank.Drive.AngularVelocity=crank.Axis*crank.NativeSpeed
         crank.Drive.Enabled=true
     end
     crank.Model:SetAttribute("OPENWORKS_CrankRunning",true)
@@ -417,6 +460,12 @@ function Simulation:InputCrank(player,id,_desired,holding,release)
     local crank=session.Cranks and session.Cranks[id]
     if not crank then return end
     if release==true or holding~=true then
+        if (crank.ActiveSeconds or 0)<0.5 then
+            warn(string.format("[OPENWORKS][GEARS] Crank released after %.2f s "
+                .."(received %d held-input packets). Hold LMB to drive "
+                .."the shaft continuously; 'armed' is not rotation.",
+                crank.ActiveSeconds or 0,crank.InputPackets or 0))
+        end
         self:StopCrank(session,id)
         return
     end
@@ -427,6 +476,7 @@ function Simulation:InputCrank(player,id,_desired,holding,release)
     if now-(crank.LastPacket or 0)<0.04 then return end
     crank.LastPacket=now
     crank.LastInput=now
+    crank.InputPackets=(crank.InputPackets or 0)+1
 end
 
 function Simulation:SetStatus(player,running,grounded)

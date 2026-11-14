@@ -173,6 +173,8 @@ local ok, failure=pcall(function()
         end
     end
 end)
+local _,live=transmission:DriveDiagnostics("test-shaft-A")
+print("[OPENWORKS][GEAR TEST] Final drive telemetry: "..live)
 transmission:StopMotion()
 world:Destroy()
 if not ok then error("[OPENWORKS][GEAR TEST] Studio test errored: "..tostring(failure)) end

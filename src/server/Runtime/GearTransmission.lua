@@ -8,6 +8,8 @@ local Alignment=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
 local GearMath=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
+local HandCrankMath=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
 
 local Transmission={}
 Transmission.__index=Transmission
@@ -19,6 +21,19 @@ local COUPLING_RESPONSE=14
 local PHASE_RECOVERY=6
 local MAX_TOOTH_FORCE=80000
 local MIN_INERTIA=0.001
+-- The old per-tooth cap could be >100,000 while a manual crank could only
+-- supply 6,500. That closed-loop brake can stall an otherwise valid gearbox.
+-- A coupling MUST NOT consume more than the available drive torque just to
+-- enforce a speed ratio. The input motor retains headroom to accelerate.
+local MAX_MESH_EFFORT=HandCrankMath.MaxTorque*0.72
+local MAX_INERTIA_ESTIMATE=2500
+local function finiteAssemblyMass(part)
+    local root=part.AssemblyRootPart
+    if (root and root.Anchored) or part.Anchored then return nil end
+    local mass=part.AssemblyMass
+    if mass~=mass or mass==math.huge or mass<0 or mass>1e8 then return nil end
+    return mass
+end
 
 local function identifier(model)
     return model:GetAttribute("InstanceId")
@@ -305,13 +320,30 @@ function Transmission:Step(dt)
         local ratio=link.Ratio
         local errorSpeed=wb-ratio*wa
         link.Error=math.clamp(link.Error+errorSpeed*dt,-0.35,0.35)
-        local ia=math.max(MIN_INERTIA,0.5*a.Root.AssemblyMass*link.RadiusA^2)
-        local ib=math.max(MIN_INERTIA,0.5*b.Root.AssemblyMass*link.RadiusB^2)
+        -- An anchored member makes the ENTIRE rigid physics island immobile,
+        -- even if our chosen root Part.Anchored is false. Roblox reports an
+        -- infinite AssemblyMass in that case; never feed INF/NaN to Torque.
+        local ma,mb=finiteAssemblyMass(a.Root),finiteAssemblyMass(b.Root)
+        if not ma or not mb then
+            link.Effort=0
+            link.Error=0
+            link.PhysicsBlocked=true
+            continue
+        end
+        link.PhysicsBlocked=false
+        local ia=math.clamp(0.5*ma*link.RadiusA^2,
+            MIN_INERTIA,MAX_INERTIA_ESTIMATE)
+        local ib=math.clamp(0.5*mb*link.RadiusB^2,
+            MIN_INERTIA,MAX_INERTIA_ESTIMATE)
         local effective=1/(1/ib+ratio^2/ia)
+        -- A gear ratio multiplies the reaction torque at the input. Bound
+        -- both sides of the coupling; don't let the feedback solver overpower
+        -- the hand-crank motor and freeze the driving gear at startup.
+        local maxEffort=math.min(MAX_TOOTH_FORCE*link.RadiusB,
+            MAX_MESH_EFFORT/math.max(1,math.abs(ratio)))
         local effort=math.clamp(
             -(errorSpeed+PHASE_RECOVERY*link.Error)*effective*correction,
-            -MAX_TOOTH_FORCE*link.RadiusB,
-            MAX_TOOTH_FORCE*link.RadiusB)
+            -maxEffort,maxEffort)
         -- Equal virtual work; reversing shaft torques reverses the power flow.
         link.Effort=effort
         a.Pending+=aa*(-ratio*effort)
@@ -342,6 +374,46 @@ function Transmission:Step(dt)
             group.Torque.Torque=group.Pending
         end
     end
+end
+
+function Transmission:DriveDiagnostics(id)
+    local group=self.ById[id]
+    if not group or #group.Gears==0 then
+        return false,"input shaft is NOT part of a recognized mounted gear"
+    end
+    local root=group.Root
+    if not root or not root.Parent then
+        return false,"input physics root is missing"
+    end
+    local physicalRoot=root.AssemblyRootPart
+    local anchored=physicalRoot and physicalRoot.Anchored or root.Anchored
+    local w=root.AssemblyAngularVelocity:Dot(axis(group))
+    local links={}
+    local outputTurning=false
+    for _,link in ipairs(self.Links) do
+        local other=if link.A==group then link.B
+            elseif link.B==group then link.A else nil
+        if other then
+            local peerRoot=other.Root
+            local peerPhysical=peerRoot and peerRoot.AssemblyRootPart
+            local blocked=peerPhysical and peerPhysical.Anchored
+                or peerRoot and peerRoot.Anchored
+            local speed=if peerRoot and peerRoot.Parent then
+                peerRoot.AssemblyAngularVelocity:Dot(axis(other)) else 0
+            if math.abs(speed)>0.08 then outputTurning=true end
+            table.insert(links,string.format(
+                "output %.3f rad/s, torque %.1f, input/output rigidly anchored %s/%s, "
+                .."output shaft mount %s, blocked %s",
+                speed,math.abs(link.Effort or 0),tostring(anchored),
+                tostring(blocked),tostring(other.AxisSource~=nil),
+                tostring(link.PhysicsBlocked==true)))
+        end
+    end
+    local detail=string.format("input %.3f rad/s, mass %.1f, rigidly anchored %s, %d mesh(es)",
+        w,root.AssemblyMass,tostring(anchored),#links)
+    if #links==0 then return false,detail.."; no gear contact currently" end
+    return math.abs(w)>0.08 and outputTurning,
+        detail.."; "..table.concat(links,"; ")
 end
 
 function Transmission:StopMotion()
