@@ -10,6 +10,7 @@
 -- The publisher MUST run as a locally installed plugin (not Command Bar,
 -- not a server Script, not inside a live game). CreateAssetAsync requires it.
 -- Sync the latest dev source into Studio before publishing.
+-- REQUIRED: File > Beta Features > CreateAssetAsync Luau API (restart Studio).
 local plugin = plugin
 assert(plugin, "Install this Script as a LOCAL STUDIO PLUGIN first (Plugins > Save as Local Plugin)")
 
@@ -80,13 +81,27 @@ local function assetParams(key)
     return p
 end
 
+-- Roblox's upload API is currently gated behind an opt-in Studio beta.
+-- Detect the exact engine exception and explain how to unblock publication.
+local function checkUploadCall(ok, result, key, action)
+    if ok then return end
+    local reason = tostring(result)
+    if reason:find("CreateAssetAsync and CreateAssetVersionAsync are not available yet", 1, true) then
+        error("Roblox mesh upload is disabled in this Studio session. Open File > Beta Features, "
+            .. "enable 'CreateAssetAsync Luau API', save, and COMPLETELY RESTART Studio. "
+            .. "Then click OpenWorks Meshes > Publish Missing again. No existing mesh IDs were discarded. "
+            .. "Original Roblox error: " .. reason, 0)
+    end
+    error(string.format("%s threw for %s: %s", action, key, reason), 0)
+end
+
 local function uploadMesh(editableMesh, key, previousId, updateVersion)
     if previousId and updateVersion then
         local ok, result, versionOrError = pcall(function()
             return AssetService:CreateAssetVersionAsync(editableMesh,
                 Enum.AssetType.Mesh, previousId, assetParams(key))
         end)
-        assert(ok, string.format("Version upload threw for %s: %s", key, tostring(result)))
+        checkUploadCall(ok, result, key, "Version upload")
         assert(result == Enum.CreateAssetResult.Success,
             string.format("Version upload failed for %s: %s / %s",
                 key, tostring(result), tostring(versionOrError)))
@@ -97,7 +112,7 @@ local function uploadMesh(editableMesh, key, previousId, updateVersion)
         return AssetService:CreateAssetAsync(editableMesh,
             Enum.AssetType.Mesh, assetParams(key))
     end)
-    assert(ok, string.format("Upload threw for %s: %s", key, tostring(result)))
+    checkUploadCall(ok, result, key, "Upload")
     assert(result == Enum.CreateAssetResult.Success and type(idOrError) == "number",
         string.format("Upload failed for %s: %s / %s", key, tostring(result), tostring(idOrError)))
     log(string.format("Published %s as permanent mesh asset %d", key, idOrError))

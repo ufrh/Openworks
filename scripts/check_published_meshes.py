@@ -54,6 +54,11 @@ check('Publisher stores IDs as durable StringValues and supports resume',
     'previousId and not updateVersion' in plugin)
 check('Publisher supports group-owned experiences',
     'Enum.CreatorType.Group' in plugin and 'Enum.AssetCreatorType.Group' in plugin)
+check('Publisher catches missing opt-in CreateAssetAsync beta with a useful message',
+    'CreateAssetAsync and CreateAssetVersionAsync are not available yet' in plugin and
+    "enable 'CreateAssetAsync Luau API'" in plugin and
+    'COMPLETELY RESTART Studio' in plugin and
+    'CreateAssetAsync Luau API' in doc)
 check('Publisher marks complete only after upload and refreshes prefab gallery',
     plugin.index('assert(progress == 9') < plugin.index('manifest:SetAttribute("Ready", true)') and
     'generator.Ensure(true)' in plugin and 'generator.BuildGallery(false)' in plugin)
