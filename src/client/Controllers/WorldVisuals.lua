@@ -47,7 +47,7 @@ local function segment(item,anchor,a,b,color)
     item.Adornee=anchor
     item.CFrame=anchor.CFrame:ToObjectSpace(CFrame.lookAt(a,b))
     item.Length=delta.Magnitude
-    item.Thickness=2
+    item.Thickness=3
     item.Color3=color
     item.Visible=true
 end
@@ -117,7 +117,7 @@ function Visuals:UpdateJoint(cue,relation,source,target)
     local linear=kind=="Slider" or kind=="Cylindrical"
 
     cue.Origin.Visible=rotational
-    if rotational then point(cue.Origin,anchor,center,0.047,GREEN) end
+    if rotational then point(cue.Origin,anchor,center,0.095,GREEN) end
 
     local travel=relation:GetAttribute("FitTravelU")
     local half=if type(travel)=="number" and travel>0
@@ -133,7 +133,7 @@ function Visuals:UpdateJoint(cue,relation,source,target)
         local hi=math.clamp(upper*Grid.Unit,-half,half)
         if hi>=lo then
             segment(cue.Rail,anchor,center+axis*lo,center+axis*hi,BLUE)
-            point(cue.Min,anchor,center+axis*lo,0.055,GREEN)
+            point(cue.Min,anchor,center+axis*lo,0.10,GREEN)
             point(cue.Max,anchor,center+axis*hi,0.055,GREEN)
         else
             cue.Rail.Visible=false
@@ -153,7 +153,7 @@ function Visuals:UpdateJoint(cue,relation,source,target)
     if linear then
         local offset=(moving-center):Dot(axis)
         if half>0 then offset=math.clamp(offset,-half,half) end
-        point(cue.Current,anchor,center+axis*offset,0.053,BLUE)
+        point(cue.Current,anchor,center+axis*offset,0.095,BLUE)
     end
 
     if rotational then
@@ -163,7 +163,7 @@ function Visuals:UpdateJoint(cue,relation,source,target)
         local v=axis:Cross(u).Unit
         local size=math.min(source.PrimaryPart.Size.Magnitude,
             target.PrimaryPart.Size.Magnitude)
-        local radius=math.clamp(size*0.28,0.17,0.65)
+        local radius=math.clamp(size*0.43,0.30,1.1)
         local function at(angle)
             return center+(u*math.cos(angle)+v*math.sin(angle))*radius
         end

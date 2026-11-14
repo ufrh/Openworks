@@ -105,8 +105,8 @@ function Feedback:Set(owner,key,members,role,whole)
     assert(PALETTE[role]~=nil,"Invalid visual feedback role")
     -- Only deliberate selection, explicit assembly members, active
     -- connection participants and transient confirmations make boxes.
-    -- Passive hover, auto snap and per-body grounding must never render
-    -- as selection-like bounding boxes.
+    -- Passive hover and auto snap must never render selection boxes.
+    -- Assembly grounding is deliberate context: its boxes are blue/green.
     if owner=="hover" or owner=="snap" or owner=="ground"
         or owner=="explorer-selection" then
         self:Clear(owner)

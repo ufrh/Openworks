@@ -561,7 +561,10 @@ function Tool:Cancel()
 end
 
 function Tool:ClearVisuals()
-    if self.Feedback then self.Feedback:Clear("assembly") end
+    if self.Feedback then
+        self.Feedback:Clear("assembly")
+        self.Feedback:Clear("assembly-grounding")
+    end
     self.PreviewRoot=nil
     self.PreviewCache=""
     self.PreviewOutlines={}
@@ -630,6 +633,29 @@ function Tool:OnModeChanged(mode)
     self:Refresh()
 end
 
+function Tool:ShowGroundingVisuals()
+    if not self.Feedback then return end
+    if self.Mode~="Assembly"
+        or player:GetAttribute("OPENWORKS_Simulating")==true then
+        self.Feedback:Clear("assembly-grounding")
+        return
+    end
+    local seen={}
+    for _,model in ipairs(ownedModels()) do
+        local id=instanceId(model)
+        if id then
+            seen[id]=true
+            self.Feedback:Set("assembly-grounding",id,{model},
+                if model:GetAttribute("Grounded")==true
+                then "grounded" else "free",false)
+        end
+    end
+    local layer=self.Feedback.Layers["assembly-grounding"] or {}
+    for id in pairs(layer) do
+        if not seen[id] then self.Feedback:Remove("assembly-grounding",id) end
+    end
+end
+
 function Tool:Tick()
     self:OnModeChanged(self.Tools.ActiveId)
     if self.LastMessage and os.clock()>self.MessageUntil then
@@ -646,6 +672,18 @@ function Tool:Tick()
             end
         end
     end
+    elseif self.Mode=="Simulate"
+        and player:GetAttribute("OPENWORKS_Simulating")~=true then
+        -- Mirror P: selection in the explorer takes precedence over aim.
+        local chosen=self.UnifiedExplorer and self.UnifiedExplorer.Selected
+        local seed=chosen and chosen.kind=="assembly"
+            and chosen.members and chosen.members[1] or self:Pick()
+        local assemblyId=seed and seed:GetAttribute("AssemblyId")
+        if type(assemblyId)=="string" and assemblyId~="" then
+            members=self:OwnedAssembly(assemblyId)
+        end
+    end
+    self:ShowGroundingVisuals()
     self:ShowVisuals(members,PURPLE)
     player:SetAttribute("OPENWORKS_HoverAssemblyId","")
 end
