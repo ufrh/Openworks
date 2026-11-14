@@ -8,6 +8,7 @@
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local GearMath=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
+local VectorJoint=require(script.Parent:WaitForChild("VectorJoint"))
 
 local Kinematics={}
 Kinematics.__index=Kinematics
@@ -141,8 +142,31 @@ function Kinematics.new(graph,copies)
         end
     end
 
+    local vectorLinks={}
+    for _,edge in ipairs(graph.edges) do
+        if edge.kind=="VectorJoint" then
+            local a=byId[identifier(edge.source)]
+            local b=byId[identifier(edge.target)]
+            if a and b and a~=b and kinematic[a] and kinematic[b]
+                and a.Axis and b.Axis then
+                local g,why=VectorJoint.Measure(edge.source,edge.target)
+                if not g then error(why or "Invalid vector shaft joint") end
+                local alignA=a.Axis:Dot(edge.source.PrimaryPart.CFrame.RightVector)
+                local alignB=b.Axis:Dot(edge.target.PrimaryPart.CFrame.RightVector)
+                if math.abs(alignA)<0.98 or math.abs(alignB)<0.98 then
+                    error("Vector Joint must connect shafts on their geared axle axes")
+                end
+                local ratio=g.SpinSign
+                    *(if alignA>=0 then 1 else -1)
+                    *(if alignB>=0 then 1 else -1)
+                table.insert(vectorLinks,{A=a,B=b,Ratio=ratio})
+            end
+        end
+    end
+
     local self=setmetatable({
         Groups=groups,ById=byId,Gears=gears,Racks=racks,
+        VectorLinks=vectorLinks,LastVelocities={},
         Kinematic=kinematic,
         ScanElapsed=SCAN_PERIOD,MotionElapsed=0,Contacts=0,
         CurrentSpeed=0,LastDrivenId=nil,LastAxis=nil,
@@ -155,6 +179,15 @@ end
 function Kinematics:IsKinematic(id)
     local group=self.ById[id]
     return group~=nil and self.Kinematic[group]==true
+end
+
+-- Signed angular velocity at the requested authored shaft's LOCAL axis.
+-- Only actual scripted gear groups can be sampled as Vector inputs.
+function Kinematics:AngularSpeedFor(id,shaftAxis)
+    local group=self.ById[id]
+    if not group or not group.Axis then return 0 end
+    local velocity=self.LastVelocities[group] or 0
+    return velocity*group.Axis:Dot(shaftAxis or group.Axis)
 end
 
 function Kinematics:CanDriveRack(id)
@@ -434,6 +467,15 @@ function Kinematics:Detect()
             count+=1
         end
     end
+    -- Adjoining geared shafts are linked by the custom Vector relation,
+    -- never by contact-based gear meshing. Both directions use reciprocal
+    -- signs, so a compound angled drivetrain remains backdrivable.
+    for _,joint in ipairs(self.VectorLinks) do
+        local a,b=joint.A,joint.B
+        table.insert(a.Links,{Group=b,Ratio=joint.Ratio})
+        table.insert(b.Links,{Group=a,Ratio=1/joint.Ratio})
+        count+=1
+    end
     self.Contacts=count
     self.Unmeshed={}
     -- Expose WHY a gear is stationary. A visually nearby gear may have
@@ -485,6 +527,7 @@ function Kinematics:Explain(id)
 end
 
 function Kinematics:StopMotion()
+    table.clear(self.LastVelocities)
     self.CurrentSpeed=0
     self.MotionElapsed=0
     self.LastDrivenId=nil
@@ -528,6 +571,7 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
     local sourceId=if active then drivenId else self.LastDrivenId
     local inputAxis=if active then shaftAxis else self.LastAxis
     if not sourceId or not inputAxis or self.CurrentSpeed==0 then
+        table.clear(self.LastVelocities)
         return
     end
 
@@ -577,9 +621,11 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
         end
     end
     if stalled then
+        table.clear(self.LastVelocities)
         self.CurrentSpeed=0
         return
     end
+    self.LastVelocities=speed
 
     -- One-to-many branching is automatic: EVERY reachable group is
     -- rotated once around its own axle. Rotating any output-side crank

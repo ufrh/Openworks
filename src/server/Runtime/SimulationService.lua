@@ -20,7 +20,7 @@ local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
 local GearKinematics = require(script.Parent:WaitForChild("GearKinematics"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
-local CVAxle=require(script.Parent:WaitForChild("CVAxle"))
+local VectorJoint=require(script.Parent:WaitForChild("VectorJoint"))
 
 local Simulation = {}
 Simulation.__index = Simulation
@@ -200,15 +200,44 @@ function Simulation:StepCranks(dt)
                 rackId=nil
             end
             local rackDriven=not powered and rackId~=nil
+            -- A physical wheel/shaft can backdrive a scripted gear group
+            -- through a Vector Joint. Gear speed is still propagated by ONE
+            -- server-owned graph rather than external native gear forces.
+            local nativeId,nativeAxis,nativeSpeed=nil,nil,0
+            if not powered and not rackDriven then
+                for _,joint in ipairs(session.VectorJoints or {}) do
+                    if joint.GearId and joint.NativePart
+                        and joint.NativePart.Parent then
+                        local physicalAxis=joint.NativePart.CFrame.RightVector
+                        local measured=joint.NativePart.AssemblyAngularVelocity
+                            :Dot(physicalAxis)*joint.Sign
+                        if math.abs(measured)>0.12
+                            and math.abs(measured)>math.abs(nativeSpeed) then
+                            local shaft=if joint.KinematicA
+                                then joint.PartA else joint.PartB
+                            nativeId=joint.GearId
+                            nativeAxis=shaft.CFrame.RightVector
+                            nativeSpeed=measured
+                        end
+                    end
+                end
+            end
             session.Gears:Step(dt,
                 if powered then crank.DrivenId
-                    elseif rackDriven then rackId else nil,
+                    elseif rackDriven then rackId else nativeId,
                 if powered then crank.Axis
                     elseif rackDriven then session.Gears:RackAxis(rackId)
-                    else nil,
+                    else nativeAxis,
                 if powered then HandCrankMath.FixedAngularSpeed
                     elseif rackDriven then session.RackDirection*RACK_MANUAL_SPEED
-                    else 0)
+                    else nativeSpeed)
+            for _,joint in ipairs(session.VectorJoints or {}) do
+                VectorJoint.Step(joint,dt,session.Gears,nativeId)
+            end
+        elseif session.Paused then
+            for _,joint in ipairs(session.VectorJoints or {}) do
+                VectorJoint.Stop(joint)
+            end
         end
     end
 end
@@ -392,7 +421,7 @@ function Simulation:Graph(player, seed)
                 and (kind == "Bearing" or kind == "Slider"
                     or kind == "Cylindrical" or kind == "Fixed"
                     or kind == "Spring" or kind == "Weld" or kind == "Bolt"
-                    or kind == "CVAxle"
+                    or kind == "VectorJoint"
 ) then
                 local a, b = bodyKey(source), bodyKey(target)
                 if a ~= b then
@@ -539,6 +568,7 @@ function Simulation:Start(player, payload)
         RackDirection=0,RackLastInput=0,
         Gears=nil,
         Motors={},
+        VectorJoints={},
         UnregisteredGears=unregisteredGears,
     }
     for _,edge in ipairs(graph.edges) do
@@ -617,16 +647,13 @@ function Simulation:Start(player, payload)
             local source = copies[edge.source:GetAttribute("InstanceId")]
             if not target or not source then error("Missing joint endpoint") end
             local p0, p1 = target.PrimaryPart, source.PrimaryPart
-            if edge.kind == "CVAxle" then
-                -- Kinematic gear shafts cannot receive native torque; never
-                -- compile a visually connected but mechanically dead axle.
-                if session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))
-                    or session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")) then
-                    error("CV axle endpoint is a kinematic gear body; use a physical bearing-driven shaft")
-                end
-                for _,joint in ipairs(CVAxle.Compile(edge.relation,source,target,runtime)) do
-                    table.insert(session.Constraints,joint)
-                end
+            if edge.kind == "VectorJoint" then
+                local control=VectorJoint.Compile(edge.relation,
+                    source,target,runtime,
+                    session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId")),
+                    session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")))
+                table.insert(session.VectorJoints,control)
+                table.insert(session.Constraints,control.Constraint)
             elseif edge.kind == "Gear" then
                 -- Legacy K relationships are OPTIONAL metadata.
                 -- Meshing and transmission use geometry every frame.
