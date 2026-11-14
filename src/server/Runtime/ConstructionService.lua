@@ -1298,7 +1298,8 @@ local function handle(player, payload)
         or action == "AdjustJoint" or action == "PoseShaft"
         or action == "SetGrounded" or action == "GetMechanismInfo"
         or action == "CreateSpring" or action == "TuneSpring"
-        or action == "CreateWeld" or action == "CreateBolt"
+        or action == "CreateWeld" or action == "CreateMultiWeld"
+        or action == "CreateBolt"
         or action == "CoupleHandCrank" or action == "TuneBearingMotor"
         or action == "CreateBelt" or action == "RemoveBelt"
 
@@ -1360,6 +1361,10 @@ local function handle(player, payload)
             if not hasEquippedTool(player,"Mechanics")
                 and not hasEquippedTool(player,"Edit") then
                 return {ok=false,message="Equip Edit (2) or Mechanics to fine-fit a shaft"}
+            end
+        elseif action=="CreateMultiWeld" then
+            if not hasEquippedTool(player,"Edit") then
+                return {ok=false,message="Select parts in Edit and press Shift+K to multi-weld"}
             end
         elseif action=="CreateWeld" then
             if not hasEquippedTool(player,"Mechanics") then
@@ -1482,6 +1487,9 @@ local function handle(player, payload)
         end
         if action=="CreateWeld" then
             return mechanical:CreateWeld(player,payload)
+        end
+        if action=="CreateMultiWeld" then
+            return mechanical:CreateMultiWeld(player,payload)
         end
         if action=="CoupleHandCrank" then
             return mechanical:CoupleHandCrank(player,payload,false)
