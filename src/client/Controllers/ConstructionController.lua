@@ -2690,6 +2690,32 @@ function Controller:VerticalNudge(key)
     return true
 end
 
+-- Explicit multi-weld for current Edit selection; never weld on mere touch.
+function Controller:MultiWeldSelected()
+    if self.Mode~="Edit" or self.Pending or self.Busy or self.ScaleMode
+        or self.CatalogOpen then return false end
+    local ids,seen={},{}
+    for _,model in ipairs(self.SelectedParts) do
+        if model and model.Parent then
+            local id=model:GetAttribute("InstanceId")
+            if type(id)=="string" and not seen[id] then
+                seen[id]=true
+                table.insert(ids,id)
+            end
+        end
+    end
+    if #ids<2 then
+        self:Message("Shift+click at least two touching primitives to multi-weld")
+        return false
+    end
+    local ok=self:Request({action="CreateMultiWeld",ids=ids})
+    if ok and self.Feedback then
+        self.Feedback:FlashSuccess(self.SelectedParts)
+    end
+    self:RefreshHUD()
+    return ok
+end
+
 function Controller:OnInput(input, processed)
     if self.Tools:WasConsumed(input) then return end
     if self.BankModal and self.BankModal.Visible then return end
@@ -2840,7 +2866,7 @@ function Controller:OnInput(input, processed)
     end
     if self.CatalogOpen then return end
 
-    if self.Mode=="Edit" and key==Enum.KeyCode.W and not self.Pending then
+    if self.Mode=="Edit" and key==Enum.KeyCode.K and shiftHeld and not self.Pending then
         self:MultiWeldSelected()
         return
     end
