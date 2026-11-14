@@ -26,6 +26,8 @@ jobs:
         run: python3 scripts/check_gear_reliability.py
       - name: Verify persistent precision mesh publication pipeline
         run: python3 scripts/check_published_meshes.py
+      - name: Verify video gearbox contact regression
+        run: python3 scripts/check_gear_video_regression.py
 
   parse-luau:
     name: Parse Luau sources (no formatting gate)

@@ -104,6 +104,32 @@ end
 -- separate shafts, or unrelated component/editor groups.
 -- Authored joints win: conflicting bearings/slider relationships are not
 -- silently overridden. Ambiguous shaft candidates are also left untouched.
+-- Strict HubFits is the authoritative EDIT operation. Older, manually
+-- positioned assemblies may be a tiny fraction of a stud off the snap grid
+-- or use a nominally snug/press-fit shaft. Simulation can repair a uniquely
+-- inserted hub without rewriting the saved geometry or authoring a DataStore
+-- relationship. This NEVER accepts merely touching teeth or a nearby shaft.
+local function physicallyInsertedGearShaft(gear,shaft)
+    if not gear or not gear.PrimaryPart or not shaft or not shaft.PrimaryPart
+        or type(gear:GetAttribute("GearTeeth"))~="number"
+        or not Alignment.IsShaft(shaft) then return false end
+    if Smart.HubFits(gear,shaft) then return true end
+    local bore=gear:GetAttribute("BoreRadiusStuds")
+    if type(bore)~="number" or bore<=0 then return false end
+    local gearCF,shaftCF=gear:GetPivot(),shaft:GetPivot()
+    local axis=shaftCF.RightVector.Unit
+    if math.abs(axis:Dot(gearCF.RightVector))<0.995 then return false end
+    local delta=gearCF.Position-shaftCF.Position
+    local eccentricity=(delta-axis*delta:Dot(axis)).Magnitude
+    if eccentricity>0.045 then return false end
+    local diameter=math.max(shaft.PrimaryPart.Size.Y,shaft.PrimaryPart.Size.Z)
+    if diameter>2*bore+0.012 then return false end
+    local halfGear=gear.PrimaryPart.Size.X*0.5
+    local halfShaft=shaft.PrimaryPart.Size.X*0.5
+    local overlap=halfGear+halfShaft-math.abs(delta:Dot(axis))
+    return overlap>0.02
+end
+
 local function repairMissingGearHubs(graph)
     local shafts,gears={},{ }
     local locked={}
@@ -127,7 +153,7 @@ local function repairMissingGearHubs(graph)
             -- the simulation edge only when actual bore geometry still fits.
             -- The permanent saved relationship remains the user's choice.
             if (edge.kind=="Bearing" or edge.kind=="Slider"
-                or edge.kind=="Cylindrical") and Smart.HubFits(gear,shaft) then
+                or edge.kind=="Cylindrical") and physicallyInsertedGearShaft(gear,shaft) then
                 edge.kind="Weld"
                 edge.inferredHub=true
             end
@@ -141,7 +167,7 @@ local function repairMissingGearHubs(graph)
         if not locked[gear] then
             local matches={}
             for _,shaft in ipairs(shafts) do
-                if Smart.HubFits(gear,shaft) then
+                if physicallyInsertedGearShaft(gear,shaft) then
                     table.insert(matches,shaft)
                 end
             end
@@ -501,6 +527,11 @@ function Simulation:Start(player, payload)
     if not graph then return false, reason end
     local unregisteredGears=countNearbyUnregisteredGears(
         player,graph,d.folder)
+    if unregisteredGears>0 then
+        warn(string.format("[OPENWORKS][GEARS] %d visibly nearby gear(s) are OUTSIDE the '%s' Assembly; "
+            .."they cannot receive transmission torque. Add them with the Assembly tool.",
+            unregisteredGears,tostring(graph.assemblyName)))
+    end
 
     local session = {
         Originals = {},
@@ -531,6 +562,27 @@ function Simulation:Start(player, payload)
     if #session.AmbiguousHubs>0 then
         warn("[OPENWORKS][GEARS] Ambiguous shaft fit for "
             ..table.concat(session.AmbiguousHubs,", ").."; use Edit > Hub to select a shaft")
+    end
+    if #session.RepairedHubs==0 then
+        for _,gear in ipairs(graph.models) do
+            if type(gear:GetAttribute("GearTeeth"))=="number" then
+                local mounted=false
+                for _,edge in ipairs(graph.edges) do
+                    if (edge.kind=="Weld" or edge.kind=="Fixed")
+                        and ((edge.source==gear and Alignment.IsShaft(edge.target))
+                            or (edge.target==gear and Alignment.IsShaft(edge.source))) then
+                        mounted=true
+                        break
+                    end
+                end
+                if not mounted then
+                    warn("[OPENWORKS][GEARS] "..gear.Name
+                        .." has no recognized shaft weld in this Assembly. "
+                        .."A visible gear bore is NOT a mechanical connection; "
+                        .."use Edit > Hub to mount it.")
+                end
+            end
+        end
     end
     local created = Instance.new("Folder")
     created.Name = "Simulation_" .. tostring(player.UserId)
@@ -569,6 +621,11 @@ function Simulation:Start(player, payload)
         -- Build the torque transfer map, not a scripted animation graph.
         session.Gears=GearTransmission.new(graph,copies,runtime)
         session.Belts=BeltTransmission.new(graph,copies,runtime)
+        if #session.Gears.Gears>1 and session.Gears.Contacts==0 then
+            warn("[OPENWORKS][GEARS] Assembly '"..tostring(graph.assemblyName)
+                .."' has "..#session.Gears.Gears.." gears but ZERO engaging pairs. "
+                ..session.Gears:NearestFailure())
+        end
 
         -- A prefab is a physical primitive even if it has several geometry
         -- Parts (bolt heads / gear teeth). Only those INTERNAL parts are welded.
@@ -923,6 +980,13 @@ function Simulation:Start(player, payload)
         -- Native shaft bearings remain active and enforce rotational freedom.
         session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,
             created,player.Character,d.folder)
+        for _,entry in ipairs(session.Gears.Gears) do
+            if entry.Group.Grounded then
+                warn("[OPENWORKS][GEARS] "..entry.Model.Name
+                    .." is attached to a GROUNDED shaft/body and cannot rotate. "
+                    .."Ground the bearing housing instead of either drive shaft.")
+            end
+        end
 
         -- Ground/movable colors are drawn by client WorldVisuals as
         -- fill-only Highlights. Do not create overlapping simulation

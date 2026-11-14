@@ -75,7 +75,12 @@ function Transmission.new(graph,copies,runtime)
             end
             table.insert(group.Models,clone)
             byId[id]=group
-            if Alignment.IsShaft(original) and not group.AxisSource then
+            -- A HandCrank also advertises PrimitiveFamily=Cylinder, but it
+            -- is an actuator, not the rigid output shaft reference. Prefer
+            -- the real cylinder shaft regardless of assembly iteration order.
+            if Alignment.IsShaft(original)
+                and original:GetAttribute("ActuatorKind")~="HandCrank"
+                and not group.AxisSource then
                 group.AxisSource=clone
                 group.Root=clone.PrimaryPart
             end
@@ -160,9 +165,11 @@ function Transmission:Detect()
                 continue
             end
             local a,b=left.Group,right.Group
-            if not a.AxisSource or not b.AxisSource then
-                continue -- a visually meshed loose gear is not a shaft gearbox
-            end
+            -- Apply native torque even to a gear whose shaft mount is
+            -- missing: a visibly engaging *free* gear should still receive
+            -- force. A mounted gear remains part of its welded shaft body.
+            -- The diagnostic names missing Hub welds rather than silently
+            -- turning a valid visual contact into zero transmission.
             local ratio
             local kind=GearMath.Kind(left.Model)
             if kind=="Bevel45" or kind=="Bevel90" then
@@ -212,6 +219,29 @@ function Transmission:Detect()
     self.Unmeshed=unmeshed
 end
 
+function Transmission:NearestFailure()
+    if #self.Gears<2 then return "Assembly must register at least two gears." end
+    local closestReason="No matching gears"
+    local closest=math.huge
+    for i=1,#self.Gears-1 do
+        for j=i+1,#self.Gears do
+            local left,right=self.Gears[i],self.Gears[j]
+            local a,b=left.Model,right.Model
+            local good,why,distance=GearMath.AutoMeshStatus(a,b)
+            if left.Group==right.Group then
+                why="Both gears belong to ONE rigid welded shaft"
+            end
+            if not good and type(distance)=="number"
+                and (distance<closest or closest==math.huge) then
+                closest=distance
+                closestReason=string.format("%s vs %s: %s",
+                    a.Name,b.Name,tostring(why))
+            end
+        end
+    end
+    return closestReason
+end
+
 function Transmission:Explain(id)
     local group=self.ById[id]
     if not group or #group.Gears==0 then
@@ -233,7 +263,8 @@ function Transmission:Explain(id)
                 total+=math.abs(link.Effort or 0)
             end
         end
-        return string.format("%d torque mesh(es) / shaft mounted / %s / effort %.1f / %s",count,
+        return string.format("%d torque mesh(es) / %s / %s / effort %.1f / %s",count,
+            if group.AxisSource then "shaft mounted" else "LOOSE GEAR: missing shaft weld",
             live,total,
             if root and root.Anchored then "ERROR: SHAFT ANCHORED"
                 elseif group.Grounded then "GROUNDED"

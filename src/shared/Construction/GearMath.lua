@@ -187,6 +187,18 @@ end
 -- Respect the same 0.09-stud pitch-spacing tolerance as construction,
 -- so a gear the editor accepts is not mysteriously rejected in Simulate.
 local MESH_PITCH_TOLERANCE=0.09
+-- Building uses fractional-stud snap and real teeth have finite addendum.
+-- The old fixed 0.09 stud limit silently rejected visually engaged gears,
+-- especially the larger authored module sizes. Do not allow arbitrarily
+-- separated tooth rings: use module-scaled allowance capped at 0.28 studs.
+local function toothEngagementTolerance(a,b,held)
+    local m=a:GetAttribute("GearModuleStuds")
+    local n=b:GetAttribute("GearModuleStuds")
+    if type(m)~="number" or type(n)~="number"
+        or math.abs(m-n)>0.0001 then return MESH_PITCH_TOLERANCE end
+    local allowance=math.clamp(m*0.32,MESH_PITCH_TOLERANCE,0.28)
+    return allowance+(if held then math.min(m*0.08,0.06) else 0)
+end
 function GearMath.AutoMeshStatus(a:Model,b:Model,held: boolean?):(boolean,string,number)
     local kindA=GearMath.Kind(a)
     local kindB=GearMath.Kind(b)
@@ -231,10 +243,18 @@ function GearMath.AutoMeshStatus(a:Model,b:Model,held: boolean?):(boolean,string
         return false,string.format("Gear faces separated by %.3f studs",
             axial-faceLimit),proximity
     end
-    if spacingError>(if held then MESH_PITCH_TOLERANCE+0.075
-        else MESH_PITCH_TOLERANCE) then
-        return false,string.format("Gear center spacing is off by %.3f studs",
-            spacingError),proximity
+    local tolerance=toothEngagementTolerance(a,b,held)
+    -- Visible tooth intersection matters; metadata alone is not enough.
+    local tipA=a:GetAttribute("TipDiameter")
+    local tipB=b:GetAttribute("TipDiameter")
+    if type(tipA)=="number" and type(tipB)=="number"
+        and radial>(tipA+tipB)*0.5+0.001 then
+        return false,"Gear tooth tips do not touch",proximity
+    end
+    if spacingError>tolerance then
+        return false,string.format(
+            "Gear centers off %.3f studs (max %.3f for these teeth)",
+            spacingError,tolerance),proximity
     end
     return true,"Meshed",proximity
 end

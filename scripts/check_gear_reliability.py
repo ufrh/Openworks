@@ -19,7 +19,7 @@ testit("Editor components do not prevent gear/shaft Weld when already fitted",
     and 'd.commitAssembly(player,{},{},spec)' in mechanical)
 testit("Infer only validated concentric gear/shaft Hub pairs inside registered assembly",
     all(x in sim for x in ['local function repairMissingGearHubs(graph)',
-      'Smart.HubFits(gear,shaft)', 'if #matches==1 then', 'elseif #matches>1 then',
+      'physicallyInsertedGearShaft(gear,shaft)', 'if #matches==1 then', 'elseif #matches>1 then',
       'inferredHub=true', 'session.RepairedHubs,session.AmbiguousHubs=repairMissingGearHubs(graph)']))
 testit("No saved model, DataStore, or fabricated user-authorized relationship mutated",
     'table.insert(graph.edges,{' in sim and 'kind="Weld", source=shaft,target=gear' in sim
@@ -36,13 +36,14 @@ testit("Bounded native crank effort supports loaded gears and stays held-input c
     'Crank.MaxTorque=6500' in crank and 'drive.MaxTorque=HandCrankMath.MaxTorque' in sim
     and 'drive.AngularVelocity=crank.Axis*crank.NativeSpeed' in sim
     and 'CRANK_HOLD_TIMEOUT = 0.5' in sim)
-testit("Detect actively meshed shafts only, not loose gear contact",
-    'if not a.AxisSource or not b.AxisSource then' in solver
-    and 'GearMath.AutoMeshStatus(left.Model,right.Model,' in solver)
+testit("Engage actual tooth contacts even before missing mounts are repaired",
+    'if not a.AxisSource or not b.AxisSource then' not in solver
+    and 'GearMath.AutoMeshStatus(left.Model,right.Model,' in solver
+    and 'LOOSE GEAR: missing shaft weld' in solver)
 testit("Strict first contact; bounded holding margin prevents 0.1s physics disconnect flicker",
     'previous[key]~=nil' in solver
     and 'if axial>=faceLimit+(if held then 0.025 else 0) then' in math
-    and 'MESH_PITCH_TOLERANCE+0.075' in math
+    and 'toothEngagementTolerance(a,b,held)' in math
     and 'if held then BEVEL_APEX_TOLERANCE*1.5' in math)
 testit("Native torque unchanged, bidirectional; no scripted gear CFrame motion",
     'local errorSpeed=wb-ratio*wa' in solver
