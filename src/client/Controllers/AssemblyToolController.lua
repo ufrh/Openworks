@@ -671,7 +671,6 @@ function Tool:Tick()
                 table.insert(members,model)
             end
         end
-    end
     elseif self.Mode=="Simulate"
         and player:GetAttribute("OPENWORKS_Simulating")~=true then
         -- Mirror P: selection in the explorer takes precedence over aim.
