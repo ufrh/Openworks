@@ -92,6 +92,10 @@ local function cap(parent,g,physical,sourcePart)
     return shell
 end
 
+function VectorJoint.Hardware(parent,g,physical,sourcePart)
+    return cap(parent,g,physical,sourcePart)
+end
+
 local function torque(runtime,attach,name,id)
     local device=Instance.new("Torque")
     device.Name=name
@@ -156,7 +160,6 @@ function VectorJoint.Compile(relation,a,b,runtime,kinematicA,kinematicB)
         result.Motor=motor
         result.NativePart=if kinematicA then p1 else p0
         result.GearId=if kinematicA then result.IdA else result.IdB
-        result.FromGearSign=if kinematicA then g.SpinSign else g.SpinSign
     end
     return result
 end
@@ -176,10 +179,12 @@ function VectorJoint.Step(j,dt,gears,backdriven)
     local axisA=j.PartA.CFrame.RightVector
     local axisB=j.PartB.CFrame.RightVector
     if j.Motor then
-        local speed=gears and gears:AngularSpeedFor(j.GearId) or 0
+        local gearPart=if j.KinematicA then j.PartA else j.PartB
+        local speed=gears and gears:AngularSpeedFor(j.GearId,
+            gearPart.CFrame.RightVector) or 0
         local native=j.NativePart
         local nativeAxis=native.CFrame.RightVector
-        local sign=if j.KinematicA then j.Sign else j.Sign
+        local sign=j.Sign
         -- Native->gear input must remain free of a competing motor.
         local driven=backdriven==j.GearId
         j.Motor.Enabled=not driven and math.abs(speed)>0.02
