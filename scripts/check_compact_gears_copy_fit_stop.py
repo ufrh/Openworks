@@ -36,7 +36,7 @@ check("Publisher stages v6 and retains original bolt version and saved data",
     and 'manifest:SetAttribute("BoltGeometryVersion",5)' in pl
     and 'entry.Value=old.Id' in pl)
 check("Copy preview recognizes smart fits and can choose Bore/Hub relationship",
-    'if not alt and self.Pending~="ComponentCopy" then' in c
+    'if not alt and not shift and self.Pending~="ComponentCopy" then' in c
     and 'if self.SmartMatch' in c
     and 'self:OpenMateChoice("Build")' in c
     and 'or self.SmartMatch.kind=="Bore") then {' in c)
