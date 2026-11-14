@@ -652,7 +652,8 @@ def main() -> int:
           'function GearMath.AutoMeshStatus(' in gear_math
           and 'MESH_PITCH_TOLERANCE=0.09' in gear_math
           and 'math.min(a.PrimaryPart.Size.X,b.PrimaryPart.Size.X)*0.07' in gear_math
-          and 'if axial>=faceLimit then' in gear_math
+          and ('if axial>=faceLimit then' in gear_math
+               or 'if axial>=faceLimit+(if held then 0.025 else 0) then' in gear_math)
           and 'if not GearMath.Meshable(a,b)' not in gear_math)
     check("Third gear diagnostics expose failed pitch or axial overlap",
           'self.Unmeshed={}' in gears

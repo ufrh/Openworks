@@ -22,6 +22,8 @@ jobs:
         run: python3 scripts/check_prefab_integration.py
       - name: Verify native gearbox transfer integration
         run: python3 scripts/check_gear_transfer.py
+      - name: Verify gearbox runtime reliability and hub repair
+        run: python3 scripts/check_gear_reliability.py
       - name: Verify persistent precision mesh publication pipeline
         run: python3 scripts/check_published_meshes.py
 

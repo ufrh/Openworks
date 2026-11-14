@@ -39,7 +39,7 @@ check('powered motor & crank feed same native transmission solver',
       and 'drive.AngularVelocity=crank.Axis*crank.NativeSpeed' in sim)
 check('transmission diagnostics exposes mesh, mounting, grounding and speed',
       all(t in trans for t in ('NO SHAFT WELD','Not engaged:',
-                                'GROUNDED','rad/s','idle: drive the shaft')))
+                                'GROUNDED','rad/s','idle: drive the crank shaft')))
 check('Studio fixture measures actual physics, not simulated CFrames',
       all(t in fixture for t in ('Transmission.new','HingeConstraint',
                                  'WeldConstraint','AssemblyAngularVelocity',

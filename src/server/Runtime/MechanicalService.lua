@@ -670,7 +670,38 @@ function Mechanical:SmartMate(player, request, newSource)
     local movingComponent=source:GetAttribute("ComponentId")
     local targetComponent=target:GetAttribute("ComponentId")
     if movingComponent and movingComponent==targetComponent then
-        return false,"The parts are already in the same rigid component"
+        -- ComponentId is ONLY an editor selection group, not a rigid joint.
+        -- A gear already concentric with a shaft in the same component
+        -- must still be able to author its mechanical Hub Weld in place.
+        -- Do not try to move an entire group onto one of its own members.
+        if mode~="Hub" then
+            return false,"Choose an independent moving part to align inside this component"
+        end
+        local valid,why=Smart.HubFits(source,target)
+        if not valid then return false,why or "Hub must already fit the shaft" end
+        local shaftId=shaft:GetAttribute("InstanceId")
+        local gearId=opening:GetAttribute("InstanceId")
+        for _,relation in ipairs(self.Folder:GetChildren()) do
+            if relation:GetAttribute("OwnerUserId")==player.UserId then
+                local a,b=relation:GetAttribute("SourceId"),relation:GetAttribute("TargetId")
+                if (a==shaftId and b==gearId) or (a==gearId and b==shaftId) then
+                    if relation:GetAttribute("Kind")=="Weld" then
+                        return true,"Gear is already rigidly mounted to this shaft"
+                    end
+                    return false,"Remove the old free-spinning joint before welding this gear"
+                end
+            end
+        end
+        local spec={
+            relationId=HttpService:GenerateGUID(false),
+            ownerUserId=player.UserId,kind="Weld",
+            sourceId=shaftId,targetId=gearId,
+            componentId=movingComponent,
+        }
+        local ok,reason=self:Restore(player,spec)
+        if not ok then return false,reason end
+        d.commitAssembly(player,{},{},spec)
+        return true,"Gear rigidly welded onto the shaft (in-place Hub)"
     end
     local members=if movingComponent
         then d.components:Members(player,movingComponent) else {source}

@@ -48,7 +48,7 @@ check('Loaded bolts validate first and second hole geometry', 'spec.kind=="Bolt"
 check('Direct bolt-to-hole placement still supported', 'function Mechanical:FastenBolt(player,request,newSource)' in mechanical and 'if not BoltMath.Fits(bolt,target)' in mechanical)
 manual_gear=mechanical.split('function Mechanical:CreateGearMesh(player, request)',1)[1].split('function Mechanical:PoseShaft',1)[0]
 check('Manual gear meshing uses shared bevel + spur math', 'GearMath.AutoMeshStatus(first,second)' in manual_gear)
-check('Spur and 90-degree bevel detection remains shaft-centric',all(x in transmission for x in ['GearMath.AutoMeshable', 'GearMeshTorque','ratio=-left.Teeth/right.Teeth','axis(a)']))
+check('Spur and 90-degree bevel detection remains shaft-centric',all(x in transmission for x in ['GearMath.AutoMeshStatus', 'GearMeshTorque','ratio=-left.Teeth/right.Teeth','axis(a)']))
 check('Bevel collision ring does not intrude into bore',all(x in module for x in ['rootRadius*scale*(1-FACE_WIDTH*BEVEL_SLOPE/(2*pitch))','inner=bore+0.018*scale']))
 check('Standalone gallery script includes corrected gear/bolt physics',all(x in command for x in ['ringCollision(model,scale,details.root,details.pitch,bevel)','head.Name="HeadCollider"','OpenworksCollisionMode","VisualOnly"']))
 check('Standalone bolt regenerator includes matching physics',all(x in bolt_command for x in ['pivot:SetAttribute("OpenworksCollisionMode","Proxy")','head.Name="HeadCollider"','visual:SetAttribute("OpenworksCollisionMode","VisualOnly")']))

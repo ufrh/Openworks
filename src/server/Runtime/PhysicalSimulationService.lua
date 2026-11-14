@@ -24,6 +24,8 @@ local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
 local PrefabCollision=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("PrefabCollision"))
+local Smart=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("SmartPlacement"))
 
 local Simulation = {}
 Simulation.__index = Simulation
@@ -94,6 +96,69 @@ local function countNearbyUnregisteredGears(player,graph,folder)
         end
     end
     return count
+end
+
+-- Some older/custom constructions contain a genuinely inserted gear and
+-- shaft but lost the intended Hub Weld. Reconstruct that PHYSICAL joint only
+-- inside the user's registered simulation; never weld merely touching teeth,
+-- separate shafts, or unrelated component/editor groups.
+-- Authored joints win: conflicting bearings/slider relationships are not
+-- silently overridden. Ambiguous shaft candidates are also left untouched.
+local function repairMissingGearHubs(graph)
+    local shafts,gears={},{ }
+    local locked={}
+    for _,model in ipairs(graph.models) do
+        if Alignment.IsShaft(model) then
+            table.insert(shafts,model)
+        elseif type(model:GetAttribute("GearTeeth"))=="number" then
+            table.insert(gears,model)
+        end
+    end
+    for _,edge in ipairs(graph.edges) do
+        local gear=if type(edge.source:GetAttribute("GearTeeth"))=="number"
+            then edge.source
+            elseif type(edge.target:GetAttribute("GearTeeth"))=="number"
+                then edge.target else nil
+        local shaft=if Alignment.IsShaft(edge.source) then edge.source
+            elseif Alignment.IsShaft(edge.target) then edge.target else nil
+        if gear and shaft then
+            -- Historical gear-hub 'Bearing'/'Slider' joints are invalid:
+            -- the tooth ring must rotate WITH its inserted shaft. Upgrade
+            -- the simulation edge only when actual bore geometry still fits.
+            -- The permanent saved relationship remains the user's choice.
+            if (edge.kind=="Bearing" or edge.kind=="Slider"
+                or edge.kind=="Cylindrical") and Smart.HubFits(gear,shaft) then
+                edge.kind="Weld"
+                edge.inferredHub=true
+            end
+            -- Any authored gear/shaft relation blocks guessing another
+            -- mount, even when that old relation is geometrically invalid.
+            locked[gear]=true
+        end
+    end
+    local repaired,ambiguous={},{}
+    for _,gear in ipairs(gears) do
+        if not locked[gear] then
+            local matches={}
+            for _,shaft in ipairs(shafts) do
+                if Smart.HubFits(gear,shaft) then
+                    table.insert(matches,shaft)
+                end
+            end
+            if #matches==1 then
+                local shaft=matches[1]
+                table.insert(graph.edges,{
+                    kind="Weld", source=shaft,target=gear,
+                    a=bodyKey(shaft),b=bodyKey(gear),
+                    inferredHub=true,
+                })
+                table.insert(repaired,{gear=gear,shaft=shaft})
+            elseif #matches>1 then
+                table.insert(ambiguous,gear.Name)
+            end
+        end
+    end
+    return repaired,ambiguous
 end
 
 function Simulation.new(deps)
@@ -458,6 +523,15 @@ function Simulation:Start(player, payload)
     for _,edge in ipairs(graph.edges) do
         session.ActiveRelations[edge.relation:GetAttribute("RelationId")]=true
     end
+    session.RepairedHubs,session.AmbiguousHubs=repairMissingGearHubs(graph)
+    if #session.RepairedHubs>0 then
+        print(string.format("[OPENWORKS][GEARS] Repaired %d concentric gear/shaft mounts in %s (simulation only)",
+            #session.RepairedHubs,tostring(graph.assemblyName)))
+    end
+    if #session.AmbiguousHubs>0 then
+        warn("[OPENWORKS][GEARS] Ambiguous shaft fit for "
+            ..table.concat(session.AmbiguousHubs,", ").."; use Edit > Hub to select a shaft")
+    end
     local created = Instance.new("Folder")
     created.Name = "Simulation_" .. tostring(player.UserId)
     session.World = created
@@ -723,10 +797,18 @@ function Simulation:Start(player, payload)
                     local other=if edge.source==original then edge.target
                         elseif edge.target==original then edge.source else nil
                     if other and HandCrankMath.IsOutputShaft(other) then
-                        local fitted=HandCrankMath.Fits(original,other)
-                        local sized=math.abs(original.PrimaryPart.Size.Y
-                            -other.PrimaryPart.Size.Y)<0.001
-                        if fitted and sized then
+                        -- The Weld was verified at creation/load and is
+                        -- rebuilt against these exact simulation bodies.
+                        -- Do not silently disable a real connection because
+                        -- an old saved crank diameter/face offset differs
+                        -- by a fraction of a stud from the new template.
+                        local crankCF=original:GetPivot()
+                        local shaftCF=other:GetPivot()
+                        local delta=shaftCF.Position-crankCF.Position
+                        local axis=shaftCF.RightVector.Unit
+                        local radial=(delta-axis*delta:Dot(axis)).Magnitude
+                        if math.abs(crankCF.RightVector:Dot(axis))>=0.995
+                            and radial<=0.08 then
                             coupledShaft=other
                             break
                         end
@@ -885,8 +967,11 @@ function Simulation:Start(player, payload)
         .. (if session.Belts and #session.Belts.Loops>0 then
             string.format(" • %d friction belt(s)",#session.Belts.Loops) else "")
         .. (if session.Gears and #session.Gears.Gears>0 then
-            string.format(" • %d gears / %d automatic contact(s)",
+            string.format(" • %d gears / %d torque mesh(es)",
                 #session.Gears.Gears,session.Gears.Contacts) else "")
+        .. (if #session.RepairedHubs>0 then
+            string.format(" • %d inserted hub weld(s) repaired in sim",
+                #session.RepairedHubs) else "")
         .. (if unregisteredGears>0 then
             string.format(" • WARNING: %d nearby gear(s) NOT in assembly",
                 unregisteredGears) elseif session.Gears
@@ -1063,6 +1148,18 @@ function Simulation:Info(player,payload)
             table.insert(lines,session.Gears:Explain(id))
         elseif session.Gears and type(model:GetAttribute("GearTeeth"))=="number" then
             table.insert(lines,"Gear was not included in the active transmission")
+        end
+        if session.Cranks and session.Cranks[id] then
+            local crank=session.Cranks[id]
+            table.insert(lines,if crank.Coupled then
+                string.format("crank SHAFT COUPLED • drive %s • speed %.2f rad/s",
+                    if crank.Running then "ON" else "OFF",
+                    crank.Root.AssemblyAngularVelocity:Dot(crank.Axis))
+                else "crank NOT COUPLED • use Edit to weld to a cylinder shaft")
+        end
+        if session.Gears and #session.Gears.Gears>=2
+            and session.Gears.Contacts==0 then
+            table.insert(lines,"NO GEAR TORQUE MESH • inspect gear pair alignment")
         end
         if session.SupportWarning then
             table.insert(lines,session.SupportWarning)

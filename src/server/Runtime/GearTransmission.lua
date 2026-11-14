@@ -14,6 +14,7 @@ Transmission.__index=Transmission
 
 local MAX_GEARS=40
 local SCAN_INTERVAL=0.10
+local STALL_REPORT_INTERVAL=2.0
 local COUPLING_RESPONSE=14
 local PHASE_RECOVERY=6
 local MAX_TOOTH_FORCE=80000
@@ -148,11 +149,20 @@ function Transmission:Detect()
         local left=self.Gears[i]
         for j=i+1,#self.Gears do
             local right=self.Gears[j]
-            if left.Group==right.Group
-                or not GearMath.AutoMeshable(left.Model,right.Model) then
+            local key=tostring(identifier(left.Model))..":"..tostring(identifier(right.Model))
+            -- A tiny amount of bearing/physics drift must not turn off
+            -- torque transmission every tenth of a second. New contacts
+            -- use strict validation; existing contacts retain a small
+            -- bounded hysteresis region (same gear module and axis).
+            local engaged=GearMath.AutoMeshStatus(left.Model,right.Model,
+                previous[key]~=nil)
+            if left.Group==right.Group or not engaged then
                 continue
             end
             local a,b=left.Group,right.Group
+            if not a.AxisSource or not b.AxisSource then
+                continue -- a visually meshed loose gear is not a shaft gearbox
+            end
             local ratio
             local kind=GearMath.Kind(left.Model)
             if kind=="Bevel45" or kind=="Bevel90" then
@@ -166,7 +176,6 @@ function Transmission:Detect()
                 if math.abs(orientation)<0.999 then continue end
                 ratio=-left.Teeth/right.Teeth*orientation
             end
-            local key=tostring(identifier(left.Model))..":"..tostring(identifier(right.Model))
             table.insert(links,{A=a,B=b,Ratio=ratio,
                 RadiusA=GearMath.PitchRadius(left.Model),
                 RadiusB=GearMath.PitchRadius(right.Model),
@@ -218,11 +227,21 @@ function Transmission:Explain(id)
     local live=string.format("%s / %.2f rad/s",if group.Grounded then
         "GROUNDED" else "FREE",speed)
     if count>0 then
-        return string.format("%d torque mesh(es) / %s / %s%s",count,
-            if group.AxisSource then "shaft mounted" else "NO SHAFT WELD",live,
-            if group.Grounded then " / shaft anchored (cannot rotate)"
-                elseif math.abs(speed)<0.035 then " / idle: drive the shaft"
-                else "")
+        local total=0
+        for _,link in ipairs(self.Links) do
+            if link.A==group or link.B==group then
+                total+=math.abs(link.Effort or 0)
+            end
+        end
+        return string.format("%d torque mesh(es) / shaft mounted / %s / effort %.1f / %s",count,
+            live,total,
+            if root and root.Anchored then "ERROR: SHAFT ANCHORED"
+                elseif group.Grounded then "GROUNDED"
+                elseif math.abs(speed)<0.035 then "idle: drive the crank shaft"
+                else "rotation active")
+    end
+    if not group.AxisSource then
+        return "NO SHAFT WELD • fit the gear hub onto a cylinder shaft / "..live
     end
     for _,info in ipairs(self.Unmeshed) do
         if self.ById[info.Id]==group then
@@ -260,6 +279,7 @@ function Transmission:Step(dt)
             -MAX_TOOTH_FORCE*link.RadiusB,
             MAX_TOOTH_FORCE*link.RadiusB)
         -- Equal virtual work; reversing shaft torques reverses the power flow.
+        link.Effort=effort
         a.Pending+=aa*(-ratio*effort)
         b.Pending+=ab*effort
     end

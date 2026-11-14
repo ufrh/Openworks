@@ -18,6 +18,9 @@ local GearMath = require(ReplicatedStorage
 local stock = ReplicatedStorage:FindFirstChild("OPENWORKS_PrimitiveLibrary_DRAFT")
 local transmissionFolder=stock and stock:FindFirstChild("Transmission")
 local gearTemplate=transmissionFolder and transmissionFolder:FindFirstChild("GearMesh_20T_S03")
+assert(gearTemplate and gearTemplate:IsA("Model") and gearTemplate.PrimaryPart
+    and gearTemplate.PrimaryPart:IsA("MeshPart"),
+    "This transmission test REQUIRES a real published GearMesh_20T_S03 prefab")
 
 local previous = workspace:FindFirstChild("OPENWORKS_TransmissionSmokeTest")
 if previous then previous:Destroy() end
@@ -81,19 +84,7 @@ local function setupShaft(suffix, position, color)
             end
         end
     else
-        -- Fallback diagnoses the transmission solver even if the user's
-        -- session-scoped mesh assets are not currently generated.
-        gearPart = makePart("Geometry",CFrame.new(position),
-            Vector3.new(0.60,5.50,5.50),false)
-        gearPart.Color = color
-        gearPart.Transparency = 0.35
-        gear = makeModel("GearMesh_20T_S03","test-gear-"..suffix,gearPart)
-        gear:SetAttribute("GearKind","Spur")
-        gear:SetAttribute("PrimitiveFamily","Gear")
-        gear:SetAttribute("GearTeeth",20)
-        gear:SetAttribute("GearModuleStuds",math.pi*0.25)
-        gear:SetAttribute("BoreRadiusStuds",0.375)
-        gear:SetAttribute("AxialAxis","X")
+        error("Missing real 20T S03 gear prefab. Sync dev and publish permanent precision meshes first")
     end
     local weld = Instance.new("WeldConstraint")
     weld.Name = "RigidHubWeld"
@@ -151,7 +142,7 @@ local motor=Instance.new("AngularVelocity")
 motor.Name="DiagnosticInputMotor"
 motor.Attachment0=motorAttachment
 motor.RelativeTo=Enum.ActuatorRelativeTo.World
-motor.MaxTorque=2500
+motor.MaxTorque=6500 -- match actual 2026-11 crank effort
 motor.AngularVelocity=Vector3.new(2,0,0)
 motor.Parent=world
 
@@ -161,7 +152,7 @@ for _,root in ipairs({rootA,rootB}) do
     pcall(function() root:SetNetworkOwner(nil) end)
 end
 print("[OPENWORKS][GEAR TEST] 20T/S03 input drive ON; one physical mesh detected / "
-    .. (if gearTemplate then "REAL precision prefab" else "fallback mock gear"))
+    .. "REAL published precision prefab")
 
 local started=os.clock()
 local bestA,bestB=0,0

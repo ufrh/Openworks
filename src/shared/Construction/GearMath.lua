@@ -37,7 +37,7 @@ end
 
 -- True 45° and 90° bevel sets require equal teeth and shared pitch cone apexes.
 -- Mixed-angle bevel sets and unequal tooth ratios are not conjugate mates.
-function GearMath.AutoBevelStatus(a:Model,b:Model):(boolean,string,number)
+function GearMath.AutoBevelStatus(a:Model,b:Model,held: boolean?):(boolean,string,number)
     local kindA,kindB=GearMath.Kind(a),GearMath.Kind(b)
     if (kindA~="Bevel45" and kindA~="Bevel90") or kindB~=kindA then
         return false,"Use a matching pair of 45° or 90° bevel gears",math.huge
@@ -62,10 +62,10 @@ function GearMath.AutoBevelStatus(a:Model,b:Model):(boolean,string,number)
         -math.cos(math.rad(shaftAngle)))
     local apexError=(GearMath.BevelApex(a)-GearMath.BevelApex(b)).Magnitude
     local proximity=apexError+axisError*2
-    if axisError>BEVEL_AXIS_TOLERANCE then
+    if axisError>(if held then BEVEL_AXIS_TOLERANCE*1.5 else BEVEL_AXIS_TOLERANCE) then
         return false,"Bevel shaft axes must intersect at "..shaftAngle.." degrees",proximity
     end
-    if apexError>BEVEL_APEX_TOLERANCE then
+    if apexError>(if held then BEVEL_APEX_TOLERANCE*1.5 else BEVEL_APEX_TOLERANCE) then
         return false,"Bevel pitch-cone apexes do not coincide",proximity
     end
     return true,tostring(shaftAngle).."-degree bevel mesh",proximity
@@ -187,7 +187,7 @@ end
 -- Respect the same 0.09-stud pitch-spacing tolerance as construction,
 -- so a gear the editor accepts is not mysteriously rejected in Simulate.
 local MESH_PITCH_TOLERANCE=0.09
-function GearMath.AutoMeshStatus(a:Model,b:Model):(boolean,string,number)
+function GearMath.AutoMeshStatus(a:Model,b:Model,held: boolean?):(boolean,string,number)
     local kindA=GearMath.Kind(a)
     local kindB=GearMath.Kind(b)
     if kindA=="RackGuide" or kindB=="RackGuide" then
@@ -198,7 +198,7 @@ function GearMath.AutoMeshStatus(a:Model,b:Model):(boolean,string,number)
     end
     if kindA=="Bevel45" or kindA=="Bevel90"
         or kindB=="Bevel45" or kindB=="Bevel90" then
-        return GearMath.AutoBevelStatus(a,b)
+        return GearMath.AutoBevelStatus(a,b,held)
     end
     if not a or not b or a==b or not a.PrimaryPart or not b.PrimaryPart then
         return false,"Missing gear geometry",math.huge
@@ -224,14 +224,15 @@ function GearMath.AutoMeshStatus(a:Model,b:Model):(boolean,string,number)
     if math.abs(m1-m2)>0.0001 then
         return false,"Different tooth pitches",proximity+1
     end
-    if math.abs(axis:Dot(cb.RightVector))<0.999 then
+    if math.abs(axis:Dot(cb.RightVector))<(if held then 0.997 else 0.999) then
         return false,"Gear axles are not parallel",proximity+0.5
     end
-    if axial>=faceLimit then
+    if axial>=faceLimit+(if held then 0.025 else 0) then
         return false,string.format("Gear faces separated by %.3f studs",
             axial-faceLimit),proximity
     end
-    if spacingError>MESH_PITCH_TOLERANCE then
+    if spacingError>(if held then MESH_PITCH_TOLERANCE+0.075
+        else MESH_PITCH_TOLERANCE) then
         return false,string.format("Gear center spacing is off by %.3f studs",
             spacingError),proximity
     end
