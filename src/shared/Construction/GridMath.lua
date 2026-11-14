@@ -2,7 +2,7 @@
 -- All player-facing construction dimensions are in U, never mm.
 local UNIT = 0.25
 local Grid = { Unit = UNIT, MaxUnits = 64, MaxDistance = 55,
-    MinSizeStepU = 0.25, DefaultSizeStepU = 0.5 }
+    MinSizeStepU = 0.25, DefaultSizeStepU = 0.25 }
 
 local function nearest(value, step, offset)
     return math.floor((value - offset) / step + 0.5) * step + offset
@@ -130,6 +130,21 @@ function Grid.ValidPosition(position)
         end
     end
     return true
+end
+
+-- Newly placed resizable stock begins at the smallest structural quantum.
+-- Fixed premanufactured parts retain their authored geometry and bore sizes.
+function Grid.InitialSize(templateSize, resizeMode)
+    if resizeMode == "None" then return templateSize end
+    local small=UNIT*Grid.MinSizeStepU
+    if resizeMode == "XYZ_1U" or resizeMode == "UniformDiameter_1U"
+        or resizeMode == "LengthAndDiameter_1U" then
+        return Vector3.new(small,small,small)
+    end
+    if resizeMode == "LengthOnly_1U" then
+        return Vector3.new(small,templateSize.Y,templateSize.Z)
+    end
+    return templateSize
 end
 
 function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter, numericPrecision)
