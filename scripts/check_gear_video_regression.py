@@ -11,7 +11,7 @@ for label,check in [
  ("Recognize press-fit inserted gear bores with bounded tolerances", 'physicallyInsertedGearShaft(gear,shaft)' in sim and 'eccentricity>math.min(0.08,math.max(0.045,bore*0.20))' in sim and 'diameter>2*bore+0.035' in sim),
  ("Require an unambiguous shaft before inferring a weld", '#matches==1' in sim and '#matches>1' in sim),
  ("Preserve authored model and save data", 'table.insert(graph.edges,{' in sim and 'self.D.commitAssembly' not in sim.split('local function repairMissingGearHubs(graph)')[1].split('function Simulation.new(deps)')[0]),
- ("Native mesh torque is not skipped merely due to absent shaft mount", 'if not a.AxisSource or not b.AxisSource then' not in solver and 'group.Torque.Torque=group.Pending' in solver),
+ ("Native shaft speed is not skipped merely due to absent shaft mount", 'if not a.AxisSource or not b.AxisSource then' not in solver and 'actuator.AngularVelocity=axis(group)*desired' in solver),
  ("Use actual tooth envelope and module-dependent capture", 'toothEngagementTolerance(a,b,held)' in math and 'Gear tooth tips do not touch' in math),
  ("Never mesh different module sizes", 'if math.abs(m1-m2)>0.0001 then' in math),
  ("Warning for zero meshed contacts", 'session.Gears:NearestFailure()' in sim and 'ZERO engaging pairs' in sim),

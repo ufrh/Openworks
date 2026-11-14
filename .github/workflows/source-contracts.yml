@@ -20,7 +20,7 @@ jobs:
         run: python3 scripts/check_prefab_geometry.py
       - name: Verify mechanical prefab integration contracts
         run: python3 scripts/check_prefab_integration.py
-      - name: Verify native gearbox transfer integration
+      - name: Verify native shaft-speed gearbox transfer integration
         run: python3 scripts/check_gear_transfer.py
       - name: Verify gearbox runtime reliability and hub repair
         run: python3 scripts/check_gear_reliability.py
@@ -30,7 +30,7 @@ jobs:
         run: python3 scripts/check_gear_video_regression.py
       - name: Verify crank-to-gear drive chain and failure diagnostics
         run: python3 scripts/check_crank_to_gear_chain.py
-      - name: Verify torque budget, anchored islands and live drive diagnostics
+      - name: Verify virtual shaft load, speed graph and live drive diagnostics
         run: python3 scripts/check_gear_torque_budget.py
 
   parse-luau:

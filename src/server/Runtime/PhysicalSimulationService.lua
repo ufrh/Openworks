@@ -310,11 +310,15 @@ end
 
 function Simulation:StepCranks(dt)
     for owner,session in pairs(self.Sessions) do
+        if session.Gears then session.Gears:ClearDrives() end
         for _,motor in ipairs(session.Motors or {}) do
             if motor.Constraint.Parent and (session.Paused
                 or not motor.Held or os.clock()-motor.LastInput>0.45) then
                 motor.Held=false
                 motor.Constraint.AngularVelocity=0
+            elseif motor.Held and session.Gears and not session.Paused then
+                session.Gears:SetDrive(motor.ShaftId,motor.Speed,
+                    motor.Constraint.MotorMaxTorque)
             end
         end
         local character=owner.Character
@@ -350,6 +354,10 @@ function Simulation:StepCranks(dt)
                 crank.NativeSpeed+=(HandCrankMath.FixedAngularSpeed
                     -crank.NativeSpeed)*(1-math.exp(-8*math.clamp(dt,0,0.07)))
                 drive.AngularVelocity=crank.Axis*crank.NativeSpeed
+                if session.Gears then
+                    session.Gears:SetDrive(crank.DrivenId,crank.NativeSpeed,
+                        HandCrankMath.MaxTorque,crank.Axis)
+                end
                 crank.ActiveSeconds=(crank.ActiveSeconds or 0)+dt
                 if crank.ActiveSeconds>=0.95 and
                     (crank.LastDiagnosticAt==nil
@@ -374,7 +382,8 @@ function Simulation:StepCranks(dt)
                 end
             end
         end
-        -- Meshing transfers torque to both welded shaft assemblies.
+        -- Gear speed propagates through physical AngularVelocity shafts;
+        -- virtual torque is used only for acceleration and load estimates.
         if session.Gears and not session.Paused then
             session.Gears:Step(dt)
         end
@@ -437,7 +446,7 @@ function Simulation:BeginCrank(player,request)
     crank.LastDiagnosticAt=nil
     crank.InputPackets=0
     if session.Gears and #session.Gears.Gears>=2 then
-        print(string.format("[OPENWORKS][GEARS] Input crank armed: %d gears / %d real torque link(s)",
+        print(string.format("[OPENWORKS][GEARS] Input crank armed: %d gears / %d shaft speed link(s)",
             #session.Gears.Gears,session.Gears.Contacts))
     end
     -- All cranks run their own torque-limited motor on the shaft.
@@ -947,6 +956,7 @@ function Simulation:Start(player, payload)
                         edge.relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
                     table.insert(session.Motors,{
                         Constraint=constraint,
+                        ShaftId=edge.source:GetAttribute("InstanceId"),
                         RelationId=edge.relation:GetAttribute("RelationId"),
                         Key=edge.relation:GetAttribute("MotorKey") or "F",
                         Speed=edge.relation:GetAttribute("MotorSpeed") or 3,
@@ -1178,7 +1188,7 @@ function Simulation:Start(player, payload)
         .. (if session.Belts and #session.Belts.Loops>0 then
             string.format(" • %d friction belt(s)",#session.Belts.Loops) else "")
         .. (if session.Gears and #session.Gears.Gears>0 then
-            string.format(" • %d gears / %d torque mesh(es)",
+            string.format(" • %d gears / %d speed link(s)",
                 #session.Gears.Gears,session.Gears.Contacts) else "")
         .. (if #session.RepairedHubs>0 then
             string.format(" • %d inserted hub weld(s) repaired in sim",
@@ -1370,7 +1380,7 @@ function Simulation:Info(player,payload)
         end
         if session.Gears and #session.Gears.Gears>=2
             and session.Gears.Contacts==0 then
-            table.insert(lines,"NO GEAR TORQUE MESH • inspect gear pair alignment")
+            table.insert(lines,"NO GEAR SPEED LINK • inspect gear pair alignment")
         end
         if session.SupportWarning then
             table.insert(lines,session.SupportWarning)

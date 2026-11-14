@@ -1,60 +1,63 @@
 #!/usr/bin/env python3
-"""Static gearbox integration checks; native motion requires Studio test."""
+"""Contracts for shaft-speed transmission, not native Torque objects.
+Roblox Studio physics remains the required runtime acceptance test.
+"""
 from pathlib import Path
-import math
 ROOT=Path(__file__).resolve().parents[1]
-def source(rel): return (ROOT/rel).read_text(encoding='utf-8')
-trans=source('src/server/Runtime/GearTransmission.lua')
-sim=source('src/server/Runtime/PhysicalSimulationService.lua')
-mechanical=source('src/server/Runtime/MechanicalService.lua')
-fixture=source('scripts/studio/TestGearTorqueTransfer.luau')
-client=source('src/client/Controllers/ConstructionController.lua')
-
-def check(label, condition):
-    if not condition: raise AssertionError(label)
-    print('PASS',label)
-check('native Torque enabled, attached to actual physical shaft',
-      'torque.Enabled=true' in trans
-      and 'torque.Attachment0=attachment' in trans
-      and 'group.Root=clone.PrimaryPart' in trans
-      and 'gearCF.RightVector:Dot(cf.RightVector)' in trans)
-check('physics solver feeds angular-speed error back as equal virtual work',
-      all(t in trans for t in ('wb-ratio*wa','a.Pending+=aa*(-ratio*effort)',
-                              'b.Pending+=ab*effort','group.Torque.Torque=group.Pending')))
-check('explicit gear fit creates rigid weld, not a free gear bearing',
-      all(t in mechanical for t in ('kind="Weld"','Smart.HubFits(source,target)',
-                                  'oldGearHub','oldHubMotion')))
-check('F-copy mounts new gear hubs and bolts through real authored relationships',
-      all(q in client for q in ('self.SmartMatch.kind=="Hub"',
-                                 'self.SmartMatch.kind=="BoltHole"',
-                                 'self.SmartMatch.kind=="CrankCoupling"')))
-check('simulation never auto-grounds clicked moving shaft/gear',
-      'local groundedKey=if hasCrank then nil else graph.rootKey' not in sim
-      and 'not session.Gears:IsGeared(' in sim
-      and 'session.GroundKeys[edge.b]=true' in sim
-      and 'session.SupportWarning' in sim)
-check('powered motor & crank feed same native transmission solver',
-      'session.Gears:Step(dt)' in sim
-      and 'motor.Constraint.AngularVelocity' in sim
-      and 'drive.AngularVelocity=crank.Axis*crank.NativeSpeed' in sim)
-check('transmission diagnostics exposes mesh, mounting, grounding and speed',
-      all(t in trans for t in ('NO SHAFT WELD','Not engaged:',
-                                'GROUNDED','rad/s','idle: drive the crank shaft')))
-check('Studio fixture measures actual physics, not simulated CFrames',
-      all(t in fixture for t in ('Transmission.new','HingeConstraint',
-                                 'WeldConstraint','AssemblyAngularVelocity',
-                                 'AngularVelocity','transmission:Step(dt)',
-                                 'root:SetNetworkOwner(nil)')))
-# Independent force-sign regression: for equal external spur gears, when A is
-# spinning + and B idle, the corrective torque on B must be negative.
-def torque_sign(w_a,w_b,ratio):
-    error_speed=w_b-ratio*w_a
-    effort=-error_speed
-    return -ratio*effort,effort
-for ratio in (-1,-12/20,-20/32):
-    inp,out=torque_sign(2.0,0.0,ratio)
-    check(f'load counter-torque and opposite driven output for ratio {ratio:.3f}',inp<0 and out<0)
-for ratio in (-1,-12/20):
-    inp,out=torque_sign(0,2.0,ratio)
-    check(f'bidirectional backdrive reaction for ratio {ratio:.3f}',inp<0 and out<0)
-print('PASS: gearbox transfer static contracts (Studio physics pending)')
+def src(name): return (ROOT/name).read_text(encoding="utf-8")
+gear=src("src/server/Runtime/GearTransmission.lua")
+sim=src("src/server/Runtime/PhysicalSimulationService.lua")
+mech=src("src/server/Runtime/MechanicalService.lua")
+fixture=src("scripts/studio/TestGearTorqueTransfer.luau")
+client=src("src/client/Controllers/ConstructionController.lua")
+def check(label,condition):
+    assert condition,label
+    print("PASS",label)
+check("No Roblox Torque object or scripted CFrame rotation in gearbox",
+    'Instance.new("Torque")' not in gear and ':PivotTo(' not in gear)
+check("Gear output is a native shaft AngularVelocity actuator",
+    'Instance.new("AngularVelocity")' in gear and
+    'velocity.Attachment0=attachment' in gear and
+    'group.VelocityActuator=velocity' in gear and
+    'actuator.AngularVelocity=axis(group)*desired' in gear)
+check("Physical shaft is the gear rigid-group root",
+    'group.Root=clone.PrimaryPart' in gear and
+    'gearCF.RightVector:Dot(cf.RightVector)' in gear)
+check("External spur and bevel tooth ratios use actual gear counts",
+    'ratio=-left.Teeth/right.Teeth*orientation' in gear and
+    'ratio=-left.Teeth/right.Teeth*signA*signB' in gear)
+check("Compound gears and reverse drives propagate in one connected graph",
+    'local factor={[first]=1}' in gear and
+    'Ratio=1/link.Ratio' in gear and
+    'factor[other]=expected' in gear)
+check("Crank and bearing motors explicitly supply speed to shaft groups",
+    'session.Gears:ClearDrives()' in sim and
+    'session.Gears:SetDrive(crank.DrivenId' in sim and
+    'session.Gears:SetDrive(motor.ShaftId' in sim and
+    'ShaftId=edge.source:GetAttribute("InstanceId")' in sim)
+check("Drive-side AngularVelocity motor is not opposed by another motor",
+    'if not self.Drives[group] then' in gear and
+    'group.ControlledThisFrame=true' in gear)
+check("Gear hub fitting authorizes rigid welds",
+    'kind="Weld"' in mech and 'Smart.HubFits(source,target)' in mech)
+check("F-copy preserves hub and crank relationships",
+    all(k in client for k in ['self.SmartMatch.kind=="Hub"',
+        'self.SmartMatch.kind=="BoltHole"',
+        'self.SmartMatch.kind=="CrankCoupling"']))
+check("Simulation anchors housings rather than moving shafts",
+    'not session.Gears:IsGeared(' in sim and
+    'session.GroundKeys[edge.b]=true' in sim)
+check("Shaft-speed telemetry reports mounting, grounding, and actual rad/s",
+    all(x in gear for x in ['NO SHAFT WELD','GROUNDED',
+        'rad/s','virtual load','DriveDiagnostics']))
+check("Studio fixture drives shaft speed and measures real physical output",
+    all(x in fixture for x in ['HingeConstraint','WeldConstraint',
+        'AssemblyAngularVelocity','transmission:SetDrive("test-shaft-A"',
+        'transmission:Step(dt)','root:SetNetworkOwner(nil)']))
+for n_a,n_b in [(20,20),(12,20),(20,32),(32,8)]:
+    ratio=-n_a/n_b
+    for input_speed in [2.0,-1.5]:
+        out=ratio*input_speed
+        check(f"Spur pair {n_a}:{n_b} follows ratio forward/reverse at {input_speed:g}",
+            abs(out+input_speed*n_a/n_b)<1e-9 and out*input_speed<0)
+print("PASS: shaft-speed gearbox source contracts; Studio acceptance required")

@@ -1,62 +1,59 @@
 #!/usr/bin/env python3
-"""Source and numerical regressions for bounded native gearbox torque.
-
-This does not replace an actual Roblox Studio Play Solo physics test.
+"""Numerical/contract tests for virtual gearbox load and physical speed motors.
+No Roblox VM: live shaft movement must be tested in Studio.
 """
 from pathlib import Path
 import math
-
-base = Path(__file__).resolve().parents[1]
-gear = (base/'src/server/Runtime/GearTransmission.lua').read_text()
-sim = (base/'src/server/Runtime/PhysicalSimulationService.lua').read_text()
-fixture = (base/'scripts/studio/TestGearTorqueTransfer.luau').read_text()
-crank = (base/'src/shared/Construction/HandCrankMath.lua').read_text()
-
-def test(label, condition):
-    assert condition, label
-    print('PASS:', label)
-
-test('Mesh effort bounded by the native manual drive budget',
-     'local MAX_MESH_EFFORT=HandCrankMath.MaxTorque*0.72' in gear
-     and 'MAX_MESH_EFFORT/math.max(1,math.abs(ratio))' in gear
-     and '-maxEffort,maxEffort' in gear)
-test('Anchored rigid body is detected even when the chosen root is not anchored',
-     'root=part.AssemblyRootPart' in gear
-     and 'root and root.Anchored' in gear
-     and 'part.AssemblyMass' in gear
-     and 'link.PhysicsBlocked=true' in gear)
-test('Infinite or invalid mass cannot contaminate physics torque',
-     'mass~=mass or mass==math.huge or mass<0 or mass>1e8' in gear
-     and 'if not ma or not mb then' in gear
-     and 'link.Effort=0' in gear)
-test('Crank immediately receives nonzero drive and is cleaned up on stop',
-     'crank.NativeSpeed=HandCrankMath.FixedAngularSpeed*0.2' in sim
-     and 'crank.Drive.AngularVelocity=crank.Axis*crank.NativeSpeed' in sim
-     and 'crank.Drive.AngularVelocity=Vector3.zero' in sim)
-test('Live diagnostics distinguish an armed crank from actual motion',
-     'LIVE DRIVE STALL:' in sim
-     and 'Crank drive cut: %s' in sim
-     and 'Crank released after %.2f s' in sim
-     and 'DriveDiagnostics(crank.DrivenId)' in sim)
-test('Diagnostics use actual peer angular speeds, torque and assembly anchored status',
-     'function Transmission:DriveDiagnostics(id)' in gear
-     and 'AssemblyAngularVelocity:Dot(axis(other))' in gear
-     and 'AssemblyRootPart' in gear
-     and 'link.PhysicsBlocked==true' in gear
-     and 'Final drive telemetry:' in fixture)
-test('No scripted rotation or hidden weld authoring',
-     ':PivotTo(' not in gear and 'Instance.new("WeldConstraint")' not in gear)
-
-budget=6500*0.72
-for ratio in (-0.25,-1,-4):
-    max_effort=budget/max(1,abs(ratio))
-    for error in (0.01,0.5,10,1e6):
-        raw=-error*100000
-        effort=max(-max_effort,min(max_effort,raw))
-        ta=-ratio*effort
-        tb=effort
-        test(f'Gear ratio {ratio:g} torque bounded for error {error:g}',
-             math.isfinite(ta) and math.isfinite(tb)
-             and abs(ta)<=budget+1e-9
-             and abs(tb)<=budget+1e-9 and tb<0)
-print('PASS: torque budget & live drive diagnostics (Studio acceptance required)')
+root=Path(__file__).resolve().parents[1]
+def src(p): return (root/p).read_text(encoding="utf-8")
+gear=src("src/server/Runtime/GearTransmission.lua")
+sim=src("src/server/Runtime/PhysicalSimulationService.lua")
+fixture=src("scripts/studio/TestGearTorqueTransfer.luau")
+crank=src("src/shared/Construction/HandCrankMath.lua")
+def test(label,condition):
+    assert condition,label
+    print("PASS:",label)
+test("Native Torque actuators removed; physical shaft speed controlled",
+    'Instance.new("Torque")' not in gear and
+    'Instance.new("AngularVelocity")' in gear and
+    'actuator.AngularVelocity=axis(group)*desired' in gear)
+test("Virtual inertia and load cap acceleration instead of applying torque",
+    'DRIVE_BUDGET=HandCrankMath.MaxTorque*0.72' in gear and
+    'local inertia=if mass then math.clamp(' in gear and
+    'local acceleration=math.clamp(' in gear and
+    'virtualLoad+=' in gear)
+test("Unpowered shafts read actual assembly motion for backdriving",
+    'momentum+=inertia*f*speed' in gear and
+    'baseSpeed=if hasDrive then commanded/commandWeight' in gear)
+test("Competing motors use weighted signed gear graph",
+    'drive.Weight*f*drive.Speed' in gear and
+    'commandWeight+=drive.Weight*f*f' in gear and
+    'factor[other]=expected' in gear)
+test("Anchored shaft island is excluded from speed actuation",
+    'root=part.AssemblyRootPart' in gear and
+    'root and root.Anchored' in gear and
+    'if not actuator or not inertia or not hasMotion then' in gear)
+test("Crank input drives actual shaft; no second speed actuator fights it",
+    'session.Gears:SetDrive(crank.DrivenId' in sim and
+    'drive.AngularVelocity=crank.Axis*crank.NativeSpeed' in sim and
+    'if not self.Drives[group] then' in gear)
+test("Actuator remains enabled during continuous motion",
+    'group.ControlledThisFrame=true' in gear and
+    'not group.ControlledThisFrame' in gear)
+test("Crank held-input safety, live speeds and diagnostics preserved",
+    'Crank drive cut: %s' in sim and
+    'LIVE DRIVE STALL:' in sim and 'DriveDiagnostics(crank.DrivenId)' in sim)
+test("Studio native speed smoke test supplies explicit drive and measures output",
+    'transmission:SetDrive("test-shaft-A",2,6500,Vector3.xAxis)' in fixture and
+    'rootB.AssemblyAngularVelocity.X' in fixture)
+test("No direct shaft pose animation or silent joint authoring",
+    ':PivotTo(' not in gear and 'Instance.new("WeldConstraint")' not in gear)
+for teeth_a,teeth_b in [(20,20),(12,20),(20,32)]:
+    ratio=-teeth_a/teeth_b
+    # In a compound graph A->B->C, C's speed is the product of both ratios.
+    for omega in [2,-3,0.25]:
+        second=ratio*omega
+        back=second/ratio
+        test(f"{teeth_a}T -> {teeth_b}T round trip at {omega}",
+            math.isclose(back,omega,rel_tol=1e-10) and second*omega<0)
+print("PASS: virtual load/speed gearbox contracts (Studio acceptance pending)")

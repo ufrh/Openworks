@@ -147,7 +147,7 @@ motor.AngularVelocity=Vector3.new(2,0,0)
 motor.Parent=world
 
 -- Studio Command Bar runs on the server. Release network ownership to
--- keep torque measurement and motor/hinge solver on the same authority.
+-- keep speed measurement and motor/hinge solver on the same authority.
 for _,root in ipairs({rootA,rootB}) do
     pcall(function() root:SetNetworkOwner(nil) end)
 end
@@ -160,6 +160,8 @@ local traceInterval=0
 local ok, failure=pcall(function()
     while os.clock()-started<3.0 do
         local dt=RunService.Heartbeat:Wait()
+        transmission:ClearDrives()
+        transmission:SetDrive("test-shaft-A",2,6500,Vector3.xAxis)
         transmission:Step(dt)
         local a=rootA.AssemblyAngularVelocity.X
         local b=rootB.AssemblyAngularVelocity.X
@@ -182,5 +184,5 @@ if bestA>0.25 and bestB< -0.25 then
     print(string.format("[OPENWORKS][GEAR TEST] PASS: real native physics drove the output shaft (input %.2f, output %.2f)",
         bestA,bestB))
 else
-    warn(string.format("[OPENWORKS][GEAR TEST] FAIL: input %.2f / output %.2f. Check passive bearing, AngularVelocity, transmission Torque, and network ownership.",bestA,bestB))
+    warn(string.format("[OPENWORKS][GEAR TEST] FAIL: input %.2f / output %.2f. Check passive bearing, AngularVelocity, shaft speed control, and network ownership.",bestA,bestB))
 end

@@ -39,10 +39,11 @@ check('Silent zero-contact gearboxes are rejected at crank activation',
 check('Mismatched tooth modules are not faked as meshed',
       'if math.abs(m1-m2)>0.0001 then' in math and
       'Different tooth pitches' in math)
-check('Actual welded shafts receive bidirectional native Torque',
-      'a.Pending+=aa*(-ratio*effort)' in solver and
-      'b.Pending+=ab*effort' in solver and
-      'group.Torque.Torque=group.Pending' in solver)
+check('Actual welded shaft assemblies receive bidirectional angular-speed commands',
+      'Instance.new("Torque")' not in solver and
+      'actuator.AngularVelocity=axis(group)*desired' in solver and
+      'Ratio=1/link.Ratio' in solver and
+      'session.Gears:SetDrive(crank.DrivenId' in sim)
 check('Persistent stall watchdog reports measured angular speeds and root anchors',
       'StallElapsed=if previous[key]' in solver and
       'STALLED mesh %s' in solver and

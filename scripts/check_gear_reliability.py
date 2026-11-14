@@ -45,16 +45,16 @@ testit("Strict first contact; bounded holding margin prevents 0.1s physics disco
     and 'if axial>=faceLimit+(if held then 0.025 else 0) then' in math
     and 'toothEngagementTolerance(a,b,held)' in math
     and 'if held then BEVEL_APEX_TOLERANCE*1.5' in math)
-testit("Native torque unchanged, bidirectional; no scripted gear CFrame motion",
-    'local errorSpeed=wb-ratio*wa' in solver
-    and 'a.Pending+=aa*(-ratio*effort)' in solver
-    and 'b.Pending+=ab*effort' in solver
-    and 'group.Torque.Torque=group.Pending' in solver
+testit("Speed graph uses native AngularVelocity, virtual inertia and no Torque object",
+    'Instance.new("Torque")' not in solver
+    and 'Instance.new("AngularVelocity")' in solver
+    and 'Ratio=1/link.Ratio' in solver
+    and 'actuator.AngularVelocity=axis(group)*desired' in solver
     and ':PivotTo(' not in solver)
 testit("Runtime inspection surfaces crank drive, link count, torque effort, and mount repair",
-    all(x in sim+solver for x in ['NO GEAR TORQUE MESH','crank SHAFT COUPLED',
+    all(x in sim+solver for x in ['NO GEAR SPEED LINK','crank SHAFT COUPLED',
        'crank NOT COUPLED','effort %.1f','hub weld(s) repaired in sim']))
-testit("Real precision mesh Studio fixture with actual native hinge/motor/torque",
+testit("Real precision mesh Studio fixture with native hinge and shaft speed motor",
     all(x in test for x in ['REQUIRES a real published GearMesh_20T_S03',
        'HingeConstraint','WeldConstraint','AngularVelocity','transmission:Step(dt)'])
     and 'fallback mock gear' not in test)

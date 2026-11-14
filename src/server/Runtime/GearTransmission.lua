@@ -1,8 +1,8 @@
 --!strict
 -- OPENWORKS shaft-centric gear transmission.
--- Gears are rigidly welded to shafts; meshing transfers torque between
--- Roblox physics assemblies, never scripted gear poses or hidden anchors.
--- The same mesh works in both directions with competing torque sources.
+-- Gears are rigidly welded to shafts; mesh ratios drive physical shaft
+-- AngularVelocity actuators, not native Torque forces or CFrame poses.
+-- Acceleration and load are simulated using virtual shaft inertia.
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local Alignment=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
@@ -17,16 +17,14 @@ Transmission.__index=Transmission
 local MAX_GEARS=40
 local SCAN_INTERVAL=0.10
 local STALL_REPORT_INTERVAL=2.0
-local COUPLING_RESPONSE=14
-local PHASE_RECOVERY=6
-local MAX_TOOTH_FORCE=80000
 local MIN_INERTIA=0.001
--- The old per-tooth cap could be >100,000 while a manual crank could only
--- supply 6,500. That closed-loop brake can stall an otherwise valid gearbox.
--- A coupling MUST NOT consume more than the available drive torque just to
--- enforce a speed ratio. The input motor retains headroom to accelerate.
-local MAX_MESH_EFFORT=HandCrankMath.MaxTorque*0.72
 local MAX_INERTIA_ESTIMATE=2500
+local VIRTUAL_RESPONSE=12
+local MIN_ANGULAR_ACCEL=18
+local MAX_ANGULAR_ACCEL=85
+local MAX_SPEED=35
+local SPEED_EPS=0.02
+local DRIVE_BUDGET=HandCrankMath.MaxTorque*0.72
 local function finiteAssemblyMass(part)
     local root=part.AssemblyRootPart
     if (root and root.Anchored) or part.Anchored then return nil end
@@ -84,8 +82,8 @@ function Transmission.new(graph,copies,runtime)
             local group=groups[key]
             if not group then
                 group={Id=key,Models={},Gears={},Root=nil,
-                    AxisSource=nil,Torque=nil,Pending=Vector3.zero,
-                    Grounded=false}
+                    AxisSource=nil,VelocityActuator=nil,VirtualSpeed=0,
+                    TargetSpeed=0,Grounded=false}
                 groups[key]=group
             end
             table.insert(group.Models,clone)
@@ -126,21 +124,22 @@ function Transmission.new(graph,copies,runtime)
                 end
             end
             local attachment=Instance.new("Attachment")
-            attachment.Name="OPENWORKS_TransmissionAxis"
+            attachment.Name="OPENWORKS_GearShaftAxis"
             attachment.Parent=group.Root
-            local torque=Instance.new("Torque")
-            torque.Name="OPENWORKS_GearMeshTorque"
-            torque.Enabled=true
-            torque.Attachment0=attachment
-            torque.RelativeTo=Enum.ActuatorRelativeTo.World
-            torque.Torque=Vector3.zero
-            torque.Parent=runtime
-            group.Torque=torque
+            local velocity=Instance.new("AngularVelocity")
+            velocity.Name="OPENWORKS_GearShaftSpeed"
+            velocity.Attachment0=attachment
+            velocity.RelativeTo=Enum.ActuatorRelativeTo.World
+            velocity.AngularVelocity=Vector3.zero
+            velocity.MaxTorque=DRIVE_BUDGET
+            velocity.Enabled=false
+            velocity.Parent=runtime
+            group.VelocityActuator=velocity
         end
     end
 
     local self=setmetatable({Groups=groups,ById=byId,Gears=gears,
-        Links={},Contacts=0,Unmeshed={},ScanElapsed=SCAN_INTERVAL},Transmission)
+        Links={},Contacts=0,Unmeshed={},Drives={},ScanElapsed=SCAN_INTERVAL},Transmission)
     self:Detect()
     return self
 end
@@ -281,9 +280,9 @@ function Transmission:Explain(id)
                 total+=math.abs(link.Effort or 0)
             end
         end
-        return string.format("%d torque mesh(es) / %s / %s / effort %.1f / %s",count,
+        return string.format("%d shaft speed link(s) / %s / %s / virtual load %.1f / target %.2f rad/s / %s",count,
             if group.AxisSource then "shaft mounted" else "LOOSE GEAR: missing shaft weld",
-            live,total,
+            live,total,group.TargetSpeed or 0,
             if root and root.Anchored then "ERROR: SHAFT ANCHORED"
                 elseif group.Grounded then "GROUNDED"
                 elseif math.abs(speed)<0.035 then "idle: drive the crank shaft"
@@ -300,6 +299,32 @@ function Transmission:Explain(id)
     return "No meshing teeth in this assembly / "..live
 end
 
+-- External motors enter as shaft-speed commands, never Torque objects.
+function Transmission:ClearDrives()
+    table.clear(self.Drives)
+end
+
+function Transmission:SetDrive(id,speed,budget,worldAxis)
+    local group=self.ById[id]
+    if not group or #group.Gears==0
+        or type(speed)~="number" or speed~=speed then return end
+    local signed=math.clamp(speed,-MAX_SPEED,MAX_SPEED)
+    if worldAxis and typeof(worldAxis)=="Vector3" and worldAxis.Magnitude>0 then
+        signed*=axis(group):Dot(worldAxis.Unit)
+    end
+    local commands=self.Drives[group]
+    if not commands then
+        commands={}
+        self.Drives[group]=commands
+    end
+    table.insert(commands,{Speed=signed,
+        Weight=math.clamp(budget or HandCrankMath.MaxTorque,1,100000)})
+end
+
+-- Each component of the gear graph has one signed speed coordinate.
+-- Compound stages, backdriving and opposing inputs all use the same ratios.
+-- Inertia/virtual torque bound acceleration; a real AngularVelocity drives
+-- every output shaft without ever posing the gears with CFrame.
 function Transmission:Step(dt)
     dt=math.clamp(dt,1/240,0.07)
     self.ScanElapsed+=dt
@@ -307,71 +332,115 @@ function Transmission:Step(dt)
         self.ScanElapsed=0
         self:Detect()
     end
-    for _,group in pairs(self.Groups) do
-        group.Pending=Vector3.zero
-    end
-    local correction=(1-math.exp(-COUPLING_RESPONSE*dt))/dt
+    local neighbors={}
     for _,link in ipairs(self.Links) do
-        local a,b=link.A,link.B
-        if not a.Root.Parent or not b.Root.Parent then continue end
-        local aa,ab=axis(a),axis(b)
-        local wa=a.Root.AssemblyAngularVelocity:Dot(aa)
-        local wb=b.Root.AssemblyAngularVelocity:Dot(ab)
-        local ratio=link.Ratio
-        local errorSpeed=wb-ratio*wa
-        link.Error=math.clamp(link.Error+errorSpeed*dt,-0.35,0.35)
-        -- An anchored member makes the ENTIRE rigid physics island immobile,
-        -- even if our chosen root Part.Anchored is false. Roblox reports an
-        -- infinite AssemblyMass in that case; never feed INF/NaN to Torque.
-        local ma,mb=finiteAssemblyMass(a.Root),finiteAssemblyMass(b.Root)
-        if not ma or not mb then
+        if link.A.Root.Parent and link.B.Root.Parent then
+            neighbors[link.A]=neighbors[link.A] or {}
+            neighbors[link.B]=neighbors[link.B] or {}
+            table.insert(neighbors[link.A],{Group=link.B,Ratio=link.Ratio,Link=link})
+            table.insert(neighbors[link.B],{Group=link.A,Ratio=1/link.Ratio,Link=link})
             link.Effort=0
-            link.Error=0
-            link.PhysicsBlocked=true
-            continue
-        end
-        link.PhysicsBlocked=false
-        local ia=math.clamp(0.5*ma*link.RadiusA^2,
-            MIN_INERTIA,MAX_INERTIA_ESTIMATE)
-        local ib=math.clamp(0.5*mb*link.RadiusB^2,
-            MIN_INERTIA,MAX_INERTIA_ESTIMATE)
-        local effective=1/(1/ib+ratio^2/ia)
-        -- A gear ratio multiplies the reaction torque at the input. Bound
-        -- both sides of the coupling; don't let the feedback solver overpower
-        -- the hand-crank motor and freeze the driving gear at startup.
-        local maxEffort=math.min(MAX_TOOTH_FORCE*link.RadiusB,
-            MAX_MESH_EFFORT/math.max(1,math.abs(ratio)))
-        local effort=math.clamp(
-            -(errorSpeed+PHASE_RECOVERY*link.Error)*effective*correction,
-            -maxEffort,maxEffort)
-        -- Equal virtual work; reversing shaft torques reverses the power flow.
-        link.Effort=effort
-        a.Pending+=aa*(-ratio*effort)
-        b.Pending+=ab*effort
-        -- Under load, a missing bearing, anchored output or disconnected
-        -- shaft can leave one side stationary despite a confirmed torque
-        -- mesh. Report the *real* state so the issue is actionable.
-        if math.max(math.abs(wa),math.abs(wb))>0.25
-            and math.min(math.abs(wa),math.abs(wb))<0.03
-            and math.abs(effort)>0.5 then
-            link.StallElapsed=(link.StallElapsed or 0)+dt
-            if link.StallElapsed>=STALL_REPORT_INTERVAL then
-                link.StallElapsed=0
-                warn(string.format("[OPENWORKS][GEARS] STALLED mesh %s: "
-                    .."input=%.2f output=%.2f rad/s; effort=%.1f; "
-                    .."roots anchored=%s/%s; mounted shafts=%s/%s. "
-                    .."Verify grounded HOUSINGS and actual Hub welds.",
-                    link.Key,wa,wb,effort,tostring(a.Root.Anchored),
-                    tostring(b.Root.Anchored),tostring(a.AxisSource~=nil),
-                    tostring(b.AxisSource~=nil)))
-            end
-        else
-            link.StallElapsed=0
+            link.PhysicsBlocked=false
         end
     end
     for _,group in pairs(self.Groups) do
-        if group.Torque and group.Torque.Parent then
-            group.Torque.Torque=group.Pending
+        group.TargetSpeed=0
+        group.ControlledThisFrame=false
+    end
+    local visited={}
+    for first in pairs(neighbors) do
+        if visited[first] then continue end
+        local factor={[first]=1}
+        local queue={first}
+        local component={}
+        visited[first]=true
+        local index=1
+        while index<=#queue do
+            local current=queue[index]
+            index+=1
+            table.insert(component,current)
+            for _,edge in ipairs(neighbors[current]) do
+                local other=edge.Group
+                local expected=factor[current]*edge.Ratio
+                if not factor[other] then
+                    factor[other]=expected
+                    visited[other]=true
+                    table.insert(queue,other)
+                elseif math.abs(factor[other]-expected)>0.02*math.max(1,math.abs(expected)) then
+                    edge.Link.Inconsistent=true
+                end
+            end
+        end
+        local commanded,commandWeight=0,0
+        local momentum,systemInertia=0,0
+        local inertias={}
+        for _,group in ipairs(component) do
+            local mass=finiteAssemblyMass(group.Root)
+            local radius=GearMath.PitchRadius(group.Gears[1].Model)
+            local inertia=if mass then math.clamp(0.5*mass*math.max(0.1,radius)^2,
+                MIN_INERTIA,MAX_INERTIA_ESTIMATE) else nil
+            inertias[group]=inertia
+            if inertia then
+                local f=factor[group]
+                local speed=group.Root.AssemblyAngularVelocity:Dot(axis(group))
+                momentum+=inertia*f*speed
+                systemInertia+=inertia*f*f
+                for _,drive in ipairs(self.Drives[group] or {}) do
+                    commanded+=drive.Weight*f*drive.Speed
+                    commandWeight+=drive.Weight*f*f
+                end
+            end
+        end
+        local hasDrive=commandWeight>0
+        local baseSpeed=if hasDrive then commanded/commandWeight
+            elseif systemInertia>MIN_INERTIA then momentum/systemInertia else 0
+        baseSpeed=math.clamp(baseSpeed,-MAX_SPEED,MAX_SPEED)
+        local hasMotion=hasDrive or math.abs(baseSpeed)>SPEED_EPS
+        local virtualLoad=0
+        for _,group in ipairs(component) do
+            local physical=group.Root
+            local speed=physical.AssemblyAngularVelocity:Dot(axis(group))
+            local target=baseSpeed*factor[group]
+            local inertia=inertias[group]
+            local actuator=group.VelocityActuator
+            if not actuator or not inertia or not hasMotion then
+                group.VirtualSpeed=speed
+                continue
+            end
+            local acceleration=math.clamp(DRIVE_BUDGET/math.max(inertia,MIN_INERTIA),
+                MIN_ANGULAR_ACCEL,MAX_ANGULAR_ACCEL)
+            local prior=group.VirtualSpeed or speed
+            local step=(target-prior)*math.min(1,VIRTUAL_RESPONSE*dt)
+            local desired=math.clamp(prior+math.clamp(step,
+                -acceleration*dt,acceleration*dt),-MAX_SPEED,MAX_SPEED)
+            if not hasDrive then desired=target end
+            group.VirtualSpeed=desired
+            group.TargetSpeed=desired
+            virtualLoad+=math.abs((desired-speed)*inertia/dt)
+            -- Avoid fighting the physical crank or hinge motor on its input.
+            if not self.Drives[group] then
+                actuator.MaxTorque=DRIVE_BUDGET
+                actuator.AngularVelocity=axis(group)*desired
+                actuator.Enabled=true
+                group.ControlledThisFrame=true
+            end
+        end
+        for _,group in ipairs(component) do
+            for _,edge in ipairs(neighbors[group]) do
+                if edge.Link.A==group then
+                    edge.Link.PhysicsBlocked=not inertias[edge.Link.A]
+                        or not inertias[edge.Link.B]
+                    edge.Link.Effort=math.min(DRIVE_BUDGET,virtualLoad)
+                end
+            end
+        end
+    end
+    -- Leave continuously active output motors enabled between physics steps;
+    -- disable only a shaft that has lost its mesh or external drive.
+    for _,group in pairs(self.Groups) do
+        if group.VelocityActuator and not group.ControlledThisFrame then
+            group.VelocityActuator.AngularVelocity=Vector3.zero
+            group.VelocityActuator.Enabled=false
         end
     end
 end
@@ -402,7 +471,7 @@ function Transmission:DriveDiagnostics(id)
                 peerRoot.AssemblyAngularVelocity:Dot(axis(other)) else 0
             if math.abs(speed)>0.08 then outputTurning=true end
             table.insert(links,string.format(
-                "output %.3f rad/s, torque %.1f, input/output rigidly anchored %s/%s, "
+                "output %.3f rad/s, virtual load %.1f, input/output rigidly anchored %s/%s, "
                 .."output shaft mount %s, blocked %s",
                 speed,math.abs(link.Effort or 0),tostring(anchored),
                 tostring(blocked),tostring(other.AxisSource~=nil),
@@ -417,8 +486,12 @@ function Transmission:DriveDiagnostics(id)
 end
 
 function Transmission:StopMotion()
+    self:ClearDrives()
     for _,group in pairs(self.Groups) do
-        if group.Torque then group.Torque.Torque=Vector3.zero end
+        if group.VelocityActuator then
+            group.VelocityActuator.AngularVelocity=Vector3.zero
+            group.VelocityActuator.Enabled=false
+        end
     end
 end
 
