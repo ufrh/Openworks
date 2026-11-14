@@ -100,7 +100,9 @@ local function readable(id,model)
     end
     local blockSize,diameter=n:match("^drilledblock_(%d+)u_d(%d+)$")
     if blockSize and diameter then
-        return "Drilled Block  ·  "..blockSize.." U / Ø"
+        local size=tonumber(blockSize)
+        if #blockSize>=3 then size/=100 end
+        return "Drilled Block  ·  "..tostring(size).." U / Ø"
             ..tostring(tonumber(diameter)/100).." U"
     end
     if n:find("rectangulartube",1,true) then
