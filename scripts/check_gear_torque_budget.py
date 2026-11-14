@@ -39,7 +39,7 @@ test("Anchored shaft island is excluded from speed actuation",
 test("Crank input drives actual shaft; no second speed actuator fights it",
     'session.Gears:SetDrive(crank.DrivenId' in sim and
     'drive.AngularVelocity=crank.Axis*crank.NativeSpeed' in sim and
-    'if not self.Drives[group] then' in gear)
+    'if not hasDrive or not self.Drives[group] then' in gear)
 test("Actuator remains enabled during continuous motion",
     'group.ControlledThisFrame=true' in gear and
     'not group.ControlledThisFrame' in gear)
