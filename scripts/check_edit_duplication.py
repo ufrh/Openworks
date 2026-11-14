@@ -48,7 +48,8 @@ check("Duplicate is independent: no inherited assembly, component or grounding",
         'duplicate.alignedOpeningId=nil')))
 check("Server checks plot bounds, shape and collision before committing",
     'local valid,reason=validState(player,entry,duplicate)' in server
-    and 'if intersectsConstructed(model) then' in server
+    and 'if payload.autoMate==nil and intersectsConstructed(model) then' in server
+    and 'return finalizeNewPrimitive(player,model,payload)' in server
     and 'return false,"Duplicate intersects existing geometry"' in server)
 check("Copy is an undoable authored edit, returning its new instance ID",
     'commitRecord(player, nil, after)' in server
