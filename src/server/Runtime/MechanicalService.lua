@@ -1669,10 +1669,9 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
     return true,"Hand crank sized to shaft and rigidly coupled"
 end
 
-function Mechanical:CreateWeld(player,request)
-    request.kind="Weld"
-    local source,target,reason=validEndpoints(self,player,request)
-    if not source then return false,reason end
+-- Single and multi-weld use the same server-authoritative proximity,
+-- clearance and competing-relationship checks. Never weld at a distance.
+local function weldPairValid(self,player,source,target)
     if HandCrankMath.IsCrank(source) or HandCrankMath.IsCrank(target) then
         return false,"Use the HandCrank output coupling to attach a crank to its shaft"
     end
@@ -1721,12 +1720,21 @@ function Mechanical:CreateWeld(player,request)
         if relation:GetAttribute("OwnerUserId")==player.UserId then
             local a=relation:GetAttribute("SourceId")
             local b=relation:GetAttribute("TargetId")
-            if (a==request.sourceId and b==request.targetId)
-                or (a==request.targetId and b==request.sourceId) then
+            if (a==source:GetAttribute("InstanceId") and b==target:GetAttribute("InstanceId"))
+                or (a==target:GetAttribute("InstanceId") and b==source:GetAttribute("InstanceId")) then
                 return false,"Remove the existing relationship before rigid welding"
             end
         end
     end
+    return true
+end
+
+function Mechanical:CreateWeld(player,request)
+    request.kind="Weld"
+    local source,target,reason=validEndpoints(self,player,request)
+    if not source then return false,reason end
+    local valid,why=weldPairValid(self,player,source,target)
+    if not valid then return false,why end
     local spec={
         relationId=HttpService:GenerateGUID(false),
         ownerUserId=player.UserId,kind="Weld",
@@ -1737,6 +1745,102 @@ function Mechanical:CreateWeld(player,request)
     if not ok then return false,err end
     self.D.commitAssembly(player,{}, {},spec)
     return true,"Welded • permanent rigid connection"
+end
+
+-- Batch rigid fabrication for Edit's Shift-selected geometry. Build a
+-- connected spanning tree: only genuine touching / inserted neighbors
+-- become welds. Validate the whole plan before creating any relationship.
+-- A disconnected selection is rejected rather than silently half-welded.
+function Mechanical:CreateMultiWeld(player,request)
+    local ids=request and request.ids
+    if type(ids)~="table" or #ids<2 or #ids>32 then
+        return false,"Select 2–32 primitives to multi-weld"
+    end
+    local models,seen={},{}
+    for _,id in ipairs(ids) do
+        if type(id)~="string" or #id==0 or #id>64 or seen[id] then
+            return false,"Multi-weld needs distinct owned primitives"
+        end
+        seen[id]=true
+        local model=self.D.findOwned(player,id)
+        if not model or not model.PrimaryPart
+            or not self.D.nearPlayer(player,model:GetPivot().Position) then
+            return false,"Multi-weld selection has an unavailable part"
+        end
+        if HandCrankMath.IsCrank(model) then
+            return false,"Use the dedicated hand-crank coupling for crank parts"
+        end
+        table.insert(models,model)
+    end
+    local linked={[1]=true}
+    local count=1
+    local planned={}
+    local function existingWeld(a,b)
+        local aid=a:GetAttribute("InstanceId")
+        local bid=b:GetAttribute("InstanceId")
+        for _,rel in ipairs(self.Folder:GetChildren()) do
+            if rel:GetAttribute("OwnerUserId")==player.UserId
+                and (rel:GetAttribute("Kind")=="Weld"
+                    or rel:GetAttribute("Kind")=="Fixed") then
+                local x=rel:GetAttribute("SourceId")
+                local y=rel:GetAttribute("TargetId")
+                if (x==aid and y==bid) or (x==bid and y==aid) then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+    while count<#models do
+        local found=false
+        for i=1,#models do
+            if not linked[i] then continue end
+            for j=1,#models do
+                if linked[j] then continue end
+                local a,b=models[i],models[j]
+                local already=existingWeld(a,b)
+                local valid=already
+                if not valid then valid=weldPairValid(self,player,a,b) end
+                if valid then
+                    linked[j]=true
+                    count+=1
+                    if not already then
+                        table.insert(planned,{
+                            relationId=HttpService:GenerateGUID(false),
+                            ownerUserId=player.UserId,kind="Weld",
+                            sourceId=a:GetAttribute("InstanceId"),
+                            targetId=b:GetAttribute("InstanceId"),
+                            componentId=a:GetAttribute("ComponentId"),
+                        })
+                    end
+                    found=true
+                    break
+                end
+            end
+            if found then break end
+        end
+        if not found then
+            return false,"Selected parts are disconnected; place each solid against a selected neighbor"
+        end
+    end
+    if #planned==0 then return false,"These parts are already rigidly welded" end
+    if self:Count(player)+#planned>MAX_RELATIONSHIPS_PER_PLAYER then
+        return false,"Relationship limit reached for this multi-weld"
+    end
+    local completed={}
+    for _,spec in ipairs(planned) do
+        local ok,reason=self:Restore(player,spec)
+        if not ok then
+            for _,id in ipairs(completed) do
+                self:DestroyRelation(self:OwnedRelation(player,id))
+            end
+            return false,reason or "Multi-weld validation failed"
+        end
+        table.insert(completed,spec.relationId)
+    end
+    self.D.commitAssembly(player,{}, {},planned)
+    return true,string.format("Multi-welded %d parts with %d rigid connections",
+        #models,#planned)
 end
 
 function Mechanical:CreateBolt(player,request)
