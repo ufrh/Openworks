@@ -716,7 +716,7 @@ function Controller:SelectPrimitive(id)
 
     self.CurrentId = id
     self.CurrentDisplayName=entry.DisplayName
-    self.CurrentSize = entry.Model.PrimaryPart.Size
+    self.CurrentSize = Grid.InitialSize(entry.Model.PrimaryPart.Size,entry.ResizeMode)
     self.Steps = { x = 0, y = 0, z = 0 }
     self.Pending = nil
     self:RebuildPreview()
@@ -1653,11 +1653,15 @@ function Controller:UpdatePreview()
                 hit.Position,hit.Normal)
         local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-        local originPose=if not alt then FitSolver.SurfacePose(
+        -- Hold Shift to bypass every automatic smart fit (including
+        -- origin/pivot magnetism) while retaining precise face placement.
+        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        local originPose=if not alt and not shift then FitSolver.SurfacePose(
             self.Preview,cf.Rotation,hit.Position) else nil
         if originPose then cf=originPose end
         self.Preview:PivotTo(cf)
-        if not alt and self.Pending~="ComponentCopy" then
+        if not alt and not shift and self.Pending~="ComponentCopy" then
             match=self:RecognizeAttachment(cf,hit)
             -- Reusable blueprints preserve their own internal joints. Do not
             -- silently authorize new external joints on a bank placement.
@@ -2382,7 +2386,7 @@ function Controller:BeginScale()
     local templateName = string.lower(tostring(id))
     local cylinder = string.find(templateName, "cylinder", 1, true)
         and not string.find(templateName, "halfcylinder", 1, true)
-    local step = if cylinder then 0.25 else Grid.DefaultSizeStepU
+    local step = Grid.MinSizeStepU
     -- Once inside a hole, the fitted diameter is locked for ordinary
     -- resizing. Only the cylinder's X-axis end grips are offered.
     local aligned = self.Mode=="Edit" and cylinder
@@ -2672,7 +2676,7 @@ function Controller:VerticalNudge(key)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
     local affected=if scope=="Component" or scope=="Primitives"
         then selected else {self.Selected}
-    local amount=(if fine then 0.05 else 0.25)*direction
+    local amount=(if fine then Grid.Unit*Grid.MinSizeStepU else Grid.Unit)*direction
     local displacement=if axis=="X" then Vector3.new(amount,0,0)
         elseif axis=="Y" then Vector3.new(0,amount,0)
         else Vector3.new(0,0,amount)
@@ -2836,6 +2840,10 @@ function Controller:OnInput(input, processed)
     end
     if self.CatalogOpen then return end
 
+    if self.Mode=="Edit" and key==Enum.KeyCode.W and not self.Pending then
+        self:MultiWeldSelected()
+        return
+    end
     if self.Mode=="Edit" and key==Enum.KeyCode.C and shiftHeld then
         -- Shift+C is exclusively the hand-crank coupling workflow.
         return
