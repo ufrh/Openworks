@@ -92,7 +92,9 @@ local function accessFor(player, action)
             or hasEquippedTool(player,"Build")
             or hasEquippedTool(player,"Edit")
     end
-    -- Construct while Build is equipped, mutate only in Edit.
+    -- New authored primitives belong to Build. Edit can create a duplicate
+    -- ONLY by referencing an existing, server-owned source primitive.
+    -- The dedicated DuplicatePrimitive handler reconstructs trusted state.
     return if action=="Place" then hasEquippedTool(player,"Build")
         else hasEquippedTool(player,"Edit")
 end
@@ -621,6 +623,55 @@ local function place(player, payload)
     local after = snapshot(model)
     commitRecord(player, nil, after)
     return true, after.instanceId
+end
+
+-- Edit-mode F / Ctrl+D copies an existing owned primitive. NEVER route
+-- this through Build-only Place, which rejects Edit tool authority. The
+-- source is server-resolved; clients cannot forge template/size/material
+-- overrides or inherit another construction's mechanical relationships.
+local function duplicatePrimitive(player,payload)
+    if type(payload.sourceId)~="string" then
+        return false,"Select a primitive in Edit before duplicating"
+    end
+    local source=findOwned(player,payload.sourceId)
+    if not source or not source.PrimaryPart then
+        return false,"Selected primitive no longer exists"
+    end
+    local original=snapshot(source)
+    local entry=Registry.Get(original.templateId)
+    if not entry then return false,"Original primitive template is unavailable" end
+
+    local duplicate=table.clone(original)
+    duplicate.position=payload.position
+    duplicate.steps=payload.steps
+    -- The exact visible preview pose is authoritative only for orientation;
+    -- size, material, finish and geometry always come from the owned source.
+    duplicate.orientation=if typeof(payload.orientation)=="CFrame"
+        then payload.orientation.Rotation else Grid.Rotation(original.steps)
+    duplicate.freePosition=true
+    duplicate.componentId=nil
+    duplicate.componentAnchorId=nil
+    duplicate.componentFitPivotLocal=nil
+    duplicate.assemblyId=nil
+    duplicate.assemblyName=nil
+    duplicate.grounded=false
+    duplicate.alignedOpeningId=nil
+    duplicate.alignedOffsetU=0
+    duplicate.shaftRollDegrees=0
+    local valid,reason=validState(player,entry,duplicate)
+    if not valid then return false,reason end
+
+    local model,why=createFromTemplate(player,original.templateId)
+    if not model then return false,why end
+    applyState(model,duplicate)
+    if intersectsConstructed(model) then
+        model:Destroy()
+        return false,"Duplicate intersects existing geometry"
+    end
+    model.Parent=folder
+    local after=snapshot(model)
+    commitRecord(player,nil,after)
+    return true,after.instanceId
 end
 
 local function update(player, payload)
@@ -1265,7 +1316,8 @@ local function handle(player, payload)
     local smartAction = action == "SmartMate"
     local assemblyAction=action=="CreateAssembly"
         or action=="UpdateAssembly"
-    if action ~= "Place" and action ~= "Update" and action ~= "Delete"
+    if action ~= "Place" and action ~= "DuplicatePrimitive"
+        and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
         and not componentAction and not smartAction and not assemblyAction
         and not verticalAction and not materialAction and not fitOriginAction
@@ -1365,7 +1417,9 @@ local function handle(player, payload)
             return {ok=false,message="Use Edit or Mechanics to align objects"}
         end
     elseif not accessFor(player, action) then
-        return { ok = false, message = "Equip Build" }
+        return { ok = false, message=if action=="DuplicatePrimitive"
+            then "Equip Edit (2) to duplicate an existing primitive"
+            else "Equip Build" }
     end
 
     local now = os.clock()
@@ -1389,6 +1443,7 @@ local function handle(player, payload)
         if bankAction then return componentBank:Handle(player,action,payload) end
         if action=="SetFitPivot" then return setFitPivot(player,payload) end
         if action == "Place" then return place(player, payload) end
+        if action == "DuplicatePrimitive" then return duplicatePrimitive(player,payload) end
         if action == "VerticalMove" then return verticalMove(player,payload) end
         if action == "SetMaterial" then return setMaterial(player,payload) end
         if action == "SetPaint" then return setPaint(player,payload) end
@@ -1473,12 +1528,14 @@ local function handle(player, payload)
     end
     local message = tostring(extra or "")
     if result and action == "Place" then message = "Placed" end
+    if result and action == "DuplicatePrimitive" then message = "Duplicated" end
     if result and action == "Update" then message = "Updated" end
     return {
         ok = result == true,
         message = if result and (action == "Group" or action == "DuplicateComponent")
             then "Component created" else message,
-        instanceId = if result and action == "Place" then extra else nil,
+        instanceId = if result and (action == "Place" or action == "DuplicatePrimitive")
+            then extra else nil,
         componentId = if result and (action == "Group" or action == "DuplicateComponent")
             then extra else nil,
         assemblyId=if result and assemblyAction then detail else nil,

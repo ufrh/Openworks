@@ -1828,7 +1828,8 @@ function Controller:Place(chosenKind)
     end
     if not self.PreviewCF or not self.CurrentId or not self.CurrentSize then return end
     if not self.PreviewValid then
-        self:Message("Red preview: construction intersects existing geometry")
+        self:Message(self.PreviewReason
+            or "Red preview: construction intersects existing geometry")
         return
     end
     -- F duplicates are independent objects, not implicit copies of a
@@ -1842,7 +1843,9 @@ function Controller:Place(chosenKind)
     end
     local placedMate=self.SmartMatch
     local success,reply = self:Request({
-        action = "Place",
+        action = if self.Pending=="Copy" then "DuplicatePrimitive" else "Place",
+        sourceId=if self.Pending=="Copy" and self.Selected
+            then self.Selected:GetAttribute("InstanceId") else nil,
         templateId = self.CurrentId,
         materialId=if self.Pending=="Copy" and self.Selected
             then self.Selected:GetAttribute("ConstructionMaterial") else nil,
@@ -1856,7 +1859,8 @@ function Controller:Place(chosenKind)
         fitPivotLocal=if self.Pending=="Copy" and self.Selected
             then self.Selected:GetAttribute("FitPivotLocal") else nil,
         numericPrecision=self.NumericPrecision==true,
-        orientation=if self.SmartMatch
+        orientation=if self.Pending=="Copy" then self.PreviewCF.Rotation
+            elseif self.SmartMatch
             and (self.SmartMatch.kind=="BoltHole"
                 or self.SmartMatch.kind=="Bore"
                 or self.SmartMatch.kind=="CrankCoupling"
@@ -2007,7 +2011,8 @@ function Controller:ConfirmComponentPlacement()
     if self.Pending=="ComponentMove" and self.SmartMatch
         and self:SmartDrop() then return end
     if not self.PreviewValid then
-        self:Message("Red preview: component overlaps another construction")
+        self:Message(self.PreviewReason
+            or "Red preview: component overlaps another construction")
         return
     end
     local isCopy=self.Pending=="ComponentCopy"
