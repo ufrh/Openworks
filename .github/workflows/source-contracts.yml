@@ -32,6 +32,8 @@ jobs:
         run: python3 scripts/check_crank_to_gear_chain.py
       - name: Verify virtual shaft load, speed graph and live drive diagnostics
         run: python3 scripts/check_gear_torque_budget.py
+      - name: Verify tooth phase-lock and stop-on-release braking
+        run: python3 scripts/check_gear_phase_and_braking.py
 
   parse-luau:
     name: Parse Luau sources (no formatting gate)

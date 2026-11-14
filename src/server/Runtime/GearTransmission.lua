@@ -24,6 +24,10 @@ local MIN_ANGULAR_ACCEL=18
 local MAX_ANGULAR_ACCEL=85
 local MAX_SPEED=35
 local SPEED_EPS=0.02
+local RELEASE_BRAKE_ACCEL=28 -- rad/s^2; stop in a fraction of a second
+local PHASE_RESPONSE=7 -- phase-slip convergence (1/s)
+local PHASE_DEADBAND=0.012 -- fraction of a tooth
+local MAX_PHASE_SPEED=1.2 -- bounded follower correction (rad/s)
 local DRIVE_BUDGET=HandCrankMath.MaxTorque*0.72
 local function finiteAssemblyMass(part)
     local root=part.AssemblyRootPart
@@ -200,6 +204,7 @@ function Transmission:Detect()
             table.insert(links,{A=a,B=b,Ratio=ratio,
                 RadiusA=GearMath.PitchRadius(left.Model),
                 RadiusB=GearMath.PitchRadius(right.Model),
+                LeftGear=left.Model,RightGear=right.Model,
                 Key=key,Error=if previous[key] then previous[key].Error else 0,
                 StallElapsed=if previous[key] then previous[key].StallElapsed else 0})
             contacted[left]=true
@@ -275,14 +280,16 @@ function Transmission:Explain(id)
         "GROUNDED" else "FREE",speed)
     if count>0 then
         local total=0
+        local worstPhase=0
         for _,link in ipairs(self.Links) do
             if link.A==group or link.B==group then
                 total+=math.abs(link.Effort or 0)
+                worstPhase=math.max(worstPhase,math.abs(link.PhaseError or 0))
             end
         end
-        return string.format("%d shaft speed link(s) / %s / %s / virtual load %.1f / target %.2f rad/s / %s",count,
+        return string.format("%d shaft speed link(s) / %s / %s / virtual load %.1f / target %.2f rad/s / tooth error %.2f pitch / %s",count,
             if group.AxisSource then "shaft mounted" else "LOOSE GEAR: missing shaft weld",
-            live,total,group.TargetSpeed or 0,
+            live,total,group.TargetSpeed or 0,worstPhase,
             if root and root.Anchored then "ERROR: SHAFT ANCHORED"
                 elseif group.Grounded then "GROUNDED"
                 elseif math.abs(speed)<0.035 then "idle: drive the crank shaft"
@@ -372,7 +379,6 @@ function Transmission:Step(dt)
             end
         end
         local commanded,commandWeight=0,0
-        local momentum,systemInertia=0,0
         local inertias={}
         for _,group in ipairs(component) do
             local mass=finiteAssemblyMass(group.Root)
@@ -382,9 +388,6 @@ function Transmission:Step(dt)
             inertias[group]=inertia
             if inertia then
                 local f=factor[group]
-                local speed=group.Root.AssemblyAngularVelocity:Dot(axis(group))
-                momentum+=inertia*f*speed
-                systemInertia+=inertia*f*f
                 for _,drive in ipairs(self.Drives[group] or {}) do
                     commanded+=drive.Weight*f*drive.Speed
                     commandWeight+=drive.Weight*f*f
@@ -392,15 +395,76 @@ function Transmission:Step(dt)
             end
         end
         local hasDrive=commandWeight>0
-        local baseSpeed=if hasDrive then commanded/commandWeight
-            elseif systemInertia>MIN_INERTIA then momentum/systemInertia else 0
+        -- Zero AUTHORIZED input means zero commanded energy. Do not mistake
+        -- shaft inertia (including motion from our own actuators) for a
+        -- new drive: that was a self-sustaining loop after crank release.
+        local baseSpeed=if hasDrive then commanded/commandWeight else 0
         baseSpeed=math.clamp(baseSpeed,-MAX_SPEED,MAX_SPEED)
-        local hasMotion=hasDrive or math.abs(baseSpeed)>SPEED_EPS
+        local hasMotion=hasDrive
+        if not hasDrive then
+            for _,group in ipairs(component) do
+                if math.abs(group.Root.AssemblyAngularVelocity:Dot(axis(group)))>SPEED_EPS then
+                    hasMotion=true
+                    break
+                end
+            end
+        end
+
+        -- Phase-lock real tooth tips against opposite gaps. Only a shaft
+        -- further from an ACTIVE input gets a correction: no feedback on
+        -- release and no competing actuators on commanded motor shafts.
+        local phaseCorrections,phaseCounts={},{}
+        if hasDrive then
+            local depth={}
+            local sources={}
+            for _,group in ipairs(component) do
+                if self.Drives[group] then
+                    depth[group]=0
+                    table.insert(sources,group)
+                end
+            end
+            local k=1
+            while k<=#sources do
+                local current=sources[k]
+                k+=1
+                for _,edge in ipairs(neighbors[current]) do
+                    if depth[edge.Group]==nil then
+                        depth[edge.Group]=depth[current]+1
+                        table.insert(sources,edge.Group)
+                    end
+                end
+            end
+            for _,group in ipairs(component) do
+                for _,edge in ipairs(neighbors[group]) do
+                    local link=edge.Link
+                    if link.A~=group then continue end
+                    local phaseError=GearMath.ToothPhaseError(link.LeftGear,link.RightGear)
+                    link.PhaseError=phaseError
+                    if phaseError==nil or math.abs(phaseError)<=PHASE_DEADBAND then continue end
+                    local aDepth,bDepth=depth[link.A],depth[link.B]
+                    if aDepth==nil or bDepth==nil or aDepth==bDepth then continue end
+                    local follower=if aDepth>bDepth then link.A else link.B
+                    local gear=if follower==link.A then link.LeftGear else link.RightGear
+                    local teeth=gear:GetAttribute("GearTeeth")
+                    if type(teeth)~="number" or teeth<=0 then continue end
+                    local sign=if axis(follower):Dot(gear:GetPivot().RightVector)>=0 then 1 else -1
+                    -- Positive tooth-phase error requires positive rotation
+                    -- about the follower's own gear axis to reach a tooth gap.
+                    local correction=math.clamp(
+                        phaseError*(2*math.pi/teeth)*PHASE_RESPONSE*sign,
+                        -MAX_PHASE_SPEED,MAX_PHASE_SPEED)
+                    phaseCorrections[follower]=(phaseCorrections[follower] or 0)+correction
+                    phaseCounts[follower]=(phaseCounts[follower] or 0)+1
+                end
+            end
+        end
         local virtualLoad=0
         for _,group in ipairs(component) do
             local physical=group.Root
             local speed=physical.AssemblyAngularVelocity:Dot(axis(group))
-            local target=baseSpeed*factor[group]
+            local correction=if phaseCounts[group] then
+                phaseCorrections[group]/phaseCounts[group] else 0
+            local target=baseSpeed*factor[group]+correction
             local inertia=inertias[group]
             local actuator=group.VelocityActuator
             if not actuator or not inertia or not hasMotion then
@@ -413,12 +477,18 @@ function Transmission:Step(dt)
             local step=(target-prior)*math.min(1,VIRTUAL_RESPONSE*dt)
             local desired=math.clamp(prior+math.clamp(step,
                 -acceleration*dt,acceleration*dt),-MAX_SPEED,MAX_SPEED)
-            if not hasDrive then desired=target end
+            if not hasDrive then
+                -- Actual inertial speed is used ONLY to calculate braking,
+                -- never as a renewed drive target. Brake the input too:
+                -- its physical crank motor was disabled on mouse release.
+                local magnitude=math.max(0,math.abs(speed)-RELEASE_BRAKE_ACCEL*dt)
+                desired=if magnitude>SPEED_EPS then math.sign(speed)*magnitude else 0
+            end
             group.VirtualSpeed=desired
             group.TargetSpeed=desired
             virtualLoad+=math.abs((desired-speed)*inertia/dt)
             -- Avoid fighting the physical crank or hinge motor on its input.
-            if not self.Drives[group] then
+            if not hasDrive or not self.Drives[group] then
                 actuator.MaxTorque=DRIVE_BUDGET
                 actuator.AngularVelocity=axis(group)*desired
                 actuator.Enabled=true

@@ -177,12 +177,17 @@ local ok, failure=pcall(function()
 end)
 local _,live=transmission:DriveDiagnostics("test-shaft-A")
 print("[OPENWORKS][GEAR TEST] Final drive telemetry: "..live)
+local toothPhaseError=GearMath.ToothPhaseError(gearA,gearB)
+print(string.format("[OPENWORKS][GEAR TEST] Tooth interlock error: %s pitch (ideal 0)",
+    if toothPhaseError then string.format("%+.4f",toothPhaseError) else "unavailable"))
 transmission:StopMotion()
 world:Destroy()
 if not ok then error("[OPENWORKS][GEAR TEST] Studio test errored: "..tostring(failure)) end
-if bestA>0.25 and bestB< -0.25 then
-    print(string.format("[OPENWORKS][GEAR TEST] PASS: real native physics drove the output shaft (input %.2f, output %.2f)",
+if bestA>0.25 and bestB< -0.25
+    and toothPhaseError and math.abs(toothPhaseError)<0.08 then
+    print(string.format("[OPENWORKS][GEAR TEST] PASS: shaft speed and tooth gaps align (input %.2f, output %.2f)",
         bestA,bestB))
 else
-    warn(string.format("[OPENWORKS][GEAR TEST] FAIL: input %.2f / output %.2f. Check passive bearing, AngularVelocity, shaft speed control, and network ownership.",bestA,bestB))
+    warn(string.format("[OPENWORKS][GEAR TEST] FAIL: input %.2f / output %.2f / tooth phase %s. Check bearings, speed drives, tooth phase and network ownership.",
+        bestA,bestB,tostring(toothPhaseError)))
 end

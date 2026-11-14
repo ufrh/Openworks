@@ -22,9 +22,12 @@ test("Virtual inertia and load cap acceleration instead of applying torque",
     'local inertia=if mass then math.clamp(' in gear and
     'local acceleration=math.clamp(' in gear and
     'virtualLoad+=' in gear)
-test("Unpowered shafts read actual assembly motion for backdriving",
-    'momentum+=inertia*f*speed' in gear and
-    'baseSpeed=if hasDrive then commanded/commandWeight' in gear)
+test("Unpowered gear assemblies never generate self-sustaining speed commands",
+    'momentum+=inertia*f*speed' not in gear and
+    'local baseSpeed=if hasDrive then commanded/commandWeight else 0' in gear and
+    'if not hasDrive then' in gear and
+    'RELEASE_BRAKE_ACCEL=28' in gear and
+    'if not hasDrive or not self.Drives[group] then' in gear)
 test("Competing motors use weighted signed gear graph",
     'drive.Weight*f*drive.Speed' in gear and
     'commandWeight+=drive.Weight*f*f' in gear and

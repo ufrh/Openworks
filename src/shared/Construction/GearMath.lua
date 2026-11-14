@@ -35,6 +35,48 @@ function GearMath.BevelApex(model:Model):Vector3
         *(GearMath.PitchRadius(model)/math.tan(cone))
 end
 
+-- Tooth phase is measured at the actual pitch-contact direction. A phase
+-- error of zero means the tooth tips on one gear face gaps on the other.
+-- The mesh generator puts tooth zero along local +Y and indexes toward +Z.
+-- Return signed error in tooth pitches, wrapped to [-0.5,+0.5).
+-- Gear shaft speed correction can use this continuously without moving CFrames.
+function GearMath.ToothPhaseError(a:Model,b:Model,poseA:CFrame?):number?
+    if not a or not b or not a.PrimaryPart or not b.PrimaryPart then return nil end
+    local teethA,teethB=a:GetAttribute("GearTeeth"),b:GetAttribute("GearTeeth")
+    if type(teethA)~="number" or type(teethB)~="number"
+        or teethA<=0 or teethB<=0 then return nil end
+    local kindA,kindB=GearMath.Kind(a),GearMath.Kind(b)
+    if kindA~=kindB then return nil end
+    local ca,cb=poseA or a:GetPivot(),b:GetPivot()
+    local axa,axb=ca.RightVector.Unit,cb.RightVector.Unit
+    local radialA,radialB
+    if kindA=="Spur" then
+        local delta=cb.Position-ca.Position
+        radialA=delta-axa*delta:Dot(axa)
+        radialB=-delta+axb*delta:Dot(axb)
+    elseif kindA=="Bevel90" or kindA=="Bevel45" then
+        -- Pitch-cone generator lies along the bisector of both apex-to-gear
+        -- axes. Project that direction into each toothed gear face.
+        local generator=axa+axb
+        if generator.Magnitude<0.001 then return nil end
+        generator=generator.Unit
+        radialA=generator-axa*generator:Dot(axa)
+        radialB=generator-axb*generator:Dot(axb)
+    else
+        return nil
+    end
+    if radialA.Magnitude<0.001 or radialB.Magnitude<0.001 then return nil end
+    radialA=radialA.Unit
+    radialB=radialB.Unit
+    -- LookVector is local -Z in Roblox; the authored teeth use local +Z.
+    local angleA=math.atan2(radialA:Dot(ca:VectorToWorldSpace(Vector3.zAxis)),
+        radialA:Dot(ca.UpVector))
+    local angleB=math.atan2(radialB:Dot(cb:VectorToWorldSpace(Vector3.zAxis)),
+        radialB:Dot(cb.UpVector))
+    local toothTurns=(teethA*angleA+teethB*angleB)/(2*math.pi)
+    return (toothTurns%1)-0.5
+end
+
 -- True 45° and 90° bevel sets require equal teeth and shared pitch cone apexes.
 -- Mixed-angle bevel sets and unequal tooth ratios are not conjugate mates.
 function GearMath.AutoBevelStatus(a:Model,b:Model,held: boolean?):(boolean,string,number)

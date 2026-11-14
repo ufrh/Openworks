@@ -129,6 +129,16 @@ function Smart.BevelPose(source:Model,target:Model,near:Vector3)
     if up.Magnitude<0.001 then up=fixed.UpVector end
     up=up.Unit
     local pose=CFrame.fromMatrix(center,newAxis,up,newAxis:Cross(up))
+    -- Seat the moving bevel's tooth tips between the fixed teeth at
+    -- placement. Runtime phase-lock maintains this half-tooth offset as
+    -- the two shafts spin; no part rotation is scripted during simulation.
+    local phaseError=GearMath.ToothPhaseError(source,target,pose)
+    if phaseError then
+        local teeth=source:GetAttribute("GearTeeth")
+        local phase=phaseError*2*math.pi/teeth
+        local corrected=CFrame.fromAxisAngle(newAxis,phase)*pose.Rotation
+        pose=CFrame.new(center)*corrected
+    end
     return pose,(center-near).Magnitude
 end
 
