@@ -53,7 +53,7 @@ check('Publisher stores IDs as durable StringValues and supports resume',
     'Instance.new("StringValue")' in plugin and
     'entry.Value = string.format("%.0f", id)' in plugin and
     'previousId and (not replaceGears or not isGear or upToDate)' in plugin
-    and 'if replaceGears and previousId and isGear then' in plugin
+    and 'if replaceGears and previousId then' in plugin
     and 'entry:SetAttribute("PendingAssetId",' in plugin)
 check('Publisher supports group-owned experiences',
     'Enum.CreatorType.Group' in plugin and 'Enum.AssetCreatorType.Group' in plugin)
@@ -63,7 +63,7 @@ check('Publisher catches missing opt-in CreateAssetAsync beta with a useful mess
     'COMPLETELY RESTART Studio' in plugin and
     'CreateAssetAsync Luau API' in doc)
 check('Publisher marks complete only after upload and refreshes prefab gallery',
-    plugin.index('assert(progress == 9') < plugin.index('manifest:SetAttribute("Ready", true)') and
+    plugin.index('assert(progress==9') < plugin.index('manifest:SetAttribute("Ready",true)') and
     'generator.Ensure(true)' in plugin and 'generator.BuildGallery(false)' in plugin)
 check('Shared module destroys EditableMesh after plugin callback',
     len(re.findall(r'local ok, result = pcall\(onEditable, mesh\)\s+mesh:Destroy\(\)', mod)) == 2)
