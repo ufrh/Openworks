@@ -4,7 +4,7 @@
 local Origin=require(script.Parent:WaitForChild("FitOrigin"))
 local Features=require(script.Parent:WaitForChild("FitFeatureRegistry"))
 local Solver={}
-local CAPTURE=0.42
+local CAPTURE=0.16
 local function rayDistance(ray,position)
     if not ray then return math.huge end
     local direction=ray.Direction.Unit
