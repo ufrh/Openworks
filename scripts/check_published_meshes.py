@@ -47,11 +47,14 @@ check('Publisher requires an installed plugin and uses real mesh assets',
     'assert(plugin, "Install this Script as a LOCAL STUDIO PLUGIN first' in plugin and
     'AssetService:CreateAssetAsync(editableMesh,' in plugin and
     'Enum.AssetType.Mesh' in plugin and
-    'CreateAssetVersionAsync(editableMesh,' in plugin)
+    'AssetService:CreateAssetVersionAsync' not in plugin and
+    'AssetService:CreateAssetAsync(editableMesh,' in plugin)
 check('Publisher stores IDs as durable StringValues and supports resume',
     'Instance.new("StringValue")' in plugin and
     'entry.Value = string.format("%.0f", id)' in plugin and
-    'previousId and (not updateVersion or key=="Bolt_SharpThread")' in plugin)
+    'previousId and (not replaceGears or not isGear or upToDate)' in plugin
+    and 'if replaceGears and previousId and isGear then' in plugin
+    and 'entry:SetAttribute("PendingAssetId",' in plugin)
 check('Publisher supports group-owned experiences',
     'Enum.CreatorType.Group' in plugin and 'Enum.AssetCreatorType.Group' in plugin)
 check('Publisher catches missing opt-in CreateAssetAsync beta with a useful message',

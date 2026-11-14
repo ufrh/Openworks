@@ -15,7 +15,7 @@ local busy = false
 
 local toolbar = plugin:CreateToolbar("OpenWorks Meshes")
 local publishButton = toolbar:CreateButton("Publish Missing", "Upload missing permanent gear/bolt meshes and install 45 prefabs", "rbxassetid://0")
-local refreshButton = toolbar:CreateButton("Update Mesh Versions", "Update eight gear tooth profiles while retaining all existing mesh asset IDs and the bolt asset", "rbxassetid://0")
+local refreshButton = toolbar:CreateButton("Update Mesh Versions", "Create eight replacement gear mesh assets, stage new IDs and swap only once loadable; preserves bolt and save data", "rbxassetid://0")
 
 local function log(message)
     print("[OPENWORKS][MESH PUBLISHER] " .. message)
@@ -87,107 +87,241 @@ local function checkUploadCall(ok, result, key, action)
     error(string.format("%s threw for %s: %s", action, key, reason), 0)
 end
 
-local function uploadMesh(editableMesh, key, previousId, updateVersion)
-    if previousId and updateVersion then
-        local ok, result, versionOrError = pcall(function()
-            return AssetService:CreateAssetVersionAsync(editableMesh,
-                Enum.AssetType.Mesh, previousId, assetParams(key))
-        end)
-        checkUploadCall(ok, result, key, "Version upload")
-        assert(result == Enum.CreateAssetResult.Success,
-            string.format("Version upload failed for %s: %s / %s",
-                key, tostring(result), tostring(versionOrError)))
-        log(string.format("Updated %s asset %d to version %s", key, previousId, tostring(versionOrError)))
-        return previousId
-    end
+-- Roblox Studio currently rejects Mesh in CreateAssetVersionAsync even if
+-- it is listed by some API documentation. Only CreateAssetAsync is used.
+-- Published gear asset IDs change, but the manifest swap is staged and safe.
+local function uploadMesh(editableMesh, key)
     local ok, result, idOrError = pcall(function()
         return AssetService:CreateAssetAsync(editableMesh,
             Enum.AssetType.Mesh, assetParams(key))
     end)
-    checkUploadCall(ok, result, key, "Upload")
-    assert(result == Enum.CreateAssetResult.Success and type(idOrError) == "number",
-        string.format("Upload failed for %s: %s / %s", key, tostring(result), tostring(idOrError)))
-    log(string.format("Published %s as permanent mesh asset %d", key, idOrError))
+    checkUploadCall(ok, result, key, "Mesh upload")
+    assert(result == Enum.CreateAssetResult.Success and type(idOrError) == "number"
+        and idOrError > 0,
+        string.format("Mesh upload failed for %s: %s / %s",
+            key, tostring(result), tostring(idOrError)))
+    log(string.format("Uploaded %s as NEW permanent mesh ID %.0f", key, idOrError))
     return idOrError
 end
 
-local function run(updateVersion)
+local function pendingIdFor(entry)
+    if not entry or entry:GetAttribute("PendingProfileVersion") ~= 5 then
+        return nil
+    end
+    local raw = entry:GetAttribute("PendingAssetId")
+    if type(raw) ~= "string" or not raw:match("^%d+$") then return nil end
+    local id=tonumber(raw)
+    if not id or id<=0 then return nil end
+    return id
+end
+
+local function verifyReplacement(key, assetId)
+    -- Upload success does NOT guarantee the asset has finished processing
+    -- or moderation. Probe loading before switching any live manifest IDs.
+    local ok, meshOrError=pcall(function()
+        return AssetService:CreateMeshPartAsync(Content.fromAssetId(assetId), {
+            CollisionFidelity=Enum.CollisionFidelity.Box,
+            RenderFidelity=Enum.RenderFidelity.Precise,
+        })
+    end)
+    if not ok or not meshOrError or not meshOrError:IsA("MeshPart") then
+        return false, string.format(
+            "%s (%.0f) is not ready to load yet: %s",
+            key, assetId, tostring(meshOrError))
+    end
+    meshOrError:Destroy()
+    return true
+end
+
+local function run(replaceGears)
     if busy then fail("Already publishing; no second operation started") return end
     if not RunService:IsStudio() then fail("Run this plugin in Studio Edit mode") return end
-    busy = true
-    local success, message = pcall(function()
-        local generator = getGenerator()
-        local manifest = getManifest()
-        local previouslyReady = manifest:GetAttribute("Ready") == true
+    busy=true
+    local success,message=pcall(function()
+        local generator=getGenerator()
+        local manifest=getManifest()
+        local previouslyReady=manifest:GetAttribute("Ready")==true
         local installedGearVersion=manifest:GetAttribute("GearGeometryVersion")
-        -- Existing IDs are NOT replaced by Publish Missing. Reject this
-        -- choice when they still contain the old cardinal-tooth geometry.
-        if not updateVersion and type(installedGearVersion)=="number"
+        if not replaceGears and previouslyReady
+            and type(installedGearVersion)=="number"
             and installedGearVersion<5 then
-            error("Gear profile v5 required: click OpenWorks Meshes > Update Mesh Versions. "
-                .."It preserves all eight gear asset IDs and existing bolts.")
+            error("Gear profile v5 required: choose OpenWorks Meshes > "
+                .."Update Mesh Versions. Mesh uploads require NEW IDs; "
+                .."your current published IDs will remain in place until replacements load.")
         end
-        manifest:SetAttribute("Ready", false)
-        manifest:SetAttribute("SchemaVersion", SCHEMA_VERSION)
-        local progress = 0
+
+        -- Existing ready manifests MUST remain active during upload. Only
+        -- first-time publication ever sets Ready=false during preparation.
+        if not previouslyReady then manifest:SetAttribute("Ready",false) end
+        manifest:SetAttribute("SchemaVersion",SCHEMA_VERSION)
+        local progress=0
         local ids
-        local uploadOK, uploadError = pcall(function()
-            ids = generator.PublishBaseAssets(function(key, editableMesh)
-                progress += 1
-                local previousId = assetIdFor(manifest, key)
-                if previousId and (not updateVersion or key=="Bolt_SharpThread") then
-                    -- Bolts are unchanged by this gear-only geometry revision.
-                    log(string.format("[%d/9] %s already published (%d)", progress, key, previousId))
+        local preparedOK,preparedError=pcall(function()
+            ids=generator.PublishBaseAssets(function(key,editableMesh)
+                progress+=1
+                local entry=manifest:FindFirstChild(key)
+                local previousId=assetIdFor(manifest,key)
+                local isGear=key~="Bolt_SharpThread"
+                local upToDate=entry and entry:GetAttribute("ProfileVersion")==5
+                    and (type(installedGearVersion)=="number"
+                        and installedGearVersion>=5)
+                -- Bolt geometry is not changing. Publish Missing never
+                -- overwrites any ID; a completed gear update is idempotent.
+                if previousId and (not replaceGears or not isGear or upToDate) then
+                    log(string.format("[%d/9] %s already published (%.0f)",
+                        progress,key,previousId))
                     return previousId
                 end
-                log(string.format("[%d/9] %s: uploading...", progress, key))
-                local id = uploadMesh(editableMesh, key, previousId, updateVersion)
-                local entry = manifest:FindFirstChild(key)
-                if not entry then
-                    entry = Instance.new("StringValue")
-                    entry.Name = key
-                    entry.Parent = manifest
+                if replaceGears and previousId then
+                    local pending=pendingIdFor(entry)
+                    if pending then
+                        log(string.format("[%d/9] %s pending replacement %.0f reused",
+                            progress,key,pending))
+                        return pending
+                    end
                 end
-                entry.Value = string.format("%.0f", id) -- Never save scientific notation
-                if key~="Bolt_SharpThread" then
-                    -- Per-base-mesh version survives interrupted refreshes:
-                    -- v4 and v5 gears can coexist until an update completes.
-                    entry:SetAttribute("ProfileVersion",5)
+
+                log(string.format("[%d/9] %s: uploading a new mesh...",
+                    progress,key))
+                local newId=uploadMesh(editableMesh,key)
+                if replaceGears and previousId and isGear then
+                    -- Saving the place after a partial upload preserves these
+                    -- candidates. NEVER change entry.Value until ALL eight
+                    -- are loadable. Retry uses the same IDs (no upload loop).
+                    entry:SetAttribute("PendingAssetId",
+                        string.format("%.0f",newId))
+                    entry:SetAttribute("PendingProfileVersion",5)
+                else
+                    if not entry then
+                        entry=Instance.new("StringValue")
+                        entry.Name=key
+                        entry.Parent=manifest
+                    end
+                    entry.Value=string.format("%.0f",newId)
+                    if isGear then entry:SetAttribute("ProfileVersion",5) end
                 end
-                return id
+                return newId
             end)
         end)
-        if not uploadOK then
-            -- Existing known-good manifest stays usable if an update fails;
-            -- first-time publishing remains resumable with saved partial IDs.
-            manifest:SetAttribute("Ready", previouslyReady)
-            error(uploadError)
+        if not preparedOK then
+            manifest:SetAttribute("Ready",previouslyReady)
+            error("Upload interrupted; existing active mesh IDs preserved. "
+                .."Pending replacement IDs are saved on individual gear entries. "
+                .."Save the place and retry Update Mesh Versions. "
+                ..tostring(preparedError))
         end
-        assert(progress == 9, "The generator must provide exactly nine base meshes")
-        assert(ids and ids.Bolt_SharpThread and ids.Spur_08T and ids.Bevel90_32T,
-            "The generator returned an incomplete base asset manifest")
-        manifest:SetAttribute("Ready", true)
-        manifest:SetAttribute("GearGeometryVersion", 5)
-        manifest:SetAttribute("BoltGeometryVersion", 5)
-        manifest:SetAttribute("GeneratedBaseMeshCount", 9)
-        log("Nine permanent mesh IDs recorded under ReplicatedStorage." .. MANIFEST_NAME)
-        -- Rebuild the 45 prefabs from the saved IDs immediately. This step
-        -- may fail before Roblox finishes processing a fresh upload; the IDs
-        -- remain saved, so the operation is safe to retry after moderation.
-        local ready, installError = pcall(function()
-            generator.Ensure(true)
-            generator.BuildGallery(false)
-        end)
-        if not ready then
-            fail("Asset IDs are saved, but some meshes aren't ready to load yet: "
-                .. tostring(installError))
-            fail("Save the place, then retry Publish Missing later. DO NOT regenerate temporary assets.")
+        assert(progress==9 and ids and ids.Bolt_SharpThread
+            and ids.Spur_08T and ids.Bevel90_32T,
+            "Generator returned an incomplete nine-mesh manifest")
+
+        if replaceGears and previouslyReady then
+            -- Verify every NEW MeshPart ID first; validation is all-or-none.
+            -- Old published gear meshes and prefabs continue to work while
+            -- Roblox processes uploads, or when one upload is rejected.
+            local originals={}
+            local needsSwap=false
+            for _,teeth in ipairs({8,12,20,32}) do
+                for _,kind in ipairs({"Spur","Bevel90"}) do
+                    local key=string.format("%s_%02dT",kind,teeth)
+                    local entry=manifest:FindFirstChild(key)
+                    assert(entry and entry:IsA("StringValue"),
+                        "Missing active gear manifest entry: "..key)
+                    local candidate=pendingIdFor(entry)
+                    if candidate then
+                        local isReady,reason=verifyReplacement(key,candidate)
+                        if not isReady then
+                            error("Replacement assets are still processing. "
+                                .."Original IDs are untouched. Save the place "
+                                .."and retry Update Mesh Versions later: "..reason)
+                        end
+                        originals[key]={
+                            Id=entry.Value,
+                            Version=entry:GetAttribute("ProfileVersion"),
+                        }
+                        needsSwap=true
+                    elseif entry:GetAttribute("ProfileVersion")~=5 then
+                        error("No replacement was staged for "..key
+                            .."; old IDs are still active. Retry Update Mesh Versions.")
+                    end
+                end
+            end
+
+            if not needsSwap then
+                if type(installedGearVersion)=="number"
+                    and installedGearVersion>=5 then
+                    log("All eight gear profiles are already at geometry v5.")
+                    return
+                end
+                error("No replacement assets were staged but the active "
+                    .."manifest is still marked older than v5. "
+                    .."Retry Update Mesh Versions; old assets are untouched.")
+            end
+            local oldVersion=installedGearVersion
+            for key in pairs(originals) do
+                local entry=manifest:FindFirstChild(key)
+                entry.Value=string.format("%.0f",ids[key])
+                entry:SetAttribute("ProfileVersion",5)
+            end
+            manifest:SetAttribute("GearGeometryVersion",5)
+            manifest:SetAttribute("GeneratedBaseMeshCount",9)
+            manifest:SetAttribute("Ready",true)
+
+            local rebuilt,problem=pcall(function()
+                generator.Ensure(true)
+                generator.BuildGallery(false)
+            end)
+            if not rebuilt then
+                -- Atomic rollback of the manifest's active IDs if creating
+                -- any runtime prefab fails (moderation/cache errors).
+                for key,old in pairs(originals) do
+                    local entry=manifest:FindFirstChild(key)
+                    entry.Value=old.Id
+                    entry:SetAttribute("ProfileVersion",old.Version)
+                end
+                manifest:SetAttribute("GearGeometryVersion",oldVersion)
+                manifest:SetAttribute("Ready",previouslyReady)
+                local restored,restoreReason=pcall(function()
+                    generator.Ensure(true)
+                end)
+                if not restored then
+                    fail("Restoring old prefab gallery also failed: "
+                        ..tostring(restoreReason))
+                end
+                error("Updated meshes could not be installed; ACTIVE manifest "
+                    .."IDs were rolled back. Pending IDs retained for retry. "
+                    ..tostring(problem))
+            end
+
+            -- Only clear staged IDs after successful prefab installation.
+            for key in pairs(originals) do
+                local entry=manifest:FindFirstChild(key)
+                entry:SetAttribute("PendingAssetId",nil)
+                entry:SetAttribute("PendingProfileVersion",nil)
+            end
+            log("Eight new gear mesh IDs activated; all tooth gaps are v5. "
+                .."Original bolt ID and existing constructions preserved.")
         else
-            log("Installed 40 persistent gears + 5 persistent bolts, refreshed gallery")
+            -- First-time publishing, or an incomplete manifest resumed via
+            -- Publish Missing. No existing ready asset is ever overridden.
+            manifest:SetAttribute("GearGeometryVersion",5)
+            manifest:SetAttribute("BoltGeometryVersion",5)
+            manifest:SetAttribute("GeneratedBaseMeshCount",9)
+            manifest:SetAttribute("Ready",true)
+            local ok,problem=pcall(function()
+                generator.Ensure(true)
+                generator.BuildGallery(false)
+            end)
+            if not ok then
+                manifest:SetAttribute("Ready",previouslyReady)
+                error("Assets uploaded, but meshes are not ready to load. "
+                    .."IDs remain saved; retry Publish Missing after processing: "
+                    ..tostring(problem))
+            end
+            log("Nine permanent meshes installed.")
         end
-        log("IMPORTANT: Save/Publish your Roblox place to persist the manifest!")
+        log("IMPORTANT: Save/Publish this Roblox place to persist the new IDs!")
     end)
-    busy = false
+    busy=false
     if not success then fail(message) end
 end
 
@@ -197,4 +331,4 @@ end)
 refreshButton.Click:Connect(function()
     run(true)
 end)
-log("Ready. Sync dev, click Publish Missing, then SAVE the Roblox place.")
+log("Ready. Use Update Mesh Versions for v5 gear geometry, then SAVE the Roblox place.")

@@ -32,12 +32,16 @@ check("Old and new geometry can mesh with correct tooth phase",
       and 'sourceShift=source:GetAttribute("GearToothPhaseFraction") or 0' in smart
       and 'targetShift=target:GetAttribute("GearToothPhaseFraction") or 0' in smart
       and '(sourcePhase+sourceShift)*sourcePitch' in smart)
-check("Published gear assets are versioned without replacing IDs",
-      "CreateAssetVersionAsync(editableMesh," in plugin
-      and 'manifest:SetAttribute("GearGeometryVersion", 5)' in plugin
-      and 'entry:SetAttribute("ProfileVersion",5)' in plugin)
+check("Gear assets are republished as NEW IDs, with delayed manifest promotion",
+      "CreateAssetVersionAsync(editableMesh," not in plugin
+      and "CreateAssetAsync(editableMesh," in plugin
+      and 'manifest:SetAttribute("GearGeometryVersion",5)' in plugin
+      and 'entry:SetAttribute("PendingAssetId",' in plugin
+      and 'entry:SetAttribute("ProfileVersion",5)' in plugin
+      and 'entry.Value=string.format("%.0f",ids[key])' in plugin)
 check("Old bolts remain untouched in a gear version update",
-      'previousId and (not updateVersion or key=="Bolt_SharpThread")' in plugin)
+      'local isGear=key~="Bolt_SharpThread"' in plugin
+      and 'not replaceGears or not isGear or upToDate' in plugin)
 check("Studio plugin XML and source are identical",
       xml.split("<![CDATA[",1)[1].split("]]>",1)[0]==plugin)
 
