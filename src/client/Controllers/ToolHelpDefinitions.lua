@@ -61,7 +61,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
                 put(rows,"Tab","Cycle fit target")
                 put(rows,"Shift+Tab","Previous target")
             else
-                put(rows,"Alt","Free placement")
+                put(rows,"Shift / Alt","Temporarily disable smart fit")
             end
             put(rows,"Enter / Esc","Stop placement (Edit = hotbar 2)")
         elseif pending then
