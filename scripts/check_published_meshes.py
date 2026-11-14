@@ -51,7 +51,8 @@ check('Publisher requires an installed plugin and uses real mesh assets',
     'AssetService:CreateAssetAsync(editableMesh,' in plugin)
 check('Publisher stores IDs as durable StringValues and supports resume',
     'Instance.new("StringValue")' in plugin and
-    'entry.Value = string.format("%.0f", id)' in plugin and
+    'entry.Value=string.format("%.0f",newId)' in plugin and
+    'entry.Value=string.format("%.0f",ids[key])' in plugin and
     'previousId and (not replaceGears or not isGear or upToDate)' in plugin
     and 'if replaceGears and previousId then' in plugin
     and 'entry:SetAttribute("PendingAssetId",' in plugin)
