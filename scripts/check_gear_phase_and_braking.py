@@ -17,7 +17,7 @@ def test(name, ok):
     print("PASS",name)
 
 test("Actual generated tooth geometry uses local +Y and +Z angular basis",
-     "local center = tooth * step" in
+     "local center = (tooth + 0.5) * step" in
      src("src/shared/Construction/ProceduralPrefabLibrary.lua")
      and "math.cos(v.a), math.sin(v.a)" in
      src("src/shared/Construction/ProceduralPrefabLibrary.lua"))
@@ -62,13 +62,14 @@ test("Held crank and powered bearing are the only graph drive inputs",
 test("No native Torque force or scripted gear poses",
      'Instance.new("Torque")' not in gear and ':PivotTo(' not in gear)
 
-# Tooth zero is at local +Y and each successive tooth moves toward local +Z.
-# For equal/unequal even tooth counts, the two facing teeth would collide
-# unless the second gear has an additional half-pitch angular displacement.
-def phase_error(na,nb,theta_a,theta_b):
+# Rev 5 moves tooth zero half a pitch from local +Y: +Y,+Z,-Y,-Z are
+# ROOT GAPS in the actual mesh. Rev 4 published meshes use phase 0.
+# Either profile can mesh with the other when each mesh carries its phase.
+def phase_error(na,nb,theta_a,theta_b,phase_a=.5,phase_b=.5):
     contact_a=-theta_a
     contact_b=math.pi-theta_b
-    return ((na*contact_a+nb*contact_b)/(2*math.pi)%1)-0.5
+    turns=(na*contact_a+nb*contact_b)/(2*math.pi)-phase_a-phase_b
+    return (turns%1)-0.5
 
 for na,nb in [(8,8),(8,12),(12,20),(20,20),(20,32),(32,8)]:
     aligned_offset=-math.pi/nb
@@ -77,6 +78,14 @@ for na,nb in [(8,8),(8,12),(12,20),(20,20),(20,32),(32,8)]:
         e=phase_error(na,nb,theta,theta_out)
         test(f"Aligned {na}:{nb} spur teeth remain in gaps while rotating input {theta:g}",
              abs(e)<1e-8)
+    # All four radial cardinal directions are between full involute teeth.
+    gap_pitch=2*math.pi/nb
+    for cardinal in range(4):
+        theta=cardinal*math.pi/2
+        nearest=min(abs((theta-(tooth+.5)*gap_pitch+math.pi)
+                        %(2*math.pi)-math.pi) for tooth in range(nb))
+        test(f"{nb}T cardinal gap at quadrant {cardinal}",
+             abs(nearest-gap_pitch/2)<1e-9)
     # A half-tooth correction should resolve an initial tip-to-tip contact.
     theta_b=0.0
     for _ in range(240):
@@ -85,6 +94,14 @@ for na,nb in [(8,8),(8,12),(12,20),(20,20),(20,32),(32,8)]:
         theta_b+=command/60
     test(f"{na}:{nb} follower converges to tooth gap",
          abs(phase_error(na,nb,0,theta_b))<0.012)
+
+# A mixed previously-published rev 4 and rev 5 gear pair still finds
+# a half-tooth contact phase, without assuming both IDs were reuploaded.
+for pa,pb in [(0,0),(.5,.5),(0,.5),(.5,0)]:
+    n=20
+    theta_b=-(pa+pb+.5)*2*math.pi/n
+    test(f"Mixed geometry phases {pa:g}/{pb:g} mesh correctly",
+         abs(phase_error(n,n,0,theta_b,pa,pb))<1e-8)
 
 speed=2.0
 for _ in range(15):

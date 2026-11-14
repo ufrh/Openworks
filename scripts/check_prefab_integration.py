@@ -36,7 +36,12 @@ check('Rack simulation honors prefab collision', 'PrefabCollision.Configure(part
 check('All meshes have separate collision proxies', all(x in module for x in ['ringCollision(model,scale,details.root,details.pitch,bevel)','RimCollider_%02d','OpenworksCollisionMode","Proxy"','head.Name="HeadCollider"']))
 check('Bolt fits use cylinder centered on declared shank',all(x in module for x in ['pivot.Name = "Geometry"','pivot.Shape = Enum.PartType.Cylinder','model.PrimaryPart = pivot','model:SetAttribute("BoltDiameterU", diameterU)','model:SetAttribute("BoltLengthU", lengthU)']))
 check('Game prefabs remain under the stable registry folders',all(x in module for x in ['OPENWORKS_PrimitiveLibrary_DRAFT','folder(library, "Transmission")','folder(library, "Fasteners")']))
-check('Geometry versions keep old saves compatible',all(x in module for x in ['model:SetAttribute("ProceduralPrefabVersion", VERSION)','model:SetAttribute("GeometryVersion", 5)','model:SetAttribute("GeometryVersion", 4)']))
+check('Geometry version marks new profile without mislabeling old published meshes',
+      all(x in module for x in [
+          'model:SetAttribute("ProceduralPrefabVersion", VERSION)',
+          'model:SetAttribute("GeometryVersion",if toothPhase==0.5 then 5 else 4)',
+          'model:SetAttribute("GearToothPhaseFraction",toothPhase)',
+          'model:SetAttribute("GeometryVersion", 5)']))
 check('Bolt automatic selection searches the whole registry', 'for _,entry in ipairs(self.D.Registry.List()) do' in mechanical and 'bestNew=precision' in mechanical)
 create_bolt=mechanical.split('function Mechanical:CreateBolt(player,request)',1)[1].split('function Mechanical:FastenBolt',1)[0]
 check('Bolt source is physically generated bolt', 'sourceId=bolt:GetAttribute("InstanceId")' in create_bolt)

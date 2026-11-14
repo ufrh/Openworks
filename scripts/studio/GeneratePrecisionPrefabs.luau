@@ -129,8 +129,9 @@ local function makeOutline(teeth)
     end
     local samples = {}
     local step = 2 * math.pi / teeth
+    -- Keep cardinal local Y/Z directions clear between teeth.
     for tooth = 0, teeth - 1 do
-        local center = tooth * step
+        local center = (tooth + 0.5) * step
         local rootShoulder = halfTooth(base) + ROOT_SHOULDER
         local tipHalf = halfTooth(tip)
         assert(tipHalf > 0 and rootShoulder * 2 < step,
@@ -424,7 +425,8 @@ local function addGear(parent, source, kind, teeth, index, details)
     model:SetAttribute("BevelConeDeg", bevel and 45 or nil)
     model:SetAttribute("BevelShaftAngleDeg", bevel and 90 or nil)
     model:SetAttribute("AxialAxis", "X")
-    model:SetAttribute("GeometryVersion", 4)
+    model:SetAttribute("GeometryVersion", 5)
+    model:SetAttribute("GearToothPhaseFraction", 0.5)
     model:SetAttribute("ToothCount", teeth)
     model:SetAttribute("PitchDiameter", 2 * details.pitch * scale)
     model:SetAttribute("RootDiameter", 2 * details.root * scale)

@@ -37,9 +37,11 @@ end
 
 -- Tooth phase is measured at the actual pitch-contact direction. A phase
 -- error of zero means the tooth tips on one gear face gaps on the other.
--- The mesh generator puts tooth zero along local +Y and indexes toward +Z.
+-- Rev 5 rotates ALL profile teeth by half a pitch: the local +Y/-Y
+-- and +Z/-Z centerlines become root gaps. Published rev 4 assets still
+-- have tooth zero on +Y. The phase attribute follows the installed mesh
+-- asset version, so mixed old/new prefabs remain phase-correct.
 -- Return signed error in tooth pitches, wrapped to [-0.5,+0.5).
--- Gear shaft speed correction can use this continuously without moving CFrames.
 function GearMath.ToothPhaseError(a:Model,b:Model,poseA:CFrame?):number?
     if not a or not b or not a.PrimaryPart or not b.PrimaryPart then return nil end
     local teethA,teethB=a:GetAttribute("GearTeeth"),b:GetAttribute("GearTeeth")
@@ -73,7 +75,12 @@ function GearMath.ToothPhaseError(a:Model,b:Model,poseA:CFrame?):number?
         radialA:Dot(ca.UpVector))
     local angleB=math.atan2(radialB:Dot(cb:VectorToWorldSpace(Vector3.zAxis)),
         radialB:Dot(cb.UpVector))
+    local phaseA=a:GetAttribute("GearToothPhaseFraction")
+    local phaseB=b:GetAttribute("GearToothPhaseFraction")
+    local shiftA=if type(phaseA)=="number" then phaseA else 0
+    local shiftB=if type(phaseB)=="number" then phaseB else 0
     local toothTurns=(teethA*angleA+teethB*angleB)/(2*math.pi)
+        -shiftA-shiftB
     return (toothTurns%1)-0.5
 end
 

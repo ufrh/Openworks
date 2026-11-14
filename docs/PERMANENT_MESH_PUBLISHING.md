@@ -19,7 +19,15 @@ The older generator called `CreateDataModelContentAsync(Content.fromObject(edita
 
 ### Updating the geometry later
 
-Use the plugin's **Update Mesh Versions** button. It calls `CreateAssetVersionAsync()` on all nine existing asset IDs so their references don't change. Save/Publish the place afterward. **Publish Missing** skips existing IDs and safely resumes partial first-time publishing. If a mesh is still processing, the plugin retains the saved asset IDs; try Publish Missing again after Roblox finishes processing.
+**Gear geometry revision 5 (cardinal tooth-gap alignment, spur and 90° bevel)**
+
+1. Sync the latest `dev`. **Reinstall the updated local plugin** from `scripts/studio/OpenworksPermanentMeshPublisher.rbxmx` or the matching `.plugin.lua` source (Plugins → Save as Local Plugin). An older installed plugin may still mark your gear assets as version 4.
+2. In Edit mode choose **OpenWorks Meshes → Update Mesh Versions**, **not** Publish Missing. Eight gear bases (8T, 12T, 20T, 32T, spur and bevel) are uploaded with `CreateAssetVersionAsync()` **using the same permanent mesh asset IDs**. The existing bolt asset is skipped; no saved constructions or DataStores are cleared.
+3. Confirm `ReplicatedStorage.OPENWORKS_PublishedMeshAssets.GearGeometryVersion == 5` and the eight gear StringValues have `ProfileVersion == 5`. **Save/Publish the Roblox place**, then restart Studio if the mesh cache still shows old teeth. Roblox asset processing/moderation can delay visible updates.
+
+The regenerated involute profile has a **half-tooth angular offset**; local +Y, -Y, +Z, and -Z (the four lines through a gear face) lie in *gaps* rather than tooth tips. Every tooth remains intact, so the gear ratio, shaft bore, physics, and continuous meshing work as before.
+
+**Publish Missing** continues to resume first-time publication; when an existing version-4 gear manifest needs this geometry change, the updated plugin instructs you to choose **Update Mesh Versions** instead. Per-gear `ProfileVersion` metadata keeps phase alignment correct if an upload is interrupted partway. If an upload is still processing, retry **Update Mesh Versions**; never delete the mesh manifest or clear plot saves.
 
 ### Notes and limitations
 

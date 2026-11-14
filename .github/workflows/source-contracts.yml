@@ -34,6 +34,8 @@ jobs:
         run: python3 scripts/check_gear_torque_budget.py
       - name: Verify tooth phase-lock and stop-on-release braking
         run: python3 scripts/check_gear_phase_and_braking.py
+      - name: Verify cardinal tooth gaps and in-line spur chain geometry
+        run: python3 scripts/check_cardinal_gear_geometry.py
       - name: Verify Edit-mode primitive and component duplication
         run: python3 scripts/check_edit_duplication.py
 

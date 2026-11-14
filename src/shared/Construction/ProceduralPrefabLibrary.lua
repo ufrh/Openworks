@@ -176,8 +176,12 @@ local function makeOutline(teeth)
     end
     local samples = {}
     local step = 2 * math.pi / teeth
+    -- Geometry revision 5: cardinal +Y/+Z/-Y/-Z rays land in ROOT GAPS,
+    -- not tooth centers. Rotate the complete involute profile by half a
+    -- tooth pitch; never remove teeth (that would break continuous meshing).
+    -- All supported tooth counts are divisible by four.
     for tooth = 0, teeth - 1 do
-        local center = tooth * step
+        local center = (tooth + 0.5) * step
         local rootShoulder = halfTooth(base) + ROOT_SHOULDER
         local tipHalf = halfTooth(tip)
         assert(tipHalf > 0 and rootShoulder * 2 < step,
@@ -502,7 +506,22 @@ local function addGear(parent, source, kind, teeth, index, details, assetId)
     model:SetAttribute("BevelConeDeg", bevel and 45 or nil)
     model:SetAttribute("BevelShaftAngleDeg", bevel and 90 or nil)
     model:SetAttribute("AxialAxis", "X")
-    model:SetAttribute("GeometryVersion", 4)
+    -- Published meshes are immutable until the local Studio publisher
+    -- updates their asset versions. Keep OLD v4 tooth phase while the
+    -- manifest still points at old geometry; v5/temporary meshes use
+    -- the new half-pitch tooth profile. No DataStore or asset ID reset.
+    local publishedVersion=nil
+    if assetId then
+        local manifest=ReplicatedStorage:FindFirstChild(PUBLISHED_MANIFEST_NAME)
+        local entry=manifest and manifest:FindFirstChild(gearBaseKey(teeth,bevel))
+        local individual=entry and entry:GetAttribute("ProfileVersion")
+        publishedVersion=if type(individual)=="number" then individual
+            else if manifest then manifest:GetAttribute("GearGeometryVersion") else nil
+    end
+    local toothPhase=if assetId and (type(publishedVersion)~="number"
+        or publishedVersion<5) then 0 else 0.5
+    model:SetAttribute("GeometryVersion",if toothPhase==0.5 then 5 else 4)
+    model:SetAttribute("GearToothPhaseFraction",toothPhase)
     model:SetAttribute("ToothCount", teeth)
     model:SetAttribute("PitchDiameter", 2 * details.pitch * scale)
     model:SetAttribute("RootDiameter", 2 * details.root * scale)

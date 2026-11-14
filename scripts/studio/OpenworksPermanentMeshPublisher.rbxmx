@@ -23,7 +23,7 @@ local busy = false
 
 local toolbar = plugin:CreateToolbar("OpenWorks Meshes")
 local publishButton = toolbar:CreateButton("Publish Missing", "Upload missing permanent gear/bolt meshes and install 45 prefabs", "rbxassetid://0")
-local refreshButton = toolbar:CreateButton("Update Mesh Versions", "Re-upload all nine source meshes as new versions of the same permanent asset IDs", "rbxassetid://0")
+local refreshButton = toolbar:CreateButton("Update Mesh Versions", "Update eight gear tooth profiles while retaining all existing mesh asset IDs and the bolt asset", "rbxassetid://0")
 
 local function log(message)
     print("[OPENWORKS][MESH PUBLISHER] " .. message)
@@ -127,6 +127,14 @@ local function run(updateVersion)
         local generator = getGenerator()
         local manifest = getManifest()
         local previouslyReady = manifest:GetAttribute("Ready") == true
+        local installedGearVersion=manifest:GetAttribute("GearGeometryVersion")
+        -- Existing IDs are NOT replaced by Publish Missing. Reject this
+        -- choice when they still contain the old cardinal-tooth geometry.
+        if not updateVersion and type(installedGearVersion)=="number"
+            and installedGearVersion<5 then
+            error("Gear profile v5 required: click OpenWorks Meshes > Update Mesh Versions. "
+                .."It preserves all eight gear asset IDs and existing bolts.")
+        end
         manifest:SetAttribute("Ready", false)
         manifest:SetAttribute("SchemaVersion", SCHEMA_VERSION)
         local progress = 0
@@ -135,7 +143,8 @@ local function run(updateVersion)
             ids = generator.PublishBaseAssets(function(key, editableMesh)
                 progress += 1
                 local previousId = assetIdFor(manifest, key)
-                if previousId and not updateVersion then
+                if previousId and (not updateVersion or key=="Bolt_SharpThread") then
+                    -- Bolts are unchanged by this gear-only geometry revision.
                     log(string.format("[%d/9] %s already published (%d)", progress, key, previousId))
                     return previousId
                 end
@@ -148,6 +157,11 @@ local function run(updateVersion)
                     entry.Parent = manifest
                 end
                 entry.Value = string.format("%.0f", id) -- Never save scientific notation
+                if key~="Bolt_SharpThread" then
+                    -- Per-base-mesh version survives interrupted refreshes:
+                    -- v4 and v5 gears can coexist until an update completes.
+                    entry:SetAttribute("ProfileVersion",5)
+                end
                 return id
             end)
         end)
@@ -161,7 +175,7 @@ local function run(updateVersion)
         assert(ids and ids.Bolt_SharpThread and ids.Spur_08T and ids.Bevel90_32T,
             "The generator returned an incomplete base asset manifest")
         manifest:SetAttribute("Ready", true)
-        manifest:SetAttribute("GearGeometryVersion", 4)
+        manifest:SetAttribute("GearGeometryVersion", 5)
         manifest:SetAttribute("BoltGeometryVersion", 5)
         manifest:SetAttribute("GeneratedBaseMeshCount", 9)
         log("Nine permanent mesh IDs recorded under ReplicatedStorage." .. MANIFEST_NAME)

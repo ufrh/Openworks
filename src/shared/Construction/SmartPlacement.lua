@@ -87,9 +87,15 @@ function Smart.GearPose(source: Model, target: Model, near: Vector3)
     local angle=math.atan2(direction:Dot(tangentZ),direction:Dot(targetCF.UpVector))
     local targetPitch=2*math.pi/target:GetAttribute("GearTeeth")
     local sourcePitch=2*math.pi/source:GetAttribute("GearTeeth")
-    local targetPhase=(angle/targetPitch)%1
+    -- Both old (tooth on cardinal) and new (gap on cardinal) published
+    -- profiles can coexist until the permanent mesh IDs are updated.
+    -- Offset phase in *tooth pitches*, rather than deleting any teeth.
+    local sourceShift=source:GetAttribute("GearToothPhaseFraction") or 0
+    local targetShift=target:GetAttribute("GearToothPhaseFraction") or 0
+    local targetPhase=(angle/targetPitch-targetShift)%1
     local sourcePhase=(0.5-targetPhase)%1
-    local desiredPhase=(angle+math.pi)-sourcePhase*sourcePitch
+    local desiredPhase=(angle+math.pi)
+        -(sourcePhase+sourceShift)*sourcePitch
     local phase=((desiredPhase+sourcePitch*0.5)%sourcePitch)-sourcePitch*0.5
     local rotation=CFrame.fromAxisAngle(normal,phase)*targetCF.Rotation
     -- Match face planes by default. A valid pitch-circle placement is

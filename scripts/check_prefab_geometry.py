@@ -22,7 +22,7 @@ def gear(n, bevel):
     def half(r): return math.pi/(2*n)+inv(rp)-inv(r)
     samples=[]; step=2*math.pi/n; shoulder=math.radians(.55)
     for tooth in range(n):
-        center=tooth*step; hs=half(base)+shoulder; ht=half(rt)
+        center=(tooth+.5)*step; hs=half(base)+shoulder; ht=half(rt)
         assert ht>0 and hs*2<step
         samples.append((root,center-hs))
         for j in range(11):
