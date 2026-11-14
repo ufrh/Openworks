@@ -118,12 +118,12 @@ local function physicallyInsertedGearShaft(gear,shaft)
     if type(bore)~="number" or bore<=0 then return false end
     local gearCF,shaftCF=gear:GetPivot(),shaft:GetPivot()
     local axis=shaftCF.RightVector.Unit
-    if math.abs(axis:Dot(gearCF.RightVector))<0.995 then return false end
+    if math.abs(axis:Dot(gearCF.RightVector))<0.990 then return false end
     local delta=gearCF.Position-shaftCF.Position
     local eccentricity=(delta-axis*delta:Dot(axis)).Magnitude
-    if eccentricity>0.045 then return false end
+    if eccentricity>math.min(0.08,math.max(0.045,bore*0.20)) then return false end
     local diameter=math.max(shaft.PrimaryPart.Size.Y,shaft.PrimaryPart.Size.Z)
-    if diameter>2*bore+0.012 then return false end
+    if diameter>2*bore+0.035 then return false end
     local halfGear=gear.PrimaryPart.Size.X*0.5
     local halfShaft=shaft.PrimaryPart.Size.X*0.5
     local overlap=halfGear+halfShaft-math.abs(delta:Dot(axis))
@@ -182,6 +182,71 @@ local function repairMissingGearHubs(graph)
             elseif #matches>1 then
                 table.insert(ambiguous,gear.Name)
             end
+        end
+    end
+    return repaired,ambiguous
+end
+
+-- Some older placements visually snap a HandCrank to a shaft without an
+-- authored Weld. A crank rotating on its OWN isolated axle looks powered but
+-- cannot drive a gear. Repair only unambiguous, physically end-to-end shafts.
+-- Never include a nearby gear solely because it visually touches the handle.
+local function crankShaftEndFit(crank,shaft)
+    if not HandCrankMath.IsCrank(crank)
+        or not HandCrankMath.IsOutputShaft(shaft) then return false end
+    if HandCrankMath.Fits(crank,shaft) then return true end
+    local cf=crank:GetPivot()
+    local sf=shaft:GetPivot()
+    if math.abs(cf.RightVector:Dot(sf.RightVector))<0.995 then return false end
+    local output=HandCrankMath.OutputEnd(crank)
+    local target=HandCrankMath.NearestShaftEnd(shaft,output)
+    if not output or not target then return false end
+    local delta=target-output
+    local axial=delta:Dot(cf.RightVector)
+    local radial=(delta-cf.RightVector*axial).Magnitude
+    local crankDiameter=crank.PrimaryPart.Size.Y
+    local shaftDiameter=shaft.PrimaryPart.Size.Y
+    if math.abs(crankDiameter-shaftDiameter)>0.08 then return false end
+    return radial<=0.07 and math.abs(axial)<=0.09
+        and delta.Magnitude<=0.1
+end
+
+local function repairMissingCrankCouplings(graph)
+    local repaired,ambiguous={},{}
+    local cranks,shafts={},{}
+    local coupled={}
+    for _,model in ipairs(graph.models) do
+        if HandCrankMath.IsCrank(model) then table.insert(cranks,model)
+        elseif HandCrankMath.IsOutputShaft(model) then table.insert(shafts,model) end
+    end
+    for _,edge in ipairs(graph.edges) do
+        if edge.kind=="Weld" or edge.kind=="Fixed" then
+            local crank=if HandCrankMath.IsCrank(edge.source) then edge.source
+                elseif HandCrankMath.IsCrank(edge.target) then edge.target else nil
+            if crank then
+                local other=if edge.source==crank then edge.target else edge.source
+                if HandCrankMath.IsOutputShaft(other)
+                    or type(other:GetAttribute("GearTeeth"))=="number" then
+                    coupled[crank]=true
+                end
+            end
+        end
+    end
+    for _,crank in ipairs(cranks) do
+        if coupled[crank] then continue end
+        local matches={}
+        for _,shaft in ipairs(shafts) do
+            if crankShaftEndFit(crank,shaft) then table.insert(matches,shaft) end
+        end
+        if #matches==1 then
+            local shaft=matches[1]
+            table.insert(graph.edges,{
+                source=crank,target=shaft,kind="Weld",inferredCrank=true,
+                a=bodyKey(crank),b=bodyKey(shaft),
+            })
+            table.insert(repaired,crank.Name.." -> "..shaft.Name)
+        elseif #matches>1 then
+            table.insert(ambiguous,crank.Name)
         end
     end
     return repaired,ambiguous
@@ -295,7 +360,22 @@ function Simulation:BeginCrank(player,request)
         return true,"Hand crank held"
     end
     if not crank.Coupled then
-        return false,"Couple the crank output to a cylindrical shaft in Edit"
+        return false,"Crank is spinning its own axle; connect it to a shaft "
+            .."or gear using Edit > HandCrank/Hub before driving the gearbox"
+    end
+    if session.Gears and #session.Gears.Gears>0 then
+        if not session.Gears:IsGeared(crank.DrivenId) then
+            return false,"Hand crank is welded to a shaft with NO gear mounted. "
+                .."Use Edit > Hub to weld an actual gear to the driven shaft."
+        end
+        if #session.Gears.Gears>=2 and session.Gears.Contacts==0 then
+            return false,"The gearbox has ZERO recognized gear contacts: "
+                ..session.Gears:NearestFailure()
+        end
+        if (session.UnregisteredGears or 0)>0 and session.Gears.Contacts==0 then
+            return false,"A gear next to the crank is OUTSIDE the registered "
+                .."Assembly; add it using the Assembly tool."
+        end
     end
     if session.GroundKeys and
         (session.GroundKeys[crank.BodyKey]
@@ -315,6 +395,10 @@ function Simulation:BeginCrank(player,request)
     session.ActiveCrankId=id
     crank.Running=true
     crank.LastInput=os.clock()
+    if session.Gears and #session.Gears.Gears>=2 then
+        print(string.format("[OPENWORKS][GEARS] Input crank armed: %d gears / %d real torque link(s)",
+            #session.Gears.Gears,session.Gears.Contacts))
+    end
     -- All cranks run their own torque-limited motor on the shaft.
     if crank.Drive then
         crank.NativeSpeed=0
@@ -555,6 +639,16 @@ function Simulation:Start(player, payload)
         session.ActiveRelations[edge.relation:GetAttribute("RelationId")]=true
     end
     session.RepairedHubs,session.AmbiguousHubs=repairMissingGearHubs(graph)
+    session.RepairedCranks,session.AmbiguousCranks=repairMissingCrankCouplings(graph)
+    if #session.RepairedCranks>0 then
+        print("[OPENWORKS][GEARS] Reconstructed coaxial crank/shaft weld(s): "
+            ..table.concat(session.RepairedCranks,", "))
+    end
+    if #session.AmbiguousCranks>0 then
+        warn("[OPENWORKS][GEARS] Ambiguous crank output shaft(s): "
+            ..table.concat(session.AmbiguousCranks,", ")
+            ..". Use Edit > HandCrank to make one explicit rigid connection.")
+    end
     if #session.RepairedHubs>0 then
         print(string.format("[OPENWORKS][GEARS] Repaired %d concentric gear/shaft mounts in %s (simulation only)",
             #session.RepairedHubs,tostring(graph.assemblyName)))
@@ -854,11 +948,8 @@ function Simulation:Start(player, payload)
                     local other=if edge.source==original then edge.target
                         elseif edge.target==original then edge.source else nil
                     if other and HandCrankMath.IsOutputShaft(other) then
-                        -- The Weld was verified at creation/load and is
-                        -- rebuilt against these exact simulation bodies.
-                        -- Do not silently disable a real connection because
-                        -- an old saved crank diameter/face offset differs
-                        -- by a fraction of a stud from the new template.
+                        -- Existing authorized Welds are real, even if a saved
+                        -- crank's old size differs slightly from today's model.
                         local crankCF=original:GetPivot()
                         local shaftCF=other:GetPivot()
                         local delta=shaftCF.Position-crankCF.Position
@@ -869,6 +960,12 @@ function Simulation:Start(player, payload)
                             coupledShaft=other
                             break
                         end
+                    elseif other and type(other:GetAttribute("GearTeeth"))=="number"
+                        and physicallyInsertedGearShaft(other,original) then
+                        -- A gear may sit directly on the crank output spindle
+                        -- instead of a separately constructed shaft.
+                        coupledShaft=other
+                        break
                     end
                 end
             end

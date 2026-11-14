@@ -186,7 +186,8 @@ function Transmission:Detect()
             table.insert(links,{A=a,B=b,Ratio=ratio,
                 RadiusA=GearMath.PitchRadius(left.Model),
                 RadiusB=GearMath.PitchRadius(right.Model),
-                Key=key,Error=if previous[key] then previous[key].Error else 0})
+                Key=key,Error=if previous[key] then previous[key].Error else 0,
+                StallElapsed=if previous[key] then previous[key].StallElapsed else 0})
             contacted[left]=true
             contacted[right]=true
         end
@@ -230,6 +231,8 @@ function Transmission:NearestFailure()
             local good,why,distance=GearMath.AutoMeshStatus(a,b)
             if left.Group==right.Group then
                 why="Both gears belong to ONE rigid welded shaft"
+                good=false
+                distance=0
             end
             if not good and type(distance)=="number"
                 and (distance<closest or closest==math.huge) then
@@ -313,6 +316,26 @@ function Transmission:Step(dt)
         link.Effort=effort
         a.Pending+=aa*(-ratio*effort)
         b.Pending+=ab*effort
+        -- Under load, a missing bearing, anchored output or disconnected
+        -- shaft can leave one side stationary despite a confirmed torque
+        -- mesh. Report the *real* state so the issue is actionable.
+        if math.max(math.abs(wa),math.abs(wb))>0.25
+            and math.min(math.abs(wa),math.abs(wb))<0.03
+            and math.abs(effort)>0.5 then
+            link.StallElapsed=(link.StallElapsed or 0)+dt
+            if link.StallElapsed>=STALL_REPORT_INTERVAL then
+                link.StallElapsed=0
+                warn(string.format("[OPENWORKS][GEARS] STALLED mesh %s: "
+                    .."input=%.2f output=%.2f rad/s; effort=%.1f; "
+                    .."roots anchored=%s/%s; mounted shafts=%s/%s. "
+                    .."Verify grounded HOUSINGS and actual Hub welds.",
+                    link.Key,wa,wb,effort,tostring(a.Root.Anchored),
+                    tostring(b.Root.Anchored),tostring(a.AxisSource~=nil),
+                    tostring(b.AxisSource~=nil)))
+            end
+        else
+            link.StallElapsed=0
+        end
     end
     for _,group in pairs(self.Groups) do
         if group.Torque and group.Torque.Parent then
