@@ -1018,7 +1018,7 @@ local function verticalMove(player,payload)
     -- All Y movement is quantized, with an optional Shift fine-step.
     -- The server chooses the actual increment, not the client.
     local fine=payload.fine==true
-    local step=if fine then 0.05 else 0.25
+    local step=if fine then Grid.Unit*Grid.MinSizeStepU else Grid.Unit
     local delta=(if axis=="X" then Vector3.xAxis
         elseif axis=="Y" then Vector3.yAxis else Vector3.zAxis)
         *payload.direction*step
