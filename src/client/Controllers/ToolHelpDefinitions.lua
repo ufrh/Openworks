@@ -131,6 +131,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
                 put(rows,"N","Create assembly")
                 put(rows,"Click","Select assembly")
             end
+            put(rows,"G","Ground / release aimed body")
             put(rows,"Alt+Arrows","Move assembly")
             put(rows,"Ctrl+Z / Y","Undo / redo")
         else

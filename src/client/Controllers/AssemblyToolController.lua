@@ -633,6 +633,25 @@ function Tool:OnModeChanged(mode)
     self:Refresh()
 end
 
+function Tool:ToggleGround()
+    local target=self:Pick()
+    local id=instanceId(target)
+    if not id then
+        self:Tell("Aim at a primitive to ground or release it")
+        return
+    end
+    self.Busy=true
+    local ok,result=pcall(function()
+        return RS:WaitForChild(Config.RequestName):InvokeServer({
+            action="SetGrounded",instanceId=id,
+        })
+    end)
+    self.Busy=false
+    self:Tell(if ok and type(result)=="table" then
+        tostring(result.message or "Ground state updated")
+        else "Could not change grounding; see Output")
+end
+
 function Tool:ShowGroundingVisuals()
     if not self.Feedback then return end
     if self.Mode~="Assembly"
@@ -730,6 +749,8 @@ function Tool:Start()
         end
         if key==Enum.KeyCode.N then
             self:BeginNew()
+        elseif key==Enum.KeyCode.G then
+            self:ToggleGround()
         elseif key==Enum.KeyCode.R and self.Stage=="Selecting"
             and self.EditingId then
             self:OpenName(true)
