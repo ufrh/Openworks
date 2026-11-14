@@ -479,7 +479,7 @@ def main() -> int:
           and 'local v=camera.CFrame.RightVector' in selection
           and 'if key==Enum.KeyCode.Left then direction=-direction end' in selection
           and 'self:VerticalNudge(key)' in selection
-          and 'if fine then 0.05 else 0.25' in service)
+          and 'if fine then Grid.Unit*Grid.MinSizeStepU else Grid.Unit' in service)
     check("Assembly arrows share world Y and camera-relative horizontal motion",
           'function Tool:VerticalNudge(key)' in assembly_tool
           and 'if key==Enum.KeyCode.Up or key==Enum.KeyCode.Down then' in assembly_tool
@@ -768,8 +768,8 @@ def main() -> int:
           and 'return Bore.ShaftFits(shaft,gearBody)' in smart_placement
           and 'function Smart.HubPose(' in smart_placement)
     check("Gear-to-gear acquisition targets teeth and true pitch circle",
-          'Smart.GearPitchCapture = 0.7' in smart_placement
-          and 'Smart.GearFaceCapture = 0.55' in smart_placement
+          'Smart.GearPitchCapture = 0.24' in smart_placement
+          and 'Smart.GearFaceCapture = 0.20' in smart_placement
           and 'math.abs(radial.Magnitude-pitch)>Smart.GearPitchCapture' in smart_placement
           and 'aimedPart:IsDescendantOf(model)' in smart_placement
           and 'local directAim=aimedModel==target' in smart_placement
@@ -900,8 +900,8 @@ def main() -> int:
           and 'if not Bore.CanInsert(shaft,target) then return nil end' in smart_placement
           and 'if not Bore.CanInsert(shaft,opening) then return nil end' in smart_placement)
     check("Gear-to-gear snap retains tight separate shaft bore hitbox",
-          'Smart.HubSnapRadius = 0.34' in smart_placement
-          and 'Smart.HubAimRadius = 0.24' in smart_placement
+          'Smart.HubSnapRadius = 0.14' in smart_placement
+          and 'Smart.HubAimRadius = 0.10' in smart_placement
           and 'if hubAimed then boreAim*0.25+0.015' in smart_placement)
     check("Gear selection retargets by tooth hit without old target lock",
           'local switchedGear=movingGear and aimedModel' in selection
@@ -921,8 +921,8 @@ def main() -> int:
           and 'GearMath.AutoMeshable(left.Model,right.Model)' in gears)
     gear_templates=read("src/server/Runtime/GearLibrary.lua")
     check("Gear snap uses tiny bore/axis-specific target, not gear bounding radius",
-          'Smart.HubSnapRadius = 0.34' in smart_placement
-          and 'Smart.HubAimRadius = 0.24' in smart_placement
+          'Smart.HubSnapRadius = 0.14' in smart_placement
+          and 'Smart.HubAimRadius = 0.10' in smart_placement
           and 'hubAimDistance(aimRay,target)' in smart_placement
           and 'local range=if isHub then Smart.HubSnapRadius' in smart_placement
           and 'local aimThreshold=if isHub then Smart.HubAimRadius' in smart_placement
@@ -1357,19 +1357,53 @@ def main() -> int:
           and 'IDLE_SCAN_PERIOD=0.25' in gears
           and 'if moving then SCAN_PERIOD else IDLE_SCAN_PERIOD' in gears)
     compact_hole=read("src/server/Runtime/CompactHoleLibrary.lua")
-    check("Compact 1U drilled block is a true 0.98U CSG bore",
-          'OUTER_U=1' in compact_hole
-          and 'HOLE_U=0.98' in compact_hole
+    check("Smallest drilled stock matches 0.25U structural block while preserving legacy 1U",
+          'DrilledBlock_025U_D016' in compact_hole
+          and 'outerU=0.25,holeU=0.16' in compact_hole
+          and 'DrilledBlock_050U_D030' in compact_hole
+          and 'outerU=0.50,holeU=0.30' in compact_hole
+          and 'DrilledBlock_1U_D098' in compact_hole
+          and 'outerU=1,holeU=0.98' in compact_hole
           and 'Shape=Enum.PartType.Cylinder' in compact_hole
           and 'GeometryService:SubtractAsync(base,{cutter}' in compact_hole
-          and 'model:SetAttribute("HoleDiameterU",HOLE_U)' in compact_hole
+          and 'model:SetAttribute("HoleDiameterU",spec.holeU)' in compact_hole
           and 'model:SetAttribute("OpeningAxis","Y")' in compact_hole
           and 'CompactHoleLibrary.Ensure()' in service
           and 'SplitApart=false' in compact_hole)
-    check("Compact bored block does not misrepresent CSG errors as valid geometry",
+    check("Compact bored block never misrepresents failed CSG as a valid hole",
           'if not ok or type(solids)~="table" or #solids~=1' in compact_hole
-          and 'template discarded' in compact_hole
+          and 'Invalid drilled bounds' in compact_hole
+          and 'Never misrepresent a solid cube' in compact_hole
           and 'model.Parent=category' in compact_hole)
+    grid=read("src/shared/Construction/GridMath.lua")
+    surface=read("src/shared/Construction/SurfacePlacement.lua")
+    help_text=read("src/client/Controllers/ToolHelpDefinitions.lua")
+    check("Build defaults to smallest resizable stock with one 0.25U fabrication quantum",
+          'MinSizeStepU = 0.25, DefaultSizeStepU = 0.25' in grid
+          and 'function Grid.InitialSize(templateSize, resizeMode)' in grid
+          and 'Grid.InitialSize(entry.Model.PrimaryPart.Size,entry.ResizeMode)' in selection
+          and 'if id=="Shaft"' in selection)
+    check("Neighbor faces are perfectly flush without clearance offsets",
+          'local EPSILON = 0' in surface
+          and 'SnapToNearbyFace(ghost:Model' in surface
+          and 'local result=cf+delta' in surface)
+    check("Shift temporarily turns off smart/pivot matching, not face placement",
+          'local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)' in selection
+          and 'if not alt and not shift and self.Pending~="ComponentCopy"' in selection
+          and 'local originPose=if not alt and not shift then' in selection
+          and 'Shift / Alt' in help_text)
+    check("Nudge fine step is the smallest construction dimension increment",
+          'local step=if fine then Grid.Unit*Grid.MinSizeStepU else Grid.Unit' in service
+          and 'local amount=(if fine then Grid.Unit*Grid.MinSizeStepU else Grid.Unit)' in selection)
+    check("Multi-weld validates the whole selected adjacency tree and commits atomically",
+          'function Mechanical:CreateMultiWeld(player,request)' in mechanical
+          and 'local valid=already' in mechanical
+          and 'valid=weldPairValid(self,player,a,b)' in mechanical
+          and 'if self:Count(player)+#planned>MAX_RELATIONSHIPS_PER_PLAYER then' in mechanical
+          and 'self.D.commitAssembly(player,{}, {},planned)' in mechanical
+          and 'action=="CreateMultiWeld"' in service
+          and 'function Controller:MultiWeldSelected()' in selection
+          and 'Shift+K' in help_text)
     shaft_library=read("src/server/Runtime/ShaftLibrary.lua")
     check("Default Shaft is a separate 0.95U diameter x 2U cylinder",
           'model.Name="Shaft"' in shaft_library
