@@ -3,7 +3,8 @@
 -- Given a preview at desired rotation/pivot, shift EVERY member together so
 -- its lowest world-space geometry rests on the aimed surface, not below it.
 local SurfacePlacement = {}
-local EPSILON = 0.002
+-- Face planes must be exactly coincident: clearance creates visible seams.
+local EPSILON = 0
 
 local function axisRadius(part: BasePart, normal: Vector3): number
     local cf = part.CFrame
