@@ -35,8 +35,8 @@ check('Legacy temporary preview path retained for unconverted places',
     'base, details = buildGearMesh(teeth, bevel)' in mod and
     'boltBase, boltDetails = buildBoltMesh()' in mod)
 check('Published gear metadata matches runtime gear math',
-    'local function publishedGearDetails(teeth)' in mod and
-    'triangles = #samples * 8' in mod and
+    'local function publishedGearDetails(teeth,bevel,version)' in mod and
+    'triangles=#samples*8' in mod and
     'model:SetAttribute("GearModuleStuds", math.pi * details.module * scale)' in mod)
 check('Published bolt metadata matches existing fitting geometry',
     'local function publishedBoltDetails()' in mod and
