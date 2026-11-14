@@ -12,14 +12,14 @@ local HandCrankMath = require(script.Parent:WaitForChild("HandCrankMath"))
 local Grid = require(script.Parent:WaitForChild("GridMath"))
 local MultiFit = require(script.Parent:WaitForChild("MultiFitMath"))
 local Smart = {}
-Smart.SnapDistance = 2.0 -- unchanged for general hole/gear-to-gear snapping
-Smart.HubSnapRadius = 0.34 -- studs from the REAL bore/shaft axis, not gear bounds
-Smart.HubAimRadius = 0.24 -- small crosshair tolerance through an empty bore
-Smart.HubAxialReach = 0.65 -- axial approach tolerance, excluding shaft overlap
-Smart.GearPitchCapture = 0.7 -- radial proximity to the true mesh pitch circle
-Smart.GearFaceCapture = 0.55 -- transient cursor distance from axial gear plane
-Smart.BevelCapture = 0.85 -- near a matching 45°/90° pitch-cone apex
-Smart.RackCapture = 0.65 -- near actual straight toothed pitch line
+Smart.SnapDistance = 0.55 -- deliberately small general socket capture
+Smart.HubSnapRadius = 0.14 -- studs from the REAL bore/shaft axis, not gear bounds
+Smart.HubAimRadius = 0.10 -- small crosshair tolerance through an empty bore
+Smart.HubAxialReach = 0.22 -- axial approach tolerance, excluding shaft overlap
+Smart.GearPitchCapture = 0.24 -- radial proximity to the true mesh pitch circle
+Smart.GearFaceCapture = 0.20 -- transient cursor distance from axial gear plane
+Smart.BevelCapture = 0.32 -- near a matching 45°/90° pitch-cone apex
+Smart.RackCapture = 0.24 -- near actual straight toothed pitch line
 Smart.MaxAxialOffsetUnits = 64
 Smart.PreviewInterval = 0.08
 
@@ -375,19 +375,17 @@ local function socketPlan(members, shaft, target, forcedByAim)
     local delta=shaft:GetPivot().Position-targetCF.Position
     local depth=delta:Dot(worldAxis)
     local radial=(delta-worldAxis*depth).Magnitude
-    local reach=math.max(0.65,
-        math.min(1.6,target.PrimaryPart.Size.Magnitude*0.58))
+    local reach=math.clamp(target.PrimaryPart.Size.Magnitude*0.18,0.12,0.5)
     -- A 10 U pin can be 5 U beyond a housing midpoint and still touch
     -- the bore. Capture should scale with the shaft's ACTUAL axial reach.
-    local axialReach=math.max(2.5,
-        target.PrimaryPart.Size.Magnitude+1.5,
+    local axialReach=math.max(0.2,
         shaft.PrimaryPart.Size.X*0.5
-            +target.PrimaryPart.Size.Magnitude*0.5+0.65)
-    if (radial>reach+0.65 or math.abs(depth)>axialReach)
+            +target.PrimaryPart.Size.Magnitude*0.5+0.18)
+    if (radial>reach+0.10 or math.abs(depth)>axialReach)
         and not forcedByAim then return nil end
     -- A ray passing through an empty drilled hole can hit something far
     -- behind it. Aim recognition still centers the shaft in THAT hole.
-    if forcedByAim and (radial>reach+0.65
+    if forcedByAim and (radial>reach+0.10
         or math.abs(depth)>axialReach) then
         depth=0
     end
@@ -459,12 +457,10 @@ local function reverseSocketPlan(members, opening, shaft, forcedByAim,
     local delta=holeCF.Position-shaftCF.Position
     local axial=delta:Dot(axis)
     local radial=(delta-axis*axial).Magnitude
-    local reach=math.max(0.65,math.min(1.6,
-        opening.PrimaryPart.Size.Magnitude*0.58))
-    local axialReach=math.max(2.5,
-        opening.PrimaryPart.Size.Magnitude+1.5,
+    local reach=math.clamp(opening.PrimaryPart.Size.Magnitude*0.18,0.12,0.5)
+    local axialReach=math.max(0.2,
         shaft.PrimaryPart.Size.X*0.5
-            +opening.PrimaryPart.Size.Magnitude*0.5+0.65)
+            +opening.PrimaryPart.Size.Magnitude*0.5+0.18)
     if (radial>reach+0.65 or math.abs(axial)>axialReach)
         and not forcedByAim then return nil end
     if forcedByAim and (radial>reach+0.65
@@ -665,7 +661,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 shaftMouseDepth,shaftMouseError=shaftCursorDepth(aimRay,target)
                 if shaftMouseDepth then rayError=shaftMouseError end
             end
-            local aimReach=math.clamp(target.PrimaryPart.Size.Magnitude*0.38,0.48,1.5)
+            local aimReach=math.clamp(target.PrimaryPart.Size.Magnitude*0.20,0.10,0.55)
             local aimed=rayError<=aimReach
             local kind,cf,offset,roll,score,approach
             local pivot=if movingHasOrigin and source==pivotAnchor
@@ -962,10 +958,10 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
             -- remain discoverable within a small central radius, even
             -- though their actual empty bores have no raycast hitbox.
             local range=if isHub then Smart.HubSnapRadius
-                else Smart.SnapDistance+math.min(3,size)
+                else Smart.SnapDistance+math.min(1.0,size*0.45)
                     +math.clamp(extraReach or 0,0,24)
             local aimThreshold=if isHub then Smart.HubAimRadius
-                else math.clamp(size*0.38,0.48,1.5)
+                else math.clamp(size*0.20,0.10,0.55)
             local gearPlacement=false
             local movingGear=hasMovingGear
             local movingRack=hasMovingRack
