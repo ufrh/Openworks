@@ -20,6 +20,7 @@ local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
 local GearKinematics = require(script.Parent:WaitForChild("GearKinematics"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
+local CVAxle=require(script.Parent:WaitForChild("CVAxle"))
 
 local Simulation = {}
 Simulation.__index = Simulation
@@ -391,6 +392,7 @@ function Simulation:Graph(player, seed)
                 and (kind == "Bearing" or kind == "Slider"
                     or kind == "Cylindrical" or kind == "Fixed"
                     or kind == "Spring" or kind == "Weld" or kind == "Bolt"
+                    or kind == "CVAxle"
 ) then
                 local a, b = bodyKey(source), bodyKey(target)
                 if a ~= b then
@@ -615,7 +617,17 @@ function Simulation:Start(player, payload)
             local source = copies[edge.source:GetAttribute("InstanceId")]
             if not target or not source then error("Missing joint endpoint") end
             local p0, p1 = target.PrimaryPart, source.PrimaryPart
-            if edge.kind == "Gear" then
+            if edge.kind == "CVAxle" then
+                -- Kinematic gear shafts cannot receive native torque; never
+                -- compile a visually connected but mechanically dead axle.
+                if session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))
+                    or session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")) then
+                    error("CV axle endpoint is a kinematic gear body; use a physical bearing-driven shaft")
+                end
+                for _,joint in ipairs(CVAxle.Compile(edge.relation,source,target,runtime)) do
+                    table.insert(session.Constraints,joint)
+                end
+            elseif edge.kind == "Gear" then
                 -- Legacy K relationships are OPTIONAL metadata.
                 -- Meshing and transmission use geometry every frame.
                 continue

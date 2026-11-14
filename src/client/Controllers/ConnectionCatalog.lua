@@ -20,6 +20,7 @@ local LABELS={
     CrankCoupling="Couple hand crank",
     Rigid="Rigid gear / pulley hub",
     Belt="Connect pulleys with a friction belt",
+    CVAxle="CV axle · self-fitting drive + suspension plunge",
     Adjust="Adjust depth / roll",
 }
 Catalog.Labels=table.freeze(LABELS)
@@ -53,6 +54,7 @@ function Catalog.Pair(first,second)
     local axle=if hubBody==first then second else first
     local hub=hubBody~=nil and axle~=nil and Alignment.IsShaft(axle)
     local belt=BeltMath.IsPulley(first) and BeltMath.IsPulley(second)
+    local pairedShafts=Alignment.IsShaft(first) and Alignment.IsShaft(second)
     -- One physically selected pair; prioritize types for matching hardware.
     if belt then
         add("Belt")
@@ -70,6 +72,7 @@ function Catalog.Pair(first,second)
         add("CrankCoupling")
     end
     if not crank then
+        if pairedShafts then add("CVAxle") end
         -- A hub's Rigid mount creates the validated physical Weld.
         -- Do not expose two separate UI names for the same connection.
         if not hub and not belt then add("Weld") end

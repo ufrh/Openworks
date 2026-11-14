@@ -53,7 +53,8 @@ function CV.Measure(source,target,angle,plunge)
     if axis0:Dot(link)<cosLimit or (-axis1):Dot(link)<cosLimit then
         return nil,"The two shaft ends exceed the CV joint articulation angle"
     end
-    local travel=if plunge==nil then math.clamp(distance*0.16,0.14,1.5)
+    local travel=if plunge==nil then math.min(
+        math.clamp(distance*0.16,0.14,1.5),distance*0.25)
         else plunge
     if not finite(travel) or travel<0.05 or travel>distance*0.29 then
         return nil,"CV plunge must be positive and leave both sleeves engaged"

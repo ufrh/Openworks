@@ -196,6 +196,17 @@ function Visuals:Update()
     if authored then
         for _,relation in ipairs(authored:GetChildren()) do
             if relation:GetAttribute("OwnerUserId")==player.UserId
+                and relation:GetAttribute("Kind")=="CVAxle" then
+                local hardware=relation:FindFirstChild("CVAxleHardware")
+                if hardware then
+                    for _,part in ipairs(hardware:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            part.LocalTransparencyModifier=if simulating then 1 else 0
+                        end
+                    end
+                end
+            end
+            if relation:GetAttribute("OwnerUserId")==player.UserId
                 and relation:GetAttribute("Kind")=="Spring" then
                 local spring=relation:FindFirstChildOfClass("SpringConstraint")
                 if spring then

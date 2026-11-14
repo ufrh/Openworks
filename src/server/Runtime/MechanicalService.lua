@@ -29,6 +29,7 @@ local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SpringMath"))
 local MultiFit = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("MultiFitMath"))
+local CVAxle=require(script.Parent:WaitForChild("CVAxle"))
 
 local Mechanical = {}
 Mechanical.__index = Mechanical
@@ -38,7 +39,7 @@ local function relationValid(kind)
     return kind == "Bearing" or kind == "Slider"
         or kind == "Cylindrical" or kind == "Fixed" or kind == "Gear"
         or kind == "Spring" or kind == "Weld" or kind == "Bolt"
-        or kind == "Belt"
+        or kind == "Belt" or kind=="CVAxle"
 end
 
 function Mechanical.new(deps)
@@ -102,6 +103,8 @@ function Mechanical:Snapshot(relation)
         motorTorque=relation:GetAttribute("MotorTorque"),
         motorAcceleration=relation:GetAttribute("MotorAcceleration"),
         motorKey=relation:GetAttribute("MotorKey"),
+        axleMaxAngle=relation:GetAttribute("AxleMaxAngle"),
+        axlePlunge=relation:GetAttribute("AxlePlunge"),
     }
 end
 
@@ -209,6 +212,8 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("MotorTorque",spec.motorTorque)
     folder:SetAttribute("MotorAcceleration",spec.motorAcceleration)
     folder:SetAttribute("MotorKey",spec.motorKey)
+    folder:SetAttribute("AxleMaxAngle",spec.axleMaxAngle)
+    folder:SetAttribute("AxlePlunge",spec.axlePlunge)
 
     local targetPart, sourcePart = target.PrimaryPart, source.PrimaryPart
     if not targetPart or not sourcePart then
@@ -216,7 +221,17 @@ function Mechanical:Restore(player, spec)
         return false, "Missing relationship geometry"
     end
 
-    if spec.kind=="Belt" then
+    if spec.kind=="CVAxle" then
+        local g,why=CVAxle.Measure(source,target,
+            spec.axleMaxAngle,spec.axlePlunge)
+        if not g then
+            folder:Destroy()
+            return false,why or "Invalid CV axle"
+        end
+        folder:SetAttribute("AxleMaxAngle",g.MaxAngle)
+        folder:SetAttribute("AxlePlunge",g.Plunge)
+        CVAxle.Hardware(folder,g,false)
+    elseif spec.kind=="Belt" then
         local path,why=BeltMath.Path(source,target)
         if not path then
             folder:Destroy()
@@ -1371,6 +1386,52 @@ function Mechanical:RemoveBelt(player,request)
         end
     end
     return false,"These pulleys have no belt to remove"
+end
+
+-- CV half-shaft: geometry and authority are verified before generating
+-- the visible couplings. Both ends stay editable original shaft models.
+function Mechanical:CreateCVAxle(player,request)
+    if type(request)~="table" or type(request.sourceId)~="string"
+        or type(request.targetId)~="string" then
+        return false,"Select the two shaft ends for a CV axle"
+    end
+    local a=self.D.findOwned(player,request.sourceId)
+    local b=self.D.findOwned(player,request.targetId)
+    if not a or not b or a==b then
+        return false,"Choose two different shafts you own"
+    end
+    if not self.D.nearPlayer(player,a:GetPivot().Position)
+        or not self.D.nearPlayer(player,b:GetPivot().Position) then
+        return false,"CV axle is outside your build range"
+    end
+    local g,why=CVAxle.Measure(a,b,request.maxAngle,request.plunge)
+    if not g then return false,why end
+    if self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
+        return false,"Relationship limit reached"
+    end
+    for _,existing in ipairs(self.Folder:GetChildren()) do
+        if existing:GetAttribute("OwnerUserId")==player.UserId
+            and (existing:GetAttribute("Kind")=="CVAxle"
+                or existing:GetAttribute("Kind")=="Weld"
+                or existing:GetAttribute("Kind")=="Fixed") then
+            local first=existing:GetAttribute("SourceId")
+            local second=existing:GetAttribute("TargetId")
+            if (first==request.sourceId and second==request.targetId)
+                or (second==request.sourceId and first==request.targetId) then
+                return false,"These shafts already have a rigid or CV coupling"
+            end
+        end
+    end
+    local spec={
+        relationId=game:GetService("HttpService"):GenerateGUID(false),
+        ownerUserId=player.UserId,kind="CVAxle",
+        sourceId=request.sourceId,targetId=request.targetId,
+        axleMaxAngle=g.MaxAngle,axlePlunge=g.Plunge,
+    }
+    local ok,message=self:Restore(player,spec)
+    if not ok then return false,message end
+    self.D.commitAssembly(player,{}, {},spec)
+    return true,"CV axle manufactured: two universal joints + captive sliding spline"
 end
 
 function Mechanical:CreateSpring(player,request)
