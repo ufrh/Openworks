@@ -1683,7 +1683,7 @@ local function weldPairValid(self,player,source,target)
     for _,part in ipairs(source:GetDescendants()) do
         if part:IsA("BasePart") and part.CanCollide then
             local probe=part:Clone()
-            probe.Size=part.Size+Vector3.one*0.065
+            probe.Size=part.Size+Vector3.one*0.016
             probe.Anchored=true
             probe.CanCollide=false
             probe.CanQuery=true
