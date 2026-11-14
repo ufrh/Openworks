@@ -498,7 +498,7 @@ function Tool:VerticalNudge(key)
     -- One animation for every real member of the named assembly.
     -- No implicit weld/constraint and no per-frame server writes.
     local members=self:OwnedAssembly(id)
-    local amount=(if fine then 0.05 else 0.25)*direction
+    local amount=(if fine then Grid.Unit*Grid.MinSizeStepU else Grid.Unit)*direction
     local displacement=if axis=="X" then Vector3.new(amount,0,0)
         elseif axis=="Y" then Vector3.new(0,amount,0)
         else Vector3.new(0,0,amount)
