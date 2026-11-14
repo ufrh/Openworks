@@ -51,9 +51,9 @@ testit("Speed graph uses native AngularVelocity, virtual inertia and no Torque o
     and 'Ratio=1/link.Ratio' in solver
     and 'actuator.AngularVelocity=axis(group)*desired' in solver
     and ':PivotTo(' not in solver)
-testit("Runtime inspection surfaces crank drive, link count, torque effort, and mount repair",
+testit("Runtime inspection surfaces crank drive, speed links, virtual load, and mount repair",
     all(x in sim+solver for x in ['NO GEAR SPEED LINK','crank SHAFT COUPLED',
-       'crank NOT COUPLED','effort %.1f','hub weld(s) repaired in sim']))
+       'crank NOT COUPLED','virtual load %.1f','hub weld(s) repaired in sim']))
 testit("Real precision mesh Studio fixture with native hinge and shaft speed motor",
     all(x in test for x in ['REQUIRES a real published GearMesh_20T_S03',
        'HingeConstraint','WeldConstraint','AngularVelocity','transmission:Step(dt)'])

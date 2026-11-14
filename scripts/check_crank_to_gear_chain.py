@@ -44,10 +44,11 @@ check('Actual welded shaft assemblies receive bidirectional angular-speed comman
       'actuator.AngularVelocity=axis(group)*desired' in solver and
       'Ratio=1/link.Ratio' in solver and
       'session.Gears:SetDrive(crank.DrivenId' in sim)
-check('Persistent stall watchdog reports measured angular speeds and root anchors',
-      'StallElapsed=if previous[key]' in solver and
-      'STALLED mesh %s' in solver and
-      'roots anchored=%s/%s' in solver)
+check('Live stall watchdog reports measured shaft speed and anchored roots',
+      'LIVE DRIVE STALL:' in sim and
+      'DriveDiagnostics(crank.DrivenId)' in sim and
+      'AssemblyAngularVelocity:Dot(axis(other))' in solver and
+      'AssemblyRootPart' in solver)
 check('No visual rotation fakes',
       ':PivotTo(' not in solver and ':PivotTo(' not in sim)
 print('PASS: hand-crank gearbox chain contracts')
