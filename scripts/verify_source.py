@@ -1452,29 +1452,45 @@ def main() -> int:
           and 'elseif key==Enum.KeyCode.G then' in assembly_tool
           and 'self:ToggleGround()' in assembly_tool
           and 'if control and key==Enum.KeyCode.G' not in assembly_tool)
-    cv_axle=read("src/server/Runtime/CVAxle.lua")
+    vector_joint=read("src/server/Runtime/VectorJoint.lua")
     mechanical=read("src/server/Runtime/MechanicalService.lua")
     connection_catalog=read("src/client/Controllers/ConnectionCatalog.lua")
     joint_visuals=read("src/client/Controllers/WorldVisuals.lua")
-    check("CV axle creation is owner validated and survives authored plot saves",
-          'function Mechanical:CreateCVAxle(player,request)' in mechanical
-          and 'CVAxle.Measure(a,b,request.maxAngle,request.plunge)' in mechanical
-          and 'axleMaxAngle=relation:GetAttribute("AxleMaxAngle")' in mechanical
-          and 'axlePlunge=relation:GetAttribute("AxlePlunge")' in mechanical
-          and 'CVAxle.Hardware(folder,g,false)' in mechanical
-          and 'or kind=="CVAxle"' in mechanical)
-    check("CV axle is selectable through Mechanics Connect and server dispatcher",
-          'add("CVAxle")' in connection_catalog
-          and 'action="CreateCVAxle"' in simulate_ui_v2
-          and 'mechanical:CreateCVAxle(player,payload)' in service)
-    check("CV axle transmits native motion through two U joints and captive prismatic",
-          'Instance.new("UniversalConstraint")' in cv_axle
-          and 'u.MaxAngle=g.MaxAngle' in cv_axle
-          and 'Instance.new("PrismaticConstraint")' in cv_axle
-          and 'sliding.LowerLimit=-g.Plunge' in cv_axle
-          and 'sliding.UpperLimit=g.Plunge' in cv_axle
-          and 'CVAxle.Compile(edge.relation,source,target,runtime)' in simulation
-          and 'part.LocalTransparencyModifier=if simulating then 1 else 0' in joint_visuals)
+    check("Vector Joint creation is owner validated, saveable and undoable",
+          'function Mechanical:CreateVectorJoint(player,request)' in mechanical
+          and 'VectorJoint.Measure(a,b)' in mechanical
+          and 'self.D.findOwned(player,request.sourceId)' in mechanical
+          and 'kind="VectorJoint"' in mechanical
+          and 'VectorJoint.Hardware(folder,joint,false)' in mechanical
+          and 'or kind=="VectorJoint"' in mechanical)
+    check("Vector Joint replaces CV axle in player connection picker",
+          'add("VectorJoint")' in connection_catalog
+          and 'action="CreateVectorJoint"' in simulate_ui_v2
+          and 'mechanical:CreateVectorJoint(player,payload)' in service
+          and 'add("CVAxle")' not in connection_catalog
+          and 'action=="CreateCVAxle"' not in service)
+    check("Vector Joint requires touching shaft ends and adds no telescopic hardware",
+          'shaftEnd(a,second.Position)' in vector_joint
+          and 'shaftEnd(b,first.Position)' in vector_joint
+          and 'if gap>allowance then' in vector_joint
+          and 'Instance.new("PrismaticConstraint")' not in vector_joint
+          and 'Instance.new("BallSocketConstraint")' in vector_joint
+          and 'VectorJointPivot' in vector_joint)
+    check("Vector Joint physically transfers bidirectional shaft torque",
+          'Instance.new("Torque")' in vector_joint
+          and 'j.TorqueA.Torque=-axisA*effort' in vector_joint
+          and 'j.TorqueB.Torque=axisB*(j.Sign*effort)' in vector_joint
+          and 'VectorJoint.Step(joint,dt,session.Gears,nativeId)' in simulation
+          and 'table.insert(session.VectorJoints,control)' in simulation)
+    check("Vector Joint crosses scripted gears and physical shaft boundary",
+          'function Kinematics:AngularSpeedFor(id,shaftAxis)' in gears
+          and 'VectorLinks=vectorLinks,LastVelocities={}' in gears
+          and 'if joint.GearId and joint.NativePart' in simulation
+          and 'VectorKinematicBridge' in vector_joint
+          and 'session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))' in simulation)
+    check("Old CV axle saves are preserved, not silently deleted",
+          'or spec.kind=="CVAxle"' in persistence
+          and 'relation:GetAttribute("Kind")=="VectorJoint"' in joint_visuals)
     check("Assembly tool shows scoped blue-green grounding and purple simulation target",
           'self.Feedback:Set("assembly-grounding",id,{model}' in assembly_tool
           and 'then "grounded" else "free"' in assembly_tool
