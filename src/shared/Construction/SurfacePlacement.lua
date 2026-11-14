@@ -39,7 +39,7 @@ end
 -- This eliminates parity drift between independently sized parts and
 -- makes edges, centers and neighboring faces align exactly.
 local FACE_LATTICE=0.0625 -- 0.25 U; smallest ordinary size quantum
-local EDGE_CAPTURE=0.16
+local EDGE_CAPTURE=0.05
 
 local function quantize(value,step)
     return math.floor(value/step+0.5)*step
@@ -51,12 +51,27 @@ function SurfacePlacement.SnapToNearbyFace(ghost:Model,desired:CFrame,
         return SurfacePlacement.SnapToSurface(ghost,desired,
             hitPosition,hitNormal)
     end
-    -- First make face-to-face contact exact, regardless of pivot
-    -- placement, fractional dimensions or orientation.
-    local cf=SurfacePlacement.SnapToSurface(ghost,desired,
-        hitPosition,hitNormal)
     local targetCF=hitPart.CFrame
     local n=hitNormal.Unit
+    -- A raycast on a faceted/CSG surface may be microscopically inside
+    -- the part's canonical planar face. For ordinary orthogonal block
+    -- faces resolve the actual support plane from its oriented bounds,
+    -- so adjacent solids meet EXACTLY despite raycast numerical drift.
+    local faceHit=hitPosition
+    local planar=false
+    for _,axis in ipairs({targetCF.RightVector,targetCF.UpVector,
+        targetCF.LookVector}) do
+        if math.abs(n:Dot(axis))>0.999 then
+            planar=true
+            break
+        end
+    end
+    if planar then
+        local facePlane=n:Dot(hitPart.Position)+axisRadius(hitPart,n)
+        faceHit=hitPosition+n*(facePlane-n:Dot(hitPosition))
+    end
+    local cf=SurfacePlacement.SnapToSurface(ghost,desired,
+        faceHit,hitNormal)
     ghost:PivotTo(cf)
     local delta=Vector3.zero
     local axisVectors={targetCF.RightVector,targetCF.UpVector,
