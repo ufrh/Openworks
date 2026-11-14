@@ -597,7 +597,7 @@ function Controller:RefreshHUD()
                     else "Release to fasten bolt")
                 .. " • shaft connects all pierced aligned holes"
             else (if self.Mode=="Build" then "Click to place" else "Release to place")
-                .. " • touching is NOT welded • Alt free"
+                .. " • touching is NOT welded • Shift/Alt free"
     elseif self.Layered and self.Layered.Alignment then
         local alignment = self.Layered.Alignment
         if alignment.Stage == "PickTarget" then
@@ -1061,7 +1061,7 @@ function Controller:RecognizeAttachment(raw,hit)
     local folder=workspace:FindFirstChild(Config.FolderName)
     local camera=workspace.CurrentCamera
     if not preview or not folder or not camera then return nil end
-    -- A placed Bolt prefab snaps shaft-first through the nearest fitting
+    -- A placed Bolt prefab snaps shaft-first through a nearby fitting
     -- drilled hole. Its head stays outside the entrance face.
     if BoltMath.IsBolt(preview) then
         local ignored={}
@@ -1078,7 +1078,11 @@ function Controller:RecognizeAttachment(raw,hit)
             local opening=BoreClearance.OpeningDiameter(candidate)
             if holeAxis and opening and opening>diameter+0.002 then
                 local distance=(candidate:GetPivot().Position-raw.Position).Magnitude
-                if distance<bestDistance then best=candidate bestDistance=distance end
+                local limit=math.max(0.25,candidate.PrimaryPart.Size.Magnitude*0.4)
+                if distance<=limit and distance<bestDistance then
+                    best=candidate
+                    bestDistance=distance
+                end
             end
         end
         if best then
