@@ -54,9 +54,9 @@ function CV.Measure(source,target,angle,plunge)
         return nil,"The two shaft ends exceed the CV joint articulation angle"
     end
     local travel=if plunge==nil then math.min(
-        math.clamp(distance*0.16,0.14,1.5),distance*0.25)
+        math.clamp(distance*0.16,0.14,1.5),distance*0.22)
         else plunge
-    if not finite(travel) or travel<0.05 or travel>distance*0.29 then
+    if not finite(travel) or travel<0.05 or travel>distance*0.22 then
         return nil,"CV plunge must be positive and leave both sleeves engaged"
     end
     local diameter=math.min(source.PrimaryPart.Size.Y,
