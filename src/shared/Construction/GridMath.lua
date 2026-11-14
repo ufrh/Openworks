@@ -160,11 +160,12 @@ function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter, numeri
         return (proposed - templateSize).Magnitude < 0.01
     end
 
-    local function unitValid(value, step)
+    local function unitValid(value, step, minU)
         local u = value / UNIT
         local increment = step or Grid.MinSizeStepU
         local ticks = u / increment
-        return u >= Grid.MinSizeStepU - 0.0001 and u <= Grid.MaxUnits + 0.0001
+        return u >= (minU or Grid.MinSizeStepU) - 0.0001
+            and u <= Grid.MaxUnits + 0.0001
             and math.abs(ticks - math.floor(ticks + 0.5)) < 0.0001
     end
 
@@ -183,7 +184,8 @@ function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter, numeri
             and math.abs(proposed.X - proposed.Z) < 0.001
     elseif resizeMode == "LengthAndDiameter_1U" then
         return unitValid(proposed.X,positionStep)
-            and unitValid(proposed.Y,diameterStep)
+            and unitValid(proposed.Y,diameterStep,
+                if fineDiameter then 0.05 else Grid.MinSizeStepU)
             and math.abs(proposed.Y - proposed.Z) < 0.001
     elseif resizeMode == "LengthOnly_1U" then
         return unitValid(proposed.X,positionStep)
