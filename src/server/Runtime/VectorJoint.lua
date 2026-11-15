@@ -124,6 +124,9 @@ function VectorJoint.Compile(relation,a,b,runtime,kinematicA,kinematicB)
     ball.LimitsEnabled=true
     ball.UpperAngle=g.Angle
     ball.TwistLimitsEnabled=false
+    -- Do not use native angular friction: it also resists shaft roll.
+    -- A custom perpendicular-axis bushing stabilizes only the elbow.
+    ball.MaxFrictionTorque=0
     ball.Radius=g.Radius
     ball:SetAttribute("AuthoredRelationId",relation:GetAttribute("RelationId"))
     ball.Parent=runtime
@@ -138,6 +141,26 @@ function VectorJoint.Compile(relation,a,b,runtime,kinematicA,kinematicB)
         Constraint=ball,
     }
     local id=relation:GetAttribute("RelationId")
+    -- An ordinary free ball socket lets the wheel-side shaft hang down
+    -- under gravity. Add a limited, damped angular bushing that restores
+    -- its AUTHORED elbow angle while leaving axial rotation completely free.
+    -- Gear-authored bodies are CFrame-driven and must not receive native
+    -- torque; apply only to the non-kinematic side in mixed graphs.
+    if not (kinematicA and kinematicB) then
+        local reference=if kinematicB then p1 else p0
+        local moving=if kinematicB then p0 else p1
+        local movingAttachment=if kinematicB then at0 else at1
+        result.TiltReference=reference
+        result.TiltPart=moving
+        result.TiltRestReferenceAxis=reference.CFrame.RightVector
+        result.TiltRestAxis=moving.CFrame.RightVector
+        result.TiltDrive=torque(runtime,movingAttachment,
+            "VectorElbowTiltSupport",id)
+        if not kinematicA and not kinematicB then
+            result.TiltReaction=torque(runtime,at0,
+                "VectorElbowSupportReaction",id)
+        end
+    end
     if not kinematicA and not kinematicB then
         result.TorqueA=torque(runtime,at0,"VectorDriveReaction",id)
         result.TorqueB=torque(runtime,at1,"VectorDriveOutput",id)
@@ -166,9 +189,59 @@ end
 
 function VectorJoint.Stop(j)
     if j.TorqueA then j.TorqueA.Torque=Vector3.zero end
+    if j.TiltDrive then j.TiltDrive.Torque=Vector3.zero end
+    if j.TiltReaction then j.TiltReaction.Torque=Vector3.zero end
     if j.TorqueB then j.TorqueB.Torque=Vector3.zero end
     if j.Motor then j.Motor.Enabled=false end
     j.PhaseError=0
+end
+
+-- Minimum rotation from the rest reference axis to the current one,
+-- explicitly ignoring shaft roll. Otherwise each drivetrain revolution
+-- would rotate the elbow's rest orientation and fight wheel steering.
+local function referenceSwing(oldAxis,newAxis)
+    local dot=math.clamp(oldAxis:Dot(newAxis),-1,1)
+    if dot>0.999999 then return CFrame.identity end
+    local cross=oldAxis:Cross(newAxis)
+    if cross.Magnitude<1e-5 then
+        local side=if math.abs(oldAxis:Dot(Vector3.yAxis))<0.9
+            then Vector3.yAxis else Vector3.xAxis
+        return CFrame.fromAxisAngle(oldAxis:Cross(side).Unit,math.pi)
+    end
+    return CFrame.fromAxisAngle(cross.Unit,math.acos(dot))
+end
+
+-- A compliant angular bushing, not a rigid AlignOrientation. Only the
+-- TWO tilt degrees of freedom are stabilized; shaft roll (the driven DOF)
+-- receives no restoring torque. Actual suspension/steering forces can
+-- still articulate the joint against this bounded resistance.
+local function stabilizeElbow(j)
+    local moving=j.TiltPart
+    local reference=j.TiltReference
+    if not moving or not reference then return end
+    local rotation=referenceSwing(j.TiltRestReferenceAxis,
+        reference.CFrame.RightVector)
+    local desired=rotation:VectorToWorldSpace(j.TiltRestAxis)
+    local current=moving.CFrame.RightVector
+    local tiltError=current:Cross(desired)
+    local angularVelocity=moving.AssemblyAngularVelocity
+    local lateralVelocity=angularVelocity-current*angularVelocity:Dot(current)
+    local mass=math.clamp(moving.AssemblyMass,0.1,35)
+    local strength=math.clamp(
+        mass*workspace.Gravity*math.clamp(moving.Size.X*0.5,0.2,1.4),
+        7,3500)
+    local correction=tiltError*(strength*3.5)
+        -lateralVelocity*(strength*0.55)
+    local maxTorque=strength*1.5
+    if correction.Magnitude>maxTorque then
+        correction=correction.Unit*maxTorque
+    end
+    -- Axial projection is removed explicitly, including any damping.
+    correction-=current*correction:Dot(current)
+    j.TiltDrive.Torque=correction
+    if j.TiltReaction then
+        j.TiltReaction.Torque=-correction
+    end
 end
 
 function VectorJoint.Step(j,dt,gears,backdriven)
@@ -178,6 +251,7 @@ function VectorJoint.Step(j,dt,gears,backdriven)
     end
     local axisA=j.PartA.CFrame.RightVector
     local axisB=j.PartB.CFrame.RightVector
+    if j.TiltDrive then stabilizeElbow(j) end
     if j.Motor then
         local gearPart=if j.KinematicA then j.PartA else j.PartB
         local speed=gears and gears:AngularSpeedFor(j.GearId,
