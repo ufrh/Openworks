@@ -404,11 +404,21 @@ function Smart.HubPose(source: Model, target: Model, near: Vector3)
 end
 
 local function socketPlan(members, shaft, target, forcedByAim)
-    -- A Cylinder can be used as a wheel, roller, or solid construction
-    -- piece. It is a shaft candidate ONLY when its real diameter is
-    -- smaller than the target's verifiable opening, with sufficient
-    -- insertion length. Never magnetize oversized wheel geometry.
-    if not Bore.CanInsert(shaft,target) then return nil end
+    -- The original 1U generic Cylinder is slightly larger than the
+    -- standard 0.98U hole. New construction may snug it to 0.95U.
+    -- Existing authored shafts are never resized without user action.
+    local snugDiameter=nil
+    if not Bore.CanInsert(shaft,target) then
+        if shaft:GetAttribute("InstanceId")~="OPENWORKS_Preflight" then
+            return nil
+        end
+        snugDiameter=Bore.SnugDiameter(shaft,target)
+        if not snugDiameter then return nil end
+        local current=shaft.PrimaryPart.Size
+        shaft.PrimaryPart.Size=Vector3.new(current.X,snugDiameter,snugDiameter)
+        shaft:SetAttribute("OPENWORKS_AutoSnugDiameter",snugDiameter)
+        if not Bore.CanInsert(shaft,target) then return nil end
+    end
     local axis=Alignment.TargetAxis(target)
     if not axis then return nil end
     local targetCF=target:GetPivot()
@@ -1029,7 +1039,10 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                         elseif kind=="Guide" then "Guide" else "Gear",
                     reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score,
-                    fittedCount=fitted and #fitted or 0}
+                    fittedCount=fitted and #fitted or 0,
+                    snugDiameter=if kind=="Bore" and isShaft
+                        then source:GetAttribute("OPENWORKS_AutoSnugDiameter")
+                        else nil}
                 if target==preferred then
                     score-=if kind=="Gear" or kind=="Rack"
                         or kind=="Guide" then 0.08 else 1.5

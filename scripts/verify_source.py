@@ -820,6 +820,13 @@ def main() -> int:
           'if Alignment.IsShaft(model) then return nil end' in alignment_math
           and 'if isOpening and Alignment.IsShaft(target) then' in smart_placement
           and 'if isShaft and Alignment.TargetAxis(target) then' in smart_placement)
+    check("New default 1U cylinders auto-snug to clear 0.98U drilled bores",
+          'function Bore.SnugDiameter(source,target)' in bore_clearance
+          and 'current>opening*1.08' in bore_clearance
+          and 'shaft:GetAttribute("InstanceId")~="OPENWORKS_Preflight"' in smart_placement
+          and 'shaft.PrimaryPart.Size=Vector3.new(current.X,snugDiameter,snugDiameter)' in smart_placement
+          and 'OPENWORKS_AutoSnugDiameter' in selection
+          and 'self.SmartMatch.snugDiameter' in selection)
     check("Shaft/hole snap searches obstruction-free depth on 0.5U lattice",
           'function Insertion.Resolve(ghost:Model,source:Model,target:Model,' in bore_insertion
           and 'local anchorU=math.clamp(math.round(preferredU*2)' in bore_insertion

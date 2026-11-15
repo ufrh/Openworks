@@ -1589,6 +1589,14 @@ function Controller:UpdatePreview()
     -- Explicit placement/fit changes set LastPreviewCheck=0 to bypass the
     -- budget and calculate on the next rendered frame.
     local visualNow=os.clock()
+    if self.Mode=="Build" and self.CurrentId and not self.CurrentBank
+        and self.Preview.PrimaryPart and self.CurrentSize then
+        -- The snapped preview can temporarily shrink a 1U cylinder to
+        -- fit a 0.98U bore. Restore authored default stock before each
+        -- new matching pass so leaving the hole undoes the preview change.
+        self.Preview.PrimaryPart.Size=self.CurrentSize
+        self.Preview:SetAttribute("OPENWORKS_AutoSnugDiameter",nil)
+    end
     if self.PreviewCF and self.Preview.Parent
         and self.LastPreviewCheck~=0
         and visualNow-(self.PreviewComputeTime or 0)<1/30 then
@@ -1888,7 +1896,12 @@ function Controller:Place(chosenKind)
             then self.Selected:GetAttribute("PaintColorHex") else nil,
         position = self.PreviewCF.Position,
         steps = stepsCopy(self.Steps),
-        size = self.CurrentSize,
+        size = if self.SmartMatch and self.SmartMatch.kind=="Bore"
+                and type(self.SmartMatch.snugDiameter)=="number"
+                and self.Pending~="Copy" then Vector3.new(
+                    self.CurrentSize.X,self.SmartMatch.snugDiameter,
+                    self.SmartMatch.snugDiameter)
+            else self.CurrentSize,
         fitPivotLocal=if self.Pending=="Copy" and self.Selected
             then self.Selected:GetAttribute("FitPivotLocal") else nil,
         numericPrecision=self.NumericPrecision==true,

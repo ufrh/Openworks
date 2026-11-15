@@ -117,6 +117,29 @@ function Bore.CanInsert(source,target):(boolean,string?)
     return true
 end
 
+-- New stock sometimes starts at exactly 1U diameter while the standard
+-- drilled bore is 0.98U. Permit a small automatic snug-down of NEW shaft
+-- stock only (not arbitrary thinning or silently resizing built machinery).
+-- Clearance is larger than CSG/physics probe numerical tolerances.
+function Bore.SnugDiameter(source,target):(number?,string?)
+    if not Alignment.IsShaft(source) or not source.PrimaryPart then
+        return nil,"Not a cylindrical shaft"
+    end
+    local opening=Bore.OpeningDiameter(target)
+    if not opening then return nil,"No real bore geometry"
+    end
+    local current=math.max(source.PrimaryPart.Size.Y,source.PrimaryPart.Size.Z)
+    local desired=opening-0.03*Grid.Unit
+    if desired<=0 then return nil,"Opening too small" end
+    if current<=desired then return nil end
+    -- No automatic major shape changes. 1U -> 0.95U for a 0.98U bore
+    -- is allowed; 1U -> 0.30U is NOT.
+    if current>opening*1.08 then
+        return nil,"Shaft is substantially wider than the opening"
+    end
+    return desired
+end
+
 function Bore.MaxShaftDiameter(source, target): (number?, string?)
     if not Alignment.IsShaft(source) or not source.PrimaryPart then
         return nil, "Select a cylindrical shaft"
