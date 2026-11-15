@@ -1039,19 +1039,17 @@ function Mechanical:SmartMate(player, request, newSource)
             restoreMoving()
             return false,"Fitted depth does not match the selected insertion"
         end
-        -- A through-pin can have its center between two hinge leaves
-        -- when it is a rotation-only bearing. Linear sliders retain the
-        -- strict tube-face travel rule; allowing a distant midpoint
-        -- would otherwise create a frozen or out-of-bounds slider.
+        -- A blocked-end hole may only permit PARTIAL insertion. This
+        -- is still a physically valid slider/cylinder if its shaft has
+        -- nonzero genuine overlap. RelativeTravelBounds safely includes
+        -- the starting position but never extends beyond engagement.
         if typeName=="Slider" or typeName=="Cylindrical" then
             for _,pair in ipairs(fitPairs) do
-                local low,high=Alignment.OffsetBounds(pair.shaft,pair.hole)
+                local low,high=Alignment.InsertionBounds(pair.shaft,pair.hole)
                 if not low or pair.depthU<low-0.006
                     or pair.depthU>high+0.006 then
                     restoreMoving()
-                    return false,
-                        "Choose Rotation Only for a long hinge pin; "
-                        .."linear guides need the shaft center in every tube"
+                    return false,"Shaft must genuinely engage every opening"
                 end
             end
         end

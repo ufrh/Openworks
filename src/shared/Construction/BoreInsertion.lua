@@ -9,7 +9,6 @@ local Config=require(script.Parent:WaitForChild("BuildConfig"))
 
 local Insertion={}
 Insertion.MaxSearchSteps=28 -- 14U of surrounding depth, both directions
-local Inset=0.006 -- avoid zero-depth/touching CSG collider jitter
 
 local overlap=OverlapParams.new()
 overlap.FilterType=Enum.RaycastFilterType.Include
@@ -17,11 +16,12 @@ overlap.RespectCanCollide=false
 overlap.MaxParts=0
 
 local function contactSolid(part:BasePart):boolean
+    -- Preview construction intentionally sets CanCollide=false on ALL
+    -- its ghosts. Determine physical intent from metadata instead, so a
+    -- component's non-Geometry named solid cannot slip through a wall.
     return part:GetAttribute("GearPivotOnly")~=true
         and part:GetAttribute("OpenworksCollisionMode")~="VisualOnly"
         and part:GetAttribute("OpenworksCollisionMode")~="PivotOnly"
-        and (part.CanCollide or part:GetAttribute("OpenworksCollisionMode")=="Proxy"
-            or part.Name=="Geometry")
 end
 
 -- Evaluate the EXACT candidate pose using genuine Roblox collision geometry.

@@ -132,6 +132,16 @@ function Alignment.RelativeTravelBounds(shaft,opening)
         Alignment.TargetAxis(opening)).Unit
     local authored=(shaft:GetPivot().Position-opening:GetPivot().Position)
         :Dot(axis)/Grid.Unit
+    -- An obstacle may only permit the shaft to enter partway into a bore.
+    -- A newly fitted partial insertion is physically engaged and must be
+    -- a valid starting point for a cylinder/slider, not an out-of-bounds
+    -- legacy joint. Keep the normal strict housing-face stops, but allow
+    -- the starting position itself when the shaft still overlaps the hole.
+    local inLo,inHi=Alignment.InsertionBounds(shaft,opening)
+    if inLo and authored>=inLo-0.005 and authored<=inHi+0.005 then
+        low=math.min(low,authored)
+        high=math.max(high,authored)
+    end
     return low-authored,high-authored
 end
 

@@ -804,6 +804,11 @@ def main() -> int:
           'GrabAtHit = UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)' in selection
           and 'self.DragGrabLocal=if held.GrabAtHit then' in selection)
     bore_insertion=read("src/shared/Construction/BoreInsertion.lua")
+    check("Partially inserted slider/cylinder starts within real overlap and cannot escape",
+          'local inLo,inHi=Alignment.InsertionBounds(shaft,opening)' in alignment_math
+          and 'low=math.min(low,authored)' in alignment_math
+          and 'high=math.max(high,authored)' in alignment_math
+          and 'local low,high=Alignment.InsertionBounds(pair.shaft,pair.hole)' in mechanical)
     check("Shaft/hole snap searches obstruction-free depth on 0.5U lattice",
           'function Insertion.Resolve(ghost:Model,source:Model,target:Model,' in bore_insertion
           and 'local anchorU=math.clamp(math.round(preferredU*2)' in bore_insertion
