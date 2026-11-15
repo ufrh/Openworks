@@ -27,9 +27,9 @@ check("External spur and bevel tooth ratios use actual gear counts",
     'ratio=-left.Teeth/right.Teeth*orientation' in gear and
     'ratio=-left.Teeth/right.Teeth*signA*signB' in gear)
 check("Compound gear stages propagate only explicitly driven shaft commands",
-    'local factor={[first]=1}' in gear and
+    'local factor={[lead]=1}' in gear and
     'Ratio=1/link.Ratio' in gear and
-    'factor[other]=expected' in gear)
+    'factor[edge.Group]=expected' in gear)
 check("Crank and bearing motors explicitly supply speed to shaft groups",
     'session.Gears:ClearDrives()' in sim and
     'session.Gears:SetDrive(crank.DrivenId' in sim and
