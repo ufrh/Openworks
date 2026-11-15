@@ -100,7 +100,8 @@ local function torque(runtime,attach,name,id)
     device.Name=name
     device.Attachment0=attach
     device.RelativeTo=Enum.ActuatorRelativeTo.World
-    device.ReactionTorqueEnabled=false
+    -- Torque has no ReactionTorqueEnabled member. We apply opposing
+    -- torque explicitly on each shaft in Step for bidirectional drive.
     device.Torque=Vector3.zero
     device:SetAttribute("AuthoredRelationId",id)
     device.Parent=runtime
