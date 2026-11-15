@@ -132,4 +132,22 @@ function Spring.Settings(request,length)
     return {stiffness=stiffness,damping=damping,freeLength=rest}
 end
 
+-- Physics uses an effective mass to prevent tiny spring systems from
+-- exploding when an arbitrary high stiffness is applied to light parts.
+-- Values on the authored relationship remain user-facing and unchanged.
+function Spring.ApplyPhysical(spring,part0,part1)
+    local massA=if part0 and part0:IsA("BasePart") then part0.AssemblyMass else 1
+    local massB=if part1 and part1:IsA("BasePart") then part1.AssemblyMass else 1
+    local reduced=math.clamp((massA*massB)/math.max(0.01,massA+massB),0.05,100)
+    local k=math.clamp(spring.Stiffness,10,3000)
+    local critical=2*math.sqrt(k*reduced)
+    -- Even 0 damping retains a gentle numerical floor to avoid endless
+    -- oscillation, but damping 0-300 still makes a meaningful difference.
+    spring.Damping=math.max(spring.Damping,critical*0.22)
+    spring.MaxForce=math.clamp((massA+massB)*workspace.Gravity*15,100,35000)
+    spring.LimitsEnabled=true
+    spring.MinLength=math.max(0.01,spring.FreeLength*0.25)
+    spring.MaxLength=math.max(spring.FreeLength*1.6,spring.MinLength+0.1)
+end
+
 return table.freeze(Spring)

@@ -964,12 +964,51 @@ function Panel:RenderRelation(node)
         return
     end
     if kind=="Spring" then
-        self:Field("Stiffness",rel:GetAttribute("Stiffness") or 120)
-        self:Field("Damping",rel:GetAttribute("Damping") or 14)
+        -- Plane Crazy-style configuration: three plain-language controls
+        -- and one-click suspension presets. Keep the raw quantities visible
+        -- so experienced builders can tune exact springs as well.
+        self:Value("Strength","Resists compression and extension")
+        self:Field("Stiffness",math.round(rel:GetAttribute("Stiffness") or 120))
+        self:Value("Bounce control","More damping = less oscillation")
+        self:Field("Damping",math.round(rel:GetAttribute("Damping") or 14))
+        self:Value("Natural length","Rest position, in construction units")
         self:Field("Rest length (U)",
-            (rel:GetAttribute("FreeLength") or 0.5)/Grid.Unit)
-        self:ActionButton("CONFIRM",
-            "Apply all spring parameters together",function()
+            math.round((rel:GetAttribute("FreeLength") or 0.5)/Grid.Unit*10)/10)
+        self:Section("Suspension presets")
+        local presets=row(self.Properties,34)
+        local function preset(name,stiff,damp,pos)
+            button(presets,name,UDim2.new(pos/3,2,0,0),
+                UDim2.new(1/3,-5,1,0),function()
+                    self.Fields.Stiffness.Text=tostring(stiff)
+                    self.Fields.Damping.Text=tostring(damp)
+                    self:Message(name.." spring selected • CONFIRM to apply")
+                end)
+        end
+        preset("SOFT",85,10,0)
+        preset("ROAD",480,55,1)
+        preset("FIRM",1600,125,2)
+        self:ActionButton("– Strength",
+            "Reduce spring force by 25% and compare during simulation",function()
+                self.Fields.Stiffness.Text=tostring(math.max(10,
+                    math.floor((tonumber(self.Fields.Stiffness.Text) or 120)*0.75)))
+            end)
+        self:ActionButton("+ Strength",
+            "Increase spring force by 35%",function()
+                self.Fields.Stiffness.Text=tostring(math.min(3000,
+                    math.floor((tonumber(self.Fields.Stiffness.Text) or 120)*1.35)))
+            end)
+        self:ActionButton("– Damping",
+            "More bounce and longer oscillation",function()
+                self.Fields.Damping.Text=tostring(math.max(0,
+                    math.floor((tonumber(self.Fields.Damping.Text) or 14)*0.7)))
+            end)
+        self:ActionButton("+ Damping",
+            "Less bounce and faster settling",function()
+                self.Fields.Damping.Text=tostring(math.min(300,
+                    math.ceil((tonumber(self.Fields.Damping.Text) or 14)*1.4+1)))
+            end)
+        self:ActionButton("CONFIRM SPRING SETTINGS",
+            "Apply spring strength, damping and natural length together",function()
                 local stiffness=tonumber(self.Fields.Stiffness.Text)
                 local damping=tonumber(self.Fields.Damping.Text)
                 local length=tonumber(self.Fields["Rest length (U)"].Text)

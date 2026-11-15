@@ -59,20 +59,6 @@ local function cap(parent,g,physical,sourcePart)
     local model=Instance.new("Folder")
     model.Name="VectorJointHardware"
     model.Parent=parent
-    if physical then
-        -- Simulated cover is a pure shaft-relative adornment, NOT a
-        -- separate unanchored Part. It has zero mass and cannot fall off.
-        local shell=Instance.new("SphereHandleAdornment")
-        shell.Name="ElbowCover"
-        shell.Adornee=sourcePart
-        shell.CFrame=sourcePart.CFrame:ToObjectSpace(CFrame.new(g.Point))
-        shell.Radius=g.Radius*1.2
-        shell.Color3=CAP_COLOR
-        shell.AlwaysOnTop=false
-        shell.Transparency=0
-        shell.Parent=model
-        return shell
-    end
     local shell=Instance.new("Part")
     shell.Name="ElbowCover"
     shell.Shape=Enum.PartType.Ball
@@ -80,7 +66,7 @@ local function cap(parent,g,physical,sourcePart)
     shell.Color=CAP_COLOR
     shell.Material=Enum.Material.Metal
     shell.CFrame=CFrame.new(g.Point)
-    shell.Anchored=true
+    shell.Anchored=not physical
     shell.Massless=true
     shell.CanCollide=false
     shell.CanTouch=false
@@ -88,11 +74,32 @@ local function cap(parent,g,physical,sourcePart)
     shell.CastShadow=false
     shell:SetAttribute("OPENWORKS_VisualOnly",true)
     shell.Parent=model
+    if physical then
+        -- The moving cap is real METAL geometry welded to the first
+        -- simulated shaft. It has no collision or weight of its own.
+        local weld=Instance.new("WeldConstraint")
+        weld.Name="VectorElbowCoverFollow"
+        weld.Part0=sourcePart
+        weld.Part1=shell
+        weld.Parent=model
+    end
     return shell
 end
 
 function VectorJoint.Hardware(parent,g,physical,sourcePart)
     return cap(parent,g,physical,sourcePart)
+end
+
+function VectorJoint.RefreshHardware(relation,source,target)
+    local hardware=relation:FindFirstChild("VectorJointHardware")
+    local shell=hardware and hardware:FindFirstChild("ElbowCover")
+    if not shell or not shell:IsA("BasePart") then return end
+    local g=VectorJoint.Measure(source,target)
+    if not g then return end
+    shell.Size=Vector3.one*g.Radius*2.4
+    shell.CFrame=CFrame.new(g.Point)
+    shell.Material=Enum.Material.Metal
+    shell.Color=CAP_COLOR
 end
 
 local function torque(runtime,attach,name,id)

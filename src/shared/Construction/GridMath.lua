@@ -132,18 +132,9 @@ function Grid.ValidPosition(position)
     return true
 end
 
--- Newly placed resizable stock begins at the smallest structural quantum.
--- Fixed premanufactured parts retain their authored geometry and bore sizes.
-function Grid.InitialSize(templateSize, resizeMode)
-    if resizeMode == "None" then return templateSize end
-    local small=UNIT*Grid.MinSizeStepU
-    if resizeMode == "XYZ_1U" or resizeMode == "UniformDiameter_1U"
-        or resizeMode == "LengthAndDiameter_1U" then
-        return Vector3.new(small,small,small)
-    end
-    if resizeMode == "LengthOnly_1U" then
-        return Vector3.new(small,templateSize.Y,templateSize.Z)
-    end
+-- Restore the original template-sized spawn behavior. Minimum dimensions
+-- remain available through resize; they are not the default every time.
+function Grid.InitialSize(templateSize,_resizeMode)
     return templateSize
 end
 

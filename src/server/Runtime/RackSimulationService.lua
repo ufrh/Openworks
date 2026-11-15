@@ -655,10 +655,7 @@ function Simulation:Start(player, payload)
                 spring.Damping=edge.relation:GetAttribute("Damping") or 14
                 spring.FreeLength=edge.relation:GetAttribute("FreeLength")
                     or (world1-world0).Magnitude
-                spring.MaxForce=40000
-                spring.LimitsEnabled=true
-                spring.MinLength=0.01
-                spring.MaxLength=math.max(spring.FreeLength*1.8,0.25)
+                SpringMath.ApplyPhysical(spring,p0,p1)
                 spring.Coils=8
                 spring.Radius=SpringMath.Radius(edge.source,edge.target,mode)
                 spring.Thickness=math.clamp(spring.Radius*0.085,0.012,0.065)

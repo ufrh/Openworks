@@ -2607,11 +2607,16 @@ function Mechanical:DisconnectMoved(player,beforeStates,afterStates,exemptRelati
         if nextState then
             local a,b=pose(old),pose(nextState)
             local resized=(old.size-nextState.size).Magnitude>0.0001
-            if resized or not matching(a,b) then
-                moved[id]={
-                    delta=b*a:Inverse(),
-                    resized=resized,
-                }
+            local pureResize=resized
+                and a.RightVector:Dot(b.RightVector)>0.99999
+                and a.UpVector:Dot(b.UpVector)>0.99999
+                and (a.Position-b.Position).Magnitude
+                    <=(old.size-nextState.size).Magnitude*0.51+0.003
+            -- A scale-grip resize is not a joint-breaking movement. The
+            -- opposite face can stay put while the center shifts by half
+            -- the dimension change, so testing center equality is wrong.
+            if not pureResize and not matching(a,b) then
+                moved[id]={delta=b*a:Inverse(),resized=false}
             end
         end
     end
@@ -2647,7 +2652,6 @@ function Mechanical:DisconnectMoved(player,beforeStates,afterStates,exemptRelati
             local motion=moved[id]
             if motion then
                 changed=true
-                if motion.resized then keep=false end
                 if common and not matching(common,motion.delta) then
                     keep=false
                 end
@@ -2855,6 +2859,8 @@ function Mechanical:RebuildRelations()
                 ) then
                     self:DestroyRelation(relation)
                     self:Restore(player, spec)
+                elseif spec.kind=="VectorJoint" then
+                    VectorJoint.RefreshHardware(relation,source,target)
                 elseif spec.kind=="Belt" then
                     BeltVisual.Refresh(relation,BeltMath.Path(source,target))
                 elseif relation:FindFirstChildOfClass("WeldConstraint") then

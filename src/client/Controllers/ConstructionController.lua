@@ -717,7 +717,7 @@ function Controller:SelectPrimitive(id)
     self.CurrentId = id
     self.CurrentDisplayName=entry.DisplayName
     self.CurrentSize = if id=="Shaft" then Vector3.new(
-        Grid.Unit*Grid.MinSizeStepU,Grid.Unit*0.1,Grid.Unit*0.1)
+        Grid.Unit*2,Grid.Unit*0.95,Grid.Unit*0.95)
         else Grid.InitialSize(entry.Model.PrimaryPart.Size,entry.ResizeMode)
     self.Steps = { x = 0, y = 0, z = 0 }
     self.Pending = nil
