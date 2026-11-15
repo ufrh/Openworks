@@ -1484,11 +1484,10 @@ def main() -> int:
           and 'ball.TwistLimitsEnabled=false' in vector_joint
           and 'ball.MaxFrictionTorque=0' in vector_joint
           and 'ball.Enabled=true' in vector_joint
-          and 'Instance.new("AlignPosition")' in vector_joint
-          and 'lock.Mode=Enum.PositionAlignmentMode.TwoAttachment' in vector_joint
-          and 'lock.RigidityEnabled=true' in vector_joint
-          and 'lock.ReactionForceEnabled=true' in vector_joint
-          and 'table.insert(session.Constraints,control.PositionLock)' in simulation)
+          and 'Instance.new("AlignPosition")' not in vector_joint
+          and 'VectorJointPinLock' not in vector_joint
+          and 'PositionLock' not in vector_joint
+          and 'table.insert(session.Constraints,control.PositionLock)' not in simulation)
     check("Vector cover cannot detach or fall in physics simulation",
           'Instance.new("SphereHandleAdornment")' in vector_joint
           and 'shell.Adornee=sourcePart' in vector_joint
@@ -1513,7 +1512,7 @@ def main() -> int:
           and 'source,target,runtime,false,false' in active_physics
           and 'table.insert(session.VectorJoints,joint)' in active_physics
           and 'table.insert(session.Constraints,joint.Constraint)' in active_physics
-          and 'table.insert(session.Constraints,joint.PositionLock)' in active_physics)
+          and 'table.insert(session.Constraints,joint.PositionLock)' not in active_physics)
     check("ACTIVE physical solver updates reversible Vector rotation every heartbeat",
           'VectorJoint.Step(joint,dt,nil,nil)' in active_physics
           and 'VectorJoint.Stop(joint)' in active_physics
@@ -1533,6 +1532,15 @@ def main() -> int:
           and 'device.ReactionTorqueEnabled' not in torque_factory
           and 'device.RelativeTo=Enum.ActuatorRelativeTo.World' in torque_factory
           and 'motor.ReactionTorqueEnabled=false' in vector_joint)
+    check("Vector transmission damps only relative axial spin, with bounded torque and no windup",
+          'local slip=omegaA-j.Sign*omegaB' in vector_joint
+          and 'math.abs(slip)>0.025' in vector_joint
+          and 'inertiaA=0.5*math.max(j.PartA.AssemblyMass,0.01)*radiusA^2' in vector_joint
+          and 'inertiaB=0.5*math.max(j.PartB.AssemblyMass,0.01)*radiusB^2' in vector_joint
+          and 'math.clamp(math.clamp(slip,-20,20)*reduced*12' in vector_joint
+          and 'j.PhaseError' not in vector_joint
+          and 'MaxSlip' not in vector_joint
+          and 'VectorElbowTiltSupport' not in vector_joint)
     check("Vector Joint physically transfers bidirectional shaft torque",
           'Instance.new("Torque")' in vector_joint
           and 'j.TorqueA.Torque=-axisA*effort' in vector_joint

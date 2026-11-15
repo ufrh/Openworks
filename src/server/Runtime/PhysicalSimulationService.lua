@@ -838,7 +838,6 @@ function Simulation:Start(player, payload)
                     source,target,runtime,false,false)
                 table.insert(session.VectorJoints,joint)
                 table.insert(session.Constraints,joint.Constraint)
-                table.insert(session.Constraints,joint.PositionLock)
             elseif edge.kind == "Gear" or edge.kind=="Belt" then
                 -- Legacy K relationships are OPTIONAL metadata.
                 -- Meshing and transmission use geometry every frame.

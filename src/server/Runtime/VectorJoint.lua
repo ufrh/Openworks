@@ -130,20 +130,6 @@ function VectorJoint.Compile(relation,a,b,runtime,kinematicA,kinematicB)
     ball.Enabled=true
     ball:SetAttribute("AuthoredRelationId",relation:GetAttribute("RelationId"))
     ball.Parent=runtime
-    -- A position-only coincidence servo backs up the native socket under
-    -- gravity/large mass ratios. It does NOT align shaft orientations or
-    -- restrict spin, so the output is free to swing around the pivot.
-    local lock=Instance.new("AlignPosition")
-    lock.Name="VectorJointPinLock"
-    lock.Mode=Enum.PositionAlignmentMode.TwoAttachment
-    lock.Attachment0=at0
-    lock.Attachment1=at1
-    lock.RigidityEnabled=true
-    lock.ReactionForceEnabled=true
-    lock.ApplyAtCenterOfMass=false
-    lock.Enabled=true
-    lock:SetAttribute("AuthoredRelationId",relation:GetAttribute("RelationId"))
-    lock.Parent=runtime
     cap(runtime,g,true,p0)
 
     local result={
@@ -151,8 +137,7 @@ function VectorJoint.Compile(relation,a,b,runtime,kinematicA,kinematicB)
         KinematicA=kinematicA,KinematicB=kinematicB,
         IdA=a:GetAttribute("InstanceId"),
         IdB=b:GetAttribute("InstanceId"),
-        PhaseError=0,MaxSlip=0.40,
-        Constraint=ball,PositionLock=lock,
+        Constraint=ball,
         Attachment0=at0,Attachment1=at1,
         ReportedDrift=false,
     }
@@ -187,7 +172,6 @@ function VectorJoint.Stop(j)
     if j.TorqueA then j.TorqueA.Torque=Vector3.zero end
     if j.TorqueB then j.TorqueB.Torque=Vector3.zero end
     if j.Motor then j.Motor.Enabled=false end
-    j.PhaseError=0
 end
 
 function VectorJoint.Step(j,dt,gears,backdriven)
@@ -197,8 +181,8 @@ function VectorJoint.Step(j,dt,gears,backdriven)
     end
     local axisA=j.PartA.CFrame.RightVector
     local axisB=j.PartB.CFrame.RightVector
-    -- A diagnostic only: socket separation is never hidden by teleporting
-    -- either shaft. The pin and position-lock constraints own translation.
+    -- Native ball socket alone owns translation: never add AlignPosition
+    -- to the same attachments or the two solvers fight and jitter.
     local gap=(j.Attachment0.WorldPosition-j.Attachment1.WorldPosition).Magnitude
     if gap>math.max(0.11,j.PartA.Size.Y*0.5) then
         if not j.ReportedDrift then
@@ -228,17 +212,27 @@ function VectorJoint.Step(j,dt,gears,backdriven)
         VectorJoint.Stop(j)
         return
     end
-    local slip=math.clamp(omegaA-j.Sign*omegaB,-80,80)
-    j.PhaseError=math.clamp(
-        j.PhaseError+slip*math.clamp(dt,0,0.05),
-        -j.MaxSlip,j.MaxSlip)
-    local mass=math.clamp(math.min(j.PartA.AssemblyMass,
-        j.PartB.AssemblyMass),0.18,40)
-    local effort=math.clamp((slip*22+j.PhaseError*75)*mass,
-        -400*mass,400*mass)
-    -- Identical axial torque with opposite reactions: either side can
-    -- backdrive the other. No motor, driver direction or external spin
-    -- is invented when both shafts are at rest.
+    -- Passive bidirectional viscous coupling. There is no integrator:
+    -- the previous speed+phase controller accumulated energy while the
+    -- freely swinging shaft moved, violently kicking the whole mechanism.
+    -- Resist only relative shaft-axis spin; do NOT stabilize pitch/yaw.
+    local slip=omegaA-j.Sign*omegaB
+    local effort=0
+    if math.abs(slip)>0.025 then
+        -- Use a conservative estimate of rotational inertia so small
+        -- shafts cannot receive enormous torque from a high P/PI gain.
+        local radiusA=math.max(0.03,math.min(j.PartA.Size.Y,j.PartA.Size.Z)*0.5)
+        local radiusB=math.max(0.03,math.min(j.PartB.Size.Y,j.PartB.Size.Z)*0.5)
+        local inertiaA=0.5*math.max(j.PartA.AssemblyMass,0.01)*radiusA^2
+        local inertiaB=0.5*math.max(j.PartB.AssemblyMass,0.01)*radiusB^2
+        local reduced=(inertiaA*inertiaB)/(inertiaA+inertiaB)
+        -- Approximate a 12/s speed-equalization response, with hard
+        -- acceleration and speed bounds. No torque at rest, no windup.
+        effort=math.clamp(math.clamp(slip,-20,20)*reduced*12,
+            -reduced*120,reduced*120)
+    end
+    -- Axial reaction torques transmit power in either direction; the
+    -- native BallSocketConstraint remains solely responsible for the pivot.
     j.TorqueA.Torque=-axisA*effort
     j.TorqueB.Torque=axisB*(j.Sign*effort)
 end

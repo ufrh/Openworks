@@ -654,7 +654,6 @@ function Simulation:Start(player, payload)
                     session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")))
                 table.insert(session.VectorJoints,control)
                 table.insert(session.Constraints,control.Constraint)
-                table.insert(session.Constraints,control.PositionLock)
             elseif edge.kind == "Gear" then
                 -- Legacy K relationships are OPTIONAL metadata.
                 -- Meshing and transmission use geometry every frame.
