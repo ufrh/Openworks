@@ -16,33 +16,35 @@ def test(label,condition):
 test("Native Torque actuators removed; physical shaft speed controlled",
     'Instance.new("Torque")' not in gear and
     'Instance.new("AngularVelocity")' in gear and
-    'actuator.AngularVelocity=axis(group)*desired' in gear)
-test("Virtual inertia and load cap acceleration instead of applying torque",
-    'DRIVE_BUDGET=HandCrankMath.MaxTorque*0.72' in gear and
-    'local inertia=if mass then math.clamp(' in gear and
-    'local acceleration=math.clamp(' in gear and
-    'virtualLoad+=' in gear)
-test("Unpowered gear assemblies never generate self-sustaining speed commands",
-    'momentum+=inertia*f*speed' not in gear and
-    'local baseSpeed=if hasDrive then commanded/commandWeight else 0' in gear and
-    'if not hasDrive then' in gear and
-    'RELEASE_BRAKE_ACCEL=28' in gear and
-    'if not hasDrive or not self.Drives[group] then' in gear)
-test("Competing motors use weighted signed gear graph",
-    'drive.Weight*f*drive.Speed' in gear and
-    'commandWeight+=drive.Weight*f*f' in gear and
-    'factor[other]=expected' in gear)
-test("Anchored shaft island is excluded from speed actuation",
-    'root=part.AssemblyRootPart' in gear and
-    'root and root.Anchored' in gear and
-    'if not actuator or not inertia or not hasMotion then' in gear)
-test("Crank input drives actual shaft; no second speed actuator fights it",
-    'session.Gears:SetDrive(crank.DrivenId' in sim and
-    'drive.AngularVelocity=crank.Axis*crank.NativeSpeed' in sim and
-    'if not hasDrive or not self.Drives[group] then' in gear)
-test("Actuator remains enabled during continuous motion",
-    'group.ControlledThisFrame=true' in gear and
-    'if not actuator or group.ControlledThisFrame then continue end' in gear)
+    'actuator.AngularVelocity=axis(group)*group.TargetSpeed' in gear)
+test("Explicit motor command sets exact signed output speed without virtual inertia",
+    'DRIVE_BUDGET=HandCrankMath.MaxTorque*0.72' in gear
+    and 'local commanded=(factor[group] or 0)*drive.Speed' in gear
+    and 'group.TargetSpeed=math.clamp(commanded,-MAX_SPEED,MAX_SPEED)' in gear
+    and 'phaseCorrections' not in gear
+    and 'VIRTUAL_RESPONSE' not in gear)
+test("Unpowered gear assemblies never create drive commands from physics feedback",
+    'momentum+=inertia*f*speed' not in gear
+    and 'Output shafts NEVER become implicit input sources' in gear
+    and 'self.Drives[group] or {}' in gear
+    and 'actuator.AngularVelocity=Vector3.zero' in gear)
+test("Explicit strongest motor determines stable speed propagation",
+    'candidate.Weight>drive.Weight' in gear
+    and 'tostring(group.Id)<tostring(lead.Id)' in gear
+    and 'factor[edge.Group]=expected' in gear)
+test("Grounded or anchored shaft group excluded from speed actuation",
+    'local root=part and part.AssemblyRootPart' in gear
+    and 'not (root and root.Anchored)' in gear
+    and 'if group~=lead and unanchored(group) then' in gear)
+test("Crank input drives real shaft without competing gearbox actuator",
+    'session.Gears:SetDrive(crank.DrivenId' in sim
+    and 'drive.AngularVelocity=crank.Axis*crank.NativeSpeed' in sim
+    and 'local explicitlyDriven=self.Drives[group]~=nil' in gear)
+test("Output speed actuator stays enabled while commanded and disables on release",
+    'commandedGroups[group]=true' in gear
+    and 'if actuator and not commandedGroups[group] then' in gear
+    and 'actuator.Enabled=true' in gear
+    and 'actuator.Enabled=false' in gear)
 test("Crank held-input safety, live speeds and diagnostics preserved",
     'Crank drive cut: %s' in sim and
     'LIVE DRIVE STALL:' in sim and 'DriveDiagnostics(crank.DrivenId)' in sim)

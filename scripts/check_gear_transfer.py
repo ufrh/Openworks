@@ -19,14 +19,14 @@ check("Gear output is a native shaft AngularVelocity actuator",
     'Instance.new("AngularVelocity")' in gear and
     'velocity.Attachment0=attachment' in gear and
     'group.VelocityActuator=velocity' in gear and
-    'actuator.AngularVelocity=axis(group)*desired' in gear)
+    'actuator.AngularVelocity=axis(group)*group.TargetSpeed' in gear)
 check("Physical shaft is the gear rigid-group root",
     'group.Root=clone.PrimaryPart' in gear and
-    'gearCF.RightVector:Dot(cf.RightVector)' in gear)
+    'coaxial(shaft,entry.Model)' in gear)
 check("External spur and bevel tooth ratios use actual gear counts",
     'ratio=-left.Teeth/right.Teeth*orientation' in gear and
     'ratio=-left.Teeth/right.Teeth*signA*signB' in gear)
-check("Compound gears and reverse drives propagate in one connected graph",
+check("Compound gear stages propagate only explicitly driven shaft commands",
     'local factor={[first]=1}' in gear and
     'Ratio=1/link.Ratio' in gear and
     'factor[other]=expected' in gear)
@@ -35,9 +35,10 @@ check("Crank and bearing motors explicitly supply speed to shaft groups",
     'session.Gears:SetDrive(crank.DrivenId' in sim and
     'session.Gears:SetDrive(motor.ShaftId' in sim and
     'ShaftId=edge.source:GetAttribute("InstanceId")' in sim)
-check("Drive-side AngularVelocity motor is not opposed by another motor",
-    'if not hasDrive or not self.Drives[group] then' in gear and
-    'group.ControlledThisFrame=true' in gear)
+check("Direct drive shaft is never opposed by a gearbox speed actuator",
+    'local explicitlyDriven=self.Drives[group]~=nil' in gear
+    and 'if explicitlyDriven then' in gear
+    and 'actuator.Enabled=false' in gear)
 check("Gear hub fitting authorizes rigid welds",
     'kind="Weld"' in mech and 'Smart.HubFits(source,target)' in mech)
 check("F-copy preserves hub and crank relationships",
@@ -49,7 +50,7 @@ check("Simulation anchors housings rather than moving shafts",
     'session.GroundKeys[edge.b]=true' in sim)
 check("Shaft-speed telemetry reports mounting, grounding, and actual rad/s",
     all(x in gear for x in ['NO SHAFT WELD','GROUNDED',
-        'rad/s','virtual load','DriveDiagnostics']))
+        'rad/s','target %.2f rad/s','DriveDiagnostics']))
 check("Studio fixture drives shaft speed and measures real physical output",
     all(x in fixture for x in ['HingeConstraint','WeldConstraint',
         'AssemblyAngularVelocity','transmission:SetDrive("test-shaft-A"',

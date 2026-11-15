@@ -45,11 +45,11 @@ testit("Strict first contact; bounded holding margin prevents 0.1s physics disco
     and 'if axial>=faceLimit+(if held then 0.025 else 0) then' in math
     and 'toothEngagementTolerance(a,b,held)' in math
     and 'if held then BEVEL_APEX_TOLERANCE*1.5' in math)
-testit("Speed graph uses native AngularVelocity, virtual inertia and no Torque object",
+testit("Speed graph uses native AngularVelocity from explicit inputs and no Torque object",
     'Instance.new("Torque")' not in solver
     and 'Instance.new("AngularVelocity")' in solver
     and 'Ratio=1/link.Ratio' in solver
-    and 'actuator.AngularVelocity=axis(group)*desired' in solver
+    and 'actuator.AngularVelocity=axis(group)*group.TargetSpeed' in solver
     and ':PivotTo(' not in solver)
 testit("Runtime inspection surfaces crank drive, speed links, virtual load, and mount repair",
     all(x in sim+solver for x in ['NO GEAR SPEED LINK','crank SHAFT COUPLED',

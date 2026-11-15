@@ -39,9 +39,9 @@ check('Silent zero-contact gearboxes are rejected at crank activation',
 check('Mismatched tooth modules are not faked as meshed',
       'if math.abs(m1-m2)>0.0001 then' in math and
       'Different tooth pitches' in math)
-check('Actual welded shaft assemblies receive bidirectional angular-speed commands',
+check('Actual welded shaft assemblies follow an explicitly selected source motor',
       'Instance.new("Torque")' not in solver and
-      'actuator.AngularVelocity=axis(group)*desired' in solver and
+      'actuator.AngularVelocity=axis(group)*group.TargetSpeed' in solver and
       'Ratio=1/link.Ratio' in solver and
       'session.Gears:SetDrive(crank.DrivenId' in sim)
 check('Live stall watchdog reports measured shaft speed and anchored roots',

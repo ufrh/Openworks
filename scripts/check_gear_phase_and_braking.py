@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OPENWORKS phase-locked gear mesh and no-input braking source/numerical contracts.
+"""OPENWORKS placement tooth phases and explicit-input gearbox/braking contracts.
 
 Roblox Studio physics is not emulated here; this checks authored math and invariants.
 """
@@ -37,26 +37,19 @@ test("Spur placement maintains half-tooth interlock",
      'local sourcePhase=(0.5-targetPhase)%1' in smart)
 test("Each detected gear link retains its actual contacting gear models",
      'LeftGear=left.Model,RightGear=right.Model' in gear)
-test("Follower phase correction is active only while a real motor is held",
-     'if hasDrive then' in gear and
-     'GearMath.ToothPhaseError(link.LeftGear,link.RightGear)' in gear
-     and 'phaseCorrections[follower]' in gear
-     and 'PHASE_RESPONSE=7' in gear)
-test("Corrections avoid motor-driven input shafts",
-     'if aDepth==nil or bDepth==nil or aDepth==bDepth then continue end' in gear
-     and 'local follower=if aDepth>bDepth then link.A else link.B' in gear
-     and 'if not hasDrive or not self.Drives[group] then' in gear)
-test("No-input phase correction cannot feed itself",
-     'local baseSpeed=if hasDrive then commanded/commandWeight else 0' in gear
-     and 'momentum+=inertia*f*speed' not in gear
-     and 'local phaseCorrections,phaseCounts={},{}' in gear)
-test("No-input physical shafts actively brake, with no new drive source",
-     'RELEASE_BRAKE_ACCEL=28' in gear
-     and 'desired=0' in gear
-     and 'RELEASE_STOP_EPS=0.035' in gear
-     and 'group.Braking and not self.Drives[group]' in gear
-     and 'if not hasDrive then' in gear
-     and 'group.ControlledThisFrame=true' in gear)
+test("No live tooth-phase correction or speed feedback remains",
+     'PHASE_RESPONSE' not in gear
+     and 'phaseCorrections' not in gear
+     and 'GearMath.ToothPhaseError(link.LeftGear,link.RightGear)' not in gear
+     and 'Output shafts NEVER become implicit input sources' in gear)
+test("Only explicit input drives connected gears at exact tooth ratios",
+     'local lead,drive=nil,nil' in gear
+     and 'factor[edge.Group]=expected' in gear
+     and 'local commanded=(factor[group] or 0)*drive.Speed' in gear)
+test("Braking supplies zero speed, never a new input source",
+     'group.Braking and unanchored(group)' in gear
+     and 'actuator.AngularVelocity=Vector3.zero' in gear
+     and 'local explicitlyDriven=self.Drives[group]~=nil' in gear)
 test("Held crank and powered bearing are the only graph drive inputs",
      'session.Gears:ClearDrives()' in sim
      and 'session.Gears:SetDrive(crank.DrivenId' in sim
@@ -88,14 +81,6 @@ for na,nb in [(8,8),(8,12),(12,20),(20,20),(20,32),(32,8)]:
                         %(2*math.pi)-math.pi) for tooth in range(nb))
         test(f"{nb}T cardinal gap at quadrant {cardinal}",
              abs(nearest-gap_pitch/2)<1e-9)
-    # A half-tooth correction should resolve an initial tip-to-tip contact.
-    theta_b=0.0
-    for _ in range(240):
-        err=phase_error(na,nb,0,theta_b)
-        command=max(-1.2,min(1.2,err*(2*math.pi/nb)*7))
-        theta_b+=command/60
-    test(f"{na}:{nb} follower converges to tooth gap",
-         abs(phase_error(na,nb,0,theta_b))<0.012)
 
 # A mixed previously-published rev 4 and rev 5 gear pair still finds
 # a half-tooth contact phase, without assuming both IDs were reuploaded.
@@ -109,4 +94,4 @@ speed=2.0
 for _ in range(15):
     speed=max(0,speed-28/60)
 test("Released 2 rad/s hand crank has no self-sustaining speed",speed==0)
-print("PASS: tooth contact phase and no-input braking source contracts")
+print("PASS: initial tooth phase placement and explicit-input gear braking contracts")

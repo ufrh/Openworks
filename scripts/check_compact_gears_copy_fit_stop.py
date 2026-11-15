@@ -49,13 +49,14 @@ check("Copy still verifies authoritative source and clears inherited relations",
     and 'duplicate.assemblyId=nil' in s
     and 'duplicate.alignedOpeningId=nil' in s
     and 'sourceId=model:GetAttribute("InstanceId")' in s)
-check("Motor release sets zero angular speed instead of feeding back velocity",
-    'local baseSpeed=if hasDrive then commanded/commandWeight else 0' in g
-    and 'desired=0' in g and 'group.Braking=true' in g)
-check("Formerly meshed isolated shafts continue braking until settled",
-    'group.Braking and not self.Drives[group]' in g
+check("Motor release never backdrives through residual output rotation",
+    'local lead,drive=nil,nil' in g
+    and 'group.Braking=true' in g
+    and 'Output shafts NEVER become implicit input sources' in g)
+check("Previously driven shafts brake to true zero after input release",
+    'group.Braking and unanchored(group)' in g
     and 'actuator.AngularVelocity=Vector3.zero' in g
-    and 'root.AssemblyAngularVelocity=root.AssemblyAngularVelocity-dir*spin' in g)
+    and 'group.Root.AssemblyAngularVelocity-dir*speed' in g)
 check("All native gear speed actuation remains attached to physical shaft body",
     'Instance.new("AngularVelocity")' in g
     and 'Instance.new("Torque")' not in g)
