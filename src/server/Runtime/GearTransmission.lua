@@ -15,29 +15,11 @@ local Transmission={}
 Transmission.__index=Transmission
 
 local MAX_GEARS=40
-local SCAN_INTERVAL=0.10
+local SCAN_INTERVAL=0.20
 local STALL_REPORT_INTERVAL=2.0
-local MIN_INERTIA=0.001
-local MAX_INERTIA_ESTIMATE=2500
-local VIRTUAL_RESPONSE=12
-local MIN_ANGULAR_ACCEL=18
-local MAX_ANGULAR_ACCEL=85
 local MAX_SPEED=35
-local SPEED_EPS=0.02
-local RELEASE_BRAKE_ACCEL=28 -- retained diagnostic deceleration reference
 local RELEASE_STOP_EPS=0.035 -- residual shaft spin must not linger forever
-local PHASE_RESPONSE=7 -- phase-slip convergence (1/s)
-local PHASE_DEADBAND=0.012 -- fraction of a tooth
-local MAX_PHASE_SPEED=1.2 -- bounded follower correction (rad/s)
 local DRIVE_BUDGET=HandCrankMath.MaxTorque*0.72
-local function finiteAssemblyMass(part)
-    local root=part.AssemblyRootPart
-    if (root and root.Anchored) or part.Anchored then return nil end
-    local mass=part.AssemblyMass
-    if mass~=mass or mass==math.huge or mass<0 or mass>1e8 then return nil end
-    return mass
-end
-
 local function identifier(model)
     return model:GetAttribute("InstanceId")
 end
@@ -49,6 +31,13 @@ end
 
 local function axis(group)
     return (group.AxisSource or group.Gears[1].Model):GetPivot().RightVector.Unit
+end
+
+local function coaxial(a,b)
+    local acf,bcf=a:GetPivot(),b:GetPivot()
+    local delta=bcf.Position-acf.Position
+    return math.abs(acf.RightVector:Dot(bcf.RightVector))>=0.998
+        and (delta-acf.RightVector*delta:Dot(acf.RightVector)).Magnitude<=0.035
 end
 
 function Transmission.new(graph,copies,runtime)
@@ -86,7 +75,7 @@ function Transmission.new(graph,copies,runtime)
         if key and clone then
             local group=groups[key]
             if not group then
-                group={Id=key,Models={},Gears={},Root=nil,
+                group={Id=key,Models={},Gears={},ShaftCandidates={},Root=nil,
                     AxisSource=nil,VelocityActuator=nil,VirtualSpeed=0,
                     TargetSpeed=0,Grounded=false,Braking=false}
                 groups[key]=group
@@ -97,10 +86,12 @@ function Transmission.new(graph,copies,runtime)
             -- is an actuator, not the rigid output shaft reference. Prefer
             -- the real cylinder shaft regardless of assembly iteration order.
             if Alignment.IsShaft(original)
-                and original:GetAttribute("ActuatorKind")~="HandCrank"
-                and not group.AxisSource then
-                group.AxisSource=clone
-                group.Root=clone.PrimaryPart
+                and original:GetAttribute("ActuatorKind")~="HandCrank" then
+                table.insert(group.ShaftCandidates,clone)
+                if not group.AxisSource then
+                    group.AxisSource=clone
+                    group.Root=clone.PrimaryPart
+                end
             end
             if isGear(original) then
                 local entry={Model=clone,Group=group,
@@ -117,15 +108,37 @@ function Transmission.new(graph,copies,runtime)
 
     for _,group in pairs(groups) do
         if #group.Gears>0 then
-            -- Compound trains: a single shaft may carry arbitrarily many
-            -- distinct gears provided every mounted gear is concentric.
-            local cf=(group.AxisSource or group.Gears[1].Model):GetPivot()
+            -- Rigid welding another cylinder or bearing-shaped structure
+            -- onto a gear shaft does NOT change the gear's spin axis.
+            -- The old solver chose the first random shaft encountered and
+            -- threw an error when that unrelated rigid member was angled.
+            local chosen,score=nil,-1
+            for _,shaft in ipairs(group.ShaftCandidates) do
+                local count=0
+                for _,entry in ipairs(group.Gears) do
+                    if coaxial(shaft,entry.Model) then count+=1 end
+                end
+                if count>score then chosen,score=shaft,count end
+            end
+            if chosen and score>0 then
+                group.AxisSource=chosen
+                group.Root=chosen.PrimaryPart
+            else
+                -- A gear-only rigid group remains legal and can spin.
+                group.AxisSource=nil
+                group.Root=group.Gears[1].Model.PrimaryPart
+            end
+            -- If a builder rigidly welds two gears at non-coaxial angles,
+            -- they form ONE rigid physics body, NOT two separately driven
+            -- shafts. Ignore the incompatible mesh contact rather than
+            -- killing simulation of the rest of the machine.
+            local reference=group.AxisSource or group.Gears[1].Model
             for _,entry in ipairs(group.Gears) do
-                local gearCF=entry.Model:GetPivot()
-                local delta=gearCF.Position-cf.Position
-                if math.abs(gearCF.RightVector:Dot(cf.RightVector))<0.999
-                    or (delta-cf.RightVector*delta:Dot(cf.RightVector)).Magnitude>0.025 then
-                    error("All gears welded to one shaft must be coaxial")
+                if not coaxial(reference,entry.Model) then
+                    entry.Incompatible=true
+                    warn("[OPENWORKS][GEARS] Ignoring non-coaxial gear "
+                        ..tostring(entry.Model.Name)
+                        .." rigidly attached to a different gear axis")
                 end
             end
             local attachment=Instance.new("Attachment")
@@ -173,6 +186,7 @@ function Transmission:Detect()
         local left=self.Gears[i]
         for j=i+1,#self.Gears do
             local right=self.Gears[j]
+            if left.Incompatible or right.Incompatible then continue end
             local key=tostring(identifier(left.Model))..":"..tostring(identifier(right.Model))
             -- A tiny amount of bearing/physics drift must not turn off
             -- torque transmission every tenth of a second. New contacts
@@ -329,10 +343,11 @@ function Transmission:SetDrive(id,speed,budget,worldAxis)
         Weight=math.clamp(budget or HandCrankMath.MaxTorque,1,100000)})
 end
 
--- Each component of the gear graph has one signed speed coordinate.
--- Compound stages, backdriving and opposing inputs all use the same ratios.
--- Inertia/virtual torque bound acceleration; a real AngularVelocity drives
--- every output shaft without ever posing the gears with CFrame.
+-- A single explicit input drives each connected gear train at its
+-- exact tooth ratio. Output shafts NEVER become implicit input sources:
+-- no backdrive feedback, virtual inertia blending, or tooth-phase servo.
+-- The only permitted commands are SetDrive calls from actual crank/motor
+-- controls. This eliminates self-chasing jitter after releasing a drive.
 function Transmission:Step(dt)
     dt=math.clamp(dt,1/240,0.07)
     self.ScanElapsed+=dt
@@ -351,199 +366,117 @@ function Transmission:Step(dt)
             link.PhysicsBlocked=false
         end
     end
-    for _,group in pairs(self.Groups) do
-        group.TargetSpeed=0
-        group.ControlledThisFrame=false
-    end
     local visited={}
+    local commandedGroups={}
+    local function unanchored(group)
+        local part=group.Root
+        local root=part and part.AssemblyRootPart
+        return part and part.Parent and not part.Anchored
+            and not (root and root.Anchored)
+    end
     for first in pairs(neighbors) do
         if visited[first] then continue end
-        local factor={[first]=1}
-        local queue={first}
         local component={}
+        local queue={first}
         visited[first]=true
-        local index=1
-        while index<=#queue do
-            local current=queue[index]
-            index+=1
+        local i=1
+        while i<=#queue do
+            local current=queue[i]
+            i+=1
             table.insert(component,current)
             for _,edge in ipairs(neighbors[current]) do
-                local other=edge.Group
-                local expected=factor[current]*edge.Ratio
-                if not factor[other] then
-                    factor[other]=expected
-                    visited[other]=true
-                    table.insert(queue,other)
-                elseif math.abs(factor[other]-expected)>0.02*math.max(1,math.abs(expected)) then
-                    edge.Link.Inconsistent=true
+                if not visited[edge.Group] then
+                    visited[edge.Group]=true
+                    table.insert(queue,edge.Group)
                 end
             end
         end
-        local commanded,commandWeight=0,0
-        local inertias={}
+        -- Prefer the strongest explicitly driven shaft; break ties by
+        -- stable group ID, not order of pairs() iteration or physics speed.
+        local lead,drive=nil,nil
         for _,group in ipairs(component) do
-            local mass=finiteAssemblyMass(group.Root)
-            local radius=GearMath.PitchRadius(group.Gears[1].Model)
-            local inertia=if mass then math.clamp(0.5*mass*math.max(0.1,radius)^2,
-                MIN_INERTIA,MAX_INERTIA_ESTIMATE) else nil
-            inertias[group]=inertia
-            if inertia then
-                local f=factor[group]
-                for _,drive in ipairs(self.Drives[group] or {}) do
-                    commanded+=drive.Weight*f*drive.Speed
-                    commandWeight+=drive.Weight*f*f
+            if unanchored(group) then
+                for _,candidate in ipairs(self.Drives[group] or {}) do
+                    if not drive or candidate.Weight>drive.Weight
+                        or (candidate.Weight==drive.Weight
+                            and tostring(group.Id)<tostring(lead.Id)) then
+                        lead,drive=group,candidate
+                    end
                 end
             end
         end
-        local hasDrive=commandWeight>0
-        -- Zero AUTHORIZED input means zero commanded energy. Do not mistake
-        -- shaft inertia (including motion from our own actuators) for a
-        -- new drive: that was a self-sustaining loop after crank release.
-        local baseSpeed=if hasDrive then commanded/commandWeight else 0
-        baseSpeed=math.clamp(baseSpeed,-MAX_SPEED,MAX_SPEED)
-        local hasMotion=hasDrive
-        if not hasDrive then
-            for _,group in ipairs(component) do
-                if group.Braking
-                    or math.abs(group.Root.AssemblyAngularVelocity:Dot(axis(group)))>RELEASE_STOP_EPS then
-                    hasMotion=true
-                    break
-                end
-            end
-        end
-        if hasDrive then
-            for _,group in ipairs(component) do group.Braking=true end
-        end
-
-        -- Phase-lock real tooth tips against opposite gaps. Only a shaft
-        -- further from an ACTIVE input gets a correction: no feedback on
-        -- release and no competing actuators on commanded motor shafts.
-        local phaseCorrections,phaseCounts={},{}
-        if hasDrive then
-            local depth={}
-            local sources={}
-            for _,group in ipairs(component) do
-                if self.Drives[group] then
-                    depth[group]=0
-                    table.insert(sources,group)
-                end
-            end
+        if lead and drive then
+            -- Ratios are directional from the selected AUTHORIZED input.
+            -- This is not physics backdrive: changing which motor is held
+            -- changes the source, but passive output motion never can.
+            local factor={[lead]=1}
+            local bfs={lead}
             local k=1
-            while k<=#sources do
-                local current=sources[k]
+            while k<=#bfs do
+                local current=bfs[k]
                 k+=1
                 for _,edge in ipairs(neighbors[current]) do
-                    if depth[edge.Group]==nil then
-                        depth[edge.Group]=depth[current]+1
-                        table.insert(sources,edge.Group)
+                    local expected=factor[current]*edge.Ratio
+                    if factor[edge.Group]==nil then
+                        factor[edge.Group]=expected
+                        table.insert(bfs,edge.Group)
+                    elseif math.abs(factor[edge.Group]-expected)>
+                        0.02*math.max(1,math.abs(expected)) then
+                        edge.Link.Inconsistent=true
                     end
                 end
             end
             for _,group in ipairs(component) do
-                for _,edge in ipairs(neighbors[group]) do
-                    local link=edge.Link
-                    if link.A~=group then continue end
-                    local phaseError=GearMath.ToothPhaseError(link.LeftGear,link.RightGear)
-                    link.PhaseError=phaseError
-                    if phaseError==nil or math.abs(phaseError)<=PHASE_DEADBAND then continue end
-                    local aDepth,bDepth=depth[link.A],depth[link.B]
-                    if aDepth==nil or bDepth==nil or aDepth==bDepth then continue end
-                    local follower=if aDepth>bDepth then link.A else link.B
-                    local gear=if follower==link.A then link.LeftGear else link.RightGear
-                    local teeth=gear:GetAttribute("GearTeeth")
-                    if type(teeth)~="number" or teeth<=0 then continue end
-                    local sign=if axis(follower):Dot(gear:GetPivot().RightVector)>=0 then 1 else -1
-                    -- Positive tooth-phase error requires positive rotation
-                    -- about the follower's own gear axis to reach a tooth gap.
-                    local correction=math.clamp(
-                        phaseError*(2*math.pi/teeth)*PHASE_RESPONSE*sign,
-                        -MAX_PHASE_SPEED,MAX_PHASE_SPEED)
-                    phaseCorrections[follower]=(phaseCorrections[follower] or 0)+correction
-                    phaseCounts[follower]=(phaseCounts[follower] or 0)+1
+                local commanded=(factor[group] or 0)*drive.Speed
+                group.TargetSpeed=math.clamp(commanded,-MAX_SPEED,MAX_SPEED)
+                group.VirtualSpeed=group.TargetSpeed
+                group.Braking=true
+                if group~=lead and unanchored(group) then
+                    local actuator=group.VelocityActuator
+                    if actuator then
+                        actuator.MaxTorque=DRIVE_BUDGET
+                        actuator.AngularVelocity=axis(group)*group.TargetSpeed
+                        actuator.Enabled=true
+                        commandedGroups[group]=true
+                    end
                 end
             end
-        end
-        local virtualLoad=0
-        for _,group in ipairs(component) do
-            local physical=group.Root
-            local speed=physical.AssemblyAngularVelocity:Dot(axis(group))
-            local correction=if phaseCounts[group] then
-                phaseCorrections[group]/phaseCounts[group] else 0
-            local target=baseSpeed*factor[group]+correction
-            local inertia=inertias[group]
-            local actuator=group.VelocityActuator
-            if not actuator or not inertia or not hasMotion then
-                group.VirtualSpeed=speed
-                continue
-            end
-            if not hasDrive and math.abs(speed)<=RELEASE_STOP_EPS then
-                -- AngularVelocity switched off below its previous speed
-                -- threshold, leaving a tiny but persistent spin forever.
-                -- Only after the motor is released and physical speed is
-                -- already negligible, settle the AXIAL component to zero.
-                physical.AssemblyAngularVelocity =
-                    physical.AssemblyAngularVelocity-axis(group)*speed
-                group.Braking=false
-                group.VirtualSpeed=0
-                continue
-            end
-            local acceleration=math.clamp(DRIVE_BUDGET/math.max(inertia,MIN_INERTIA),
-                MIN_ANGULAR_ACCEL,MAX_ANGULAR_ACCEL)
-            local prior=group.VirtualSpeed or speed
-            local step=(target-prior)*math.min(1,VIRTUAL_RESPONSE*dt)
-            local desired=math.clamp(prior+math.clamp(step,
-                -acceleration*dt,acceleration*dt),-MAX_SPEED,MAX_SPEED)
-            if not hasDrive then
-                -- A real zero-speed native actuator supplies positive
-                -- braking effort. Targeting only (speed - 28*dt) kept
-                -- trailing shafts rotating at that nonzero target.
-                -- Use zero directly; the physical solver handles deceleration.
-                desired=0
-            end
-            group.VirtualSpeed=desired
-            group.TargetSpeed=desired
-            virtualLoad+=math.abs((desired-speed)*inertia/dt)
-            -- Avoid fighting the physical crank or hinge motor on its input.
-            if not hasDrive or not self.Drives[group] then
-                actuator.MaxTorque=DRIVE_BUDGET
-                actuator.AngularVelocity=axis(group)*desired
-                actuator.Enabled=true
-                group.ControlledThisFrame=true
-            end
-        end
-        for _,group in ipairs(component) do
-            for _,edge in ipairs(neighbors[group]) do
-                if edge.Link.A==group then
-                    edge.Link.PhysicsBlocked=not inertias[edge.Link.A]
-                        or not inertias[edge.Link.B]
-                    edge.Link.Effort=math.min(DRIVE_BUDGET,virtualLoad)
+            for _,link in ipairs(self.Links) do
+                if factor[link.A]~=nil and factor[link.B]~=nil then
+                    link.Effort=math.min(drive.Weight,DRIVE_BUDGET)
+                    link.PhaseError=0
                 end
             end
         end
     end
-    -- Keep braking shafts even when a mesh contact disappears before the
-    -- last rotations have settled. Otherwise the now-isolated output loses
-    -- its motor and freewheels indefinitely despite zero active inputs.
+    -- Braking is a ZERO target, never a reverse-motion sample or a
+    -- generated drive. After it settles we release the actuator entirely.
     for _,group in pairs(self.Groups) do
         local actuator=group.VelocityActuator
-        if not actuator or group.ControlledThisFrame then continue end
-        if group.Braking and not self.Drives[group] then
-            local root=group.Root
-            local dir=axis(group)
-            local spin=root.AssemblyAngularVelocity:Dot(dir)
-            if math.abs(spin)>RELEASE_STOP_EPS then
-                actuator.MaxTorque=DRIVE_BUDGET
+        if actuator and not commandedGroups[group] then
+            local explicitlyDriven=self.Drives[group]~=nil
+            if explicitlyDriven then
+                -- Do not fight the native crank or bearing motor.
                 actuator.AngularVelocity=Vector3.zero
-                actuator.Enabled=true
+                actuator.Enabled=false
+            elseif group.Braking and unanchored(group) then
+                local dir=axis(group)
+                local speed=group.Root.AssemblyAngularVelocity:Dot(dir)
+                if math.abs(speed)>RELEASE_STOP_EPS then
+                    actuator.MaxTorque=DRIVE_BUDGET
+                    actuator.AngularVelocity=Vector3.zero
+                    actuator.Enabled=true
+                else
+                    group.Root.AssemblyAngularVelocity=
+                        group.Root.AssemblyAngularVelocity-dir*speed
+                    actuator.AngularVelocity=Vector3.zero
+                    actuator.Enabled=false
+                    group.Braking=false
+                end
             else
-                root.AssemblyAngularVelocity=root.AssemblyAngularVelocity-dir*spin
-                group.Braking=false
                 actuator.AngularVelocity=Vector3.zero
                 actuator.Enabled=false
             end
-        else
-            actuator.AngularVelocity=Vector3.zero
-            actuator.Enabled=false
         end
     end
 end
