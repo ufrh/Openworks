@@ -2606,6 +2606,39 @@ function Mechanical:Remove(player, request)
 end
 
 
+-- Resizing must never silently create an impossible mechanical joint.
+-- Preserve the relation and geometry on failure; a move may disconnect it
+-- according to the independent geometric contact rule below.
+function Mechanical:ValidateResize(player,changedId)
+    if type(changedId)~="string" then return false,"Invalid resized primitive" end
+    for _,relation in ipairs(self.Folder:GetChildren()) do
+        if relation:IsA("Folder")
+            and relation:GetAttribute("OwnerUserId")==player.UserId
+            and (relation:GetAttribute("SourceId")==changedId
+                or relation:GetAttribute("TargetId")==changedId) then
+            local kind=relation:GetAttribute("Kind")
+            if kind=="Bearing" or kind=="Slider" or kind=="Cylindrical"
+                or kind=="VectorJoint" then
+                local source=self.D.findOwned(player,relation:GetAttribute("SourceId"))
+                local target=self.D.findOwned(player,relation:GetAttribute("TargetId"))
+                local valid=false
+                if source and target then
+                    if kind=="VectorJoint" then
+                        valid=VectorJoint.Measure(source,target)~=nil
+                    else
+                        valid=MultiFit.Check(source,target)~=nil
+                    end
+                end
+                if not valid then
+                    return false,"Resize would invalidate "..kind
+                        .." connection; adjust the part or fitting first"
+                end
+            end
+        end
+    end
+    return true
+end
+
 -- Conservative geometry overlap used ONLY to decide whether an already
 -- authenticated relationship remains physically adjacent after editing.
 -- It never creates a new relationship. A world-space SAT-lite test in both

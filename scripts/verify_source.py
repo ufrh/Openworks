@@ -1499,6 +1499,12 @@ def main() -> int:
           and 'shell.Massless=true' in vector_joint
           and 'shell.CanCollide=false' in vector_joint
           and 'SphereHandleAdornment' not in vector_joint)
+    check("Incompatible resizing is rejected before an authored joint is invalidated",
+          'function Mechanical:ValidateResize(player,changedId)' in mechanical
+          and 'valid=VectorJoint.Measure(source,target)~=nil' in mechanical
+          and 'valid=MultiFit.Check(source,target)~=nil' in mechanical
+          and 'local valid,reason=mechanical:ValidateResize(player,before.instanceId)' in service
+          and 'applyState(model,before)' in service)
     check("Scaling a part does not sever its mechanical relationships",
           'local pureResize=resized' in mechanical
           and 'if not pureResize and not matching(a,b) then' in mechanical

@@ -764,6 +764,14 @@ local function update(player, payload)
     if not valid then return false, reason end
 
     applyState(model, proposed)
+    if typeof(proposed.size)=="Vector3"
+        and (proposed.size-before.size).Magnitude>0.0001 then
+        local valid,reason=mechanical:ValidateResize(player,before.instanceId)
+        if not valid then
+            applyState(model,before)
+            return false,reason
+        end
+    end
     local stillAligned=false
     if opening and Alignment.IsShaft(model) then
         stillAligned=Bore.ShaftFits(model,opening)
