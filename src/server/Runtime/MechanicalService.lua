@@ -2606,6 +2606,46 @@ function Mechanical:Remove(player, request)
 end
 
 
+-- Conservative geometry overlap used ONLY to decide whether an already
+-- authenticated relationship remains physically adjacent after editing.
+-- It never creates a new relationship. A world-space SAT-lite test in both
+-- local frames detects face-touch while tolerating tiny CSG seam gaps.
+local function stillTouching(a,b)
+    if not a or not b or not a.PrimaryPart or not b.PrimaryPart then
+        return false
+    end
+    local function nearOnAxes(first,second)
+        local cf=first.CFrame
+        local delta=cf:PointToObjectSpace(second.Position)
+        local x,y,z=cf.RightVector,cf.UpVector,cf.LookVector
+        local bx,by,bz=second.CFrame.RightVector,
+            second.CFrame.UpVector,second.CFrame.LookVector
+        local h=second.Size*0.5
+        local epsilon=0.012
+        local function fits(offset,half,axis)
+            local reach=math.abs(axis:Dot(bx))*h.X
+                +math.abs(axis:Dot(by))*h.Y
+                +math.abs(axis:Dot(bz))*h.Z
+            return math.abs(offset)<=half+reach+epsilon
+        end
+        return fits(delta.X,first.Size.X*0.5,x)
+            and fits(delta.Y,first.Size.Y*0.5,y)
+            and fits(delta.Z,first.Size.Z*0.5,z)
+    end
+    for _,left in ipairs(a:GetDescendants()) do
+        if not left:IsA("BasePart") or not left.CanCollide
+            or left:GetAttribute("GearPivotOnly")==true then continue end
+        for _,right in ipairs(b:GetDescendants()) do
+            if right:IsA("BasePart") and right.CanCollide
+                and right:GetAttribute("GearPivotOnly")~=true
+                and nearOnAxes(left,right) and nearOnAxes(right,left) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 -- A normal construction transform must not keep invisible joints spanning
 -- independently moved geometry. Springs are intentionally exempt: stretching
 -- a spring is an ordinary operation, not an authoring error.
@@ -2689,6 +2729,36 @@ function Mechanical:DisconnectMoved(player,beforeStates,afterStates,exemptRelati
             end
         end
         if changed and not keep then
+            -- A one-sided edit only disconnects once the geometry is no
+            -- longer physically engaged. Sliding a shaft inside its bore,
+            -- or sliding a joined panel along a touching face, is allowed.
+            local source=self.D.findOwned(player,
+                relation:GetAttribute("SourceId"))
+            local target=self.D.findOwned(player,
+                relation:GetAttribute("TargetId"))
+            local kind=relation:GetAttribute("Kind")
+            local engaged=false
+            if source and target then
+                if kind=="VectorJoint" then
+                    engaged=VectorJoint.Measure(source,target)~=nil
+                elseif kind=="Bearing" or kind=="Slider"
+                    or kind=="Cylindrical" then
+                    engaged=MultiFit.Check(source,target)~=nil
+                elseif kind=="Fixed" or kind=="Weld" or kind=="Bolt" then
+                    engaged=stillTouching(source,target)
+                        or (Alignment.IsShaft(source) and
+                            Bore.ShaftFits(source,target)==true)
+                        or (Alignment.IsShaft(target) and
+                            Bore.ShaftFits(target,source)==true)
+                    local secondId=relation:GetAttribute("SecondTargetId")
+                    if kind=="Bolt" and type(secondId)=="string" then
+                        local other=self.D.findOwned(player,secondId)
+                        engaged=engaged and other~=nil
+                            and stillTouching(source,other)
+                    end
+                end
+            end
+            if engaged then continue end
             local spec=self:Snapshot(relation)
             table.insert(disconnected,spec)
             self:DestroyRelation(relation)
