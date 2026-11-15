@@ -404,21 +404,11 @@ function Smart.HubPose(source: Model, target: Model, near: Vector3)
 end
 
 local function socketPlan(members, shaft, target, forcedByAim)
-    -- The original 1U generic Cylinder is slightly larger than the
-    -- standard 0.98U hole. New construction may snug it to 0.95U.
-    -- Existing authored shafts are never resized without user action.
-    local snugDiameter=nil
-    if not Bore.CanInsert(shaft,target) then
-        if shaft:GetAttribute("InstanceId")~="OPENWORKS_Preflight" then
-            return nil
-        end
-        snugDiameter=Bore.SnugDiameter(shaft,target)
-        if not snugDiameter then return nil end
-        local current=shaft.PrimaryPart.Size
-        shaft.PrimaryPart.Size=Vector3.new(current.X,snugDiameter,snugDiameter)
-        shaft:SetAttribute("OPENWORKS_AutoSnugDiameter",snugDiameter)
-        if not Bore.CanInsert(shaft,target) then return nil end
-    end
+    -- A solid default 1U Cylinder is slightly wider than the standard
+    -- 0.98U drilled opening. Detect geometry first and, only when the
+    -- player aims near a compatible hole, offer an automatic fine fit.
+    -- This also works for a single existing independent cylinder in Edit;
+    -- the server separately validates and persists its diameter change.
     local axis=Alignment.TargetAxis(target)
     if not axis then return nil end
     local targetCF=target:GetPivot()
@@ -439,6 +429,20 @@ local function socketPlan(members, shaft, target, forcedByAim)
     if forcedByAim and (radial>reach+0.10
         or math.abs(depth)>axialReach) then
         depth=0
+    end
+    local snugDiameter=nil
+    if not Bore.CanInsert(shaft,target) then
+        if #members~=1 or members[1]~=shaft then return nil end
+        snugDiameter=Bore.SnugDiameter(shaft,target)
+        if not snugDiameter then return nil end
+        local original=shaft.PrimaryPart.Size
+        shaft.PrimaryPart.Size=Vector3.new(original.X,snugDiameter,snugDiameter)
+        shaft:SetAttribute("OPENWORKS_AutoSnugDiameter",snugDiameter)
+        if not Bore.CanInsert(shaft,target) then
+            shaft.PrimaryPart.Size=original
+            shaft:SetAttribute("OPENWORKS_AutoSnugDiameter",nil)
+            return nil
+        end
     end
     local low,high=Alignment.InsertionBounds(shaft,target)
     if not low then return nil end

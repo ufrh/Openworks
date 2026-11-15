@@ -1034,6 +1034,8 @@ function Controller:SmartDrop(chosenKind)
         rollDegrees=match.rollDegrees,
         reverse=match.reverse==true,
         fitTargets=match.fitTargets,
+        shaftDiameter=if match.kind=="Bore" and not match.reverse
+            then match.snugDiameter else nil,
         approach=match.approach or exactSourcePosition,
         position=exactSourcePosition,
         orientation=exactSourceCF.Rotation,
@@ -1601,13 +1603,18 @@ function Controller:UpdatePreview()
         return
     end
     self.PreviewComputeTime=visualNow
-    if self.Mode=="Build" and self.CurrentId and not self.CurrentBank
-        and self.Preview.PrimaryPart and self.CurrentSize then
-        -- Restore original stock at the BEGINNING of each snap solve;
-        -- never flicker between full and snug diameter on the cached
-        -- interpolation frames (60+ Hz render / 30 Hz geometry updates).
-        self.Preview.PrimaryPart.Size=self.CurrentSize
-        self.Preview:SetAttribute("OPENWORKS_AutoSnugDiameter",nil)
+    if self.Preview.PrimaryPart then
+        local originalSize=if self.Mode=="Build" and self.CurrentId
+                and not self.CurrentBank then self.CurrentSize
+            elseif self.Pending=="Move" and self.Selected
+                and self.Selected.PrimaryPart then self.Selected.PrimaryPart.Size
+            else nil
+        if originalSize then
+            -- Restore original geometry before every matching pass. The
+            -- actual chosen snap may reapply a verified snug fit below.
+            self.Preview.PrimaryPart.Size=originalSize
+            self.Preview:SetAttribute("OPENWORKS_AutoSnugDiameter",nil)
+        end
     end
 
     local locked=self.LockedAlignment
@@ -1710,6 +1717,13 @@ function Controller:UpdatePreview()
         end
     end
     self.SmartMatch=match
+    if match and type(match.snugDiameter)=="number"
+        and self.Preview.PrimaryPart then
+        local size=self.Preview.PrimaryPart.Size
+        self.Preview.PrimaryPart.Size=Vector3.new(
+            size.X,match.snugDiameter,match.snugDiameter)
+        self.Preview:SetAttribute("OPENWORKS_AutoSnugDiameter",match.snugDiameter)
+    end
     if match then
         cf=match.cf
         self.Preview:PivotTo(cf)

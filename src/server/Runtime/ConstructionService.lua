@@ -607,7 +607,12 @@ local function place(player, payload)
                 or payload.autoMate.kind=="Hub"),
     }
     proposed.resizePrecision = Grid.HasFractionalSize(proposed.size)
+    -- New generic Cylinders can be auto-snugged into a real drilled bore.
+    -- The explicit bore attachment is independently checked against its
+    -- hole and other solids in MechanicalService before commit.
     proposed.fitPrecision = payload.templateId=="Shaft"
+        or (payload.autoMate~=nil and payload.autoMate.kind=="Bore"
+            and Alignment.IsShaft(entry.Model))
     proposed.numericPrecision = payload.numericPrecision == true
     proposed.fitPivotLocal=payload.fitPivotLocal
 

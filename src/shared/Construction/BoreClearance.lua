@@ -129,7 +129,10 @@ function Bore.SnugDiameter(source,target):(number?,string?)
     if not opening then return nil,"No real bore geometry"
     end
     local current=math.max(source.PrimaryPart.Size.Y,source.PrimaryPart.Size.Z)
-    local desired=opening-0.03*Grid.Unit
+    -- Exact 0.05U fabrication quantum: otherwise server-side
+    -- Grid.ValidSize would reject a green precision-fit preview.
+    local step=0.05*Grid.Unit
+    local desired=math.floor((opening-0.03*Grid.Unit)/step+1e-6)*step
     if desired<=0 then return nil,"Opening too small" end
     if current<=desired then return nil end
     -- No automatic major shape changes. 1U -> 0.95U for a 0.98U bore

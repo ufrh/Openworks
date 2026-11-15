@@ -824,10 +824,18 @@ def main() -> int:
     check("New default 1U cylinders auto-snug to clear 0.98U drilled bores",
           'function Bore.SnugDiameter(source,target)' in bore_clearance
           and 'current>opening*1.08' in bore_clearance
-          and 'shaft:GetAttribute("InstanceId")~="OPENWORKS_Preflight"' in smart_placement
-          and 'shaft.PrimaryPart.Size=Vector3.new(current.X,snugDiameter,snugDiameter)' in smart_placement
+          and '#members~=1 or members[1]~=shaft' in smart_placement
+          and 'shaft.PrimaryPart.Size=Vector3.new(original.X,snugDiameter,snugDiameter)' in smart_placement
           and 'OPENWORKS_AutoSnugDiameter' in selection
           and 'self.SmartMatch.snugDiameter' in selection)
+    check("Autosnug precision is accepted by server, validated and persisted on Edit moves",
+          'local step=0.05*Grid.Unit' in bore_clearance
+          and 'payload.autoMate.kind=="Bore"' in service
+          and 'and Alignment.IsShaft(entry.Model)' in service
+          and 'shaftDiameter=if match.kind=="Bore"' in selection
+          and 'allowedSnug=Bore.SnugDiameter(shaft,opening)' in mechanical
+          and 'state.fitPrecision=true' in mechanical
+          and 'self:ValidateResize(player,shaft:GetAttribute("InstanceId"))' in mechanical)
     check("Shaft/hole snap searches obstruction-free depth on 0.5U lattice",
           'function Insertion.Resolve(ghost:Model,source:Model,target:Model,' in bore_insertion
           and 'local anchorU=math.clamp(math.round(preferredU*2)' in bore_insertion

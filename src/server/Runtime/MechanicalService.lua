@@ -820,6 +820,18 @@ function Mechanical:SmartMate(player, request, newSource)
         if not plan then
             return false,reason or "Could not align the components"
         end
+        local requestedSnug=request.shaftDiameter
+        local allowedSnug=nil
+        if requestedSnug~=nil then
+            if newSource or reverse or #members~=1
+                or typeof(requestedSnug)~="number" then
+                return false,"Invalid shaft resize in this fit"
+            end
+            allowedSnug=Bore.SnugDiameter(shaft,opening)
+            if not allowedSnug or math.abs(allowedSnug-requestedSnug)>0.0002 then
+                return false,"Shaft cannot be automatically resized for that bore"
+            end
+        end
         for _,item in ipairs(plan.items) do
             local old=d.snapshot(item.model)
             local state=table.clone(old)
@@ -828,6 +840,14 @@ function Mechanical:SmartMate(player, request, newSource)
             state.orientation=item.orientation
             state.assemblyPrecision=true
             state.freePosition=true
+            if allowedSnug and item.model==shaft then
+                state.size=Vector3.new(state.size.X,allowedSnug,allowedSnug)
+                state.fitPrecision=true
+                state.resizePrecision=true
+                local entry=d.Registry.Get(state.templateId)
+                local valid,why=entry and d.validState(player,entry,state)
+                if not valid then return false,why or "Invalid fine-fit shaft diameter" end
+            end
             if item.model==shaft then
                 state.alignedOpeningId=opening:GetAttribute("InstanceId")
                 state.alignedOffsetU=offset
@@ -914,6 +934,10 @@ function Mechanical:SmartMate(player, request, newSource)
         d.applyState(member,planned[i])
     end
     if mode=="Bore" then
+        if request.shaftDiameter~=nil then
+            local valid,why=self:ValidateResize(player,shaft:GetAttribute("InstanceId"))
+            if not valid then restoreMoving() return false,why end
+        end
         local fits,why=Bore.ShaftFits(shaft,opening)
         if not fits then restoreMoving() return false,why end
     elseif mode=="Gear" or mode=="Rack" or mode=="Guide" then
