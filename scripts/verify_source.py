@@ -857,7 +857,7 @@ def main() -> int:
           'idMap[part.instanceId] = HttpService:GenerateGUID(false)' in component
           and 'newState.instanceId = idMap[desired.instanceId]' in component
           and 'newState.componentId = componentId' in component
-          and 'newState.componentAnchorId = idMap[anchorOldId]' in component
+          and 'newState.componentAnchorId = if componentId then idMap[anchorOldId] else nil' in component
           and 'newState.assemblyId = nil' in component
           and 'newState.assemblyName = nil' in component
           and 'newState.grounded = false' in component
@@ -1378,11 +1378,12 @@ def main() -> int:
     grid=read("src/shared/Construction/GridMath.lua")
     surface=read("src/shared/Construction/SurfacePlacement.lua")
     help_text=read("src/client/Controllers/ToolHelpDefinitions.lua")
-    check("Build defaults to smallest resizable stock with one 0.25U fabrication quantum",
+    check("Build restores authored primitive stock sizes and 2U shaft defaults",
           'MinSizeStepU = 0.25, DefaultSizeStepU = 0.25' in grid
-          and 'function Grid.InitialSize(templateSize, resizeMode)' in grid
+          and 'function Grid.InitialSize(templateSize,_resizeMode)' in grid
+          and 'return templateSize' in grid
           and 'Grid.InitialSize(entry.Model.PrimaryPart.Size,entry.ResizeMode)' in selection
-          and 'if id=="Shaft"' in selection)
+          and 'Grid.Unit*2,Grid.Unit*0.95,Grid.Unit*0.95' in selection)
     check("Neighbor faces are perfectly flush without clearance offsets",
           'local EPSILON = 0' in surface
           and 'SnapToNearbyFace(ghost:Model' in surface
@@ -1488,11 +1489,42 @@ def main() -> int:
           and 'VectorJointPinLock' not in vector_joint
           and 'PositionLock' not in vector_joint
           and 'table.insert(session.Constraints,control.PositionLock)' not in simulation)
-    check("Vector cover cannot detach or fall in physics simulation",
-          'Instance.new("SphereHandleAdornment")' in vector_joint
-          and 'shell.Adornee=sourcePart' in vector_joint
-          and 'shell.Anchored=true' in vector_joint
-          and 'Instance.new("WeldConstraint")' not in vector_joint)
+    check("Vector cover follows its shaft with metal material, no neon physics",
+          'shell.Material=Enum.Material.Metal' in vector_joint
+          and 'shell.Anchored=not physical' in vector_joint
+          and 'weld.Part0=sourcePart' in vector_joint
+          and 'weld.Part1=shell' in vector_joint
+          and 'shell.Massless=true' in vector_joint
+          and 'shell.CanCollide=false' in vector_joint
+          and 'SphereHandleAdornment' not in vector_joint)
+    check("Scaling a part does not sever its mechanical relationships",
+          'local pureResize=resized' in mechanical
+          and 'if not pureResize and not matching(a,b) then' in mechanical
+          and 'if motion.resized then keep=false end' not in mechanical)
+    check("Selection moves and duplicates all validated selected primitives",
+          'action == "TransformSelection" or action == "DuplicateSelection"' in service
+          and 'or action=="TransformSelection"' in component
+          and 'or action=="DuplicateSelection"' in component
+          and 'if payload.ids~=nil then' in component
+          and 'self.TransientSelection=true' in selection
+          and 'selectedIds=if self.TransientSelection then self:SelectedIds() else nil' in selection
+          and 'd.commitAssembly(player,{},after,relationships,false)' in component)
+    check("Temporary selection multi-fit checks every hole and rod",
+          'if #shafts>0 and movingHoles==0 then' in multi_fit
+          and 'for _,shaft in ipairs(shafts) do' in multi_fit
+          and 'if request.selectedIds~=nil then' in mechanical
+          and 'local members=if transient then transient' in mechanical
+          and 'math.min(eligible,available)' in smart_placement)
+    check("Direct drag preserves actual clicked surface point as grab pivot",
+          'HitPosition = hit.Position' in selection
+          and 'self.DragGrabLocal=anchor:GetPivot():PointToObjectSpace(held.HitPosition)' in selection
+          and 'CFrame.new(hit.Position)*rotation*CFrame.new(-self.DragGrabLocal)' in selection)
+    check("Spring tuning supports live edits and mass-aware stabilization",
+          'action~="TuneSpring"' in service
+          and 'SpringMath.ApplyPhysical(spring,p0,p1)' in active_physics
+          and 'SpringMath.ApplyPhysical(constraint,p0,p1)' in active_physics
+          and 'if simulating() and kind~="Spring" then' in unified_panel
+          and 'preset("ROAD",480,55,1)' in unified_panel)
     check("Vector Joint no longer applies elbow stabilizer torque",
           'stabilizeElbow' not in vector_joint
           and 'TiltDrive' not in vector_joint

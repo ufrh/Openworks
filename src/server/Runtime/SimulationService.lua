@@ -1052,7 +1052,11 @@ function Simulation:SyncRelationship(player,relation)
                 constraint.Stiffness=relation:GetAttribute("Stiffness") or 120
                 constraint.Damping=relation:GetAttribute("Damping") or 14
                 constraint.FreeLength=relation:GetAttribute("FreeLength") or 0.5
-                constraint.MaxLength=math.max(constraint.FreeLength*1.8,0.25)
+                local p0=constraint.Attachment0 and constraint.Attachment0.Parent
+                local p1=constraint.Attachment1 and constraint.Attachment1.Parent
+                if p0 and p1 then
+                    SpringMath.ApplyPhysical(constraint,p0,p1)
+                end
             elseif kind=="Bearing" and constraint:IsA("HingeConstraint") then
                 constraint.LimitsEnabled=relation:GetAttribute("LimitsEnabled")==true
                 constraint.LowerAngle=relation:GetAttribute("LowerLimit") or -180

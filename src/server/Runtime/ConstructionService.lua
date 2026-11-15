@@ -1341,7 +1341,8 @@ local function handle(player, payload)
         if action ~= "StopSimulation" and not hasEquippedTool(player,"AssemblySimulation") then
             return {ok=false,message="Equip Simulate to run a mechanism"}
         end
-    elseif simulation and simulation:IsRunning(player) then
+    elseif simulation and simulation:IsRunning(player)
+        and action~="TuneSpring" then
         return { ok = false, message = "Stop simulation before changing construction" }
     elseif mechanicalAction then
         if propertyAction or action=="RemoveRelation" then

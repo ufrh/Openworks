@@ -959,11 +959,14 @@ function Panel:RenderRelation(node)
     self:Value("Type",kind)
     self:Value("From",node.first and node.first.Name or "?")
     self:Value("To",node.second and node.second.Name or "?")
-    if simulating() then
+    if simulating() and kind~="Spring" then
         self:Value("Status","Read-only during simulation")
         return
     end
     if kind=="Spring" then
+        if simulating() then
+            self:Value("LIVE","Tune spring strength/damping while simulating")
+        end
         -- Plane Crazy-style configuration: three plain-language controls
         -- and one-click suspension presets. Keep the raw quantities visible
         -- so experienced builders can tune exact springs as well.

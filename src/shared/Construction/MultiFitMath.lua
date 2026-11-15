@@ -192,7 +192,10 @@ function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
             end
         end
     end
-    if #shafts==1 and movingHoles==0 then
+    -- A free selection containing several rods must discover matching
+    -- holes across independent, ungrouped stationary pieces too. Previous
+    -- code only searched the extra holes when exactly ONE rod was moving.
+    if #shafts>0 and movingHoles==0 then
         for _,candidate in ipairs(all or {}) do
             if not known[candidate] and not (ignored and ignored[candidate])
                 and candidate:GetAttribute("OwnerUserId")
@@ -202,9 +205,14 @@ function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
                 -- inserting a pin through hinge lugs must not silently
                 -- mount every nearby drivetrain gear as a bearing.
                 and type(candidate:GetAttribute("GearTeeth"))~="number"
-                and Fit.Check(shafts[1],candidate,delta) then
-                table.insert(result,candidate)
-                known[candidate]=true
+                then
+                for _,shaft in ipairs(shafts) do
+                    if Fit.Check(shaft,candidate,delta) then
+                        table.insert(result,candidate)
+                        known[candidate]=true
+                        break
+                    end
+                end
             end
         end
     end
@@ -253,7 +261,7 @@ function Fit.Completeness(movingMembers,stationaryModels,pairs,reverse)
     -- Multiple genuine constraints require their axes to be exceptionally
     -- close. Do not silently use just one accepted guide.
     for _,pair in ipairs(pairs or {}) do
-        if pair.radial>Grid.Unit*0.04 or (pair.angular or 0)<0.999995 then
+        if pair.radial>Grid.Unit*0.09 or (pair.angular or 0)<0.9999 then
             return false,"Guide pattern is slightly offset; re-align the whole component"
         end
     end

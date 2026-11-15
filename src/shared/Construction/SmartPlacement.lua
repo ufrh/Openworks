@@ -843,7 +843,15 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     target:GetAttribute("InstanceId")) or {}
                 local completed=MultiFit.Completeness(
                     members,chosenTargets,currentFits,isOpening)
-                if #currentFits<eligible or not completed then
+                local available=0
+                for _,fixed in ipairs(chosenTargets) do
+                    if (isOpening and Alignment.IsShaft(fixed))
+                        or (not isOpening and Alignment.TargetAxis(fixed)) then
+                        available+=1
+                    end
+                end
+                if #currentFits<math.min(eligible,available)
+                    or not completed then
                     cf,roll=bestBoreRoll(ghost,members,source,target,
                         isOpening,offset,roll,cf,chosenTargets,ignored)
                 end
