@@ -730,6 +730,86 @@ function Panel:Field(name,value)
     return text
 end
 
+-- Plane Crazy-like suspension slider. The player sees intuitive 0–100
+-- travel plus the actual physical value in the adjacent editable textbox.
+-- Non-linear scaling gives useful sensitivity to small mechanism springs.
+function Panel:SpringSlider(name,mode,onRelease)
+    local field=self.Fields[name]
+    if not field then return end
+    local line=row(self.Properties,29)
+    local rail=style(mk("TextButton",line,{
+        Name="Spring_"..name,
+        Text="",AutoButtonColor=false,
+        Size=UDim2.new(1,-12,0,24),Position=UDim2.fromOffset(6,2),
+        BackgroundColor3=Theme.Input,BorderSizePixel=0,ZIndex=13,
+    }),Theme.Input)
+    local filled=mk("Frame",rail,{
+        Size=UDim2.fromScale(0,1),BackgroundColor3=Theme.Accent,
+        BackgroundTransparency=0.28,BorderSizePixel=0,ZIndex=14,
+    })
+    local amount=label(rail,"",UDim2.fromOffset(6,0),
+        UDim2.new(1,-12,1,0),Theme.Text)
+    amount.ZIndex=15
+    amount.TextXAlignment=Enum.TextXAlignment.Right
+    local function fraction(value)
+        if mode=="strength" then
+            return math.log(math.clamp(value,10,3000)/10)/math.log(300)
+        elseif mode=="damping" then
+            return (math.clamp(value,0,300)/300)^(1/2.1)
+        else
+            return math.clamp((value-0.25)/19.75,0,1)
+        end
+    end
+    local function mapped(frac)
+        if mode=="strength" then
+            return math.round(10*300^frac)
+        elseif mode=="damping" then
+            return math.round(300*frac^2.1)
+        else
+            return math.round((0.25+19.75*frac)*4)/4
+        end
+    end
+    local function redraw()
+        if not field.Parent or not rail.Parent then return end
+        local frac=math.clamp(fraction(tonumber(field.Text) or 0),0,1)
+        filled.Size=UDim2.fromScale(frac,1)
+        amount.Text=string.format("%s  %d%%",
+            if mode=="strength" then "Strength"
+                elseif mode=="damping" then "Damping" else "Length",
+            math.round(frac*100))
+    end
+    field:GetPropertyChangedSignal("Text"):Connect(redraw)
+    local function setFromX(x)
+        local width=math.max(1,rail.AbsoluteSize.X)
+        local frac=math.clamp((x-rail.AbsolutePosition.X)/width,0,1)
+        field.Text=tostring(mapped(frac))
+        redraw()
+    end
+    local dragging=false
+    rail.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 then
+            dragging=true
+            setFromX(input.Position.X)
+        end
+    end)
+    local moved=UIS.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then
+            setFromX(input.Position.X)
+        end
+    end)
+    local released=UIS.InputEnded:Connect(function(input)
+        if dragging and input.UserInputType==Enum.UserInputType.MouseButton1 then
+            dragging=false
+            if onRelease then onRelease() end
+        end
+    end)
+    rail.Destroying:Connect(function()
+        moved:Disconnect()
+        released:Disconnect()
+    end)
+    redraw()
+end
+
 function Panel:ActionButton(name,tip,callback)
     local r=row(self.Properties,29)
     local item=button(r,name,UDim2.fromOffset(3,0),
@@ -972,11 +1052,31 @@ function Panel:RenderRelation(node)
         -- so experienced builders can tune exact springs as well.
         self:Value("Strength","Resists compression and extension")
         self:Field("Stiffness",math.round(rel:GetAttribute("Stiffness") or 120))
+        local function springConfirm()
+            local stiffness=tonumber(self.Fields.Stiffness.Text)
+            local damping=tonumber(self.Fields.Damping.Text)
+            local length=tonumber(self.Fields["Rest length (U)"].Text)
+            if not stiffness or not damping or not length then
+                self:Message("Invalid spring values") return
+            end
+            self:Send({action="TuneSpring",relationId=node.id,
+                stiffness=stiffness,damping=damping,
+                freeLength=length*Grid.Unit},true)
+        end
+        self:SpringSlider("Stiffness","strength",function()
+            if simulating() then springConfirm() end
+        end)
         self:Value("Bounce control","More damping = less oscillation")
         self:Field("Damping",math.round(rel:GetAttribute("Damping") or 14))
+        self:SpringSlider("Damping","damping",function()
+            if simulating() then springConfirm() end
+        end)
         self:Value("Natural length","Rest position, in construction units")
         self:Field("Rest length (U)",
             math.round((rel:GetAttribute("FreeLength") or 0.5)/Grid.Unit*10)/10)
+        self:SpringSlider("Rest length (U)","length",function()
+            if simulating() then springConfirm() end
+        end)
         self:Section("Suspension presets")
         local presets=row(self.Properties,34)
         local function preset(name,stiff,damp,pos)
@@ -1011,17 +1111,8 @@ function Panel:RenderRelation(node)
                     math.ceil((tonumber(self.Fields.Damping.Text) or 14)*1.4+1)))
             end)
         self:ActionButton("CONFIRM SPRING SETTINGS",
-            "Apply spring strength, damping and natural length together",function()
-                local stiffness=tonumber(self.Fields.Stiffness.Text)
-                local damping=tonumber(self.Fields.Damping.Text)
-                local length=tonumber(self.Fields["Rest length (U)"].Text)
-                if not stiffness or not damping or not length then
-                    self:Message("Invalid spring values") return
-                end
-                self:Send({action="TuneSpring",relationId=node.id,
-                    stiffness=stiffness,damping=damping,
-                    freeLength=length*Grid.Unit},true)
-            end)
+            "Save the spring setup. Sliders apply live on release during simulation",
+            springConfirm)
     elseif kind=="Bearing" or kind=="Slider" or kind=="Cylindrical" then
         self:Field("Lower limit",rel:GetAttribute("LowerLimit") or -4)
         self:Field("Upper limit",rel:GetAttribute("UpperLimit") or 4)
