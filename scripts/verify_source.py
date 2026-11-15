@@ -1527,6 +1527,12 @@ def main() -> int:
           'session.GroundKeys = explicitGround' in simulation
           and 'part.Anchored=session.GroundKeys[key]==true' in simulation
           and 'Ground one Vector Joint shaft to hold the pair in place' in simulation)
+    torque_factory=vector_joint.split("local function torque(runtime,attach,name,id)",1)[1].split("function VectorJoint.Compile(",1)[0]
+    check("Roblox Torque constraint never receives AngularVelocity-only properties",
+          'local device=Instance.new("Torque")' in torque_factory
+          and 'device.ReactionTorqueEnabled' not in torque_factory
+          and 'device.RelativeTo=Enum.ActuatorRelativeTo.World' in torque_factory
+          and 'motor.ReactionTorqueEnabled=false' in vector_joint)
     check("Vector Joint physically transfers bidirectional shaft torque",
           'Instance.new("Torque")' in vector_joint
           and 'j.TorqueA.Torque=-axisA*effort' in vector_joint
