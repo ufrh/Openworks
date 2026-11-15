@@ -1589,14 +1589,6 @@ function Controller:UpdatePreview()
     -- Explicit placement/fit changes set LastPreviewCheck=0 to bypass the
     -- budget and calculate on the next rendered frame.
     local visualNow=os.clock()
-    if self.Mode=="Build" and self.CurrentId and not self.CurrentBank
-        and self.Preview.PrimaryPart and self.CurrentSize then
-        -- The snapped preview can temporarily shrink a 1U cylinder to
-        -- fit a 0.98U bore. Restore authored default stock before each
-        -- new matching pass so leaving the hole undoes the preview change.
-        self.Preview.PrimaryPart.Size=self.CurrentSize
-        self.Preview:SetAttribute("OPENWORKS_AutoSnugDiameter",nil)
-    end
     if self.PreviewCF and self.Preview.Parent
         and self.LastPreviewCheck~=0
         and visualNow-(self.PreviewComputeTime or 0)<1/30 then
@@ -1609,6 +1601,14 @@ function Controller:UpdatePreview()
         return
     end
     self.PreviewComputeTime=visualNow
+    if self.Mode=="Build" and self.CurrentId and not self.CurrentBank
+        and self.Preview.PrimaryPart and self.CurrentSize then
+        -- Restore original stock at the BEGINNING of each snap solve;
+        -- never flicker between full and snug diameter on the cached
+        -- interpolation frames (60+ Hz render / 30 Hz geometry updates).
+        self.Preview.PrimaryPart.Size=self.CurrentSize
+        self.Preview:SetAttribute("OPENWORKS_AutoSnugDiameter",nil)
+    end
 
     local locked=self.LockedAlignment
     local cf,match

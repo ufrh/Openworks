@@ -820,6 +820,7 @@ def main() -> int:
           'if Alignment.IsShaft(model) then return nil end' in alignment_math
           and 'if isOpening and Alignment.IsShaft(target) then' in smart_placement
           and 'if isShaft and Alignment.TargetAxis(target) then' in smart_placement)
+    bore_clearance=read("src/shared/Construction/BoreClearance.lua")
     check("New default 1U cylinders auto-snug to clear 0.98U drilled bores",
           'function Bore.SnugDiameter(source,target)' in bore_clearance
           and 'current>opening*1.08' in bore_clearance
