@@ -57,7 +57,10 @@ check("Copy is an undoable authored edit, returning its new instance ID",
     and 'if result and action == "DuplicatePrimitive" then message = "Duplicated" end' in server
     and 'if result and (action == "Place" or action == "DuplicatePrimitive")' in server)
 check("Component copy retains its separate Edit-authorized path",
-    'action = if isCopy then "DuplicateComponent" else "TransformComponent"' in client
+    'else "DuplicateComponent")' in client
+    and 'else "TransformComponent")' in client
+    and 'if self.TransientSelection then "DuplicateSelection"' in client
+    and 'if self.TransientSelection then "TransformSelection"' in client
     and 'if componentAction and not hasEquippedTool(player,"Edit") then' in server
     and 'function ComponentService:Duplicate(player, payload)' in component)
 check("Component copy remaps internal joint IDs and does not inherit assemblies",
