@@ -37,6 +37,11 @@ end
 
 function Alignment.TargetAxis(model)
     if not model or not model:IsA("Model") or not model.PrimaryPart then return nil end
+    -- A solid cylindrical shaft is NEVER a hole, even though the Shaft
+    -- template has AxialAxis="X" describing its *own* longitudinal axis.
+    -- Previously it was detected as both types and stole bore-fit snaps
+    -- from actual drilled holes in multi-shaft constructions.
+    if Alignment.IsShaft(model) then return nil end
     local name = family(model)
     if string.find(name, "halftube", 1, true) then return nil end
     local explicit = axisOverride(model)

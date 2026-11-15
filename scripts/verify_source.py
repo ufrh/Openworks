@@ -816,6 +816,10 @@ def main() -> int:
           and 'rayError=math.min(rayError,boreAimDistance(aimRay,target))' in smart_placement
           and 'local boreAimed=type(boreDiameter)=="number"' in smart_placement
           and 'if gearPlacement or hitGear or bevelAim or hitRack or boreAimed' in smart_placement)
+    check("A physical shaft with AxialAxis=X is NOT detected as a hollow opening",
+          'if Alignment.IsShaft(model) then return nil end' in alignment_math
+          and 'if isOpening and Alignment.IsShaft(target) then' in smart_placement
+          and 'if isShaft and Alignment.TargetAxis(target) then' in smart_placement)
     check("Shaft/hole snap searches obstruction-free depth on 0.5U lattice",
           'function Insertion.Resolve(ghost:Model,source:Model,target:Model,' in bore_insertion
           and 'local anchorU=math.clamp(math.round(preferredU*2)' in bore_insertion
