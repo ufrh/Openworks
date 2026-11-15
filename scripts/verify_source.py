@@ -1084,10 +1084,11 @@ def main() -> int:
           and 'MultiFit.Check(source,hole)' in mechanical
           and 'MultiFit.StationarySet({model},opening,all)' in service
           and 'Alignment.InsertionBounds(source,target)' in mechanical)
-    check("Linear guide stop remains strict for multi-hole fit",
+    check("Linear guide stop accepts physically engaged multi-hole partial insertion",
           'if typeName=="Slider" or typeName=="Cylindrical" then' in mechanical
-          and 'Alignment.OffsetBounds(pair.shaft,pair.hole)' in mechanical
-          and 'Choose Rotation Only for a long hinge pin' in mechanical)
+          and 'Alignment.InsertionBounds(pair.shaft,pair.hole)' in mechanical
+          and 'Shaft must genuinely engage every opening' in mechanical
+          and 'low=math.min(low,authored)' in alignment_math)
     check("Simulation constrains legacy out-of-bounds shafts without aborting",
           'Alignment.RelativeTravelBounds(' in simulation
           and 'local legacyOutside=lower>0 or upper<0' in simulation
