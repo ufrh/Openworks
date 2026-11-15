@@ -677,6 +677,32 @@ function Mechanical:SmartMate(player, request, newSource)
         return false,"Relationship limit reached"
     end
 
+    local transient=nil
+    if request.selectedIds~=nil then
+        if newSource or type(request.selectedIds)~="table"
+            or #request.selectedIds<2 or #request.selectedIds>128 then
+            return false,"Invalid temporary multi-fit selection"
+        end
+        local seen={}
+        transient={}
+        local includesSource=false
+        for _,id in ipairs(request.selectedIds) do
+            if type(id)~="string" or seen[id] then
+                return false,"Duplicate or invalid multi-fit ID"
+            end
+            seen[id]=true
+            local model=d.findOwned(player,id)
+            if not model or model:GetAttribute("ComponentId") or model==target
+                or not d.nearPlayer(player,model:GetPivot().Position) then
+                return false,"Multi-fit must contain owned independent moving primitives"
+            end
+            if model==source then includesSource=true end
+            table.insert(transient,model)
+        end
+        if not includesSource then
+            return false,"Multi-fit selection must include the chosen shaft/hole"
+        end
+    end
     local movingComponent=source:GetAttribute("ComponentId")
     local targetComponent=target:GetAttribute("ComponentId")
     if movingComponent and movingComponent==targetComponent then
@@ -713,8 +739,9 @@ function Mechanical:SmartMate(player, request, newSource)
         d.commitAssembly(player,{},{},spec)
         return true,"Gear rigidly welded onto the shaft (in-place Hub)"
     end
-    local members=if movingComponent
-        then d.components:Members(player,movingComponent) else {source}
+    local members=if transient then transient
+        elseif movingComponent then d.components:Members(player,movingComponent)
+        else {source}
     if #members==0 or #members>128 then
         return false,"Moving construction is unavailable"
     end
@@ -752,7 +779,8 @@ function Mechanical:SmartMate(player, request, newSource)
             local desired=CFrame.new(request.position)
                 *request.orientation.Rotation
             local movement=desired*source:GetPivot():Inverse()
-            if movingComponent and typeof(request.groupPivot)=="CFrame" then
+            if (movingComponent or transient)
+                and typeof(request.groupPivot)=="CFrame" then
                 local groupPivot=request.groupPivot
                 if not d.Grid.ValidPosition(groupPivot.Position) then
                     return false,"Component snap pivot is outside build range"

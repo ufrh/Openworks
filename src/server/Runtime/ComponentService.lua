@@ -129,7 +129,33 @@ end
 
 function ComponentService:Plan(player, payload)
     local d = self.D
-    local members, reason = self:RequireMembers(player, payload.componentId)
+    local members, reason
+    if payload.ids~=nil then
+        -- Temporary multi-selection is NOT a persistent component. Verify
+        -- each independently owned ID instead of trusting client instances.
+        if type(payload.ids)~="table" or #payload.ids<2
+            or #payload.ids>128 then
+            return nil,nil,"Select between 2 and 128 independent primitives"
+        end
+        local seen={}
+        members={}
+        for _,id in ipairs(payload.ids) do
+            if type(id)~="string" or seen[id] then
+                return nil,nil,"Invalid multi-selection IDs"
+            end
+            seen[id]=true
+            local model=d.findOwned(player,id)
+            if not model or model:GetAttribute("ComponentId") then
+                return nil,nil,"Multi-move requires selected independent primitives"
+            end
+            if not d.nearPlayer(player,model:GetPivot().Position) then
+                return nil,nil,"Selected primitive outside build range"
+            end
+            table.insert(members,model)
+        end
+    else
+        members,reason=self:RequireMembers(player,payload.componentId)
+    end
     if not members then return nil, nil, reason end
     if not d.Grid.ValidPosition(payload.position) or not d.Grid.ValidSteps(payload.steps) then
         return nil, nil, "Invalid component transform"
@@ -298,7 +324,8 @@ function ComponentService:Duplicate(player, payload)
         return false, "Construction limit reached"
     end
 
-    local componentId = HttpService:GenerateGUID(false)
+    local componentId = if payload.ids then nil
+        else HttpService:GenerateGUID(false)
     local anchorOldId = payload.anchorId
     local idMap = {}
     for _, part in ipairs(planned) do
@@ -383,7 +410,7 @@ function ComponentService:Duplicate(player, payload)
         -- attachments and saved assembly membership are not inherited.
         newState.instanceId = idMap[desired.instanceId]
         newState.componentId = componentId
-        newState.componentAnchorId = idMap[anchorOldId]
+        newState.componentAnchorId = if componentId then idMap[anchorOldId] else nil
         newState.assemblyId = nil
         newState.assemblyName = nil
         newState.grounded = false
@@ -428,7 +455,8 @@ function ComponentService:Duplicate(player, payload)
     else
         d.commitBatch(player,{},after)
     end
-    return true,componentId
+    return true,if componentId then componentId
+        else tostring(#after).." primitives duplicated with internal joints"
 end
 
 function ComponentService:Delete(player, payload)
@@ -476,8 +504,12 @@ end
 function ComponentService:Handle(player, action, payload)
     if action == "Group" then return self:Group(player, payload) end
     if action == "Ungroup" then return self:Ungroup(player, payload) end
-    if action == "TransformComponent" then return self:Transform(player, payload) end
-    if action == "DuplicateComponent" then return self:Duplicate(player, payload) end
+    if action == "TransformComponent" or action=="TransformSelection" then
+        return self:Transform(player, payload)
+    end
+    if action == "DuplicateComponent" or action=="DuplicateSelection" then
+        return self:Duplicate(player, payload)
+    end
     if action == "DeleteComponent" then return self:Delete(player, payload) end
     return false, "Unknown component action"
 end

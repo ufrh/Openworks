@@ -1319,6 +1319,7 @@ local function handle(player, payload)
     local verticalAction=action=="VerticalMove"
     local componentAction = action == "Group" or action == "Ungroup"
         or action == "TransformComponent" or action == "DuplicateComponent"
+        or action == "TransformSelection" or action == "DuplicateSelection"
         or action == "DeleteComponent" or action == "RotateComponent"
         or action == "RotatePrimitiveWorld"
     local smartAction = action == "SmartMate"

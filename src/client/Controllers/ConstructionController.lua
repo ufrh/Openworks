@@ -154,6 +154,8 @@ function Controller.new(tools)
         DirectDragCandidate = nil,
         DirectDragActive = false,
         MoveShadowStates=nil,
+        TransientSelection=false,
+        DragGrabLocal=nil,
         VerticalHeld=nil,VerticalElapsed=0,
         Layered = nil,
         Busy = false,
@@ -1031,6 +1033,7 @@ function Controller:SmartDrop(chosenKind)
         -- The ghost was pivoted around its WHOLE component anchor; sending
         -- that exact pivot avoids re-deriving the transform from a corner.
         groupPivot=if self.Pending=="ComponentMove" then self.PreviewCF else nil,
+        selectedIds=if self.TransientSelection then self:SelectedIds() else nil,
     })
     if ok then
         if self.Feedback and (match.kind=="Bore" or match.kind=="Hub"
@@ -1447,6 +1450,11 @@ function Controller:ToggleMultiSelection(model)
 end
 
 function Controller:CancelPending()
+    self.TransientSelection=false
+    self.DragGrabLocal=nil
+    if not self.SelectedComponentId and not self.Selected then
+        self.GroupAnchor=nil
+    end
     if self.MoveShadowStates then
         for part,original in pairs(self.MoveShadowStates) do
             if part and part.Parent then part.CastShadow=original end
@@ -1653,8 +1661,12 @@ function Controller:UpdatePreview()
             else Grid.FromSurface(hit.Position,hit.Normal,
                 self.CurrentSize,rotation)
         if not self.Preview.Parent then self.Preview.Parent=workspace end
-        cf=if target then SurfacePlacement.SnapToNearbyFace(
-            self.Preview,proposed,hit.Position,hit.Normal,hit.Instance)
+        cf=if self.DirectDragActive and self.DragGrabLocal then
+            -- The grab point stays underneath the crosshair, not the
+            -- component center; free drag still undergoes collision checks.
+            CFrame.new(hit.Position)*rotation*CFrame.new(-self.DragGrabLocal)
+            elseif target then SurfacePlacement.SnapToNearbyFace(
+                self.Preview,proposed,hit.Position,hit.Normal,hit.Instance)
             else SurfacePlacement.SnapToSurface(self.Preview,proposed,
                 hit.Position,hit.Normal)
         local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
@@ -2015,8 +2027,19 @@ function Controller:ConfirmMove()
     self:FinishPendingHandoff(handoff,goal,models,success)
 end
 
+function Controller:SelectedIds()
+    local ids={}
+    for _,member in ipairs(self.SelectedParts) do
+        if member and member.Parent then
+            table.insert(ids,member:GetAttribute("InstanceId"))
+        end
+    end
+    return ids
+end
+
 function Controller:ConfirmComponentPlacement()
-    if not self.SelectedComponentId or not self.GroupAnchor or not self.PreviewCF then return end
+    if not (self.SelectedComponentId or self.TransientSelection)
+        or not self.GroupAnchor or not self.PreviewCF then return end
     if self.Pending=="ComponentMove" and self.SmartMatch
         and self:SmartDrop() then return end
     if not self.PreviewValid then
@@ -2027,8 +2050,12 @@ function Controller:ConfirmComponentPlacement()
     local isCopy=self.Pending=="ComponentCopy"
     local handoff,goal,models=self:CapturePendingHandoff()
     local ok = self:Request({
-        action = if isCopy then "DuplicateComponent" else "TransformComponent",
+        action = if isCopy then (if self.TransientSelection then "DuplicateSelection"
+            else "DuplicateComponent")
+            else (if self.TransientSelection then "TransformSelection"
+                else "TransformComponent"),
         componentId = self.SelectedComponentId,
+        ids=if self.TransientSelection then self:SelectedIds() else nil,
         anchorId = self.GroupAnchor:GetAttribute("InstanceId"),
         position = self.PreviewCF.Position,
         steps = stepsCopy(self.Steps),
@@ -2156,7 +2183,11 @@ end
 
 function Controller:StartMove(copy)
     if self.Mode ~= "Edit" or self.Pending then return end
-    if self.SelectedComponentId and self.GroupAnchor then
+    if not self.SelectedComponentId and #self.SelectedParts>1 then
+        self.GroupAnchor=ComponentGeometry.CentralPrimitive(self.SelectedParts)
+        self.TransientSelection=true
+    end
+    if self.GroupAnchor and (self.SelectedComponentId or self.TransientSelection) then
         self.Pending = if copy then "ComponentCopy" else "ComponentMove"
         self.CurrentId = self.GroupAnchor:GetAttribute("TemplateId")
         self.CurrentSize = self.GroupAnchor.PrimaryPart.Size
@@ -2557,12 +2588,13 @@ function Controller:BeginDirectDrag()
     -- when looking around during selection.
     local alreadySelected = if self.SelectedComponentId
         then node:GetAttribute("ComponentId") == self.SelectedComponentId
-        else self.Selected == node
+        else table.find(self.SelectedParts,node)~=nil
     if not alreadySelected then return end
     local camera = workspace.CurrentCamera
     if not camera then return end
     self.DirectDragCandidate = {
         Model = node,
+        HitPosition = hit.Position,
         StartedAt = os.clock(),
         Camera = camera.CFrame,
     }
@@ -2586,9 +2618,16 @@ function Controller:UpdateDirectDrag()
 
     if self.SelectedComponentId then
         if held.Model:GetAttribute("ComponentId") ~= self.SelectedComponentId then return end
-    elseif self.Selected ~= held.Model then
+    elseif not table.find(self.SelectedParts,held.Model) then
         return
     end
+    -- Preserve precisely the surface point that was actually clicked,
+    -- relative to the ghost pivot. A drag must not re-center on the part.
+    local anchor=if self.SelectedComponentId then self.GroupAnchor
+        elseif #self.SelectedParts>1 then ComponentGeometry.CentralPrimitive(
+            self.SelectedParts) else held.Model
+    if not anchor then return end
+    self.DragGrabLocal=anchor:GetPivot():PointToObjectSpace(held.HitPosition)
     self.DirectDragActive = true
     self:StartMove(false)
     if not self.Pending then self.DirectDragActive = false end
