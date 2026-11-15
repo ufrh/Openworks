@@ -578,8 +578,8 @@ function Controller:RefreshHUD()
         return
     end
     if self.ScaleReference and self.ScaleReference.Moving then
-        self.DetailLabel.Text="CHARACTER SIZE REFERENCE / 5.2 STUDS"
-        self.HelpLabel.Text="Aim at ground • click to place mannequin • Enter cancel"
+        self.DetailLabel.Text="YOUR CHARACTER / ACTUAL AVATAR SCALE"
+        self.HelpLabel.Text="Aim at ground • click to place your avatar • Enter cancel"
         return
     end
     if self.SmartMatch and not (self.Layered and self.Layered.Alignment)
@@ -2155,7 +2155,7 @@ function Controller:Activate(mode)
     if self.ScaleReference and self.ScaleReference.Moving then
         if self.ScaleReference:Place() then
             self.IgnoreClickUntil=os.clock()+0.18
-            self:Message("Scale mannequin placed • Shift+J move • J hide")
+            self:Message("Avatar reference placed • Shift+J move • J hide")
             self:RefreshHUD()
         end
         return
@@ -2798,11 +2798,11 @@ function Controller:OnInput(input, processed)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
         if shift then
             self.ScaleReference:BeginMove()
-            self:Message("Aim where the feet should stand • click to place • Enter cancel")
+            self:Message("Place your avatar reference • click to set feet • Enter cancel")
         else
             local shown=self.ScaleReference:Toggle()
-            self:Message(if shown then "Scale mannequin shown • Shift+J to move"
-                else "Scale mannequin hidden")
+            self:Message(if shown then "Your avatar shown • Shift+J to move"
+                else "Avatar reference hidden")
         end
         self:RefreshHUD()
         return
@@ -2812,7 +2812,7 @@ function Controller:OnInput(input, processed)
             or input.KeyCode==Enum.KeyCode.KeypadEnter
             or input.KeyCode==Enum.KeyCode.Escape) then
         self.ScaleReference:CancelMove()
-        self:Message("Scale mannequin placement canceled")
+        self:Message("Avatar reference placement canceled")
         self:RefreshHUD()
         return
     end

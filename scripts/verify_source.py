@@ -778,6 +778,17 @@ def main() -> int:
           and 'local bevelAim=isGear and movingGear and aimRay' in smart_placement
           and 'or bevelAim or hitRack' in smart_placement)
     scale_ghost=read("src/client/Controllers/CharacterScaleGhost.lua")
+    check("Client-only mannequin reproduces actual character appearance and scale",
+          'character:Clone()' in scale_ghost
+          and 'character.Archivable=true' in scale_ghost
+          and 'character.Archivable=archived' in scale_ghost
+          and 'model:GetBoundingBox()' in scale_ghost
+          and 'self.FootOffset=model:GetPivot():PointToObjectSpace(bottom)' in scale_ghost
+          and 'player.CharacterAppearanceLoaded:Connect(' in scale_ghost
+          and 'item:IsA("LuaSourceContainer")' in scale_ghost
+          and 'item:IsA("Humanoid")' in scale_ghost
+          and 'item.CanQuery=false' in scale_ghost
+          and 'item.CanCollide=false' in scale_ghost)
     check("Client-only mannequin provides scale, placement, movement and hide",
           'function ScaleGhost:Show(value)' in scale_ghost
           and 'function ScaleGhost:BeginMove()' in scale_ghost
