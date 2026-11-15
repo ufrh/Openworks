@@ -810,6 +810,10 @@ def main() -> int:
           and 'low=math.min(low,authored)' in alignment_math
           and 'high=math.max(high,authored)' in alignment_math
           and 'local low,high=Alignment.InsertionBounds(pair.shaft,pair.hole)' in mechanical)
+    check("Entire real bore aperture counts as targeted, not just a tiny center point",
+          'aimReach=math.max(aimReach,' in smart_placement
+          and 'math.clamp(aperture*0.5+0.07,0.10,0.40)' in smart_placement
+          and 'local aimed=rayError<=aimReach' in smart_placement)
     check("Aiming through the empty bore detects the hole rather than the rear wall",
           'local function boreAimDistance(ray,target)' in smart_placement
           and 'local nearest=cf.Position+axis*depth' in smart_placement

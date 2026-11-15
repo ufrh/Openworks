@@ -750,6 +750,16 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 rayError=math.min(rayError,boreAimDistance(aimRay,target))
             end
             local aimReach=math.clamp(target.PrimaryPart.Size.Magnitude*0.20,0.10,0.55)
+            if isShaft and Alignment.TargetAxis(target) then
+                -- Every point INSIDE the visible aperture counts as a
+                -- deliberate hole aim; its centerline is not the only
+                -- clickable point. This matches NearbyTargets capture.
+                local aperture=Bore.OpeningDiameter(target)
+                if aperture then
+                    aimReach=math.max(aimReach,
+                        math.clamp(aperture*0.5+0.07,0.10,0.40))
+                end
+            end
             local aimed=rayError<=aimReach
             local kind,cf,offset,roll,score,approach
             local pivot=if movingHasOrigin and source==pivotAnchor
@@ -952,6 +962,11 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 if resolved then
                     cf=resolved
                     offset=newDepth
+                else
+                    -- Never keep a red invalid snapped pose just because
+                    -- an initial center alignment was geometrically close.
+                    -- Other holes may still be valid candidates.
+                    cf=nil
                 end
             end
             if cf and kind=="Bore" and #members>1 then
