@@ -767,6 +767,14 @@ local function update(player, payload)
     local stillAligned=false
     if opening and Alignment.IsShaft(model) then
         stillAligned=Bore.ShaftFits(model,opening)
+        if not stillAligned and typeof(proposed.size)=="Vector3"
+            and (proposed.size-before.size).Magnitude>0.0001 then
+            -- A resize must NEVER silently destroy an existing bearing
+            -- or insertion relationship. Reject geometry that would no
+            -- longer fit; an explicit move can still disconnect it.
+            applyState(model,before)
+            return false,"Resize exceeds existing shaft/hole clearance; joint preserved"
+        end
         if stillAligned then
             local axis=opening:GetPivot():VectorToWorldSpace(
                 Alignment.TargetAxis(opening)
