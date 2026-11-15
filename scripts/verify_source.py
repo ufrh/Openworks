@@ -768,6 +768,18 @@ def main() -> int:
           'eccentricity>0.012' in smart_placement
           and 'return Bore.ShaftFits(shaft,gearBody)' in smart_placement
           and 'function Smart.HubPose(' in smart_placement)
+    check("Spur gear placement locks to eight evenly spaced local 45-degree positions",
+          'Smart.SpurSlots = 8' in smart_placement
+          and 'local slot=math.floor(azimuth/(2*math.pi/Smart.SpurSlots)+0.5)' in smart_placement
+          and 'local direction=(targetCF.UpVector*math.cos(slot*2*math.pi/Smart.SpurSlots)' in smart_placement
+          and 'approach=fixed.Position+side*pitch' in smart_placement)
+    check("Bevel90 mouse acquires virtual center-ray hit zone without physical collision",
+          'Smart.Bevel90AimRadius = 0.72' in smart_placement
+          and 'local bevelAim=isGear and movingGear and aimRay' in smart_placement
+          and 'or bevelAim or hitRack' in smart_placement)
+    check("Edit direct drag uses center by default, hitpoint only with Alt",
+          'GrabAtHit = UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)' in selection
+          and 'self.DragGrabLocal=if held.GrabAtHit then' in selection)
     check("Gear-to-gear acquisition targets teeth and true pitch circle",
           'Smart.GearPitchCapture = 0.24' in smart_placement
           and 'Smart.GearFaceCapture = 0.20' in smart_placement

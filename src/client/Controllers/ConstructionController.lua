@@ -2586,9 +2586,7 @@ function Controller:BeginDirectDrag()
     if not node or not node:IsA("Model")
         or node:GetAttribute("OwnerUserId") ~= player.UserId then return end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-        or UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
-        or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then return end
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then return end
     -- A first click just SELECTS. Only a second, deliberate hold on the
     -- already selected piece can become a move. Prevents accidental pickup
     -- when looking around during selection.
@@ -2600,6 +2598,8 @@ function Controller:BeginDirectDrag()
     if not camera then return end
     self.DirectDragCandidate = {
         Model = node,
+        GrabAtHit = UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt),
         HitPosition = hit.Position,
         StartedAt = os.clock(),
         Camera = camera.CFrame,
@@ -2633,7 +2633,10 @@ function Controller:UpdateDirectDrag()
         elseif #self.SelectedParts>1 then ComponentGeometry.CentralPrimitive(
             self.SelectedParts) else held.Model
     if not anchor then return end
-    self.DragGrabLocal=anchor:GetPivot():PointToObjectSpace(held.HitPosition)
+    -- Normal drag uses the component center; Alt+drag temporarily
+    -- changes the grab point to the exact clicked surface position.
+    self.DragGrabLocal=if held.GrabAtHit then
+        anchor:GetPivot():PointToObjectSpace(held.HitPosition) else nil
     self.DirectDragActive = true
     self:StartMove(false)
     if not self.Pending then self.DirectDragActive = false end

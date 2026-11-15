@@ -17,6 +17,8 @@ Smart.HubSnapRadius = 0.14 -- studs from the REAL bore/shaft axis, not gear boun
 Smart.HubAimRadius = 0.10 -- small crosshair tolerance through an empty bore
 Smart.HubAxialReach = 0.22 -- axial approach tolerance, excluding shaft overlap
 Smart.GearPitchCapture = 0.24 -- radial proximity to the true mesh pitch circle
+Smart.SpurSlots = 8 -- every 45 degrees about target gear axle
+Smart.Bevel90AimRadius = 0.72 -- analytic target capture even through transparent hub
 Smart.GearFaceCapture = 0.20 -- transient cursor distance from axial gear plane
 Smart.BevelCapture = 0.32 -- free-position 45-degree bevel approach
 Smart.Bevel90Slots = 8 -- fixed positions at 45-degree intervals around target axle
@@ -78,8 +80,16 @@ function Smart.GearPose(source: Model, target: Model, near: Vector3)
         or math.abs(depth)>overlap+Smart.GearFaceCapture then
         return nil
     end
-    local direction=if radial.Magnitude>0.001
-        then radial.Unit else targetCF.UpVector
+    -- Ordinary spur gears use the same eight discrete local-Y/Z slots
+    -- as 90-degree bevels. Dragging chooses the nearest of the cardinal
+    -- and diagonal positions, not an arbitrary pitch-circle angle.
+    local around=if radial.Magnitude>0.001 then radial else targetCF.UpVector
+    local localZ=targetCF:VectorToWorldSpace(Vector3.zAxis)
+    local azimuth=math.atan2(around:Dot(localZ),around:Dot(targetCF.UpVector))
+    local slot=math.floor(azimuth/(2*math.pi/Smart.SpurSlots)+0.5)
+        %Smart.SpurSlots
+    local direction=(targetCF.UpVector*math.cos(slot*2*math.pi/Smart.SpurSlots)
+        +localZ*math.sin(slot*2*math.pi/Smart.SpurSlots)).Unit
     local center=targetCF.Position+direction*pitch
     -- Phase the teeth so an approaching tooth faces its partner's gap.
     -- With equal tooth pitch, the contact phases sum to half a tooth.
@@ -795,9 +805,12 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     score=if directAim then -0.15 else dist+0.12
                 end
             elseif isGear and gear(target) then
-                local directAim=aimedModel==target
-                approach=source:GetPivot().Position
                 local bevelKind=GearMath.Kind(source)
+                local rayToTarget=aimDistance(aimRay,target:GetPivot().Position)
+                local directAim=aimedModel==target or
+                    (bevelKind=="Bevel90" and GearMath.Kind(target)==bevelKind
+                        and rayToTarget<=Smart.Bevel90AimRadius)
+                approach=source:GetPivot().Position
                 if directAim and (bevelKind=="Bevel45"
                     or bevelKind=="Bevel90")
                     and GearMath.Kind(target)==bevelKind then
@@ -808,6 +821,22 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     local fixed=target:GetPivot()
                     local axis=fixed.RightVector.Unit
                     local apex=GearMath.BevelApex(target)
+                    -- Bevel90 hit-testing uses the ray's projected point
+                    -- near the gear's center: don't use the moved ghost's
+                    -- position to guess which 45-degree side the user aims at.
+                    if bevelKind=="Bevel90" and aimRay then
+                        local direction=aimRay.Direction.Unit
+                        local distance=math.max(0,
+                            (apex-aimRay.Origin):Dot(direction))
+                        local rayPoint=aimRay.Origin+direction*distance
+                        local raySide=rayPoint-apex
+                        raySide-=axis*raySide:Dot(axis)
+                        if raySide.Magnitude>0.03 then
+                            approach=apex+raySide.Unit*
+                                (GearMath.PitchRadius(source)/
+                                    math.tan(math.rad(45)))
+                        end
+                    end
                     local delta=approach-apex
                     local lateral=delta-axis*delta:Dot(axis)
                     local side=if bevelKind=="Bevel90" then
@@ -839,7 +868,18 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     local pitch=(source:GetAttribute("GearTeeth")
                         +target:GetAttribute("GearTeeth"))
                         *source:GetAttribute("GearModuleStuds")/(2*math.pi)
-                    approach=fixed.Position+radial.Unit*pitch
+                    local side=radial.Unit
+                    -- Align the target side to a discrete slot before
+                    -- requesting the regular gear's common shared solver.
+                    local azimuth=math.atan2(side:Dot(
+                        fixed:VectorToWorldSpace(Vector3.zAxis)),
+                        side:Dot(fixed.UpVector))
+                    local slot=math.floor(azimuth/(2*math.pi/Smart.SpurSlots)+0.5)
+                        %Smart.SpurSlots
+                    side=fixed.UpVector*math.cos(slot*2*math.pi/Smart.SpurSlots)
+                        +fixed:VectorToWorldSpace(Vector3.zAxis)
+                            *math.sin(slot*2*math.pi/Smart.SpurSlots)
+                    approach=fixed.Position+side*pitch
                 end
                 local pose,dist,meshes=Smart.MultiGearPose(
                     source,target,approach,allTargets or targets)
@@ -1042,9 +1082,16 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
             -- target, even when the center pivot is non-queryable.
             local hitGear=isGear and (movingGear or movingRack)
                 and aimedPart and aimedPart:IsDescendantOf(model)
+            -- Transparent bore pivots and compact 90-degree bevel teeth
+            -- are hard to hit with the mouse. A center-ray capture radius
+            -- lets the player aim through the opening or between teeth,
+            -- without creating an oversized physical hitbox.
+            local bevelAim=isGear and movingGear and aimRay
+                and GearMath.Kind(model)=="Bevel90"
+                and hubRay<=Smart.Bevel90AimRadius
             local hitRack=rack(model) and movingGear
                 and aimedPart and aimedPart:IsDescendantOf(model)
-            if gearPlacement or hitGear or hitRack
+            if gearPlacement or hitGear or bevelAim or hitRack
                 or (model:GetPivot().Position-reference).Magnitude<=range
                 or hubRay<=aimThreshold then
                 table.insert(targets,model)
