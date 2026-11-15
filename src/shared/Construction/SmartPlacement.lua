@@ -18,7 +18,9 @@ Smart.HubAimRadius = 0.10 -- small crosshair tolerance through an empty bore
 Smart.HubAxialReach = 0.22 -- axial approach tolerance, excluding shaft overlap
 Smart.GearPitchCapture = 0.24 -- radial proximity to the true mesh pitch circle
 Smart.GearFaceCapture = 0.20 -- transient cursor distance from axial gear plane
-Smart.BevelCapture = 0.32 -- near a matching 45°/90° pitch-cone apex
+Smart.BevelCapture = 0.32 -- free-position 45-degree bevel approach
+Smart.Bevel90Slots = 8 -- fixed positions at 45-degree intervals around target axle
+Smart.Bevel90Capture = 0.55 -- additional tolerance for discrete 90-degree slots
 Smart.RackCapture = 0.24 -- near actual straight toothed pitch line
 Smart.MaxAxialOffsetUnits = 64
 Smart.PreviewInterval = 0.08
@@ -104,10 +106,29 @@ function Smart.GearPose(source: Model, target: Model, near: Vector3)
         math.abs(radial.Magnitude-pitch)+math.abs(depth)
 end
 
--- Place an equal-tooth bevel where its physical 45° or 90° pitch
--- cones intersect. The direction
--- around the fixed shaft is selected by approaching with the cursor;
--- the cone apex position and exact shaft angle are never guessed.
+-- 90-degree bevel gears have exactly EIGHT allowable mating positions.
+-- Quantize the cursor direction in the TARGET gear's LOCAL Y/Z plane:
+-- cardinal and diagonal offsets, 45 degrees apart. This rotates naturally
+-- with the target instead of relying on global world axes.
+function Smart.Bevel90Side(target:Model,near:Vector3):Vector3
+    local fixed=target:GetPivot()
+    local axis=fixed.RightVector.Unit
+    local offset=near-GearMath.BevelApex(target)
+    local radial=offset-axis*offset:Dot(axis)
+    local up=fixed.UpVector.Unit
+    local z=fixed:VectorToWorldSpace(Vector3.zAxis).Unit
+    local azimuth=if radial.Magnitude>0.0001
+        then math.atan2(radial:Dot(z),radial:Dot(up)) else 0
+    local slot=math.floor(azimuth/(2*math.pi/Smart.Bevel90Slots)+0.5)
+        %Smart.Bevel90Slots
+    local theta=slot*2*math.pi/Smart.Bevel90Slots
+    return (up*math.cos(theta)+z*math.sin(theta)).Unit
+end
+
+-- Bevel45 remains continuously positionable. Bevel90 may only use one
+-- of the eight discrete local slots. Both use exactly shared apexes and
+-- tooth phase correction; client ghost and server validation use this
+-- same pose function so confirmation cannot drift to a free angle.
 function Smart.BevelPose(source:Model,target:Model,near:Vector3)
     local kind=GearMath.Kind(source)
     if (kind~="Bevel45" and kind~="Bevel90")
@@ -122,17 +143,26 @@ function Smart.BevelPose(source:Model,target:Model,near:Vector3)
     local apex=GearMath.BevelApex(target)
     local diff=near-apex
     local lateral=diff-xaxis*diff:Dot(xaxis)
-    local side=if lateral.Magnitude>0.001
-        then lateral.Unit else fixed.UpVector
+    local is90=kind=="Bevel90"
+    local side=if is90 then Smart.Bevel90Side(target,near)
+        elseif lateral.Magnitude>0.001 then lateral.Unit
+        else fixed.UpVector
     local angle=math.rad(source:GetAttribute("BevelShaftAngleDeg") or 45)
     local cone=math.rad(source:GetAttribute("BevelConeDeg") or 22.5)
-    local newAxis=xaxis*math.cos(angle)+side*math.sin(angle)
+    local newAxis=if is90 then side
+        else xaxis*math.cos(angle)+side*math.sin(angle)
     local radius=GearMath.PitchRadius(source)
     local center=apex+newAxis*radius/math.tan(cone)
-    if (center-near).Magnitude>Smart.BevelCapture
-        +radius*0.75 then return nil end
-    local up=side-newAxis*side:Dot(newAxis)
-    if up.Magnitude<0.001 then up=fixed.UpVector end
+    local capture=if is90 then Smart.Bevel90Capture+radius
+        else Smart.BevelCapture+radius*0.75
+    if (center-near).Magnitude>capture then return nil end
+    -- For 90 degrees, side and shaft axis are the SAME vector. The old
+    -- continuous solver projected side onto its own axis, yielding zero,
+    -- then sometimes used a NON-perpendicular up vector (bad CFrame).
+    -- Fixed X is exactly orthogonal to all eight slots.
+    local up=if is90 then xaxis
+        else side-newAxis*side:Dot(newAxis)
+    if up.Magnitude<0.001 then up=xaxis end
     up=up.Unit
     local pose=CFrame.fromMatrix(center,newAxis,up,newAxis:Cross(up))
     -- Seat the moving bevel's tooth tips between the fixed teeth at
@@ -780,14 +810,16 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     local apex=GearMath.BevelApex(target)
                     local delta=approach-apex
                     local lateral=delta-axis*delta:Dot(axis)
-                    local side=if lateral.Magnitude>0.001 then
-                        lateral.Unit else fixed.UpVector
+                    local side=if bevelKind=="Bevel90" then
+                        Smart.Bevel90Side(target,approach)
+                        elseif lateral.Magnitude>0.001 then lateral.Unit
+                        else fixed.UpVector
                     local theta=math.rad(
                         source:GetAttribute("BevelShaftAngleDeg") or 45)
                     local cone=math.rad(
                         source:GetAttribute("BevelConeDeg") or 22.5)
-                    local outputAxis=axis*math.cos(theta)
-                        +side*math.sin(theta)
+                    local outputAxis=if bevelKind=="Bevel90" then side
+                        else axis*math.cos(theta)+side*math.sin(theta)
                     approach=apex+outputAxis*GearMath.PitchRadius(source)
                         /math.tan(cone)
                 elseif directAim and GearMath.Kind(source)=="Spur"
@@ -989,10 +1021,20 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
                             *moduleA/(2*math.pi)
                         local face=(member.PrimaryPart.Size.X
                             +model.PrimaryPart.Size.X)*0.5
-                        gearPlacement=gearPlacement
-                            or (math.abs(radial-pitch)
-                                <=Smart.GearPitchCapture
-                                and axial<=face+Smart.GearFaceCapture)
+                        if GearMath.Kind(member)=="Bevel90"
+                            and GearMath.Kind(model)=="Bevel90" then
+                            -- Spur pitch-radius searches miss right-angle
+                            -- gears (their axle centers differ in X too).
+                            -- Detect the same discrete slots used by the
+                            -- shared preview/server solver instead.
+                            local pose=Smart.BevelPose(member,model,reference)
+                            gearPlacement=gearPlacement or pose~=nil
+                        else
+                            gearPlacement=gearPlacement
+                                or (math.abs(radial-pitch)
+                                    <=Smart.GearPitchCapture
+                                    and axial<=face+Smart.GearFaceCapture)
+                        end
                     end
                 end
             end

@@ -816,6 +816,19 @@ def main() -> int:
           and 'if not drilled or type(solids)~="table" or #solids~=1' in transmission
           and 'model:Destroy()' in transmission
           and 'if old then old:Destroy() end' in transmission)
+    check("90-degree bevel fitting locks to eight local 45-degree slots",
+          'Smart.Bevel90Slots = 8' in smart_placement
+          and 'function Smart.Bevel90Side(target:Model,near:Vector3):Vector3' in smart_placement
+          and 'math.atan2(radial:Dot(z),radial:Dot(up))' in smart_placement
+          and 'local slot=math.floor(azimuth/(2*math.pi/Smart.Bevel90Slots)+0.5)' in smart_placement
+          and 'local theta=slot*2*math.pi/Smart.Bevel90Slots' in smart_placement
+          and 'local side=if is90 then Smart.Bevel90Side(target,near)' in smart_placement
+          and 'local newAxis=if is90 then side' in smart_placement
+          and 'local up=if is90 then xaxis' in smart_placement
+          and 'local capture=if is90 then Smart.Bevel90Capture+radius' in smart_placement
+          and 'local side=if bevelKind=="Bevel90" then' in smart_placement
+          and 'local pose=Smart.BevelPose(member,model,reference)' in smart_placement
+          and 'pose,why=Smart.GearPose(source,target,request.approach)' in mechanical)
     check("Bevel 45 and 90 geometry requires intersecting pitch-cone apexes",
           'function GearMath.AutoBevelStatus(' in gear_math
           and 'na~=nb' in gear_math
