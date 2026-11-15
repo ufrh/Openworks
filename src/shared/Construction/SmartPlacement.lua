@@ -548,6 +548,37 @@ end
 
 -- Aim at the middle of the physical gear bore, not its tooth/rim bounds.
 -- For an already placed long shaft, aim anywhere along its actual axis.
+-- Analytic distance from the camera ray to the ACTUAL finite opening axis.
+-- The hole itself contains no raycastable metal: aiming THROUGH it may
+-- otherwise select a wall meters behind, leaving an unsnapped red shaft.
+local function boreAimDistance(ray,target)
+    if not ray or not target or not target.PrimaryPart then return math.huge end
+    local localAxis=Alignment.TargetAxis(target)
+    if not localAxis or Alignment.IsShaft(target) then return math.huge end
+    local cf=target:GetPivot()
+    local axis=cf:VectorToWorldSpace(localAxis).Unit
+    local size=target.PrimaryPart.Size
+    local half=(math.abs(localAxis.X)*size.X
+        +math.abs(localAxis.Y)*size.Y
+        +math.abs(localAxis.Z)*size.Z)*0.5
+    local direction=ray.Direction.Unit
+    local offset=ray.Origin-cf.Position
+    local parallel=direction:Dot(axis)
+    local denom=1-parallel*parallel
+    local depth,along
+    if denom>0.0001 then
+        along=(parallel*offset:Dot(axis)-offset:Dot(direction))/denom
+        depth=offset:Dot(axis)+parallel*math.max(0,along)
+    else
+        depth=if parallel>=0 then -half else half
+    end
+    depth=math.clamp(depth,-half,half)
+    local nearest=cf.Position+axis*depth
+    along=(nearest-ray.Origin):Dot(direction)
+    if along<=0 or along>Grid.MaxDistance then return math.huge end
+    return (ray.Origin+direction*along-nearest).Magnitude
+end
+
 local function hubAimDistance(ray,target)
     if not ray or not target.PrimaryPart then return math.huge end
     if gear(target) then return aimDistance(ray,target:GetPivot().Position) end
@@ -701,6 +732,8 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
             if isOpening and Alignment.IsShaft(target) then
                 shaftMouseDepth,shaftMouseError=shaftCursorDepth(aimRay,target)
                 if shaftMouseDepth then rayError=shaftMouseError end
+            elseif isShaft and Alignment.TargetAxis(target) then
+                rayError=math.min(rayError,boreAimDistance(aimRay,target))
             end
             local aimReach=math.clamp(target.PrimaryPart.Size.Magnitude*0.20,0.10,0.55)
             local aimed=rayError<=aimReach
@@ -1047,6 +1080,10 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
             local isGear=gear(model)
             local isHub=hub(model)
             local hubRay=hubAimDistance(aimRay,model)
+            local boreRay=boreAimDistance(aimRay,model)
+            local boreDiameter=Bore.OpeningDiameter(model)
+            local boreAimed=type(boreDiameter)=="number"
+                and boreRay<=math.clamp(boreDiameter*0.5+0.07,0.10,0.40)
             -- Do not use the large tooth bounds to pick a gear. Gears
             -- remain discoverable within a small central radius, even
             -- though their actual empty bores have no raycast hitbox.
@@ -1104,7 +1141,7 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
                 and hubRay<=Smart.Bevel90AimRadius
             local hitRack=rack(model) and movingGear
                 and aimedPart and aimedPart:IsDescendantOf(model)
-            if gearPlacement or hitGear or bevelAim or hitRack
+            if gearPlacement or hitGear or bevelAim or hitRack or boreAimed
                 or (model:GetPivot().Position-reference).Magnitude<=range
                 or hubRay<=aimThreshold then
                 table.insert(targets,model)
