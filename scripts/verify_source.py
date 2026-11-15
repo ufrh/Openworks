@@ -803,6 +803,7 @@ def main() -> int:
     check("Edit direct drag uses center by default, hitpoint only with Alt",
           'GrabAtHit = UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)' in selection
           and 'self.DragGrabLocal=if held.GrabAtHit then' in selection)
+    alignment_math=read("src/shared/Construction/AlignmentMath.lua")
     bore_insertion=read("src/shared/Construction/BoreInsertion.lua")
     check("Partially inserted slider/cylinder starts within real overlap and cannot escape",
           'local inLo,inHi=Alignment.InsertionBounds(shaft,opening)' in alignment_math
