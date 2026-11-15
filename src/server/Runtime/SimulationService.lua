@@ -654,6 +654,7 @@ function Simulation:Start(player, payload)
                     session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")))
                 table.insert(session.VectorJoints,control)
                 table.insert(session.Constraints,control.Constraint)
+                table.insert(session.Constraints,control.PositionLock)
             elseif edge.kind == "Gear" then
                 -- Legacy K relationships are OPTIONAL metadata.
                 -- Meshing and transmission use geometry every frame.
@@ -1019,7 +1020,7 @@ function Simulation:Start(player, payload)
             then "green grounded / orange movable • P stop"
             else "free assembly • orange bodies • P stop")
         .. (if #session.VectorJoints>0 and not next(session.GroundKeys)
-            then " • Vector Joint: no grounded support; shafts still obey gravity"
+            then " • Ground one Vector Joint shaft to hold the pair in place"
             else "")
         .. (if session.Gears
             and (#session.Gears.Gears>0 or #session.Gears.Racks>0) then

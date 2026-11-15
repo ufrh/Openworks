@@ -11,7 +11,6 @@ local Alignment=require(ReplicatedStorage:WaitForChild("Openworks")
 local VectorJoint={}
 local CAP_COLOR=Color3.fromRGB(138,153,166)
 local RIM_COLOR=Color3.fromRGB(73,86,101)
-local DEFAULT_ANGLE=125
 
 local function shaftEnd(model,toward)
     local part=model.PrimaryPart
@@ -40,15 +39,8 @@ function VectorJoint.Measure(a,b)
             "Bring the shaft END FACES together (gap %.3f, limit %.3f studs)",
             gap,allowance)
     end
-    local outward0=first.CFrame.RightVector*sign0
-    local outward1=second.CFrame.RightVector*sign1
-    local angle=math.deg(math.acos(math.clamp(
-        -outward0:Dot(outward1),-1,1)))
-    if angle>DEFAULT_ANGLE then
-        return nil,"Joint elbow exceeds the 125-degree articulation limit"
-    end
     return {
-        Point=(p0+p1)*0.5,Radius=radius,Angle=DEFAULT_ANGLE,
+        Point=(p0+p1)*0.5,Radius=radius,
         -- Constant throughout articulation: moving the elbow cannot
         -- reverse the spin sign or turn a 1:1 joint into a gearbox.
         SpinSign=-sign0*sign1,
@@ -67,6 +59,20 @@ local function cap(parent,g,physical,sourcePart)
     local model=Instance.new("Folder")
     model.Name="VectorJointHardware"
     model.Parent=parent
+    if physical then
+        -- Simulated cover is a pure shaft-relative adornment, NOT a
+        -- separate unanchored Part. It has zero mass and cannot fall off.
+        local shell=Instance.new("SphereHandleAdornment")
+        shell.Name="ElbowCover"
+        shell.Adornee=sourcePart
+        shell.CFrame=sourcePart.CFrame:ToObjectSpace(CFrame.new(g.Point))
+        shell.Radius=g.Radius*1.2
+        shell.Color3=CAP_COLOR
+        shell.AlwaysOnTop=false
+        shell.Transparency=0
+        shell.Parent=model
+        return shell
+    end
     local shell=Instance.new("Part")
     shell.Name="ElbowCover"
     shell.Shape=Enum.PartType.Ball
@@ -74,7 +80,7 @@ local function cap(parent,g,physical,sourcePart)
     shell.Color=CAP_COLOR
     shell.Material=Enum.Material.Metal
     shell.CFrame=CFrame.new(g.Point)
-    shell.Anchored=not physical
+    shell.Anchored=true
     shell.Massless=true
     shell.CanCollide=false
     shell.CanTouch=false
@@ -82,13 +88,6 @@ local function cap(parent,g,physical,sourcePart)
     shell.CastShadow=false
     shell:SetAttribute("OPENWORKS_VisualOnly",true)
     shell.Parent=model
-    if physical then
-        local w=Instance.new("WeldConstraint")
-        w.Name="VectorCoverFollow"
-        w.Part0=sourcePart
-        w.Part1=shell
-        w.Parent=model
-    end
     return shell
 end
 
@@ -121,15 +120,29 @@ function VectorJoint.Compile(relation,a,b,runtime,kinematicA,kinematicB)
     ball.Name="VectorJointPivot"
     ball.Attachment0=at0
     ball.Attachment1=at1
-    ball.LimitsEnabled=true
-    ball.UpperAngle=g.Angle
+    -- This is a real 3-axis pivot. No cone limit or elbow bushing:
+    -- grounding ONE shaft supports the other via this constraint.
+    ball.LimitsEnabled=false
     ball.TwistLimitsEnabled=false
-    -- Do not use native angular friction: it also resists shaft roll.
-    -- A custom perpendicular-axis bushing stabilizes only the elbow.
     ball.MaxFrictionTorque=0
     ball.Radius=g.Radius
+    ball.Enabled=true
     ball:SetAttribute("AuthoredRelationId",relation:GetAttribute("RelationId"))
     ball.Parent=runtime
+    -- A position-only coincidence servo backs up the native socket under
+    -- gravity/large mass ratios. It does NOT align shaft orientations or
+    -- restrict spin, so the output is free to swing around the pivot.
+    local lock=Instance.new("AlignPosition")
+    lock.Name="VectorJointPinLock"
+    lock.Mode=Enum.PositionAlignmentMode.TwoAttachment
+    lock.Attachment0=at0
+    lock.Attachment1=at1
+    lock.RigidityEnabled=true
+    lock.ReactionForceEnabled=true
+    lock.ApplyAtCenterOfMass=false
+    lock.Enabled=true
+    lock:SetAttribute("AuthoredRelationId",relation:GetAttribute("RelationId"))
+    lock.Parent=runtime
     cap(runtime,g,true,p0)
 
     local result={
@@ -138,29 +151,11 @@ function VectorJoint.Compile(relation,a,b,runtime,kinematicA,kinematicB)
         IdA=a:GetAttribute("InstanceId"),
         IdB=b:GetAttribute("InstanceId"),
         PhaseError=0,MaxSlip=0.40,
-        Constraint=ball,
+        Constraint=ball,PositionLock=lock,
+        Attachment0=at0,Attachment1=at1,
+        ReportedDrift=false,
     }
     local id=relation:GetAttribute("RelationId")
-    -- An ordinary free ball socket lets the wheel-side shaft hang down
-    -- under gravity. Add a limited, damped angular bushing that restores
-    -- its AUTHORED elbow angle while leaving axial rotation completely free.
-    -- Gear-authored bodies are CFrame-driven and must not receive native
-    -- torque; apply only to the non-kinematic side in mixed graphs.
-    if not (kinematicA and kinematicB) then
-        local reference=if kinematicB then p1 else p0
-        local moving=if kinematicB then p0 else p1
-        local movingAttachment=if kinematicB then at0 else at1
-        result.TiltReference=reference
-        result.TiltPart=moving
-        result.TiltRestReferenceAxis=reference.CFrame.RightVector
-        result.TiltRestAxis=moving.CFrame.RightVector
-        result.TiltDrive=torque(runtime,movingAttachment,
-            "VectorElbowTiltSupport",id)
-        if not kinematicA and not kinematicB then
-            result.TiltReaction=torque(runtime,at0,
-                "VectorElbowSupportReaction",id)
-        end
-    end
     if not kinematicA and not kinematicB then
         result.TorqueA=torque(runtime,at0,"VectorDriveReaction",id)
         result.TorqueB=torque(runtime,at1,"VectorDriveOutput",id)
@@ -189,59 +184,9 @@ end
 
 function VectorJoint.Stop(j)
     if j.TorqueA then j.TorqueA.Torque=Vector3.zero end
-    if j.TiltDrive then j.TiltDrive.Torque=Vector3.zero end
-    if j.TiltReaction then j.TiltReaction.Torque=Vector3.zero end
     if j.TorqueB then j.TorqueB.Torque=Vector3.zero end
     if j.Motor then j.Motor.Enabled=false end
     j.PhaseError=0
-end
-
--- Minimum rotation from the rest reference axis to the current one,
--- explicitly ignoring shaft roll. Otherwise each drivetrain revolution
--- would rotate the elbow's rest orientation and fight wheel steering.
-local function referenceSwing(oldAxis,newAxis)
-    local dot=math.clamp(oldAxis:Dot(newAxis),-1,1)
-    if dot>0.999999 then return CFrame.identity end
-    local cross=oldAxis:Cross(newAxis)
-    if cross.Magnitude<1e-5 then
-        local side=if math.abs(oldAxis:Dot(Vector3.yAxis))<0.9
-            then Vector3.yAxis else Vector3.xAxis
-        return CFrame.fromAxisAngle(oldAxis:Cross(side).Unit,math.pi)
-    end
-    return CFrame.fromAxisAngle(cross.Unit,math.acos(dot))
-end
-
--- A compliant angular bushing, not a rigid AlignOrientation. Only the
--- TWO tilt degrees of freedom are stabilized; shaft roll (the driven DOF)
--- receives no restoring torque. Actual suspension/steering forces can
--- still articulate the joint against this bounded resistance.
-local function stabilizeElbow(j)
-    local moving=j.TiltPart
-    local reference=j.TiltReference
-    if not moving or not reference then return end
-    local rotation=referenceSwing(j.TiltRestReferenceAxis,
-        reference.CFrame.RightVector)
-    local desired=rotation:VectorToWorldSpace(j.TiltRestAxis)
-    local current=moving.CFrame.RightVector
-    local tiltError=current:Cross(desired)
-    local angularVelocity=moving.AssemblyAngularVelocity
-    local lateralVelocity=angularVelocity-current*angularVelocity:Dot(current)
-    local mass=math.clamp(moving.AssemblyMass,0.1,35)
-    local strength=math.clamp(
-        mass*workspace.Gravity*math.clamp(moving.Size.X*0.5,0.2,1.4),
-        7,3500)
-    local correction=tiltError*(strength*3.5)
-        -lateralVelocity*(strength*0.55)
-    local maxTorque=strength*1.5
-    if correction.Magnitude>maxTorque then
-        correction=correction.Unit*maxTorque
-    end
-    -- Axial projection is removed explicitly, including any damping.
-    correction-=current*correction:Dot(current)
-    j.TiltDrive.Torque=correction
-    if j.TiltReaction then
-        j.TiltReaction.Torque=-correction
-    end
 end
 
 function VectorJoint.Step(j,dt,gears,backdriven)
@@ -251,7 +196,17 @@ function VectorJoint.Step(j,dt,gears,backdriven)
     end
     local axisA=j.PartA.CFrame.RightVector
     local axisB=j.PartB.CFrame.RightVector
-    if j.TiltDrive then stabilizeElbow(j) end
+    -- A diagnostic only: socket separation is never hidden by teleporting
+    -- either shaft. The pin and position-lock constraints own translation.
+    local gap=(j.Attachment0.WorldPosition-j.Attachment1.WorldPosition).Magnitude
+    if gap>math.max(0.11,j.PartA.Size.Y*0.5) then
+        if not j.ReportedDrift then
+            warn(string.format("[OPENWORKS][VECTOR] Joint pivot drift: %.3f studs",gap))
+            j.ReportedDrift=true
+        end
+    else
+        j.ReportedDrift=false
+    end
     if j.Motor then
         local gearPart=if j.KinematicA then j.PartA else j.PartB
         local speed=gears and gears:AngularSpeedFor(j.GearId,

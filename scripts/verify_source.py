@@ -1476,20 +1476,33 @@ def main() -> int:
           and 'Instance.new("PrismaticConstraint")' not in vector_joint
           and 'Instance.new("BallSocketConstraint")' in vector_joint
           and 'VectorJointPivot' in vector_joint)
-    check("Vector elbow bushing counteracts gravity sag without locking shaft roll",
-          'ball.MaxFrictionTorque=0' in vector_joint
-          and 'function VectorJoint.Stop(j)' in vector_joint
-          and 'if j.TiltDrive then j.TiltDrive.Torque=Vector3.zero end' in vector_joint
-          and 'local function referenceSwing(oldAxis,newAxis)' in vector_joint
-          and 'local function stabilizeElbow(j)' in vector_joint
-          and 'local lateralVelocity=angularVelocity-current*angularVelocity:Dot(current)' in vector_joint
-          and 'correction-=current*correction:Dot(current)' in vector_joint
-          and 'j.TiltDrive.Torque=correction' in vector_joint
-          and 'if j.TiltDrive then stabilizeElbow(j) end' in vector_joint)
-    check("Ungrounded Vector assemblies warn about physics support rather than secretly anchoring",
-          'if #session.VectorJoints>0 and not next(session.GroundKeys)' in simulation
-          and 'Vector Joint: no grounded support; shafts still obey gravity' in simulation
-          and 'ball.MaxFrictionTorque=0' in vector_joint)
+    check("Vector Joint is a real freely articulating connected socket",
+          'Instance.new("BallSocketConstraint")' in vector_joint
+          and 'ball.Attachment0=at0' in vector_joint
+          and 'ball.Attachment1=at1' in vector_joint
+          and 'ball.LimitsEnabled=false' in vector_joint
+          and 'ball.TwistLimitsEnabled=false' in vector_joint
+          and 'ball.MaxFrictionTorque=0' in vector_joint
+          and 'ball.Enabled=true' in vector_joint
+          and 'Instance.new("AlignPosition")' in vector_joint
+          and 'lock.Mode=Enum.PositionAlignmentMode.TwoAttachment' in vector_joint
+          and 'lock.RigidityEnabled=true' in vector_joint
+          and 'lock.ReactionForceEnabled=true' in vector_joint
+          and 'table.insert(session.Constraints,control.PositionLock)' in simulation)
+    check("Vector cover cannot detach or fall in physics simulation",
+          'Instance.new("SphereHandleAdornment")' in vector_joint
+          and 'shell.Adornee=sourcePart' in vector_joint
+          and 'shell.Anchored=true' in vector_joint
+          and 'Instance.new("WeldConstraint")' not in vector_joint)
+    check("Vector Joint no longer applies elbow stabilizer torque",
+          'stabilizeElbow' not in vector_joint
+          and 'TiltDrive' not in vector_joint
+          and 'TiltReaction' not in vector_joint
+          and 'VectorElbowTiltSupport' not in vector_joint)
+    check("Vector Joint supports simple one-grounded-shaft assemblies",
+          'session.GroundKeys = explicitGround' in simulation
+          and 'part.Anchored=session.GroundKeys[key]==true' in simulation
+          and 'Ground one Vector Joint shaft to hold the pair in place' in simulation)
     check("Vector Joint physically transfers bidirectional shaft torque",
           'Instance.new("Torque")' in vector_joint
           and 'j.TorqueA.Torque=-axisA*effort' in vector_joint
