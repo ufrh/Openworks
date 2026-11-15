@@ -1519,6 +1519,8 @@ def main() -> int:
           'HitPosition = hit.Position' in selection
           and 'self.DragGrabLocal=anchor:GetPivot():PointToObjectSpace(held.HitPosition)' in selection
           and 'CFrame.new(hit.Position)*rotation*CFrame.new(-self.DragGrabLocal)' in selection)
+    active_physics=read("src/server/Runtime/PhysicalSimulationService.lua")
+    unified_panel=read("src/client/Controllers/ContextEditor.lua")
     check("Spring tuning supports live edits and mass-aware stabilization",
           'action~="TuneSpring"' in service
           and 'SpringMath.ApplyPhysical(spring,p0,p1)' in active_physics
