@@ -23,11 +23,16 @@ local function cloneAvatar(character:Model):Model?
     -- Preserve exact body scale, skin, avatar colors, clothing, faces, hair,
     -- accessories, packages and mesh textures. Only remove interactive
     -- behavior and physics; never touch the live player character.
+    -- Strip behaviors before touching geometry so descendants of a
+    -- destroyed Tool aren't encountered in the render-geometry pass.
     for _,item in ipairs(copy:GetDescendants()) do
         if item:IsA("LuaSourceContainer") or item:IsA("Humanoid")
             or item:IsA("Animator") or item:IsA("Tool") then
             item:Destroy()
-        elseif item:IsA("BasePart") then
+        end
+    end
+    for _,item in ipairs(copy:GetDescendants()) do
+        if item:IsA("BasePart") then
             item.Anchored=true
             item.Massless=true
             item.CanCollide=false
@@ -171,6 +176,9 @@ function ScaleGhost:Start()
         if not self.Visible or self.Moving or character~=player.Character then
             return
         end
+        -- AppearanceLoaded can fire after an early copy of the same rig;
+        -- force a fresh clone to include final clothing and accessories.
+        self.Source=nil
         local model=self:Make()
         if model then
             model.Parent=workspace
