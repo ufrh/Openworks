@@ -231,7 +231,7 @@ def main() -> int:
           and 'OPENWORKS_Simulating' in native_tool_controller
           and 'OPENWORKS_Simulating' in assembly_tool_v2
           and 'if action~="stop"' in explorer_v2
-          and 'elseif simulation and simulation:IsRunning(player) then' in
+          and 'elseif simulation and simulation:IsRunning(player)' in
               read("src/server/Runtime/ConstructionService.lua"))
 
     selection_ui_v2 = read("src/client/Controllers/ConstructionController.lua")
@@ -339,7 +339,8 @@ def main() -> int:
           and 'hasEquippedTool(player,"Build")' in mechanic_authority
           and 'hasEquippedTool(player,"Mechanics")' in mechanic_authority
           and 'hasEquippedTool(player,"AssemblySimulation")' in mechanic_authority
-          and 'elseif simulation and simulation:IsRunning(player) then' in mechanic_authority)
+          and 'elseif simulation and simulation:IsRunning(player)' in mechanic_authority
+          and 'and action~="TuneSpring" then' in mechanic_authority)
     rokit = read("rokit.toml")
     aftman = read("aftman.toml")
     for name in ("rojo", "stylua", "selene"):
@@ -983,7 +984,8 @@ def main() -> int:
           and 'Alignment.InsertionBounds(shaft,opening)' in smart_place)
     check("One shaft can pierce several ungrouped owned bore models",
           'function Fit.StationarySet(movingMembers,primary,all,delta,ignored)' in multi_fit
-          and 'and Fit.Check(shafts[1],candidate,delta)' in multi_fit
+          and 'if #shafts>0 and movingHoles==0 then' in multi_fit
+          and 'if Fit.Check(shaft,candidate,delta) then' in multi_fit
           and 'and not usedStationary[pair.stationaryId]' in multi_fit
           and 'and not usedMoving[pair.movingId]' in multi_fit
           and 'MultiFit.StationarySet(members,target,' in mechanical
