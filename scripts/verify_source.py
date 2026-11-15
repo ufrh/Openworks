@@ -777,6 +777,18 @@ def main() -> int:
           'Smart.Bevel90AimRadius = 0.72' in smart_placement
           and 'local bevelAim=isGear and movingGear and aimRay' in smart_placement
           and 'or bevelAim or hitRack' in smart_placement)
+    scale_ghost=read("src/client/Controllers/CharacterScaleGhost.lua")
+    check("Client-only mannequin provides scale, placement, movement and hide",
+          'function ScaleGhost:Show(value)' in scale_ghost
+          and 'function ScaleGhost:BeginMove()' in scale_ghost
+          and 'function ScaleGhost:Place()' in scale_ghost
+          and 'function ScaleGhost:Update()' in scale_ghost
+          and 'CanCollide=false' in scale_ghost
+          and 'CanQuery=false' in scale_ghost
+          and 'if self.ScaleReference and self.ScaleReference.Moving then' in selection
+          and 'input.KeyCode==Enum.KeyCode.J' in selection
+          and 'self.ScaleReference:BeginMove()' in selection
+          and 'local shown=self.ScaleReference:Toggle()' in selection)
     check("Edit direct drag uses center by default, hitpoint only with Alt",
           'GrabAtHit = UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)' in selection
           and 'self.DragGrabLocal=if held.GrabAtHit then' in selection)
@@ -1550,11 +1562,11 @@ def main() -> int:
           and 'math.min(eligible,available)' in smart_placement)
     check("Direct drag preserves free-rotation alignment and clicked grab point",
           'rotation=rotation*base:Inverse()*self.Selected:GetPivot().Rotation' in selection
-          and 'self.DragGrabLocal=anchor:GetPivot():PointToObjectSpace(held.HitPosition)' in selection
+          and 'self.DragGrabLocal=if held.GrabAtHit then' in selection
           and 'CFrame.new(hit.Position)*rotation*CFrame.new(-self.DragGrabLocal)' in selection)
     check("Direct drag preserves actual clicked surface point as grab pivot",
           'HitPosition = hit.Position' in selection
-          and 'self.DragGrabLocal=anchor:GetPivot():PointToObjectSpace(held.HitPosition)' in selection
+          and 'self.DragGrabLocal=if held.GrabAtHit then' in selection
           and 'CFrame.new(hit.Position)*rotation*CFrame.new(-self.DragGrabLocal)' in selection)
     active_physics=read("src/server/Runtime/PhysicalSimulationService.lua")
     unified_panel=read("src/client/Controllers/ContextEditor.lua")

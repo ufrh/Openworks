@@ -55,6 +55,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             put(rows,"Click",if build.CurrentBank then "Place saved component"
                 else "Place primitive")
             put(rows,"B","Primitive / component library")
+            put(rows,"J / Shift+J","Show/hide / move character-scale ghost")
             put(rows,"R / T / Y","Rotate axes")
             put(rows,"V / N","Resize / exact dimensions")
             if smart then
@@ -73,6 +74,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             stage="EDIT / SELECT"
             put(rows,"Click","Select authored geometry")
             put(rows,"Shift+Click","Multi-select independent parts")
+            put(rows,"J / Shift+J","Show/hide / move scale mannequin")
             put(rows,"Shift+B","Save selected component")
             put(rows,"Double click","Select inside component")
             put(rows,"Drag / G","Move one or entire selection")

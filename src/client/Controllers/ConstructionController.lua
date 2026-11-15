@@ -24,6 +24,7 @@ local ResizeGizmo = require(script.Parent:WaitForChild("ResizeGizmo"))
 local LayeredEditingController = require(script.Parent:WaitForChild("LayeredEditingController"))
 local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local ComponentBankPreview=require(script.Parent:WaitForChild("ComponentBankPreview"))
+local CharacterScaleGhost=require(script.Parent:WaitForChild("CharacterScaleGhost"))
 local FitOrigin=require(construction:WaitForChild("FitOrigin"))
 local FitSolver=require(construction:WaitForChild("FitSolver"))
 local FitPivotSnap=require(script.Parent:WaitForChild("FitPivotSnap"))
@@ -156,6 +157,7 @@ function Controller.new(tools)
         MoveShadowStates=nil,
         TransientSelection=false,
         DragGrabLocal=nil,
+        ScaleReference=nil,
         VerticalHeld=nil,VerticalElapsed=0,
         Layered = nil,
         Busy = false,
@@ -573,6 +575,11 @@ function Controller:RefreshHUD()
     if self.PivotSetting then
         self.DetailLabel.Text="ALIGNMENT ORIGIN / "..FitPivotSnap.Modes[self.PivotModeIndex]
         self.HelpLabel.Text="Aim at selected surface • Q/E point mode • click set • Enter exit • Shift+O reset"
+        return
+    end
+    if self.ScaleReference and self.ScaleReference.Moving then
+        self.DetailLabel.Text="CHARACTER SIZE REFERENCE / 5.2 STUDS"
+        self.HelpLabel.Text="Aim at ground • click to place mannequin • Enter cancel"
         return
     end
     if self.SmartMatch and not (self.Layered and self.Layered.Alignment)
@@ -2145,6 +2152,14 @@ function Controller:CommitFitPivot()
 end
 
 function Controller:Activate(mode)
+    if self.ScaleReference and self.ScaleReference.Moving then
+        if self.ScaleReference:Place() then
+            self.IgnoreClickUntil=os.clock()+0.18
+            self:Message("Scale mannequin placed • Shift+J move • J hide")
+            self:RefreshHUD()
+        end
+        return
+    end
     if self.Mode=="Edit" and self.PivotSetting then
         self:CommitFitPivot()
         return
@@ -2572,7 +2587,8 @@ end
 -- A normal click still selects. Holding LMB and moving the camera or player
 -- beyond a small world-space threshold starts the existing temporary G move.
 function Controller:BeginDirectDrag()
-    if self.PendingMateChoice
+    if (self.ScaleReference and self.ScaleReference.Moving)
+        or self.PendingMateChoice
         or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
         or (self.Assembly and self.Assembly:IsEditingJoint())
         or self.Tools.PrimaryId ~= "Edit" or self.Tools.SubtoolId ~= "Edit"
@@ -2772,6 +2788,34 @@ end
 
 function Controller:OnInput(input, processed)
     if self.Tools:WasConsumed(input) then return end
+    -- Character scale reference is local-only and can be toggled without
+    -- editing, saving, grounding, or registering anything in an assembly.
+    if self.ScaleReference and not processed
+        and not UserInputService:GetFocusedTextBox()
+        and input.KeyCode==Enum.KeyCode.J
+        and (self.Mode=="Build" or self.Mode=="Edit" or self.Mode=="Inspect") then
+        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        if shift then
+            self.ScaleReference:BeginMove()
+            self:Message("Aim where the feet should stand • click to place • Enter cancel")
+        else
+            local shown=self.ScaleReference:Toggle()
+            self:Message(if shown then "Scale mannequin shown • Shift+J to move"
+                else "Scale mannequin hidden")
+        end
+        self:RefreshHUD()
+        return
+    end
+    if self.ScaleReference and self.ScaleReference.Moving
+        and (input.KeyCode==Enum.KeyCode.Return
+            or input.KeyCode==Enum.KeyCode.KeypadEnter
+            or input.KeyCode==Enum.KeyCode.Escape) then
+        self.ScaleReference:CancelMove()
+        self:Message("Scale mannequin placement canceled")
+        self:RefreshHUD()
+        return
+    end
     if self.BankModal and self.BankModal.Visible then return end
     if player:GetAttribute("OPENWORKS_ExplorerOpen")==true then return end
     if self.PendingMateChoice then return end
@@ -2952,6 +2996,8 @@ end
 function Controller:Start()
     if self.Started then return end
     self.Started = true
+    self.ScaleReference=CharacterScaleGhost.new()
+    self.ScaleReference:Start()
     self:MakeUI()
     table.insert(self.Connections,Theme.Attach(self.Gui))
     self.Layered = LayeredEditingController.new(self)
@@ -3002,7 +3048,9 @@ function Controller:Start()
     )
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            self:BeginDirectDrag()
+            if not (self.ScaleReference and self.ScaleReference.Moving) then
+                self:BeginDirectDrag()
+            end
         end
         self:OnInput(input, processed)
     end))
