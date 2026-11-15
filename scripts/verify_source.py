@@ -828,6 +828,10 @@ def main() -> int:
           and 'shaft.PrimaryPart.Size=Vector3.new(original.X,snugDiameter,snugDiameter)' in smart_placement
           and 'OPENWORKS_AutoSnugDiameter' in selection
           and 'self.SmartMatch.snugDiameter' in selection)
+    check("Fine-fit cylinder diameter also works in older XYZ-resizable Studio stock",
+          'local radialStep=if fineDiameter and diameterXY' in grid
+          and 'unitValid(proposed.Y,radialStep)' in grid
+          and 'unitValid(proposed.Z,radialStep)' in grid)
     check("Autosnug precision is accepted by server, validated and persisted on Edit moves",
           'local step=0.05*Grid.Unit' in bore_clearance
           and 'payload.autoMate.kind=="Bore"' in service

@@ -166,9 +166,16 @@ function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter, numeri
     local diameterStep=if numericPrecision==true then 0.01
         elseif fineDiameter==true then 0.05 else Grid.MinSizeStepU
     if resizeMode == "XYZ_1U" then
+        -- Full cylinder stock from older Studio libraries can advertise
+        -- XYZ instead of LengthAndDiameter. Server fitPrecision is only
+        -- authorized for cylinders, so allow the SAME 0.05U Y/Z snug
+        -- geometry here without unlocking arbitrary fine stock sizes.
+        local diameterXY=math.abs(proposed.Y-proposed.Z)<0.001
+        local radialStep=if fineDiameter and diameterXY
+            then diameterStep else positionStep
         return unitValid(proposed.X,positionStep)
-            and unitValid(proposed.Y,positionStep)
-            and unitValid(proposed.Z,positionStep)
+            and unitValid(proposed.Y,radialStep)
+            and unitValid(proposed.Z,radialStep)
     elseif resizeMode == "UniformDiameter_1U" then
         return unitValid(proposed.X,positionStep)
             and math.abs(proposed.X - proposed.Y) < 0.001
