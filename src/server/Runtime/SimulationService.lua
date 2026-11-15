@@ -1018,6 +1018,9 @@ function Simulation:Start(player, payload)
         .. (if next(session.GroundKeys)
             then "green grounded / orange movable • P stop"
             else "free assembly • orange bodies • P stop")
+        .. (if #session.VectorJoints>0 and not next(session.GroundKeys)
+            then " • Vector Joint: no grounded support; shafts still obey gravity"
+            else "")
         .. (if session.Gears
             and (#session.Gears.Gears>0 or #session.Gears.Racks>0) then
             string.format(" • %d gears / %d racks / %d automatic contact(s)",

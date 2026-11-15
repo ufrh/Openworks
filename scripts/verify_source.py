@@ -1476,6 +1476,20 @@ def main() -> int:
           and 'Instance.new("PrismaticConstraint")' not in vector_joint
           and 'Instance.new("BallSocketConstraint")' in vector_joint
           and 'VectorJointPivot' in vector_joint)
+    check("Vector elbow bushing counteracts gravity sag without locking shaft roll",
+          'ball.MaxFrictionTorque=0' in vector_joint
+          and 'function VectorJoint.Stop(j)' in vector_joint
+          and 'if j.TiltDrive then j.TiltDrive.Torque=Vector3.zero end' in vector_joint
+          and 'local function referenceSwing(oldAxis,newAxis)' in vector_joint
+          and 'local function stabilizeElbow(j)' in vector_joint
+          and 'local lateralVelocity=angularVelocity-current*angularVelocity:Dot(current)' in vector_joint
+          and 'correction-=current*correction:Dot(current)' in vector_joint
+          and 'j.TiltDrive.Torque=correction' in vector_joint
+          and 'if j.TiltDrive then stabilizeElbow(j) end' in vector_joint)
+    check("Ungrounded Vector assemblies warn about physics support rather than secretly anchoring",
+          'if #session.VectorJoints>0 and not next(session.GroundKeys)' in simulation
+          and 'Vector Joint: no grounded support; shafts still obey gravity' in simulation
+          and 'ball.MaxFrictionTorque=0' in vector_joint)
     check("Vector Joint physically transfers bidirectional shaft torque",
           'Instance.new("Torque")' in vector_joint
           and 'j.TorqueA.Torque=-axisA*effort' in vector_joint
