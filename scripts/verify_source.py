@@ -1517,6 +1517,10 @@ def main() -> int:
           and 'if request.selectedIds~=nil then' in mechanical
           and 'local members=if transient then transient' in mechanical
           and 'math.min(eligible,available)' in smart_placement)
+    check("Direct drag preserves free-rotation alignment and clicked grab point",
+          'rotation=rotation*base:Inverse()*self.Selected:GetPivot().Rotation' in selection
+          and 'self.DragGrabLocal=anchor:GetPivot():PointToObjectSpace(held.HitPosition)' in selection
+          and 'CFrame.new(hit.Position)*rotation*CFrame.new(-self.DragGrabLocal)' in selection)
     check("Direct drag preserves actual clicked surface point as grab pivot",
           'HitPosition = hit.Position' in selection
           and 'self.DragGrabLocal=anchor:GetPivot():PointToObjectSpace(held.HitPosition)' in selection

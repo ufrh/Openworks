@@ -1651,6 +1651,12 @@ function Controller:UpdatePreview()
             (self.Pending=="ComponentMove" or self.Pending=="ComponentCopy") then
             local base=Grid.Rotation(attributesSteps(self.GroupAnchor))
             rotation=rotation*base:Inverse()*self.GroupAnchor:GetPivot().Rotation
+        elseif self.Selected and (self.Pending=="Move"
+            or self.Pending=="Copy") then
+            -- Keep free-angle shafts and rotated primitives at their
+            -- authored orientation while dragging from a clicked face.
+            local base=Grid.Rotation(attributesSteps(self.Selected))
+            rotation=rotation*base:Inverse()*self.Selected:GetPivot().Rotation
         end
         local target=hit.Instance and topBuiltModel(
             hit.Instance,workspace:FindFirstChild(Config.FolderName))

@@ -72,10 +72,11 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
         else
             stage="EDIT / SELECT"
             put(rows,"Click","Select authored geometry")
+            put(rows,"Shift+Click","Multi-select independent parts")
             put(rows,"Shift+B","Save selected component")
             put(rows,"Double click","Select inside component")
-            put(rows,"Drag / G","Move selected")
-            put(rows,"F / Ctrl+D","Duplicate")
+            put(rows,"Drag / G","Move one or entire selection from hit")
+            put(rows,"F / Ctrl+D","Duplicate with internal connections")
             put(rows,"V / N","Resize / exact dimensions")
             put(rows,"M","Appearance / properties")
             put(rows,"R / T / Y","Rotate axes")
