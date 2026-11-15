@@ -803,6 +803,21 @@ def main() -> int:
     check("Edit direct drag uses center by default, hitpoint only with Alt",
           'GrabAtHit = UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)' in selection
           and 'self.DragGrabLocal=if held.GrabAtHit then' in selection)
+    bore_insertion=read("src/shared/Construction/BoreInsertion.lua")
+    check("Shaft/hole snap searches obstruction-free depth on 0.5U lattice",
+          'function Insertion.Resolve(ghost:Model,source:Model,target:Model,' in bore_insertion
+          and 'local anchorU=math.clamp(math.round(preferredU*2)' in bore_insertion
+          and 'local found=attempt(anchorU)' in bore_insertion
+          and 'ghost:PivotTo(candidate)' in bore_insertion
+          and 'MultiFit.Check(' in bore_insertion
+          and 'Insertion.Clear(ghost,ignored)' in bore_insertion
+          and 'local resolved,newDepth=BoreInsertion.Resolve(ghost,' in smart_placement
+          and 'offset=newDepth' in smart_placement)
+    check("Red preview ignores ghost visual-only geometry and verifies real bore openings",
+          'if fittedContacts then' in preview
+          and 'return BoreInsertion.Clear(ghost,ignored)' in preview
+          and 'part:GetAttribute("OpenworksCollisionMode")=="VisualOnly"' in preview
+          and 'if not object.CanCollide' in preview)
     check("Gear-to-gear acquisition targets teeth and true pitch circle",
           'Smart.GearPitchCapture = 0.24' in smart_placement
           and 'Smart.GearFaceCapture = 0.20' in smart_placement

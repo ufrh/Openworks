@@ -11,6 +11,7 @@ local Bore = require(script.Parent:WaitForChild("BoreClearance"))
 local HandCrankMath = require(script.Parent:WaitForChild("HandCrankMath"))
 local Grid = require(script.Parent:WaitForChild("GridMath"))
 local MultiFit = require(script.Parent:WaitForChild("MultiFitMath"))
+local BoreInsertion=require(script.Parent:WaitForChild("BoreInsertion"))
 local Smart = {}
 Smart.SnapDistance = 0.55 -- deliberately small general socket capture
 Smart.HubSnapRadius = 0.14 -- studs from the REAL bore/shaft axis, not gear bounds
@@ -892,6 +893,18 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     -- two separate permanent gear connections.
                     score=(if directAim then -0.15 else dist+0.2)
                         -math.max(0,meshes-1)*0.5
+                end
+            end
+            if cf and kind=="Bore" then
+                -- A through-hole can have a solid backstop. Instead of
+                -- centering the shaft into that obstruction (red forever),
+                -- search valid insertion depth on the same 0.5U lattice.
+                -- Probe EVERY moving member; never clip a hidden flange.
+                local resolved,newDepth=BoreInsertion.Resolve(ghost,
+                    source,target,isShaft,cf,offset or 0,ignored)
+                if resolved then
+                    cf=resolved
+                    offset=newDepth
                 end
             end
             if cf and kind=="Bore" and #members>1 then

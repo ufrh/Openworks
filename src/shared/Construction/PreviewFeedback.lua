@@ -10,6 +10,8 @@ local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
 local Smart = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SmartPlacement"))
+local BoreInsertion=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("BoreInsertion"))
 
 local BoltMath=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("BoltMath"))
@@ -28,10 +30,20 @@ function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
     local built = workspace:FindFirstChild(Config.FolderName)
     if not built then return true end
     overlap.FilterDescendantsInstances = { built }
+    -- Shaft fits need the same actual solid + verified bore predicate used
+    -- by insertion-depth search. This avoids red-only preview collisions
+    -- from nonphysical mesh/visual members within the moving ghost.
+    if fittedContacts then
+        return BoreInsertion.Clear(ghost,ignored)
+    end
 
     for _, part in ipairs(ghost:GetDescendants()) do
         if not part:IsA("BasePart")
-            or part:GetAttribute("GearPivotOnly")==true then continue end
+            or part:GetAttribute("GearPivotOnly")==true
+            or part:GetAttribute("OpenworksCollisionMode")=="VisualOnly"
+            or part:GetAttribute("OpenworksCollisionMode")=="PivotOnly" then
+            continue
+        end
         local probe = part:Clone()
         -- Actual precompiled CSG geometry, not a bounding-box-only check.
         probe.Name = "OPENWORKS_LocalPreviewProbe"
@@ -54,6 +66,9 @@ function Feedback.Check(ghost: Model, ignored: { [Instance]: boolean }?,
         if not ok then return false, "Collision query unavailable" end
 
         for _, object in ipairs(touching) do
+            if not object.CanCollide
+                or object:GetAttribute("OpenworksCollisionMode")=="VisualOnly"
+                or object:GetAttribute("GearPivotOnly")==true then continue end
             local target = object:FindFirstAncestorOfClass("Model")
             if target and target.Parent == built
                 and object:GetAttribute("GearPivotOnly")~=true
