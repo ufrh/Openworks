@@ -19,6 +19,7 @@ local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
 local GearTransmission=require(script.Parent:WaitForChild("GearTransmission"))
+local VectorJoint=require(script.Parent:WaitForChild("VectorJoint"))
 local BeltTransmission=require(script.Parent:WaitForChild("BeltTransmission"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
@@ -390,6 +391,19 @@ function Simulation:StepCranks(dt)
         if session.Belts and not session.Paused then
             session.Belts:Step(dt)
         end
+        -- The pivot stays coupled by native constraints even at rest;
+        -- this servo transfers rotational speed ONLY, never elbow tilt.
+        -- It must run in the ACTIVE physical simulation, not the retired
+        -- SimulationService which the UI router never starts.
+        if not session.Paused then
+            for _,joint in ipairs(session.VectorJoints or {}) do
+                VectorJoint.Step(joint,dt,nil,nil)
+            end
+        else
+            for _,joint in ipairs(session.VectorJoints or {}) do
+                VectorJoint.Stop(joint)
+            end
+        end
     end
 end
 
@@ -538,7 +552,7 @@ function Simulation:Graph(player, seed)
                 and (kind == "Bearing" or kind == "Slider"
                     or kind == "Cylindrical" or kind == "Fixed"
                     or kind == "Spring" or kind == "Weld" or kind == "Bolt"
-                    or kind == "Belt") then
+                    or kind == "Belt" or kind == "VectorJoint") then
                 local a, b = bodyKey(source), bodyKey(target)
                 if a ~= b then
                     local edge = {source = source, target = target, kind = kind,
@@ -683,6 +697,7 @@ function Simulation:Start(player, payload)
         Paused = false,
         PausedParts = nil,
         Constraints = {},
+        VectorJoints = {},
         SeedId = payload.seedId,
         AssemblyName = graph.assemblyName,
         ActiveRelations={},
@@ -813,7 +828,18 @@ function Simulation:Start(player, payload)
             local source = copies[edge.source:GetAttribute("InstanceId")]
             if not target or not source then error("Missing joint endpoint") end
             local p0, p1 = target.PrimaryPart, source.PrimaryPart
-            if edge.kind == "Gear" or edge.kind=="Belt" then
+            if edge.kind == "VectorJoint" then
+                -- This is the ACTIVE physical engine for normal assemblies.
+                -- Both endpoints are native physical shafts (no scripted
+                -- kinematic rigid body). Hold their end points together,
+                -- leave all three ball-socket angles free, and drive spin
+                -- through equal-and-opposite axial torques.
+                local joint=VectorJoint.Compile(edge.relation,
+                    source,target,runtime,false,false)
+                table.insert(session.VectorJoints,joint)
+                table.insert(session.Constraints,joint.Constraint)
+                table.insert(session.Constraints,joint.PositionLock)
+            elseif edge.kind == "Gear" or edge.kind=="Belt" then
                 -- Legacy K relationships are OPTIONAL metadata.
                 -- Meshing and transmission use geometry every frame.
                 continue
@@ -1185,6 +1211,11 @@ function Simulation:Start(player, payload)
         .. (if next(session.GroundKeys)
             then "green grounded / orange movable • P stop"
             else "free assembly • orange bodies • P stop")
+        .. (if #session.VectorJoints>0 then
+            string.format(" • %d ACTIVE Vector Joint pivot(s)",#session.VectorJoints)
+            else "")
+        .. (if #session.VectorJoints>0 and not next(session.GroundKeys)
+            then " • Ground one shaft to anchor the joint assembly" else "")
         .. (if session.Belts and #session.Belts.Loops>0 then
             string.format(" • %d friction belt(s)",#session.Belts.Loops) else "")
         .. (if session.Gears and #session.Gears.Gears>0 then
@@ -1384,6 +1415,15 @@ function Simulation:Info(player,payload)
         end
         if session.SupportWarning then
             table.insert(lines,session.SupportWarning)
+        end
+        for _,joint in ipairs(session.VectorJoints or {}) do
+            if joint.IdA==id or joint.IdB==id then
+                local pivotGap=(joint.Attachment0.WorldPosition
+                    -joint.Attachment1.WorldPosition).Magnitude
+                table.insert(lines,string.format(
+                    "Vector Joint ACTIVE • socket %s • pin drift %.4f studs",
+                    if joint.Constraint.Enabled then "ON" else "OFF",pivotGap))
+            end
         end
         if session.UnregisteredGears and session.UnregisteredGears>0 then
             table.insert(lines,string.format(

@@ -53,6 +53,7 @@ function Unified:Choose(player,payload)
         end
     end
     local hasBelt=false
+    local hasVectorJoint=false
     for _,relation in ipairs(self.D.mechanical.Folder:GetChildren()) do
         if relation:GetAttribute("OwnerUserId")==player.UserId
             and memberIds[relation:GetAttribute("SourceId")]
@@ -60,7 +61,11 @@ function Unified:Choose(player,payload)
             local kind=relation:GetAttribute("Kind")
             if kind=="Rack" or kind=="Guide" then rack=true end
             if kind=="Belt" then hasBelt=true end
+            if kind=="VectorJoint" then hasVectorJoint=true end
         end
+    end
+    if rack and hasVectorJoint then
+        return nil,"Vector Joint with rack/guide assemblies is not yet supported by the rack engine; use a separate registered assembly"
     end
     if rack and hasBelt then
         return nil,"Rack + friction belt assemblies cannot simulate together yet; split into separate registered assemblies"

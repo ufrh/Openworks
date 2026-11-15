@@ -1499,6 +1499,30 @@ def main() -> int:
           and 'TiltDrive' not in vector_joint
           and 'TiltReaction' not in vector_joint
           and 'VectorElbowTiltSupport' not in vector_joint)
+    active_physics=read("src/server/Runtime/PhysicalSimulationService.lua")
+    active_router=read("src/server/Runtime/UnifiedSimulationService.lua")
+    check("Live Simulate routes ordinary assemblies to physical engine",
+          'local SimulationService = require(script.Parent:WaitForChild("UnifiedSimulationService"))' in service
+          and 'PhysicalSimulationService.new(deps)' in active_router
+          and 'return if rack then self.Rack else self.Physical' in active_router)
+    check("ACTIVE physical graph compiles and connects Vector Joint shafts",
+          'or kind == "Belt" or kind == "VectorJoint"' in active_physics
+          and 'VectorJoints = {}' in active_physics
+          and 'if edge.kind == "VectorJoint" then' in active_physics
+          and 'VectorJoint.Compile(edge.relation,' in active_physics
+          and 'source,target,runtime,false,false' in active_physics
+          and 'table.insert(session.VectorJoints,joint)' in active_physics
+          and 'table.insert(session.Constraints,joint.Constraint)' in active_physics
+          and 'table.insert(session.Constraints,joint.PositionLock)' in active_physics)
+    check("ACTIVE physical solver updates reversible Vector rotation every heartbeat",
+          'VectorJoint.Step(joint,dt,nil,nil)' in active_physics
+          and 'VectorJoint.Stop(joint)' in active_physics
+          and 'self:StepCranks(dt)' in active_physics
+          and 'ACTIVE Vector Joint pivot(s)' in active_physics)
+    check("Unsupported rack mode fails closed rather than dropping shaft joint",
+          'if kind=="VectorJoint" then hasVectorJoint=true end' in active_router
+          and 'if rack and hasVectorJoint then' in active_router
+          and 'return if rack then self.Rack else self.Physical' in active_router)
     check("Vector Joint supports simple one-grounded-shaft assemblies",
           'session.GroundKeys = explicitGround' in simulation
           and 'part.Anchored=session.GroundKeys[key]==true' in simulation
