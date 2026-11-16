@@ -26,7 +26,7 @@ local Theme=require(script.Parent:WaitForChild("StudioTheme"))
 local INSERTION_STEP_U = 0.5
 
 -- No implicit Fixed joint. Rigid fabrication requires explicit Weld.
-local TYPES = { "Cylindrical", "Slider", "Bearing", "Motor" }
+local TYPES = { "Cylindrical", "Slider", "Bearing" }
 local Controller = {}
 Controller.__index = Controller
 
@@ -629,8 +629,7 @@ function Controller:CommitConnect(kind,first,second)
     local roles=ConnectionCatalog.Roles(first,second)
     local firstId=first:GetAttribute("InstanceId")
     local secondId=second:GetAttribute("InstanceId")
-    if kind=="Bearing" or kind=="Slider" or kind=="Cylindrical"
-        or kind=="Motor" then
+    if kind=="Bearing" or kind=="Slider" or kind=="Cylindrical" then
         if not roles.shaft or not roles.opening
             or not Alignment.TargetAxis(roles.opening) then
             self.ConnectInvalid=true
@@ -898,7 +897,7 @@ function Controller:UpdateJoint(delta,toggle,changeRest)
         self:RefreshHUD()
         return
     end
-    local isHinge=kind=="Bearing" or kind=="Motor"
+    local isHinge=kind=="Bearing"
     local limit=if isHinge then 180 else 32
     local previous=math.max(
         math.abs(joint:GetAttribute("LowerLimit") or (if isHinge then -90 else -4)),
