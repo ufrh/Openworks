@@ -1,178 +1,120 @@
 --!strict
--- One concise keybind dictionary for the always-visible UI v2 left sidebar.
--- Subtool bindings come from shared SubtoolDefinitions, never copied here.
--- This module only lists existing actions in the active controllers.
+-- Compact, state-aware controls. Show only actions useful RIGHT NOW.
+-- No permanent camera manual or exhaustive keybind wall.
 local Help={}
-
-local function entry(key,action)
-    return {key=key,action=action}
-end
-local function put(items,key,action)
-    table.insert(items,entry(key,action))
+local function put(rows,key,description)
+    table.insert(rows,{key=key,action=description})
 end
 
 function Help.Context(tools,build,mechanics,assemblyTool,player)
     local primary=tools.PrimaryId
     local sub=tools.SubtoolId
     local rows={}
-    local stage=""
-    if not primary then return {title="CONTROLS",rows={}} end
+    local title="CONTROLS"
+    if not primary then return {title=title,rows=rows} end
 
     if primary=="Build" or primary=="Edit" then
+        local alignment=build.Layered and build.Layered.Alignment
         local pending=build.Pending
-        local layered=build.Layered and build.Layered.Alignment
-        local smart=build.SmartMatch
-        if layered then
-            stage=if layered.Stage=="Fit" then "SHAFT FIT"
-                elseif layered.Stage=="PickTarget" then (if layered.Reverse then "CHOOSE SHAFT" else "CHOOSE OPENING")
-                else "ALIGNMENT"
-            put(rows,"Click",if layered.Stage=="PickTarget" then (if layered.Reverse then "Select shaft" else "Select opening")
-                elseif layered.Stage=="Fit" then "Finish fitting"
+        if alignment then
+            title="SHAFT FIT"
+            put(rows,"Click",if alignment.Stage=="PickTarget" then "Choose target"
                 else "Confirm fit")
-            if layered.Stage~="PickTarget" then
-                put(rows,"[ / ]","Adjust insertion")
-                put(rows,"Q / E","Roll shaft")
-                put(rows,"Wheel","Adjust depth / fit")
+            if alignment.Stage~="PickTarget" then
+                put(rows,"Wheel","Insertion depth")
+                put(rows,"Q / E","Rotate fit")
             end
-            put(rows,"Esc","Cancel alignment")
+            put(rows,"Esc","Cancel")
         elseif build.PendingMateChoice or build.LockedAlignment then
-            stage="SMART FIT"
-            put(rows,"Wheel","Insertion depth")
-            put(rows,"Q / E","Shaft roll")
+            title="SMART FIT"
             put(rows,"Click","Choose connection")
-            put(rows,"Esc","Cancel fit")
+            put(rows,"Wheel","Insertion depth")
+            put(rows,"Q / E","Rotate shaft")
+            put(rows,"Esc","Cancel")
         elseif build.CatalogOpen then
-            stage="BUILD / LIBRARY"
-            put(rows,"Click","Choose primitive / blueprint")
+            title="PARTS"
+            put(rows,"Click","Select a part")
             put(rows,"B / Esc","Close library")
         elseif build.ScaleMode then
-            stage="RESIZE"
-            put(rows,"Drag","Resize face grips")
-            put(rows,"N","Exact dimensions")
-            put(rows,"V / Esc","Exit resize")
+            title="RESIZE"
+            put(rows,"Drag","Resize")
+            put(rows,"N","Enter size")
+            put(rows,"V / Esc","Done")
         elseif primary=="Build" then
-            stage="BUILD / PLACE"
-            put(rows,"Click",if build.CurrentBank then "Place saved component"
-                else "Place primitive")
-            put(rows,"B","Primitive / component library")
-            put(rows,"J / Shift+J","Show/hide / move character-scale ghost")
-            put(rows,"R / T / Y","Rotate axes")
-            put(rows,"V / N","Resize / exact dimensions")
-            if smart then
-                put(rows,"Tab","Cycle fit target")
-                put(rows,"Shift+Tab","Previous target")
-            else
-                put(rows,"Shift / Alt","Temporarily disable smart fit")
-            end
-            put(rows,"Enter / Esc","Stop placement (Edit = hotbar 2)")
+            title="BUILD"
+            put(rows,"Click","Place")
+            put(rows,"B","Parts library")
+            put(rows,"R / T / Y","Rotate")
+            put(rows,"V","Resize")
+            put(rows,"Shift / Alt","Disable snap")
+            put(rows,"Right click","Part options")
+            put(rows,"Enter","Finish")
         elseif pending then
-            stage="EDIT / TRANSFORM"
-            put(rows,"Click","Confirm move / duplicate")
-            put(rows,"R / T / Y","Rotate axes")
-            put(rows,"Esc","Cancel transform")
+            title="EDIT / MOVE"
+            put(rows,"Click","Place")
+            put(rows,"R / T / Y","Rotate")
+            put(rows,"Esc","Cancel")
         else
-            stage="EDIT / SELECT"
-            put(rows,"Click","Select authored geometry")
-            put(rows,"Shift+Click","Multi-select independent parts")
-            put(rows,"J / Shift+J","Show/hide / move scale mannequin")
-            put(rows,"Shift+B","Save selected component")
-            put(rows,"Double click","Select inside component")
-            put(rows,"Drag / G","Move one or entire selection")
-            put(rows,"Alt+Drag","Grab exactly where mouse hits")
-            put(rows,"F / Ctrl+D","Duplicate with internal connections")
-            put(rows,"V / N","Resize / exact dimensions")
-            put(rows,"M","Appearance / properties")
-            put(rows,"R / T / Y","Rotate axes")
-            put(rows,"Alt+Arrows","Nudge position")
-            put(rows,"C / U","Group / ungroup")
-            put(rows,"Shift+K","Multi-weld selected touching parts")
-            put(rows,"L","Align shaft")
-            put(rows,"X / I","X-ray / isolate")
-            put(rows,"Tab","Select behind")
-            put(rows,"Delete","Delete selected")
+            title="EDIT"
+            put(rows,"Click","Select")
+            put(rows,"Drag / G","Move")
+            put(rows,"F","Duplicate")
+            put(rows,"V","Resize")
+            put(rows,"R / T / Y","Rotate")
+            put(rows,"Right click","Connections")
+            put(rows,"Delete","Delete")
+            put(rows,"Ctrl+Z","Undo")
         end
-        put(rows,"Ctrl+Z / Y","Undo / redo")
     elseif primary=="Mechanics" then
-        if sub=="Connect" then
-            local state=mechanics.Stage
-            if state=="Preview" or state=="Fit" then
-                stage=if state=="Fit" then "FINE FIT" else "INSERTION"
-                put(rows,"Click","Confirm fit")
-                put(rows,"[ / ]","Adjust fit")
-                put(rows,"Wheel","Adjust insertion")
-                put(rows,"Q / E","Roll shaft")
-                put(rows,"Esc","Cancel connection")
-            elseif state=="Choice" or state=="ChoiceRejected" then
-                stage="CONNECTION CHOICE"
-                put(rows,"Click","Choose relationship")
-                put(rows,"Esc","Cancel choice")
-            else
-                stage="CONNECT"
-                put(rows,"Click",if state=="ChooseSecond" then
-                    "Select second part" else "Select first part")
-                put(rows,"Esc","Reset selection")
-            end
+        local state=mechanics.Stage
+        title="MECHANICS"
+        if state=="Preview" or state=="Fit" then
+            put(rows,"Click","Confirm fit")
+            put(rows,"Wheel","Insertion")
+            put(rows,"Q / E","Rotate")
+            put(rows,"Esc","Cancel")
+        elseif state=="Choice" or state=="ChoiceRejected" then
+            put(rows,"Click","Choose joint")
+            put(rows,"Esc","Cancel")
+        else
+            put(rows,"Click",if state=="ChooseSecond" then "Second part"
+                else "First part")
+            put(rows,"Esc","Reset")
         end
-        put(rows,"Ctrl+Z / Y","Undo / redo")
+        put(rows,"Right click","Connections")
+        put(rows,"Ctrl+Z","Undo")
     elseif primary=="AssemblySimulation" then
         if sub=="AssemblyEditor" then
-            local draft=assemblyTool.Stage=="Selecting"
-            stage=if draft then "ASSEMBLY DRAFT" else "ASSEMBLY EDITOR"
-            if draft then
-                put(rows,"Click","Toggle members")
-                put(rows,"Alt+Click","Single primitive")
-                put(rows,"Enter","Save draft")
-                put(rows,"Esc","Discard draft")
-                if assemblyTool.EditingId then
-                    put(rows,"R","Rename assembly")
-                end
+            local drafting=assemblyTool.Stage=="Selecting"
+            title=if drafting then "ASSEMBLY / SELECT" else "ASSEMBLY"
+            if drafting then
+                put(rows,"Click","Add / remove part")
+                put(rows,"Enter","Save assembly")
+                put(rows,"Esc","Cancel")
             else
-                put(rows,"N","Create assembly")
+                put(rows,"N","New assembly")
                 put(rows,"Click","Select assembly")
             end
-            put(rows,"G","Ground / release aimed body")
-            put(rows,"Alt+Arrows","Move assembly")
-            put(rows,"Ctrl+Z / Y","Undo / redo")
+            put(rows,"G","Ground part")
+            put(rows,"Right click","Connections")
         else
             local running=player:GetAttribute("OPENWORKS_Simulating")==true
-            local paused=player:GetAttribute("OPENWORKS_SimulationPaused")==true
-            stage=if running then (if paused then "PAUSED" else "RUNNING")
-                else "SIMULATION"
-            put(rows,"P",if running then "Stop simulation" else "Run assembly")
+            title=if running then "SIMULATING" else "SIMULATION"
+            put(rows,"P",if running then "Stop" else "Run assembly")
             if running then
-                put(rows,"O",if paused then "Resume physics" else "Pause physics")
-                put(rows,"U","Reset simulation")
-                put(rows,"I","Inspect mechanism")
-                put(rows,"Hold LMB","Drive hand crank")
-                put(rows,"Q / E","Drive rack")
-                put(rows,"Motor key","Power bearing motor")
+                put(rows,"O","Pause / resume")
+                put(rows,"U","Reset")
+                put(rows,"Motor key","Drive motor")
+                put(rows,"Hold LMB","Hand crank")
             else
-                put(rows,"G","Ground / release")
-                put(rows,"Click","Select assembly")
+                put(rows,"G","Ground part")
             end
+            put(rows,"Right click","Inspect connections")
         end
     end
-    local fitActive=((primary=="Build" or primary=="Edit") and
-        (build.SmartMatch~=nil or stage=="SHAFT FIT"
-            or stage=="ALIGNMENT" or stage=="SMART FIT"
-            or stage=="CHOOSE OPENING"))
-        or (primary=="Mechanics" and
-            (stage=="CONNECTION CHOICE" or stage=="INSERTION"
-                or stage=="FINE FIT"))
-    if primary~="Build" then
-        put(rows,"Right click","Mechanical relationship settings")
-    end
-    if not fitActive and sub~="Paint" then
-        put(rows,"F2","Unlock cursor")
-    end
-    if not fitActive then put(rows,"F6","Save / load plot") end
-    -- Shared freecam controls remain concise and only occur once below
-    -- the current operation's list; no separate permanent instruction HUD.
-    put(rows,"WASD","Fly camera")
-    put(rows,"Space / Ctrl","Up / down")
-    put(rows,"Shift","Fly faster")
-    put(rows,"Wheel","Zoom camera (unless fitting)")
-    return {title=stage~="" and stage or "CONTROLS",rows=rows}
+    -- The complete keybinds remain in the existing controllers; this is
+    -- intentionally a short, legible help strip, not a tutorial wall.
+    return {title=title,rows=rows}
 end
 
 return table.freeze(Help)
