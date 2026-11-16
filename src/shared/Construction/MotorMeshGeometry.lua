@@ -10,7 +10,7 @@ local KEYS = {"RearCan", "Housing", "Endbell"}
 local OFFSETS = {
     RearCan = Vector3.new(-1.10, 0, 0),
     Housing = Vector3.new(0.29, 0, 0),
-    Endbell = Vector3.new(1.185, 0, 0),
+    Endbell = Vector3.new(1.1775, 0, 0),
 }
 Generator.Keys = table.freeze(KEYS)
 Generator.Offsets = table.freeze(OFFSETS)
