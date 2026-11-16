@@ -1295,22 +1295,12 @@ function Panel:RenderRelation(node)
             local accelerationSlider=self:RangeSlider(
                 "Acceleration",0.1,1000,0.1,true)
             local limitRows={}
-            self:Switch(limitName,initialLimited,
+            local switchRow=self:Switch(limitName,initialLimited,
                 "Restrict the shaft's rotation",function(enabled)
                     for _,item in ipairs(limitRows) do
                         item.Visible=advanced and enabled
                     end
                 end)
-            local limitSwitchRow=self.Properties:GetChildren()
-            -- Newly created switch is the last GUI row; obtain it using
-            -- the defined layout order rather than an unstable child index.
-            local switchRow=nil
-            for _,item in ipairs(limitSwitchRow) do
-                if item:IsA("Frame") and item.LayoutOrder
-                    ==self.Properties:GetChildren()[#limitSwitchRow].LayoutOrder then
-                    switchRow=item
-                end
-            end
             local lower=self:Field(lowName,
                 rel:GetAttribute("LowerLimit") or defaultLow)
             local upper=self:Field(highName,
