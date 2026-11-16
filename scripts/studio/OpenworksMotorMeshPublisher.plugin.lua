@@ -9,7 +9,7 @@ local Geometry = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("MotorMeshGeometry"))
 local toolbar = plugin:CreateToolbar("OpenWorks Meshes")
 local button = toolbar:CreateButton("Publish DC Motor",
-    "Upload the three watertight DC motor material sections, then refresh Actuators",
+    "Upload the six approved V4 DC motor mesh sections and refresh Actuators",
     "rbxassetid://0")
 local NAME = "OPENWORKS_PublishedMotorMeshes"
 local busy = false
