@@ -795,10 +795,9 @@ end
 
 function Panel:Segment(name,options,selected,onChange)
     self.Flags[name]=selected
-    local heading=row(self.Properties,21)
-    label(heading,name,UDim2.fromOffset(6,0),
-        UDim2.new(1,-12,1,0),Theme.Muted)
-    local holder=row(self.Properties,34)
+    local holder=row(self.Properties,33)
+    label(holder,name,UDim2.fromOffset(6,0),
+        UDim2.new(0.28,-6,1,0),Theme.Text)
     local buttons={}
     local function redraw()
         for id,control in pairs(buttons) do
@@ -808,9 +807,10 @@ function Panel:Segment(name,options,selected,onChange)
     end
     for i,option in ipairs(options) do
         local chosen=option.id
+        local width=0.72/#options
         local control=button(holder,option.label,
-            UDim2.new((i-1)/#options,2,0,1),
-            UDim2.new(1/#options,-5,1,-2),function()
+            UDim2.new(0.28+(i-1)*width,2,0,1),
+            UDim2.new(width,-5,1,-2),function()
                 self.Flags[name]=chosen
                 redraw()
                 if onChange then onChange(chosen) end
@@ -827,22 +827,28 @@ end
 function Panel:RangeSlider(name,low,high,step,logarithmic,onRelease)
     local field=self.Fields[name]
     if not field then return nil end
-    local holder=row(self.Properties,18)
+    local holder=row(self.Properties,23)
     local track=mk("TextButton",holder,{
         Name="Range_"..name,Text="",AutoButtonColor=false,
-        Position=UDim2.fromOffset(6,5),
-        Size=UDim2.new(1,-12,0,8),BorderSizePixel=0,
+        Position=UDim2.fromOffset(6,1),
+        Size=UDim2.new(1,-12,0,20),BorderSizePixel=0,
+        BackgroundTransparency=1,ZIndex=13,
+    })
+    mk("Frame",track,{
+        Name="Rail",Position=UDim2.fromOffset(0,7),
+        Size=UDim2.new(1,0,0,6),BorderSizePixel=0,
         BackgroundColor3=Theme.Input,ZIndex=13,
     })
     local fill=mk("Frame",track,{
-        Name="Fill",Size=UDim2.fromScale(0,1),
+        Name="Fill",Position=UDim2.fromOffset(0,7),
+        Size=UDim2.new(0,0,0,6),
         BorderSizePixel=0,BackgroundColor3=Theme.Accent,
         ZIndex=14,
     })
     local thumb=mk("Frame",track,{
         Name="Thumb",AnchorPoint=Vector2.new(0.5,0.5),
         Position=UDim2.fromScale(0,0.5),
-        Size=UDim2.fromOffset(9,15),BorderSizePixel=0,
+        Size=UDim2.fromOffset(13,15),BorderSizePixel=0,
         BackgroundColor3=Theme.Text,ZIndex=15,
     })
     local function fraction(value)
@@ -863,7 +869,7 @@ function Panel:RangeSlider(name,low,high,step,logarithmic,onRelease)
         local value=tonumber(field.Text)
         if value==nil then return end
         local t=fraction(value)
-        fill.Size=UDim2.fromScale(t,1)
+        fill.Size=UDim2.new(t,0,0,6)
         thumb.Position=UDim2.fromScale(t,0.5)
     end
     field:GetPropertyChangedSignal("Text"):Connect(redraw)
