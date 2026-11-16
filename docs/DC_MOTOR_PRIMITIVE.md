@@ -7,8 +7,8 @@ does not depend on the uploaded asset IDs. Catalog name: **Brushed DC Motor**.
 
 ## Authoring and appearance
 
-- Three **closed, full-thickness** metal EditableMeshes, each a separate static
-  material section: `RearCan`, `Housing`, and `Endbell`.
+- Six approved V4 **closed, full-thickness** EditableMeshes, with separate
+  material sections: `RearCan`, `Armature`, `Housing`, `Endbell`, `Bearing`, and `Bushing`.
 - 24-sided smooth circular surfaces; hard, independent face-corner normals on
   stamped front/back faces, ventilation cut edges, and housing seams.
 - Three actual cut-through windows in the rear steel can and four actual
