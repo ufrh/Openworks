@@ -26,6 +26,7 @@ local ProceduralPrefabLibrary = require(construction:WaitForChild("ProceduralPre
 local PulleyLibrary = require(script.Parent:WaitForChild("PulleyLibrary"))
 local FastenerLibrary = require(script.Parent:WaitForChild("FastenerLibrary"))
 local HandCrankLibrary = require(script.Parent:WaitForChild("HandCrankLibrary"))
+local MotorLibrary = require(script.Parent:WaitForChild("MotorLibrary"))
 local ShaftLibrary = require(script.Parent:WaitForChild("ShaftLibrary"))
 local CompactHoleLibrary = require(script.Parent:WaitForChild("CompactHoleLibrary"))
 local AssemblyService = require(script.Parent:WaitForChild("AssemblyService"))
@@ -180,7 +181,9 @@ local function createFromTemplate(player, templateId, instanceId, bypassLimit)
         if descendant:IsA("BasePart") then
             descendant.MaterialVariant = ""
             descendant.Material = Enum.Material.Metal
-            descendant.Color = DEFAULT_METAL_COLOR
+            if descendant:GetAttribute("OpenworksKeepFactoryAppearance") ~= true then
+                descendant.Color = DEFAULT_METAL_COLOR
+            end
             if descendant:IsA("PartOperation") then
                 -- Precompiled CSG can otherwise retain its original face colors.
                 descendant.UsePartColor = true
@@ -1594,6 +1597,7 @@ function Service.Start()
     PulleyLibrary.Ensure()
     FastenerLibrary.Ensure()
     HandCrankLibrary.Ensure()
+    MotorLibrary.Ensure()
     ShaftLibrary.Ensure()
     CompactHoleLibrary.Ensure()
     -- Baked procedural gear / bolt templates are session-scoped static mesh
