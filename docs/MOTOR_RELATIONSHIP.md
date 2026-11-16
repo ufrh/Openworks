@@ -39,12 +39,30 @@ one of the connected parts and open its **Motor** relationship to configure it.
 | Continuous | rotates while pressed, stops on release | press to run, press again to stop |
 | Servo | approaches target while held, returns to neutral 0° on release | press to target angle, press again to neutral 0° |
 
-The servo uses `HingeConstraint.ActuatorType=Servo`,
-`TargetAngle`, `AngularSpeed`, and `ServoMaxTorque`. The continuous drive
-uses `ActuatorType=Motor`, `AngularVelocity`, `MotorMaxTorque`, and
-`MotorMaxAcceleration`. Servo returns to 0° using its configured speed and
-torque rather than teleporting. Existing angular travel limits still apply;
-if a target lies outside those limits, the hinge cannot reach it.
+The motor drives the **shaft**, never the hole-block housing. If the assembly
+has no explicit grounding, its motor hole block is grounded automatically
+to keep the housing stationary. User-authored grounding takes precedence.
+
+- **No mounted gear:** the continuous drive uses a passive
+  `HingeConstraint` with a smooth, torque-limited `AngularVelocity`
+  actuator attached to the shaft, matching the standalone hand-crank
+  drive. Servo uses the physical hinge's `ActuatorType=Servo`, target
+  angle, angular speed and `ServoMaxTorque`.
+- **Gear rigidly welded onto shaft:** the kinematic gear solver owns the
+  complete shaft-and-gear rigid group. No native hinge motor is allowed to
+  compete with it. The motor's key input drives the **same shaft ID and axle
+  orientation** as a hand crank; its welded input gear, meshed output gears
+  and compound trains advance together. Server Heartbeat integrates rotation
+  without a fixed 60 Hz gate. Geared servo control uses a signed, unwrapped
+  shaft angle with a capped target displacement to prevent overshoot.
+- **Torque:** native shaft motors and servos honor physical drive budgets.
+  Geared groups are kinematic, like hand-crank-driven gear trains, so their
+  `Max torque` cannot yet model dynamic gear loads or stall force. It remains
+  persisted for future load-aware transmission.
+
+Servo returns toward 0° using controlled rotation, not teleports. Existing
+angular travel limits constrain native hinge servos; kinematic gears do not
+have a physics hinge and cannot use native angular hard stops.
 
 The server receives key transitions and hold liveness only. The server owns
 and validates speed/force/angle parameters. Toggle behavior is edge-triggered
@@ -66,9 +84,14 @@ requirement.
 2. Select a drilled hole block and shaft: Motor must be available. An
    improperly fitted pair must be rejected by existing bore validation.
 3. In Simulate, test Continuous/Hold, Continuous/Toggle, Servo/Hold,
-   Servo/Toggle; press/release key and switch direction.
-4. Verify torque/speed, servo target and any angle limits.
-5. Stop/restart simulation, save/reload plot, undo/redo creation/settings,
+   Servo/Toggle; press/release key and switch direction. Repeat with and
+   without a gear **rigidly welded** to the motor shaft.
+4. Verify the hole block remains motionless while its shaft rotates, and
+   confirm the welded input gear drives meshed output gears. Keep the
+   housing ungrounded for the first test; the motor should supply its
+   default support when no other part was explicitly grounded.
+5. Verify torque/speed, servo target and any native-hinge angle limits.
+6. Stop/restart simulation, save/reload plot, undo/redo creation/settings,
    and disconnect/reconnect shaft. Check no phantom drive persists.
 
 Source is committed to `dev`. Studio simulation validation is still required.
