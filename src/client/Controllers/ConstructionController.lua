@@ -1317,7 +1317,9 @@ function Controller:RebuildPreview()
             item.CastShadow=false
             item.Reflectance=0
             item.Material=Enum.Material.SmoothPlastic
+            local collisionMode=item:GetAttribute("OpenworksCollisionMode")
             item.Transparency=if item:GetAttribute("GearPivotOnly")==true
+                or collisionMode=="Proxy" or collisionMode=="PivotOnly"
                 then 1 else 0.65
             item.LocalTransparencyModifier=0
             item.Color=BLUE
