@@ -782,6 +782,14 @@ def main() -> int:
           and 'return mechanical:WeldComponent(player,payload)' in component_weld_dispatch
           and 'self.Tools.PrimaryId=="Mechanics"' in component_weld_ui
           and 'SMART WELD COMPONENT' in component_weld_ui)
+    multi_hole_fit=read("src/shared/Construction/MultiFitMath.lua")
+    check("Multi-hole solver excludes gear and pulley hubs from native motion joints",
+          'local function transmissionHub(model)' in multi_hole_fit
+          and 'if transmissionHub(moving) or transmissionHub(stationary) then return nil end' in multi_hole_fit
+          and 'for _,candidate in ipairs(Fit.Scope(primary,all)) do' in multi_hole_fit
+          and 'if not transmissionHub(candidate) then' in multi_hole_fit
+          and 'and not transmissionHub(candidate)' in multi_hole_fit
+          and 'and not transmissionHub(model)' in multi_hole_fit)
     check("Shaft-to-hole mate collects coaxial gears and welds without turning them into bearings",
           'if mode=="Hub" or mode=="Bore" then' in component_weld_mechanics
           and 'local fits,why=Smart.HubFits(shaft,candidate)' in component_weld_mechanics

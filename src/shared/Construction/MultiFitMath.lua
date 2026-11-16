@@ -10,6 +10,11 @@ Fit.MaxPairs=32
 Fit.RadialTolerance=Grid.Unit*0.12
 Fit.AxisTolerance=0.9998
 
+local function transmissionHub(model)
+    return model and (type(model:GetAttribute("GearTeeth"))=="number"
+        or model:GetAttribute("PrimitiveFamily")=="Pulley")
+end
+
 local function key(model)
     return tostring(model:GetAttribute("InstanceId") or model.Name)
 end
@@ -19,6 +24,9 @@ end
 function Fit.Check(moving,stationary,delta)
     if not moving or not stationary or not moving.PrimaryPart
         or not stationary.PrimaryPart or moving==stationary then return nil end
+    -- Transmission hubs are NOT bearings. They can share the same shaft
+    -- axis, but are handled by one rigid Weld, not a second slider/joint.
+    if transmissionHub(moving) or transmissionHub(stationary) then return nil end
     local reverse=Alignment.TargetAxis(moving)~=nil
         and Alignment.IsShaft(stationary)
     local forward=Alignment.IsShaft(moving)
@@ -162,14 +170,23 @@ end
 -- independent stationary holes with verified coaxial geometry and
 -- actual positive insertion length at the proposed pose.
 function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
-    local result=Fit.Scope(primary,all)
+    -- Scoped components can contain the target drilled block AND an
+    -- independently placed gear. Never count the gear as a second guide.
+    local result={}
     local known={}
-    for _,target in ipairs(result) do known[target]=true end
+    for _,candidate in ipairs(Fit.Scope(primary,all)) do
+        if not transmissionHub(candidate) then
+            table.insert(result,candidate)
+            known[candidate]=true
+        end
+    end
     local shafts={}
     local movingHoles=0
     for _,member in ipairs(movingMembers) do
         if Alignment.IsShaft(member) then table.insert(shafts,member) end
-        if Alignment.TargetAxis(member) then movingHoles+=1 end
+        if Alignment.TargetAxis(member) and not transmissionHub(member) then
+            movingHoles+=1
+        end
     end
     if movingHoles>0 and #shafts==0 then
         for _,candidate in ipairs(all or {}) do
@@ -179,7 +196,7 @@ function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
                 and Alignment.IsShaft(candidate) then
                 local matched=false
                 for _,hole in ipairs(movingMembers) do
-                    if Alignment.TargetAxis(hole)
+                    if Alignment.TargetAxis(hole) and not transmissionHub(hole)
                         and Fit.Check(hole,candidate,delta) then
                         matched=true
                         break
@@ -201,10 +218,8 @@ function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
                 and candidate:GetAttribute("OwnerUserId")
                     ==primary:GetAttribute("OwnerUserId")
                 and Alignment.TargetAxis(candidate)
-                -- Gear hubs require an explicit Rotation/Rigid choice;
-                -- inserting a pin through hinge lugs must not silently
-                -- mount every nearby drivetrain gear as a bearing.
-                and type(candidate:GetAttribute("GearTeeth"))~="number"
+                -- Gears/pulleys are auto-welded on bore fit, never guides.
+                and not transmissionHub(candidate)
                 then
                 for _,shaft in ipairs(shafts) do
                     if Fit.Check(shaft,candidate,delta) then
@@ -226,14 +241,16 @@ end
 function Fit.Completeness(movingMembers,stationaryModels,pairs,reverse)
     local movingCount,stationaryCount=0,0
     for _,model in ipairs(movingMembers) do
-        if (reverse and Alignment.TargetAxis(model)~=nil)
+        if (reverse and Alignment.TargetAxis(model)~=nil
+                and not transmissionHub(model))
             or (not reverse and Alignment.IsShaft(model)) then
             movingCount+=1
         end
     end
     for _,model in ipairs(stationaryModels) do
         if (reverse and Alignment.IsShaft(model))
-            or (not reverse and Alignment.TargetAxis(model)~=nil) then
+            or (not reverse and Alignment.TargetAxis(model)~=nil
+                and not transmissionHub(model)) then
             stationaryCount+=1
         end
     end
