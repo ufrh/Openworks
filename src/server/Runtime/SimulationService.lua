@@ -719,9 +719,35 @@ function Simulation:Start(player, payload)
                 continue
             elseif session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))
                 or session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")) then
-                -- No native hinge/bearing/spring/rigid constraint may
-                -- exert ANY physical influence on geared rigid bodies.
-                -- Rigid members move cohesively under GearKinematics.
+                -- Gear-mounted shafts rotate under exactly the SAME
+                -- kinematic solver as an LMB hand crank. A native hinge
+                -- on anchored kinematic parts would stall or fight that
+                -- solver, and previously silently ate motor inputs.
+                if edge.kind=="Bearing"
+                    and edge.relation:GetAttribute("MotorEnabled")==true then
+                    local shaftId=edge.source:GetAttribute("InstanceId")
+                    local holeId=edge.target:GetAttribute("InstanceId")
+                    if not session.Gears:IsKinematic(shaftId) then
+                        error("Motor shaft is not the kinematic gear input")
+                    end
+                    if session.Gears:IsKinematic(holeId) then
+                        error("Motor hole housing is welded into a gear train")
+                    end
+                    local shaftPart=source.PrimaryPart
+                    local motor={
+                        Constraint=nil,
+                        Kinematic=true,
+                        DrivenId=shaftId,
+                        HousingId=holeId,
+                        Axis=shaftPart.CFrame.RightVector.Unit,
+                        RelationId=edge.relation:GetAttribute("RelationId"),
+                    }
+                    configureMotor(motor,edge.relation)
+                    table.insert(session.Motors,motor)
+                end
+                -- All kinematic gear bodies have no native hinges, springs
+                -- or welded physical relationships; the shaft and rigidly
+                -- mounted gear(s) rotate together.
                 continue
             elseif edge.kind == "Fixed" or edge.kind=="Weld"
                 or edge.kind=="Bolt" then
@@ -984,7 +1010,21 @@ function Simulation:Start(player, payload)
         end
         local hasExplicitGround = next(explicitGround) ~= nil
         session.GroundKeys = explicitGround
-        if not hasExplicitGround and session.Grounded then
+        if not hasExplicitGround then
+            -- A motor's housing is the STATIONARY support, never the
+            -- rotating shaft or its drive gear. In an assembly without
+            -- authored grounding, anchor the hole block automatically.
+            -- If a player explicitly grounded something else, respect
+            -- their authored mechanical support instead.
+            for _,edge in ipairs(graph.edges) do
+                if edge.kind=="Bearing"
+                    and edge.relation:GetAttribute("MotorEnabled")==true then
+                    session.GroundKeys[edge.b]=true
+                end
+            end
+        end
+        if not hasExplicitGround and not next(session.GroundKeys)
+            and session.Grounded then
             -- Aim-at-crank must not ground the actuator you're about to
             -- turn. Prefer the BEARING HOUSING of a crank mechanism.
             local hasCrank=false
