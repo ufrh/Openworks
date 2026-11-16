@@ -25,6 +25,7 @@ function Catalog.Apply(model:Model,id:string)
     model:SetAttribute("ConstructionMaterial",id)
     for _,part in ipairs(model:GetDescendants()) do
         if part:IsA("BasePart") then
+            if part:GetAttribute("OpenworksKeepFactoryAppearance") == true then continue end
             local pivot=part:GetAttribute("GearPivotOnly")==true
             if not pivot then
                 part.MaterialVariant=""
