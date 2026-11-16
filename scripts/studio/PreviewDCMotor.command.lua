@@ -7,13 +7,17 @@ local RS = game:GetService("ReplicatedStorage")
 local SS = game:GetService("ServerScriptService")
 local Geometry = require(RS.Openworks.Construction.MotorMeshGeometry)
 local MotorLibrary = require(SS.Openworks.Runtime.MotorLibrary)
+assert(Geometry.Version == 4,"Sync the approved V4 motor generator first")
 local prefab = MotorLibrary.Ensure(true)
 local published = prefab:GetAttribute("PublishedMotorVisual") == true
 if not published then
     local palette = {
         RearCan = Color3.fromRGB(118,126,132),
         Housing = Color3.fromRGB(187,190,191),
-        Endbell = Color3.fromRGB(150,158,163),
+        Endbell = Color3.fromRGB(171,177,181),
+        Armature = Color3.fromRGB(55,61,67),
+        Bearing = Color3.fromRGB(145,151,157),
+        Bushing = Color3.fromRGB(158,119,64),
     }
     local prepared = {}
     local ok,reason = pcall(function()
