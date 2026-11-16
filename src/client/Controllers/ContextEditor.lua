@@ -1053,7 +1053,8 @@ function Panel:RenderRelation(node)
     end
     local kind=tostring(rel:GetAttribute("Kind") or "Connection")
     self:Section("Mechanical relationship")
-    self:Value("Type",kind)
+    self:Value("Type",if kind=="Bearing"
+        and rel:GetAttribute("MotorRelationship")==true then "Motor" else kind)
     self:Value("From",node.first and node.first.Name or "?")
     self:Value("To",node.second and node.second.Name or "?")
     if simulating() and kind~="Spring" then
@@ -1148,7 +1149,7 @@ function Panel:RenderRelation(node)
             local motor
             motor=self:ActionButton(
                 if self.Flags.Motor then "Motor enabled" else "Motor disabled",
-                "Toggle powered bearing",function()
+                "Enable or disable shaft rotation on held key",function()
                     self.Flags.Motor=not self.Flags.Motor
                     motor.Text=if self.Flags.Motor then "Motor enabled"
                         else "Motor disabled"
