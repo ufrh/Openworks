@@ -10,7 +10,7 @@ local Motor = {}
 local ROOT = "OPENWORKS_PrimitiveLibrary_DRAFT"
 local MANIFEST = "OPENWORKS_PublishedMotorMeshes"
 local ID = "DCMotor"
-local VERSION = 1
+local VERSION = 2
 
 local COLORS = {
     RearCan = Color3.fromRGB(118, 126, 132),
@@ -116,11 +116,32 @@ local function build(): Model
     attachment.CFrame = CFrame.new(0.37,0,0)
     attachment.Parent = shaft
 
-    -- Fully solid brass electrical tabs at the rear.
+    -- A real brushed motor is CLOSED at the rear. Earlier versions
+    -- displayed a giant empty cylinder because its rear was just a tube.
+    -- Solid components sit beneath the vented metal shell, and are visible
+    -- through the openings without becoming extra physics bodies.
+    local rearCap = native(model,"RearInsulatingEndCap",Enum.PartType.Cylinder,
+        Vector3.new(0.16,1.84,1.84),CFrame.new(-1.79,0,0),
+        Color3.fromRGB(53,59,63))
+    rearCap:SetAttribute("OpenworksCollisionMode","VisualOnly")
+    rearCap.CanCollide=false
+    rearCap.CanQuery=false
+
+    local armature = native(model,"InternalArmature",Enum.PartType.Cylinder,
+        Vector3.new(0.86,1.49,1.49),CFrame.new(-1.06,0,0),
+        Color3.fromRGB(58,62,66))
+    armature:SetAttribute("OpenworksCollisionMode","VisualOnly")
+    armature.CanCollide=false
+    armature.CanQuery=false
+
+    -- Subtle brass electrical terminals project from the CLOSED rear cap.
     for i,z in ipairs({-0.35,0.35}) do
-        native(model,"Terminal_"..i,Enum.PartType.Block,
-            Vector3.new(0.16,0.18,0.12),CFrame.new(-1.85,0,z),
+        local terminal = native(model,"Terminal_"..i,Enum.PartType.Block,
+            Vector3.new(0.22,0.18,0.12),CFrame.new(-1.94,0,z),
             Color3.fromRGB(167,126,67))
+        terminal:SetAttribute("OpenworksCollisionMode","VisualOnly")
+        terminal.CanCollide=false
+        terminal.CanQuery=false
     end
 
     local ids = published()
