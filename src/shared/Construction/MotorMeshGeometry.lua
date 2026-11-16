@@ -135,22 +135,20 @@ local function make(key: string)
                 local a,b = TAU*j/N,TAU*(j+1)/N
                 outer(x0,x1,0.99,0.99,a,b)
                 inner(x0,x1,0.87,0.87,a,b)
-                -- For the two terminal rings, full disks replace annular caps.
-                if i > 1 and not has(i-1,j) then
-                    radialCap(x0,0.87,0.99,a,b,false)
-                end
-                if i < #xs-1 and not has(i+1,j) then
-                    radialCap(x1,0.87,0.99,a,b,true)
-                end
+                -- End annuli join the cylindrical outer and inner walls.
+                -- Inner-radius disks below fill the remaining circular hole,
+                -- preserving two incident faces per edge.
+                if not has(i-1,j) then radialCap(x0,0.87,0.99,a,b,false) end
+                if not has(i+1,j) then radialCap(x1,0.87,0.99,a,b,true) end
                 if not has(i,j-1) then side(x0,x1,0.87,0.99,a,false) end
                 if not has(i,j+1) then side(x0,x1,0.87,0.99,b,true) end
             end
         end
-        -- Seal BOTH ends. The far rear is a full metal backplate and
-        -- the other end is a closed internal divider behind the main housing.
-        -- This prevents seeing into an empty pipe from either direction.
-        fullDisc(xs[1],0.99,false)
-        fullDisc(xs[#xs],0.99,true)
+        -- Annular end faces already close 0.87 to 0.99. These disks
+        -- close radius 0 to 0.87 and share the annulus's inner ring.
+        -- Both faces are therefore connected without overlapping polygons.
+        fullDisc(xs[1],0.87,false)
+        fullDisc(xs[#xs],0.87,true)
     elseif key == "Housing" then
         local xs = {-0.46,0.81,1.04}
         local radii = {1.09,1.09,0.99}
