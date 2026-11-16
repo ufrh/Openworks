@@ -87,6 +87,7 @@ local function run()
                     end
                     assert(entry:IsA("StringValue"), "Bad mesh entry for "..key)
                     entry.Value = tostring(id)
+                    entry:SetAttribute("GeometryVersion",Geometry.Version)
                     log(string.format("[%d/%d] Uploaded %s: %.0f (%d tris)",
                         i,#Geometry.Keys,key,id,tris))
                 end
