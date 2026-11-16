@@ -72,7 +72,7 @@ local function run()
                 local entry = manifest:FindFirstChild(key)
                 local saved = entry and entry:IsA("StringValue")
                     and entry.Value:match("^%d+$") and tonumber(entry.Value)
-                if saved and revision==Geometry.Version then
+                if saved and entry:GetAttribute("GeometryVersion")==Geometry.Version then
                     log(string.format("[%d/%d] %s already uploaded",i,#Geometry.Keys,key))
                 else
                     local mesh, tris = Geometry.Build(key)
