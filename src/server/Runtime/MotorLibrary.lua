@@ -198,7 +198,8 @@ function Motor.Ensure(forceRebuild: boolean?)
     local prior = category:FindFirstChild(ID)
     if prior then
         if not forceRebuild then return prior end
-        assert(prior:IsA("Model") and prior:GetAttribute("MotorPrefabVersion") == VERSION,
+        local priorVersion = prior:GetAttribute("MotorPrefabVersion")
+        assert(prior:IsA("Model") and (priorVersion == VERSION or priorVersion == 1),
             "Refusing to overwrite a custom motor primitive")
     end
     local fresh = build()
