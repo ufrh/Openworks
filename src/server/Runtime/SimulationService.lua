@@ -148,6 +148,7 @@ local function configureMotor(motor, relation)
     motor.Latched=false
     motor.On=false
     motor.LastInput=0
+    motor.NativeSpeed=0
     local torque=math.clamp(relation:GetAttribute("MotorTorque") or 3000,1,100000)
     motor.Torque=torque
     motor.Acceleration=math.clamp(
@@ -161,8 +162,17 @@ local function configureMotor(motor, relation)
         c.MotorMaxAcceleration=motor.Acceleration
         c.ServoMaxTorque=torque
         c.AngularSpeed=math.abs(motor.Speed)
+        -- Continuous is intentionally a passive bearing: an
+        -- AngularVelocity actuator on the SHAFT provides the drive,
+        -- exactly as for an ordinary standalone hand crank. This avoids
+        -- applying a competing hinge motor to the hole housing.
         c.ActuatorType=if motor.DriveType=="Servo" then Enum.ActuatorType.Servo
-            else Enum.ActuatorType.Motor
+            else Enum.ActuatorType.None
+    end
+    if motor.Rotary then
+        motor.Rotary.MaxTorque=torque
+        motor.Rotary.AngularVelocity=Vector3.zero
+        motor.Rotary.Enabled=false
     end
 end
 
@@ -175,7 +185,9 @@ local function applyMotor(motor)
         -- Servo keeps its angular speed/torque limits in both directions.
         c.TargetAngle=if on then motor.Angle else 0
     else
-        c.AngularVelocity=if on then motor.Speed else 0
+        -- Native AngularVelocity is updated smoothly on Heartbeat; no
+        -- HingeConstraint angular target is changed by packet frequency.
+        c.AngularVelocity=0
     end
 end
 
@@ -214,6 +226,30 @@ function Simulation:StepCranks(dt)
                 motor.Held=false
                 motor.On=false
                 applyMotor(motor)
+            end
+            local rotary=motor.Rotary
+            if rotary and rotary.Parent then
+                if session.Paused or motor.DriveType=="Servo" then
+                    motor.NativeSpeed=0
+                    rotary.Enabled=false
+                    rotary.AngularVelocity=Vector3.zero
+                else
+                    -- Hand-crank style eased velocity with the authored
+                    -- acceleration limit; drive the shaft, not the hole.
+                    local target=if motor.On then motor.Speed else 0
+                    local dtSafe=math.clamp(dt,0,0.07)
+                    local change=(target-(motor.NativeSpeed or 0))
+                        *(1-math.exp(-8*dtSafe))
+                    local acceleration=(motor.Acceleration or 40)*dtSafe
+                    motor.NativeSpeed=(motor.NativeSpeed or 0)
+                        +math.clamp(change,-acceleration,acceleration)
+                    if math.abs(motor.NativeSpeed)<0.008 and not motor.On then
+                        motor.NativeSpeed=0
+                    end
+                    rotary.AngularVelocity=
+                        motor.AxisPart.CFrame.RightVector*motor.NativeSpeed
+                    rotary.Enabled=math.abs(motor.NativeSpeed)>0.0001
+                end
             end
         end
         local character=owner.Character
@@ -923,8 +959,21 @@ function Simulation:Start(player, payload)
                 if constraint:IsA("HingeConstraint")
                     and edge.kind=="Bearing"
                     and edge.relation:GetAttribute("MotorEnabled")==true then
+                    local attachment=Instance.new("Attachment")
+                    attachment.Name="MotorDrivenShaftAxis"
+                    attachment.Parent=p1
+                    local rotary=Instance.new("AngularVelocity")
+                    rotary.Name="Motor_ShaftOnlyDrive"
+                    rotary.Attachment0=attachment
+                    rotary.RelativeTo=Enum.ActuatorRelativeTo.World
+                    rotary.MaxTorque=3000
+                    rotary.AngularVelocity=Vector3.zero
+                    rotary.Enabled=false
+                    rotary.Parent=runtime
                     local motor={
                         Constraint=constraint,
+                        Rotary=rotary,
+                        AxisPart=p1,
                         RelationId=edge.relation:GetAttribute("RelationId"),
                     }
                     configureMotor(motor,edge.relation)
@@ -1268,6 +1317,11 @@ function Simulation:Pause(player)
         motor.Held=false
         motor.Latched=false
         motor.On=false
+        motor.NativeSpeed=0
+        if motor.Rotary then
+            motor.Rotary.AngularVelocity=Vector3.zero
+            motor.Rotary.Enabled=false
+        end
         applyMotor(motor)
     end
     if session.Gears then session.Gears:StopMotion() end
