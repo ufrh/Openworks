@@ -10,12 +10,15 @@ local Motor = {}
 local ROOT = "OPENWORKS_PrimitiveLibrary_DRAFT"
 local MANIFEST = "OPENWORKS_PublishedMotorMeshes"
 local ID = "DCMotor"
-local VERSION = 3
+local VERSION = 4
 
 local COLORS = {
     RearCan = Color3.fromRGB(118, 126, 132),
     Housing = Color3.fromRGB(187, 190, 191),
-    Endbell = Color3.fromRGB(150, 158, 163),
+    Endbell = Color3.fromRGB(171, 177, 181),
+    Armature = Color3.fromRGB(55, 61, 67),
+    Bearing = Color3.fromRGB(145, 151, 157),
+    Bushing = Color3.fromRGB(158, 119, 64),
 }
 local function native(model: Model, name: string, shape: Enum.PartType, size: Vector3,
         cf: CFrame, color: Color3, proxy: boolean?): Part
@@ -96,49 +99,31 @@ local function build(): Model
     model:SetAttribute("ResizeMode","None")
     model:SetAttribute("ActuatorKind","ElectricMotor")
     model:SetAttribute("ActuatorOutputAxis","X")
-    model:SetAttribute("OutputShaftDiameterStuds",0.32)
-    model:SetAttribute("OutputShaftLengthStuds",0.74)
+    model:SetAttribute("OutputShaftDiameterStuds",0.34)
+    model:SetAttribute("OutputShaftLengthStuds",0.76)
     model:SetAttribute("MotorPrefabVersion",VERSION)
     model:SetAttribute("MotorVisualOnly",true) -- no powered mechanical coupling yet
     model:SetAttribute("StudioPrecompiled",true)
 
     -- Persistent, actual-volume geometry for selection and collisions.
     local body = native(model,"Geometry",Enum.PartType.Cylinder,
-        Vector3.new(2.98,2.06,2.06),CFrame.new(-0.33,0,0),
+        Vector3.new(3.04,1.96,1.96),CFrame.new(-0.34,0,0),
         Color3.fromRGB(125,133,141),true)
     model.PrimaryPart = body
     native(model,"OutputShaft",Enum.PartType.Cylinder,
-        Vector3.new(0.74,0.32,0.32),CFrame.new(1.71,0,0),
+        Vector3.new(0.76,0.34,0.34),CFrame.new(1.85,0,0),
         Color3.fromRGB(172,182,188))
     local shaft = model:FindFirstChild("OutputShaft") :: Part
     local attachment = Instance.new("Attachment")
     attachment.Name = "ActuatorOutput"
-    attachment.CFrame = CFrame.new(0.37,0,0)
+    attachment.CFrame = CFrame.new(0.38,0,0)
     attachment.Parent = shaft
 
-    -- A real brushed motor is CLOSED at the rear. Earlier versions
-    -- displayed a giant empty cylinder because its rear was just a tube.
-    -- Solid components sit beneath the vented metal shell, and are visible
-    -- through the openings without becoming extra physics bodies.
-    local rearCap = native(model,"RearInsulatingEndCap",Enum.PartType.Cylinder,
-        Vector3.new(0.16,1.84,1.84),CFrame.new(-1.79,0,0),
-        Color3.fromRGB(53,59,63))
-    rearCap:SetAttribute("OpenworksCollisionMode","VisualOnly")
-    rearCap.CanCollide=false
-    rearCap.CanQuery=false
-
-    local armature = native(model,"InternalArmature",Enum.PartType.Cylinder,
-        Vector3.new(0.86,1.49,1.49),CFrame.new(-1.06,0,0),
-        Color3.fromRGB(58,62,66))
-    armature:SetAttribute("OpenworksCollisionMode","VisualOnly")
-    armature.CanCollide=false
-    armature.CanQuery=false
-
-    -- Subtle brass electrical terminals project from the CLOSED rear cap.
-    for i,z in ipairs({-0.35,0.35}) do
+    -- Copper tabs emerge from the backplate, with no exposed internal cavity.
+    for i,z in ipairs({-0.34,0.34}) do
         local terminal = native(model,"Terminal_"..i,Enum.PartType.Block,
-            Vector3.new(0.22,0.18,0.12),CFrame.new(-1.94,0,z),
-            Color3.fromRGB(167,126,67))
+            Vector3.new(0.19,0.18,0.12),CFrame.new(-1.96,0,z),
+            Color3.fromRGB(158,119,64))
         terminal:SetAttribute("OpenworksCollisionMode","VisualOnly")
         terminal.CanCollide=false
         terminal.CanQuery=false
@@ -166,16 +151,16 @@ local function build(): Model
         -- Always buildable before publication. Fallback uses ONLY solid native
         -- Parts and intentionally omits the detailed open-vent mesh.
         native(model,"FallbackRearCan",Enum.PartType.Cylinder,
-            Vector3.new(1.38,1.98,1.98),CFrame.new(-1.11,0,0),
+            Vector3.new(1.43,2.00,2.00),CFrame.new(-1.135,0,0),
             COLORS.RearCan)
         native(model,"FallbackHousing",Enum.PartType.Cylinder,
-            Vector3.new(1.46,2.18,2.18),CFrame.new(0.28,0,0),
+            Vector3.new(1.51,2.19,2.19),CFrame.new(0.285,0,0),
             COLORS.Housing)
         native(model,"FallbackEndbell",Enum.PartType.Cylinder,
-            Vector3.new(0.18,2.04,2.04),CFrame.new(1.06,0,0),
+            Vector3.new(0.165,2.00,2.00),CFrame.new(1.1175,0,0),
             COLORS.Endbell)
         native(model,"FallbackBearing",Enum.PartType.Cylinder,
-            Vector3.new(0.29,0.75,0.75),CFrame.new(1.26,0,0),
+            Vector3.new(0.27,0.94,0.94),CFrame.new(1.335,0,0),
             COLORS.Endbell)
     end
     model:SetAttribute("PublishedMotorVisual",ok)
@@ -199,7 +184,7 @@ function Motor.Ensure(forceRebuild: boolean?)
     if prior then
         if not forceRebuild then return prior end
         local priorVersion = prior:GetAttribute("MotorPrefabVersion")
-        assert(prior:IsA("Model") and (priorVersion == VERSION or priorVersion == 1 or priorVersion == 2),
+        assert(prior:IsA("Model") and (priorVersion == VERSION or priorVersion == 1 or priorVersion == 2 or priorVersion == 3),
             "Refusing to overwrite a custom motor primitive")
     end
     local fresh = build()
