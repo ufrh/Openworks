@@ -1216,13 +1216,17 @@ function Panel:RenderRelation(node)
 
     if kind=="Spring" then
         self:Section("Spring")
+        local applySpring=function() end
+        local function afterDrag()
+            if simulating() then applySpring() end
+        end
         self:Field("Strength",math.round(rel:GetAttribute("Stiffness") or 120))
-        self:RangeSlider("Strength",10,3000,5,true)
+        self:RangeSlider("Strength",10,3000,5,true,afterDrag)
         self:Field("Damping",math.round(rel:GetAttribute("Damping") or 14))
-        self:RangeSlider("Damping",0,300,1,false)
+        self:RangeSlider("Damping",0,300,1,false,afterDrag)
         self:Field("Length (U)",
             math.round((rel:GetAttribute("FreeLength") or 0.5)/Grid.Unit*10)/10)
-        self:RangeSlider("Length (U)",0.25,20,0.25,false)
+        self:RangeSlider("Length (U)",0.25,20,0.25,false,afterDrag)
 
         local presets=row(self.Properties,36)
         local function preset(title,stiff,damp,index)
@@ -1238,7 +1242,7 @@ function Panel:RenderRelation(node)
         preset("MEDIUM",480,55,2)
         preset("FIRM",1600,125,3)
 
-        local function saveSpring()
+        applySpring=function()
             local strength=tonumber(self.Fields.Strength.Text)
             local damping=tonumber(self.Fields.Damping.Text)
             local length=tonumber(self.Fields["Length (U)"].Text)
@@ -1251,7 +1255,9 @@ function Panel:RenderRelation(node)
                 freeLength=length*Grid.Unit},true)
             if ok then self:Message("Spring saved") end
         end
-        self:ActionButton("SAVE","Apply spring settings",saveSpring)
+        self:ActionButton("SAVE","Apply spring settings",function()
+            applySpring()
+        end)
 
     elseif kind=="Bearing" or kind=="Slider" or kind=="Cylindrical" then
         local isBearing=kind=="Bearing"
