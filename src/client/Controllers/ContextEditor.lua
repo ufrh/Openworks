@@ -97,6 +97,7 @@ function Panel.new(tools,build,mechanics,assemblyTool,feedback)
         ChoiceWasFocused=false,Telemetry=nil,TelemetrySeed=nil,
         StatusUntil=0,LastScan=0,Busy=false,Started=false,
         RelationView=nil,Removing=nil,CurrentPage="object",
+        RootPage="object",
     },Panel)
 end
 
@@ -248,8 +249,9 @@ function Panel:MakeUI()
     self.Back=button(popup,"‹",UDim2.new(1,-77,0,8),
         UDim2.fromOffset(31,29),function()
             self.RelationView=nil
-            self.CurrentPage=if self.Tools.PrimaryId=="Build"
-                then "object" else "relationships"
+            self.CurrentPage=self.RootPage
+                or (if self.Tools.PrimaryId=="Build"
+                    then "object" else "relationships")
             self:RenderContext()
         end)
     self.Back.ZIndex=23
@@ -524,13 +526,13 @@ function Panel:SelectWorldAtCenter()
     return node
 end
 
-function Panel:OpenSelectedContext()
+function Panel:OpenSelectedContext(page)
     local node=self.Selected
     if not node then
         self:Message("Select a primitive or component first")
         return
     end
-    self:OpenForNode(node,UIS:GetMouseLocation())
+    self:OpenForNode(node,UIS:GetMouseLocation(),page)
 end
 
 function Panel:ResizeContext()
@@ -553,13 +555,14 @@ function Panel:ResizeContext()
     end
 end
 
-function Panel:OpenForNode(node,pos)
+function Panel:OpenForNode(node,pos,page)
     if not node then return end
     self:CloseConnectionChoice(true)
     self.Selected=node
     self.RelationView=nil
-    self.CurrentPage=if self.Tools.PrimaryId=="Build"
+    self.RootPage=if page=="object" or self.Tools.PrimaryId=="Build"
         then "object" else "relationships"
+    self.CurrentPage=self.RootPage
     self.Removing=nil
     local viewport=workspace.CurrentCamera and
         workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
@@ -939,7 +942,9 @@ function Panel:Send(payload,mechanical)
         ok,result=self.Build:Request(payload)
     end
     self.Busy=false
-    self:Message(if ok then "Applied" else "Request rejected")
+    self:Message(if ok then "Saved"
+        else (type(result)=="table" and result.message
+            or "Couldn't save these settings"))
     self:Scan(true)
     return ok,result
 end
@@ -1375,8 +1380,7 @@ function Panel:RenderRelation(node)
                 end
                 if self:Send({action="RemoveRelation",relationId=node.id},true) then
                     self.RelationView=nil
-                    self.CurrentPage=if self.Tools.PrimaryId=="Build"
-                        then "object" else "relationships"
+                    self.CurrentPage=self.RootPage or "relationships"
                     self.Removing=nil
                     self:RenderContext()
                 end
