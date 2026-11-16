@@ -39,6 +39,11 @@ local function native(model: Model, name: string, shape: Enum.PartType, size: Ve
         p.CastShadow = false
     else
         p:SetAttribute("OpenworksKeepFactoryAppearance",true)
+        if name:match("^Fallback") then
+            p:SetAttribute("OpenworksCollisionMode","VisualOnly")
+            p.CanCollide = false
+            p.CanQuery = false
+        end
     end
     p.Parent = model
     return p
