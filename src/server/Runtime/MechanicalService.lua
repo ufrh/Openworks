@@ -99,6 +99,7 @@ function Mechanical:Snapshot(relation)
         fitSetIndex = relation:GetAttribute("FitSetIndex"),
         fitSetCount = relation:GetAttribute("FitSetCount"),
         motorEnabled=relation:GetAttribute("MotorEnabled")==true,
+        motorRelationship=relation:GetAttribute("MotorRelationship")==true,
         motorSpeed=relation:GetAttribute("MotorSpeed"),
         motorTorque=relation:GetAttribute("MotorTorque"),
         motorAcceleration=relation:GetAttribute("MotorAcceleration"),
@@ -206,6 +207,8 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("FitSetIndex",spec.fitSetIndex)
     folder:SetAttribute("FitSetCount",spec.fitSetCount)
     folder:SetAttribute("MotorEnabled",spec.kind=="Bearing" and spec.motorEnabled==true)
+    folder:SetAttribute("MotorRelationship",spec.kind=="Bearing"
+        and spec.motorRelationship==true)
     folder:SetAttribute("MotorSpeed",spec.motorSpeed)
     folder:SetAttribute("MotorTorque",spec.motorTorque)
     folder:SetAttribute("MotorAcceleration",spec.motorAcceleration)
@@ -491,7 +494,7 @@ function Mechanical:Create(player, request)
     -- Prevent the older generic route from bypassing prefab/plate rules.
     if type(request)~="table" or
         (request.kind~="Bearing" and request.kind~="Slider"
-            and request.kind~="Cylindrical") then
+            and request.kind~="Cylindrical" and request.kind~="Motor") then
         return false,
             "Use dedicated spring, bolt, weld or gear connection controls"
     end
@@ -504,6 +507,22 @@ function Mechanical:Create(player, request)
     local target = d.findOwned(player, request.targetId)
     if not source or not target or source == target then
         return false, "Choose two different primitives you own"
+    end
+    -- Motor is a powered, rotation-only bearing on a real hole block.
+    -- Store it as Bearing so existing shaft fitting, save/load, physics,
+    -- torque settings, visualization and live key input all stay intact.
+    local isMotor = request.kind=="Motor"
+    if isMotor then
+        local name=string.lower(tostring(target:GetAttribute("TemplateId")
+            or target.Name)):gsub("[%s_%-]","")
+        local isHole=name:find("drilledblock",1,true)~=nil
+            or name:find("holeblock",1,true)~=nil
+        if not isHole or not Alignment.IsShaft(source)
+            or not Alignment.TargetAxis(target) then
+            return false,"Motor needs a drilled hole block housing and cylinder shaft"
+        end
+        request=table.clone(request)
+        request.kind="Bearing"
     end
     if not d.nearPlayer(player, target:GetPivot().Position)
         or not d.nearPlayer(player, source:GetPivot().Position) then
@@ -600,6 +619,12 @@ function Mechanical:Create(player, request)
         componentId = componentId,
         offsetUnits = if request.kind == "Fixed" then 0 else request.offsetUnits,
         rollDegrees = request.rollDegrees or 0,
+        motorRelationship = isMotor,
+        motorEnabled = isMotor,
+        motorKey = if isMotor then "F" else nil,
+        motorSpeed = if isMotor then 3 else nil,
+        motorTorque = if isMotor then 3000 else nil,
+        motorAcceleration = if isMotor then 40 else nil,
     }
     local created, result = self:Restore(player, spec)
     if not created then
@@ -607,7 +632,8 @@ function Mechanical:Create(player, request)
         return false, result
     end
     d.commitAssembly(player, before, planned, spec)
-    return true, spec.kind .. " relationship created (physics when shipped)"
+    return true, if isMotor then "Motor ready · hold F during simulation"
+        else spec.kind .. " relationship created (physics when shipped)"
 end
 
 -- ONE server-verified drag release replaces manual housing->shaft/gear
