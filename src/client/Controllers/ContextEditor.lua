@@ -738,6 +738,7 @@ function Panel:Section(title)
     local r=row(self.Properties,22)
     label(r,title:upper(),UDim2.fromOffset(5,0),
         UDim2.new(1,-10,1,0),Theme.Muted)
+    return r
 end
 
 function Panel:Value(name,value)
@@ -1053,13 +1054,6 @@ function Panel:RenderObject(node)
                             else entityId(member),paintFinish="Factory"})
                 end)
         end
-        self:ActionButton("Select / resize",
-            "Select actual authored geometry in Build",function()
-                if self.Tools.PrimaryId=="Edit" then
-                    self:Select(node,true)
-                    self:CloseContext()
-                else self:Message("Equip Edit (hotbar 2) to resize") end
-            end)
         if self.Tools.PrimaryId=="Edit"
             and self.Build.Mode=="Edit" then
             if node.kind=="component" then
@@ -1111,7 +1105,6 @@ function Panel:RenderObject(node)
     end
     for i,relation in ipairs(related) do
         local item=relation
-        local raw=relation.relation
         local other=if node.kind=="component" then
             tostring(relation.name) else
             tostring(relation.name).."  ·  "..
@@ -1242,9 +1235,7 @@ function Panel:RenderRelation(node)
             -- Keep the main motor panel short. Advanced controls preserve
             -- precision and joint limits without showing every value at once.
             local advanced=false
-            local fineRows={}
             local accelHeader=self:Section("Fine tuning")
-            table.insert(fineRows,accelHeader)
             local acceleration=self:Field("Acceleration",
                 rel:GetAttribute("MotorAcceleration") or 40)
             local accelerationSlider=self:RangeSlider(
