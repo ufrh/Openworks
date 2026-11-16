@@ -238,17 +238,28 @@ function Palette:Refresh(force)
     local primary=self.Tools.PrimaryId
     local visible=primary~=nil
     -- Build has no Place/Edit switch: show the contextual controls directly.
-    self.SubtoolsPanel.Visible=visible and primary~="Build" and primary~="Edit"
+    -- One-option tool columns are redundant. Assembly is the only
+    -- tool that genuinely needs a subtool chooser.
+    local showSubtools=visible and primary=="AssemblySimulation"
+    self.SubtoolsPanel.Visible=showSubtools
     self.ControlsPanel.Visible=visible
     if not visible then self.Signature="" return end
     local signature=self:SignatureOf()
     if not force and signature==self.Signature then return end
     self.Signature=signature
     if primary~=self.CachedPrimary then self:RenderSubtools() end
-    if primary=="Build" or primary=="Edit" then
-        self.ControlsPanel.Position=UDim2.fromOffset(LEFT,TOP)
-        self.ControlsPanel.Size=UDim2.new(0,PANEL_W,1,-TOP-14)
-    end
+    local info=Help.Context(self.Tools,
+        self.Build,self.Mechanics,self.Assembly,player)
+    local headerAndRows=TITLE_H+11+#info.rows*33
+    local subtoolHeight=if showSubtools then
+        TITLE_H+9+((#definitions[primary].Items)*(ROW_H+4)) else 0
+    local top=TOP+(if showSubtools then subtoolHeight+8 else 0)
+    local camera=workspace.CurrentCamera
+    local screenHeight=if camera then camera.ViewportSize.Y else 900
+    local height=math.max(TITLE_H+35,
+        math.min(headerAndRows,screenHeight-top-12))
+    self.ControlsPanel.Position=UDim2.fromOffset(LEFT,top)
+    self.ControlsPanel.Size=UDim2.fromOffset(PANEL_W,height)
     -- Subtools remain stable when only the active row changes.
     for id,record in pairs(self.PrimaryButtons) do
         local active=id==self.Tools.SubtoolId
@@ -260,8 +271,7 @@ function Palette:Refresh(force)
         record.Label.Font=if active then Enum.Font.GothamBold
             else Enum.Font.GothamMedium
     end
-    self:RenderControls(Help.Context(self.Tools,
-        self.Build,self.Mechanics,self.Assembly,player))
+    self:RenderControls(info)
 end
 
 function Palette:Start()
