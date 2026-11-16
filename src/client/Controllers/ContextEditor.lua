@@ -825,7 +825,7 @@ end
 
 -- Simple Plane Crazy-like property controls: tap a mode, toggle a
 -- feature, or drag a range. Exact values are still directly editable.
-function Panel:Switch(name,value,tip)
+function Panel:Switch(name,value,tip,onChange)
     self.Flags[name]=value==true
     local holder=row(self.Properties,31)
     label(holder,name,UDim2.fromOffset(6,0),
@@ -840,6 +840,7 @@ function Panel:Switch(name,value,tip)
         UDim2.new(0.36,-6,1,-2),function()
             self.Flags[name]=not self.Flags[name]
             redraw()
+            if onChange then onChange(self.Flags[name]) end
         end)
     if tip then self:Hint(control,tip) end
     redraw()
@@ -1182,215 +1183,263 @@ end
 function Panel:RenderRelation(node)
     local rel=node.relation
     if not rel or not rel.Parent then
-        self:Value("Relationship","No longer exists") return
-    end
-    local kind=tostring(rel:GetAttribute("Kind") or "Connection")
-    self:Section("Mechanical relationship")
-    self:Value("Type",if kind=="Bearing"
-        and rel:GetAttribute("MotorRelationship")==true then "Motor" else kind)
-    self:Value("From",node.first and node.first.Name or "?")
-    self:Value("To",node.second and node.second.Name or "?")
-    if simulating() and kind~="Spring" then
-        self:Value("Status","Read-only during simulation")
+        self:Value("Connection","Unavailable")
         return
     end
+    local kind=tostring(rel:GetAttribute("Kind") or "Connection")
+    local isMotor=kind=="Bearing" and rel:GetAttribute("MotorRelationship")==true
+    local hasMotor=kind=="Bearing" and
+        (isMotor or rel:GetAttribute("MotorEnabled")==true)
+    local displayName=if isMotor then "Motor" else kind
+    self.Title.Text=string.upper(displayName)
+
+    -- Show the relationship's purpose, not its internal IDs and metadata.
+    local other=if self.Selected and self.Selected.model then
+        (if node.first==self.Selected.model then node.second
+            else node.first) else nil
+    if other then
+        self:Value("Connected to",other.Name)
+    end
+    if simulating() and kind~="Spring" then
+        self:Value("Editing","Stop simulation to change settings")
+        return
+    end
+
     if kind=="Spring" then
-        if simulating() then
-            self:Value("LIVE","Tune spring strength/damping while simulating")
-        end
-        -- Plane Crazy-style configuration: three plain-language controls
-        -- and one-click suspension presets. Keep the raw quantities visible
-        -- so experienced builders can tune exact springs as well.
-        self:Value("Strength","Resists compression and extension")
-        self:Field("Stiffness",math.round(rel:GetAttribute("Stiffness") or 120))
-        local function springConfirm()
-            local stiffness=tonumber(self.Fields.Stiffness.Text)
-            local damping=tonumber(self.Fields.Damping.Text)
-            local length=tonumber(self.Fields["Rest length (U)"].Text)
-            if not stiffness or not damping or not length then
-                self:Message("Invalid spring values") return
-            end
-            self:Send({action="TuneSpring",relationId=node.id,
-                stiffness=stiffness,damping=damping,
-                freeLength=length*Grid.Unit},true)
-        end
-        self:SpringSlider("Stiffness","strength",function()
-            if simulating() then springConfirm() end
-        end)
-        self:Value("Bounce control","More damping = less oscillation")
+        self:Section("Spring")
+        self:Field("Strength",math.round(rel:GetAttribute("Stiffness") or 120))
+        self:RangeSlider("Strength",10,3000,5,true)
         self:Field("Damping",math.round(rel:GetAttribute("Damping") or 14))
-        self:SpringSlider("Damping","damping",function()
-            if simulating() then springConfirm() end
-        end)
-        self:Value("Natural length","Rest position, in construction units")
-        self:Field("Rest length (U)",
+        self:RangeSlider("Damping",0,300,1,false)
+        self:Field("Length (U)",
             math.round((rel:GetAttribute("FreeLength") or 0.5)/Grid.Unit*10)/10)
-        self:SpringSlider("Rest length (U)","length",function()
-            if simulating() then springConfirm() end
-        end)
-        self:Section("Suspension presets")
-        local presets=row(self.Properties,34)
-        local function preset(name,stiff,damp,pos)
-            button(presets,name,UDim2.new(pos/3,2,0,0),
-                UDim2.new(1/3,-5,1,0),function()
-                    self.Fields.Stiffness.Text=tostring(stiff)
+        self:RangeSlider("Length (U)",0.25,20,0.25,false)
+
+        local presets=row(self.Properties,36)
+        local function preset(title,stiff,damp,index)
+            local b=button(presets,title,
+                UDim2.new((index-1)/3,1,0,1),
+                UDim2.new(1/3,-4,1,-2),function()
+                    self.Fields.Strength.Text=tostring(stiff)
                     self.Fields.Damping.Text=tostring(damp)
-                    self:Message(name.." spring selected • CONFIRM to apply")
                 end)
+            self:Hint(b,"Set spring strength and damping")
         end
-        preset("SOFT",85,10,0)
-        preset("ROAD",480,55,1)
-        preset("FIRM",1600,125,2)
-        self:ActionButton("– Strength",
-            "Reduce spring force by 25% and compare during simulation",function()
-                self.Fields.Stiffness.Text=tostring(math.max(10,
-                    math.floor((tonumber(self.Fields.Stiffness.Text) or 120)*0.75)))
-            end)
-        self:ActionButton("+ Strength",
-            "Increase spring force by 35%",function()
-                self.Fields.Stiffness.Text=tostring(math.min(3000,
-                    math.floor((tonumber(self.Fields.Stiffness.Text) or 120)*1.35)))
-            end)
-        self:ActionButton("– Damping",
-            "More bounce and longer oscillation",function()
-                self.Fields.Damping.Text=tostring(math.max(0,
-                    math.floor((tonumber(self.Fields.Damping.Text) or 14)*0.7)))
-            end)
-        self:ActionButton("+ Damping",
-            "Less bounce and faster settling",function()
-                self.Fields.Damping.Text=tostring(math.min(300,
-                    math.ceil((tonumber(self.Fields.Damping.Text) or 14)*1.4+1)))
-            end)
-        self:ActionButton("CONFIRM SPRING SETTINGS",
-            "Save the spring setup. Sliders apply live on release during simulation",
-            springConfirm)
+        preset("SOFT",85,10,1)
+        preset("MEDIUM",480,55,2)
+        preset("FIRM",1600,125,3)
+
+        local function saveSpring()
+            local strength=tonumber(self.Fields.Strength.Text)
+            local damping=tonumber(self.Fields.Damping.Text)
+            local length=tonumber(self.Fields["Length (U)"].Text)
+            if not strength or not damping or not length then
+                self:Message("Enter valid spring values")
+                return
+            end
+            local ok=self:Send({action="TuneSpring",relationId=node.id,
+                stiffness=strength,damping=damping,
+                freeLength=length*Grid.Unit},true)
+            if ok then self:Message("Spring saved") end
+        end
+        self:ActionButton("SAVE","Apply spring settings",saveSpring)
+
     elseif kind=="Bearing" or kind=="Slider" or kind=="Cylindrical" then
-        self:Field("Lower limit",rel:GetAttribute("LowerLimit") or -4)
-        self:Field("Upper limit",rel:GetAttribute("UpperLimit") or 4)
-        self.Flags.Limits=rel:GetAttribute("LimitsEnabled")==true
-        local toggle
-        toggle=self:ActionButton(
-            if self.Flags.Limits then "Limits enabled" else "Limits disabled",
-            "Toggle finite travel limits",function()
-                self.Flags.Limits=not self.Flags.Limits
-                toggle.Text=if self.Flags.Limits then "Limits enabled"
-                    else "Limits disabled"
-            end)
-        if kind=="Bearing" then
-            self:Section("Motor")
-            self.Flags.Motor=rel:GetAttribute("MotorEnabled")==true
-            local motor
-            motor=self:ActionButton(
-                if self.Flags.Motor then "Motor enabled" else "Motor disabled",
-                "Enable or disable shaft rotation on held key",function()
-                    self.Flags.Motor=not self.Flags.Motor
-                    motor.Text=if self.Flags.Motor then "Motor enabled"
-                        else "Motor disabled"
-                end)
-            self:Field("Motor key",rel:GetAttribute("MotorKey") or "F")
-            self.Flags.DriveType=rel:GetAttribute("MotorDriveType") or "Continuous"
-            self.Flags.InputMode=rel:GetAttribute("MotorInputMode") or "Hold"
-            local driveButton
-            driveButton=self:ActionButton("Drive: "..self.Flags.DriveType,
-                "Continuous rotation or angle-position servo",function()
-                    self.Flags.DriveType=if self.Flags.DriveType=="Continuous"
-                        then "Servo" else "Continuous"
-                    driveButton.Text="Drive: "..self.Flags.DriveType
-                end)
-            local inputButton
-            inputButton=self:ActionButton("Input: "..self.Flags.InputMode,
-                "Hold = only while pressed; Toggle = press to switch",function()
-                    self.Flags.InputMode=if self.Flags.InputMode=="Hold"
-                        then "Toggle" else "Hold"
-                    inputButton.Text="Input: "..self.Flags.InputMode
-                end)
-            self:Field("Speed (rad/s)",rel:GetAttribute("MotorSpeed") or 3)
-            self:Field("Servo target (degrees)",rel:GetAttribute("MotorTargetAngle") or 90)
-            self:Field("Max torque",rel:GetAttribute("MotorTorque") or 3000)
-            self:Field("Acceleration",rel:GetAttribute("MotorAcceleration") or 40)
-        end
-        self:ActionButton("CONFIRM",
-            "Apply joint limits and, when present, motor settings",function()
-                local lower=tonumber(self.Fields["Lower limit"].Text)
-                local upper=tonumber(self.Fields["Upper limit"].Text)
-                if not lower or not upper or lower>upper then
-                    self:Message("Invalid joint limits") return
-                end
-                local changes=lower~=rel:GetAttribute("LowerLimit")
-                    or upper~=rel:GetAttribute("UpperLimit")
-                    or self.Flags.Limits~=(rel:GetAttribute("LimitsEnabled")==true)
-                local motorPayload
-                if kind=="Bearing" then
-                    local speed=tonumber(self.Fields["Speed (rad/s)"].Text)
-                    local torque=tonumber(self.Fields["Max torque"].Text)
-                    local accel=tonumber(self.Fields.Acceleration.Text)
-                    local angle=tonumber(self.Fields["Servo target (degrees)"].Text)
-                    if not speed or not torque or not accel or not angle then
-                        self:Message("Invalid motor values") return
+        local isBearing=kind=="Bearing"
+        local limitName=if isBearing then "Limit rotation" else "Limit travel"
+        local lowName=if isBearing then "Min angle (°)" else "Min travel (U)"
+        local highName=if isBearing then "Max angle (°)" else "Max travel (U)"
+        local defaultLow=if isBearing then -180 else -4
+        local defaultHigh=if isBearing then 180 else 4
+        local initialLimited=rel:GetAttribute("LimitsEnabled")==true
+
+        if hasMotor then
+            self:Section("Power")
+            self:Switch("Powered",rel:GetAttribute("MotorEnabled")==true,
+                "Allow the motor to drive the shaft")
+
+            local driveType=rel:GetAttribute("MotorDriveType") or "Continuous"
+            local modeChange=function() end
+            self:Segment("Type",{
+                {id="Continuous",label="Motor",tip="Keep rotating at a set speed"},
+                {id="Servo",label="Servo",tip="Turn to a specified angle"},
+            },driveType,function() modeChange() end)
+            self:Segment("Control",{
+                {id="Hold",label="Hold",tip="Run while the key is down"},
+                {id="Toggle",label="Toggle",tip="Press to start, press again to stop"},
+            },rel:GetAttribute("MotorInputMode") or "Hold")
+            self:Field("Key",rel:GetAttribute("MotorKey") or "F")
+
+            local savedSpeed=rel:GetAttribute("MotorSpeed") or 3
+            self:Field("Speed",math.abs(savedSpeed))
+            self:RangeSlider("Speed",0.1,35,0.1,false)
+            local reverseRow=self:Switch("Reverse",savedSpeed<0,
+                "Change continuous motor rotation direction")
+
+            local angleField=self:Field("Target angle (°)",
+                rel:GetAttribute("MotorTargetAngle") or 90)
+            local angleRow=angleField.Parent
+            local angleSlider=self:RangeSlider("Target angle (°)",-180,180,1,false)
+
+            self:Field("Torque",rel:GetAttribute("MotorTorque") or 3000)
+            self:RangeSlider("Torque",1,100000,1,true)
+
+            -- Keep the main motor panel short. Advanced controls preserve
+            -- precision and joint limits without showing every value at once.
+            local advanced=false
+            local fineRows={}
+            local accelHeader=self:Section("Fine tuning")
+            table.insert(fineRows,accelHeader)
+            local acceleration=self:Field("Acceleration",
+                rel:GetAttribute("MotorAcceleration") or 40)
+            local accelerationSlider=self:RangeSlider(
+                "Acceleration",0.1,1000,0.1,true)
+            local limitRows={}
+            self:Switch(limitName,initialLimited,
+                "Restrict the shaft's rotation",function(enabled)
+                    for _,item in ipairs(limitRows) do
+                        item.Visible=advanced and enabled
                     end
-                    motorPayload={action="TuneBearingMotor",relationId=node.id,
-                        motorEnabled=self.Flags.Motor,
-                        motorKey=self.Fields["Motor key"].Text:gsub("%s+",""),
-                        motorSpeed=speed,motorTorque=torque,
-                        motorAcceleration=accel,
-                        motorDriveType=self.Flags.DriveType,
-                        motorInputMode=self.Flags.InputMode,
-                        motorTargetAngle=angle}
+                end)
+            local limitSwitchRow=self.Properties:GetChildren()
+            -- Newly created switch is the last GUI row; obtain it using
+            -- the defined layout order rather than an unstable child index.
+            local switchRow=nil
+            for _,item in ipairs(limitSwitchRow) do
+                if item:IsA("Frame") and item.LayoutOrder
+                    ==self.Properties:GetChildren()[#limitSwitchRow].LayoutOrder then
+                    switchRow=item
                 end
-                if changes and not self:Send({action="AdjustJoint",
-                    relationId=node.id,lowerLimit=lower,upperLimit=upper,
-                    limitsEnabled=self.Flags.Limits},true) then return end
-                if motorPayload then
-                    if not self:Send(motorPayload,true) then
-                        self:Message("Limits may have saved; motor rejected")
+            end
+            local lower=self:Field(lowName,
+                rel:GetAttribute("LowerLimit") or defaultLow)
+            local upper=self:Field(highName,
+                rel:GetAttribute("UpperLimit") or defaultHigh)
+            table.insert(limitRows,lower.Parent)
+            table.insert(limitRows,upper.Parent)
+            -- Reuse the simple switch component without exposing raw limits.
+            local advancedButton
+            local function visibility()
+                local isServo=self.Flags.Type=="Servo"
+                angleRow.Visible=isServo
+                if angleSlider then angleSlider.Visible=isServo end
+                reverseRow.Visible=not isServo
+                accelHeader.Visible=advanced
+                acceleration.Parent.Visible=advanced and not isServo
+                if accelerationSlider then
+                    accelerationSlider.Visible=advanced and not isServo
+                end
+                if switchRow then switchRow.Visible=advanced end
+                for _,item in ipairs(limitRows) do
+                    item.Visible=advanced and self.Flags[limitName]
+                end
+            end
+            modeChange=visibility
+            advancedButton=self:ActionButton("MORE SETTINGS  ▸",
+                "Show acceleration and rotation limits",function()
+                    advanced=not advanced
+                    advancedButton.Text=if advanced then "FEWER SETTINGS  ▾"
+                        else "MORE SETTINGS  ▸"
+                    visibility()
+                end)
+            visibility()
+
+            self:ActionButton("SAVE","Apply motor and shaft settings",function()
+                local speed=tonumber(self.Fields.Speed.Text)
+                local torque=tonumber(self.Fields.Torque.Text)
+                local accel=tonumber(self.Fields.Acceleration.Text)
+                local angle=tonumber(self.Fields["Target angle (°)"].Text)
+                local lowerLimit=tonumber(self.Fields[lowName].Text)
+                local upperLimit=tonumber(self.Fields[highName].Text)
+                if not speed or not torque or not accel or not angle
+                    or not lowerLimit or not upperLimit
+                    or lowerLimit>upperLimit then
+                    self:Message("Check the numeric settings")
+                    return
+                end
+                local changeLimits=lowerLimit~=(rel:GetAttribute("LowerLimit")
+                        or defaultLow)
+                    or upperLimit~=(rel:GetAttribute("UpperLimit")
+                        or defaultHigh)
+                    or self.Flags[limitName]~=initialLimited
+                if changeLimits then
+                    local ok=self:Send({action="AdjustJoint",
+                        relationId=node.id,lowerLimit=lowerLimit,
+                        upperLimit=upperLimit,
+                        limitsEnabled=self.Flags[limitName]},true)
+                    if not ok then
+                        self:Message("Check rotation limits")
                         return
                     end
                 end
-                self:Message("Connection confirmed")
+                local signedSpeed=math.abs(speed)
+                    *(if self.Flags.Reverse then -1 else 1)
+                local ok=self:Send({
+                    action="TuneBearingMotor",relationId=node.id,
+                    motorEnabled=self.Flags.Powered,
+                    motorKey=self.Fields.Key.Text:gsub("%s+",""),
+                    motorSpeed=signedSpeed,motorTorque=torque,
+                    motorAcceleration=accel,
+                    motorDriveType=self.Flags.Type,
+                    motorInputMode=self.Flags.Control,
+                    motorTargetAngle=angle,
+                },true)
+                if ok then self:Message("Motor saved") end
             end)
-    else
-        self:Value("Settings","No configurable parameters")
-    end
-    -- Keep non-editable relationship metadata available in the same
-    -- contextual inspector, including gear and rigid coupling attributes.
-    -- A property is only offered for editing if an existing server action
-    -- validates that field; arbitrary attributes are never written.
-    self:Section("Other relationship properties")
-    local attributes=rel:GetAttributes()
-    local names={}
-    for name in pairs(attributes) do
-        if name~="OwnerUserId" and name~="RelationId"
-            and name~="SourceId" and name~="TargetId"
-            and name~="SecondTargetId" and name~="Kind" then
-            table.insert(names,name)
+        else
+            -- Passive bearings/sliders don't need a disabled motor panel.
+            self:Section("Movement")
+            local limitRows={}
+            self:Switch(limitName,initialLimited,
+                "Limit how far this joint can move",function(on)
+                    for _,item in ipairs(limitRows) do item.Visible=on end
+                end)
+            local lower=self:Field(lowName,
+                rel:GetAttribute("LowerLimit") or defaultLow)
+            local upper=self:Field(highName,
+                rel:GetAttribute("UpperLimit") or defaultHigh)
+            table.insert(limitRows,lower.Parent)
+            table.insert(limitRows,upper.Parent)
+            for _,item in ipairs(limitRows) do item.Visible=initialLimited end
+            self:ActionButton("SAVE","Save movement settings",function()
+                local lowerLimit=tonumber(self.Fields[lowName].Text)
+                local upperLimit=tonumber(self.Fields[highName].Text)
+                if not lowerLimit or not upperLimit or lowerLimit>upperLimit then
+                    self:Message("Enter valid movement limits")
+                    return
+                end
+                local ok=self:Send({action="AdjustJoint",
+                    relationId=node.id,lowerLimit=lowerLimit,
+                    upperLimit=upperLimit,
+                    limitsEnabled=self.Flags[limitName]},true)
+                if ok then self:Message("Movement saved") end
+            end)
         end
+    else
+        -- Welds, bolts, fixed joints and transmission links have no
+        -- adjustable parameters. Do not dump raw Roblox attributes.
+        self:Value("Settings","No settings needed")
     end
-    table.sort(names)
-    for _,name in ipairs(names) do
-        local value=attributes[name]
-        if typeof(value)=="Vector3" then
-            value=string.format("%.2f / %.2f / %.2f",
-                value.X,value.Y,value.Z)
-        else value=tostring(value) end
-        self:Value(name,value)
+
+    if not simulating() then
+        self:ActionButton(
+            if self.Removing==node.id then "CONFIRM DELETE CONNECTION"
+                else "Delete connection",
+            "Only removes the connection; both parts remain",function()
+                if self.Removing~=node.id then
+                    self.Removing=node.id
+                    self:RenderContext()
+                    return
+                end
+                if self:Send({action="RemoveRelation",relationId=node.id},true) then
+                    self.RelationView=nil
+                    self.CurrentPage=if self.Tools.PrimaryId=="Build"
+                        then "object" else "relationships"
+                    self.Removing=nil
+                    self:RenderContext()
+                end
+            end)
     end
-    self:ActionButton(
-        if self.Removing==node.id then "CONFIRM REMOVE RELATIONSHIP"
-            else "Remove relationship",
-        "Removes the joint, not its physical primitives",function()
-            if self.Removing~=node.id then
-                self.Removing=node.id
-                self:RenderContext()
-                return
-            end
-            if self:Send({action="RemoveRelation",relationId=node.id},true) then
-                self.RelationView=nil
-                self.CurrentPage=if self.Tools.PrimaryId=="Build"
-                    then "object" else "relationships"
-                self.Removing=nil
-                self:RenderContext()
-            end
-        end)
 end
 
 function Panel:RenderAssembly(node)
