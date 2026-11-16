@@ -34,17 +34,23 @@ local LABELS={
 }
 Catalog.Labels=table.freeze(LABELS)
 
-function Catalog.Fit(kind)
+function Catalog.Fit(kind, hole)
+    -- Smart Fit owns the relationship choice. Only an actual drilled
+    -- block with a shaft may host a powered motor; tubes remain passive.
     if kind=="Hub" then return {
         {id="Rigid",label=LABELS.Rigid},
     } end
-    return {
+    local options={
         {id="Cylindrical",label=LABELS.Cylindrical},
         {id="Slider",label=LABELS.Slider},
         {id="Bearing",label=LABELS.Bearing},
-        {id="FreeFit",label=LABELS.FreeFit},
-        {id="__Adjust",label=LABELS.Adjust},
     }
+    if drilledBlock(hole) then
+        table.insert(options,{id="Motor",label=LABELS.Motor})
+    end
+    table.insert(options,{id="FreeFit",label=LABELS.FreeFit})
+    table.insert(options,{id="__Adjust",label=LABELS.Adjust})
+    return options
 end
 
 function Catalog.Pair(first,second)
@@ -72,7 +78,6 @@ function Catalog.Pair(first,second)
     elseif bore then
         add("Cylindrical")
         add("Bearing")
-        if drilledBlock(hole) then add("Motor") end
         add("Slider")
         add("FreeFit")
     end
