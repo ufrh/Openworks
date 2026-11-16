@@ -101,8 +101,10 @@ function ToolController:SetActive(tool)
     local primary=if tool then tool:GetAttribute("OpenworksToolId") else nil
     self.PrimaryId=if type(primary)=="string" and validIds[primary] then primary else nil
     local definition=self:GetDefinition()
+    local restored=if definition then self.LastSubtool[self.PrimaryId] else nil
     self.SubtoolId=if definition then
-        (self.LastSubtool[self.PrimaryId] or definition.Default) else nil
+        (if restored and self:GetSubtool(restored,self.PrimaryId)
+            then restored else definition.Default) else nil
     self:Publish(previousMode,previousPrimary,previousSubtool)
     if self.PrimaryId then
         print("[OPENWORKS] Equipped "..self.PrimaryId.." / "..tostring(self.SubtoolId))
