@@ -279,15 +279,19 @@ function Simulation:StepCranks(dt)
                                 if math.abs(error)>math.rad(0.2) then
                                     local cap=math.abs(motor.Speed)
                                     command=math.sign(error)*math.min(
-                                        cap,math.abs(error)*8)
+                                        cap,math.abs(error)*4)
                                 end
                             end
                         elseif motor.On then
                             command=motor.Speed
                         end
-                        if math.abs(command)>0.015 then
+                        if math.abs(command)>0.015
+                            or motor.DriveType=="Servo" then
                             motorInput={Id=motor.DrivenId,
-                                Axis=motor.Axis,Speed=command}
+                                Axis=motor.Axis,Speed=command,
+                                ServoGoal=if motor.DriveType=="Servo"
+                                    then math.rad(if motor.On then motor.Angle else 0)
+                                    else nil}
                             break
                         end
                     end
@@ -327,7 +331,8 @@ function Simulation:StepCranks(dt)
                 if powered then HandCrankMath.FixedAngularSpeed
                     elseif motorInput then motorInput.Speed
                     elseif rackDriven then session.RackDirection*RACK_MANUAL_SPEED
-                    else nativeSpeed)
+                    else nativeSpeed,
+                if motorInput then motorInput.ServoGoal else nil)
             for _,joint in ipairs(session.VectorJoints or {}) do
                 VectorJoint.Step(joint,dt,session.Gears,nativeId)
             end
