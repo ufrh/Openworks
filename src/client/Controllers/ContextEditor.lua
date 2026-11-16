@@ -248,7 +248,8 @@ function Panel:MakeUI()
     self.Back=button(popup,"‹",UDim2.new(1,-77,0,8),
         UDim2.fromOffset(31,29),function()
             self.RelationView=nil
-            self.CurrentPage="object"
+            self.CurrentPage=if self.Tools.PrimaryId=="Build"
+                then "object" else "relationships"
             self:RenderContext()
         end)
     self.Back.ZIndex=23
@@ -510,7 +511,10 @@ function Panel:SelectWorldAtCenter()
         model=self.Snapshot and self.Snapshot.byId[id]
         if not own(model) then return nil end
     end
-    local node=self:NodeForModel(model,true)
+    -- In non-Build tools the user right-clicked this EXACT primitive.
+    -- Show its joints rather than silently expanding to an entire editor
+    -- component containing unrelated internal connections.
+    local node=self:NodeForModel(model,self.Tools.PrimaryId=="Build")
     self:Select(node,true)
     return node
 end
@@ -529,7 +533,8 @@ function Panel:OpenForNode(node,pos)
     self:CloseConnectionChoice(true)
     self.Selected=node
     self.RelationView=nil
-    self.CurrentPage="object"
+    self.CurrentPage=if self.Tools.PrimaryId=="Build"
+        then "object" else "relationships"
     self.Removing=nil
     local viewport=workspace.CurrentCamera and
         workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
@@ -1277,6 +1282,39 @@ function Panel:RenderAssembly(node)
     end
 end
 
+function Panel:RenderRelationshipList(node)
+    -- All relationship kinds are discoverable: motors, bearings, slides,
+    -- welds, springs, belts, bolts, vector joints and future kinds.
+    local related=self:RelevantRelations(node)
+    self:Section("Mechanical relationships · "..tostring(#related))
+    if #related==0 then
+        self:Value("Connections","None on this part")
+        return
+    end
+    for i,entry in ipairs(related) do
+        local chosen=entry
+        local relation=entry.relation
+        local otherName=if entry.first==node.model then
+            entry.second and entry.second.Name
+            elseif entry.second==node.model then
+            entry.first and entry.first.Name
+            else nil
+        local caption=tostring(entry.name)
+            ..(if otherName then " · "..tostring(otherName) else "")
+        self:ActionButton(tostring(i)..".  "..caption,
+            "Configure the exact "..tostring(entry.name).." relationship",function()
+                if not chosen.relation or not chosen.relation.Parent then
+                    self:Message("Connection is no longer available")
+                    self:RenderContext()
+                    return
+                end
+                self.RelationView=chosen
+                self.CurrentPage="relation"
+                self:RenderContext()
+            end)
+    end
+end
+
 function Panel:RenderContext()
     if not self.ContextOpen or not self.Properties then return end
     if self.Tooltip then self.Tooltip.Visible=false end
@@ -1291,6 +1329,10 @@ function Panel:RenderContext()
     elseif not node then
         self.Title.Text="SELECTION"
         self:Value("Object","None")
+    elseif self.CurrentPage=="relationships" then
+        self.Title.Text="MECHANICAL RELATIONSHIPS"
+        self:Value("Part",node.name)
+        self:RenderRelationshipList(node)
     else
         self.Title.Text=if node.kind=="component" then "COMPONENT"
             elseif node.kind=="assembly" then "ASSEMBLY"
