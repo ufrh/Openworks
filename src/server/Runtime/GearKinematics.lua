@@ -549,7 +549,7 @@ end
 -- regardless of where the single crank is attached. Drive can start at
 -- ANY gear in a network, so transmission is inherently reversible and
 -- supports branched one-to-many gear meshes without special cases.
-function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
+function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed,servoGoal)
     dt=math.clamp(dt,0,0.07)
     self:Translate(dt)
     self.ScanElapsed+=dt
@@ -566,7 +566,8 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
     -- Inertia-like crank easing without a native physics actuator.
     -- Release stops injecting energy; a brief scripted coast smooths
     -- the gear train to a stop instead of snapping immediately.
-    local active=drivenId~=nil and shaftAxis~=nil and inputSpeed~=0
+    local active=drivenId~=nil and shaftAxis~=nil
+        and (inputSpeed~=0 or type(servoGoal)=="number")
     local target=if active then inputSpeed else 0
     local response=if active then CRANK_ACCEL_RESPONSE
         else CRANK_RELEASE_RESPONSE
@@ -592,6 +593,23 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
     self.MotionElapsed=0
     local source=self.ById[sourceId]
     if not source or not self.Kinematic[source] then return end
+
+    if type(servoGoal)=="number" then
+        -- Unlike a continuous hand crank, a servo must NEVER coast past
+        -- the authored target while the shared solver eases speed. Limit
+        -- this frame's actual signed displacement to the remaining angle.
+        local angle=self:AngleFor(sourceId,inputAxis)
+        if angle==nil then return end
+        local error=servoGoal-angle
+        if math.abs(error)<=math.rad(0.2)
+            or self.CurrentSpeed*error<=0 then
+            self.CurrentSpeed=0
+            table.clear(self.LastVelocities)
+            return
+        end
+        self.CurrentSpeed=math.sign(error)*math.min(
+            math.abs(self.CurrentSpeed),math.abs(error)/math.max(step,1/240))
+    end
 
     -- A rack is the SAME graph node type as a gear but its DOF is
     -- distance, not angle. Input speed is rad/s when rotational,
