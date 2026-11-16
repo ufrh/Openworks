@@ -764,6 +764,46 @@ def main() -> int:
           'target:GetAttribute("BoreRadiusStuds")' in gear_clearance
           and 'type(target:GetAttribute("GearTeeth"))=="number"' in gear_clearance
           and 'localY=Vector3.yAxis,localZ=Vector3.zAxis' in gear_clearance)
+    component_weld_mechanics=read("src/server/Runtime/MechanicalService.lua")
+    component_weld_dispatch=read("src/server/Runtime/ConstructionService.lua")
+    component_weld_ui=read("src/client/Controllers/ContextEditor.lua")
+    gear_mount_catalog=read("src/client/Controllers/ConnectionCatalog.lua")
+    gear_mount_preview=read("src/shared/Construction/BoreInsertion.lua")
+    gear_mount_smart=read("src/shared/Construction/SmartPlacement.lua")
+    gear_mount_build=read("src/client/Controllers/ConstructionController.lua")
+    check("Mechanics Smart Weld joins every registered component member in one undoable rigid transaction",
+          'function Mechanical:WeldComponent(player,request)' in component_weld_mechanics
+          and 'self.D.components:RequireMembers(player,cid)' in component_weld_mechanics
+          and 'kind=="Weld" or kind=="Fixed" or kind=="Bolt"' in component_weld_mechanics
+          and 'if root(i)~=initial then' in component_weld_mechanics
+          and 'self.D.commitAssembly(player,{},{},planned)' in component_weld_mechanics
+          and 'self:Restore(player,spec)' in component_weld_mechanics
+          and 'or action == "WeldComponent"' in component_weld_dispatch
+          and 'return mechanical:WeldComponent(player,payload)' in component_weld_dispatch
+          and 'self.Tools.PrimaryId=="Mechanics"' in component_weld_ui
+          and 'SMART WELD COMPONENT' in component_weld_ui)
+    check("Shaft-to-hole mate collects coaxial gears and welds without turning them into bearings",
+          'if mode=="Hub" or mode=="Bore" then' in component_weld_mechanics
+          and 'local fits,why=Smart.HubFits(shaft,candidate)' in component_weld_mechanics
+          and 'fitMap[shaft][gear]=true' in component_weld_mechanics
+          and 'if mode=="Bore" and typeName~="FreeFit" then' in component_weld_mechanics
+          and 'for _,gear in ipairs(hubGears or {}) do' in component_weld_mechanics
+          and 'kind="Weld"' in component_weld_mechanics
+          and 'self:Count(player)+#need>MAX_RELATIONSHIPS_PER_PLAYER' in component_weld_mechanics
+          and 'd.commitAssembly(player,before,after,createdSpecs,false,relationEdits)' in component_weld_mechanics
+          and 'typeName=="FreeFit" and (not hubGears or #hubGears==0)' in component_weld_mechanics)
+    check("Preview prioritizes hole and verifies coaxial gear clearance before showing green",
+          'if kind=="Bore" and isShaft and not hub(target) then' in gear_mount_smart
+          and 'score-=3.0' in gear_mount_smart
+          and 'local function authorizedBoreContact(moving,other)' in gear_mount_preview
+          and '(offset-axis*offset:Dot(axis)).Magnitude>0.012' in gear_mount_preview
+          and 'return Bore.ShaftFits(shaft,hub)==true' in gear_mount_preview)
+    check("Rigid gear/shaft fitting has no unnecessary chooser in Build, Edit or Mechanics",
+          'if match.kind=="Hub" and not chosenKind then chosenKind="Weld" end' in gear_mount_build
+          and 'if kind=="Hub" then' in component_weld_ui
+          and 'callback("Rigid")' in component_weld_ui
+          and 'if #options==1 and options[1].id=="Rigid" then' in component_weld_ui
+          and 'if not hub then add("Spring") end' in gear_mount_catalog)
     check("Gear hub mount concentric and genuinely engaged",
           'eccentricity>0.012' in smart_placement
           and 'return Bore.ShaftFits(shaft,gearBody)' in smart_placement
