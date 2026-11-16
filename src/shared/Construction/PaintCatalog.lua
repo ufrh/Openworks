@@ -67,7 +67,8 @@ function Paint.Apply(model:Model,finishId:string?,hex:string?)
     model:SetAttribute("PaintColorHex",colorHex)
     local paintColor=if colorHex then Paint.ToColor(colorHex) else nil
     for _,part in ipairs(model:GetDescendants()) do
-        if not part:IsA("BasePart") or part:GetAttribute("GearPivotOnly")==true then
+        if not part:IsA("BasePart") or part:GetAttribute("GearPivotOnly")==true
+            or part:GetAttribute("OpenworksKeepFactoryAppearance")==true then
             continue
         end
         -- MaterialCatalog already wrote native CustomPhysicalProperties.
