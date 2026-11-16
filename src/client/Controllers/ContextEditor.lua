@@ -1155,7 +1155,24 @@ function Panel:RenderRelation(node)
                         else "Motor disabled"
                 end)
             self:Field("Motor key",rel:GetAttribute("MotorKey") or "F")
+            self.Flags.DriveType=rel:GetAttribute("MotorDriveType") or "Continuous"
+            self.Flags.InputMode=rel:GetAttribute("MotorInputMode") or "Hold"
+            local driveButton
+            driveButton=self:ActionButton("Drive: "..self.Flags.DriveType,
+                "Continuous rotation or angle-position servo",function()
+                    self.Flags.DriveType=if self.Flags.DriveType=="Continuous"
+                        then "Servo" else "Continuous"
+                    driveButton.Text="Drive: "..self.Flags.DriveType
+                end)
+            local inputButton
+            inputButton=self:ActionButton("Input: "..self.Flags.InputMode,
+                "Hold = only while pressed; Toggle = press to switch",function()
+                    self.Flags.InputMode=if self.Flags.InputMode=="Hold"
+                        then "Toggle" else "Hold"
+                    inputButton.Text="Input: "..self.Flags.InputMode
+                end)
             self:Field("Speed (rad/s)",rel:GetAttribute("MotorSpeed") or 3)
+            self:Field("Servo target (degrees)",rel:GetAttribute("MotorTargetAngle") or 90)
             self:Field("Max torque",rel:GetAttribute("MotorTorque") or 3000)
             self:Field("Acceleration",rel:GetAttribute("MotorAcceleration") or 40)
         end
@@ -1174,14 +1191,18 @@ function Panel:RenderRelation(node)
                     local speed=tonumber(self.Fields["Speed (rad/s)"].Text)
                     local torque=tonumber(self.Fields["Max torque"].Text)
                     local accel=tonumber(self.Fields.Acceleration.Text)
-                    if not speed or not torque or not accel then
+                    local angle=tonumber(self.Fields["Servo target (degrees)"].Text)
+                    if not speed or not torque or not accel or not angle then
                         self:Message("Invalid motor values") return
                     end
                     motorPayload={action="TuneBearingMotor",relationId=node.id,
                         motorEnabled=self.Flags.Motor,
                         motorKey=self.Fields["Motor key"].Text:gsub("%s+",""),
                         motorSpeed=speed,motorTorque=torque,
-                        motorAcceleration=accel}
+                        motorAcceleration=accel,
+                        motorDriveType=self.Flags.DriveType,
+                        motorInputMode=self.Flags.InputMode,
+                        motorTargetAngle=angle}
                 end
                 if changes and not self:Send({action="AdjustJoint",
                     relationId=node.id,lowerLimit=lower,upperLimit=upper,
