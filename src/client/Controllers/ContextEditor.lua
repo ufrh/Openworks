@@ -1257,7 +1257,8 @@ function Panel:RenderRelation(node)
             end
             if self:Send({action="RemoveRelation",relationId=node.id},true) then
                 self.RelationView=nil
-                self.CurrentPage="object"
+                self.CurrentPage=if self.Tools.PrimaryId=="Build"
+                    then "object" else "relationships"
                 self.Removing=nil
                 self:RenderContext()
             end
@@ -1293,7 +1294,6 @@ function Panel:RenderRelationshipList(node)
     end
     for i,entry in ipairs(related) do
         local chosen=entry
-        local relation=entry.relation
         local otherName=if entry.first==node.model then
             entry.second and entry.second.Name
             elseif entry.second==node.model then
