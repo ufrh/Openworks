@@ -76,7 +76,9 @@ function Catalog.Pair(first,second)
         -- A hub's Rigid mount creates the validated physical Weld.
         -- Do not expose two separate UI names for the same connection.
         if not hub and not belt then add("Weld") end
-        add("Spring")
+        -- A gear on a shaft MUST rigidly weld: it cannot independently
+        -- rotate or have a spring in the same physical hub interface.
+        if not hub then add("Spring") end
     end
     return options
 end

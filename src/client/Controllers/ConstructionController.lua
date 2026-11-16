@@ -920,8 +920,14 @@ function Controller:OpenMateChoice(mode)
         or self.PendingMateChoice then
         return false
     end
-    -- One click on a valid hole/shaft or gear/shaft fit opens a mouse
-    -- picker. Bore users can still choose "Adjust depth / roll first",
+    -- Gear-to-shaft has exactly ONE legitimate action: rigid weld. Never
+    -- open a one-item chooser for a decision the player cannot change.
+    if match.kind=="Hub" then
+        if mode=="Build" then self:Place("Weld")
+        else self:SmartDrop("Weld") end
+        return true
+    end
+    -- Bore users can still choose "Adjust depth / roll first",
     -- then click once more to reopen this picker after adjustments.
     if match.kind=="Bore" and not self.LockedAlignment then
         if not self:BeginAlignmentPositioning() then return false end
@@ -1009,7 +1015,8 @@ function Controller:SmartDrop(chosenKind)
     -- A custom alignment origin affects pose only; it never authors a joint.
     -- Continue through normal Update/TransformComponent validators.
     if match.kind=="Pivot" then return false end
-    if (match.kind=="Bore" or match.kind=="Hub") and not chosenKind then
+    if match.kind=="Hub" and not chosenKind then chosenKind="Weld" end
+    if match.kind=="Bore" and not chosenKind then
         return self:OpenMateChoice("Edit")
     end
     -- A multi-primitive ghost pivots at its central anchor, but the
@@ -1890,8 +1897,9 @@ function Controller:Place(chosenKind)
     end
     -- F-copy never inherits old joints, but may authorize a NEW real
     -- attachment against the selected target, just like fresh Build.
-    if self.SmartMatch
-        and (self.SmartMatch.kind=="Bore" or self.SmartMatch.kind=="Hub")
+    if self.SmartMatch and self.SmartMatch.kind=="Hub"
+        and not chosenKind then chosenKind="Weld" end
+    if self.SmartMatch and self.SmartMatch.kind=="Bore"
         and not chosenKind then
         self:OpenMateChoice("Build")
         return

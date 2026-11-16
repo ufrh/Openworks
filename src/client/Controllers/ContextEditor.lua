@@ -189,6 +189,10 @@ end
 
 function Panel:ChooseFit(kind,callback,count)
     local options=ConnectionCatalog.Fit(kind)
+    if kind=="Hub" then
+        callback("Rigid")
+        return true
+    end
     local title=if kind=="Hub" then "GEAR OR PULLEY / SHAFT"
         elseif (count or 0)>1 then
             tostring(count).." OPENINGS / SHAFT"
@@ -198,6 +202,10 @@ end
 
 function Panel:ChoosePair(first,second,callback)
     local options=ConnectionCatalog.Pair(first,second)
+    if #options==1 and options[1].id=="Rigid" then
+        callback("Rigid")
+        return true
+    end
     return self:ChooseConnection(options,callback,"CONNECT TWO PARTS")
 end
 
