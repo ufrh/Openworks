@@ -133,6 +133,46 @@ function Simulation:StopRack(session)
     session.RackDirection=0
 end
 
+-- Drive mode is authoritative on the server. The client supplies only
+-- key down/up transitions and hold liveness; it never supplies torque or angle.
+local function configureMotor(motor, relation)
+    local c=motor.Constraint
+    motor.DriveType=relation:GetAttribute("MotorDriveType")=="Servo"
+        and "Servo" or "Continuous"
+    motor.InputMode=relation:GetAttribute("MotorInputMode")=="Toggle"
+        and "Toggle" or "Hold"
+    motor.Speed=relation:GetAttribute("MotorSpeed") or 3
+    motor.Angle=math.clamp(relation:GetAttribute("MotorTargetAngle") or 90,-180,180)
+    motor.Key=relation:GetAttribute("MotorKey") or "F"
+    motor.Held=false
+    motor.Latched=false
+    motor.On=false
+    motor.LastInput=0
+    local torque=math.clamp(relation:GetAttribute("MotorTorque") or 3000,1,100000)
+    c.AngularVelocity=0
+    c.TargetAngle=0
+    c.MotorMaxTorque=torque
+    c.MotorMaxAcceleration=math.clamp(
+        relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
+    c.ServoMaxTorque=torque
+    c.AngularSpeed=math.abs(motor.Speed)
+    c.ActuatorType=if motor.DriveType=="Servo" then Enum.ActuatorType.Servo
+        else Enum.ActuatorType.Motor
+end
+
+local function applyMotor(motor)
+    local c=motor.Constraint
+    if not c or not c.Parent then return end
+    local on=motor.On==true
+    if motor.DriveType=="Servo" then
+        -- Off returns the motor to its neutral position (0 degrees).
+        -- Servo keeps its angular speed/torque limits in both directions.
+        c.TargetAngle=if on then motor.Angle else 0
+    else
+        c.AngularVelocity=if on then motor.Speed else 0
+    end
+end
+
 -- Only liveness/key state is accepted from the client. Speed and
 -- torque always come from saved, owner-verified relationship attributes.
 function Simulation:InputMotor(player,key,holding)
@@ -142,11 +182,19 @@ function Simulation:InputMotor(player,key,holding)
     local now=os.clock()
     for _,motor in ipairs(session.Motors or {}) do
         if motor.Key==key then
-            motor.Held=holding
-            motor.LastInput=if holding then now else 0
-            if motor.Constraint and motor.Constraint.Parent then
-                motor.Constraint.AngularVelocity=if holding then motor.Speed else 0
+            if motor.InputMode=="Toggle" then
+                -- Edge-triggered: repeated heartbeat packets never toggle.
+                if holding and not motor.Latched then
+                    motor.On=not motor.On
+                end
+                motor.Latched=holding
+                motor.LastInput=if holding then now else 0
+            else
+                motor.Held=holding
+                motor.On=holding
+                motor.LastInput=if holding then now else 0
             end
+            applyMotor(motor)
         end
     end
 end
@@ -154,10 +202,12 @@ end
 function Simulation:StepCranks(dt)
     for owner,session in pairs(self.Sessions) do
         for _,motor in ipairs(session.Motors or {}) do
-            if motor.Constraint.Parent and (session.Paused
-                or not motor.Held or os.clock()-motor.LastInput>0.45) then
+            if motor.Constraint.Parent and motor.InputMode=="Hold"
+                and (session.Paused or not motor.Held
+                    or os.clock()-motor.LastInput>0.45) then
                 motor.Held=false
-                motor.Constraint.AngularVelocity=0
+                motor.On=false
+                applyMotor(motor)
             end
         end
         local character=owner.Character
@@ -795,19 +845,12 @@ function Simulation:Start(player, payload)
                 if constraint:IsA("HingeConstraint")
                     and edge.kind=="Bearing"
                     and edge.relation:GetAttribute("MotorEnabled")==true then
-                    constraint.ActuatorType=Enum.ActuatorType.Motor
-                    constraint.AngularVelocity=0
-                    constraint.MotorMaxTorque=math.clamp(
-                        edge.relation:GetAttribute("MotorTorque") or 3000,1,100000)
-                    constraint.MotorMaxAcceleration=math.clamp(
-                        edge.relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
-                    table.insert(session.Motors,{
+                    local motor={
                         Constraint=constraint,
                         RelationId=edge.relation:GetAttribute("RelationId"),
-                        Key=edge.relation:GetAttribute("MotorKey") or "F",
-                        Speed=edge.relation:GetAttribute("MotorSpeed") or 3,
-                        LastInput=0,Held=false,
-                    })
+                    }
+                    configureMotor(motor,edge.relation)
+                    table.insert(session.Motors,motor)
                 elseif constraint:IsA("HingeConstraint")
                     or constraint:IsA("PrismaticConstraint")
                     or constraint:IsA("CylindricalConstraint") then
@@ -1065,23 +1108,21 @@ function Simulation:SyncRelationship(player,relation)
                 constraint.LowerAngle=relation:GetAttribute("LowerLimit") or -180
                 constraint.UpperAngle=relation:GetAttribute("UpperLimit") or 180
                 local enabled=relation:GetAttribute("MotorEnabled")==true
-                constraint.ActuatorType=if enabled then Enum.ActuatorType.Motor
-                    else Enum.ActuatorType.None
-                constraint.AngularVelocity=0
-                constraint.MotorMaxTorque=math.clamp(
-                    relation:GetAttribute("MotorTorque") or 3000,1,100000)
-                constraint.MotorMaxAcceleration=math.clamp(
-                    relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
                 local found=nil
                 for _,motor in ipairs(session.Motors) do
                     if motor.RelationId==id then found=motor break end
                 end
-                if found then
-                    found.Key=relation:GetAttribute("MotorKey") or "F"
-                    found.Speed=relation:GetAttribute("MotorSpeed") or 3
-                    found.Held=false
-                    found.LastInput=0
-                    if not enabled then
+                if enabled then
+                    if not found then
+                        found={Constraint=constraint,RelationId=id}
+                        table.insert(session.Motors,found)
+                    end
+                    configureMotor(found,relation)
+                else
+                    constraint.ActuatorType=Enum.ActuatorType.None
+                    constraint.AngularVelocity=0
+                    constraint.TargetAngle=0
+                    if found then
                         for index=#session.Motors,1,-1 do
                             if session.Motors[index]==found then
                                 table.remove(session.Motors,index)
@@ -1089,13 +1130,6 @@ function Simulation:SyncRelationship(player,relation)
                             end
                         end
                     end
-                elseif enabled then
-                    table.insert(session.Motors,{
-                        Constraint=constraint,RelationId=id,
-                        Key=relation:GetAttribute("MotorKey") or "F",
-                        Speed=relation:GetAttribute("MotorSpeed") or 3,
-                        Held=false,LastInput=0,
-                    })
                 end
             elseif (kind=="Slider" or kind=="Cylindrical")
                 and (constraint:IsA("PrismaticConstraint")
@@ -1140,7 +1174,9 @@ function Simulation:Pause(player)
     self:StopRack(session)
     for _,motor in ipairs(session.Motors or {}) do
         motor.Held=false
-        if motor.Constraint.Parent then motor.Constraint.AngularVelocity=0 end
+        motor.Latched=false
+        motor.On=false
+        if motor.Constraint.Parent then applyMotor(motor) end
     end
     if session.Gears then session.Gears:StopMotion() end
     local state = {}
