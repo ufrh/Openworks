@@ -1,6 +1,7 @@
 --!strict
 -- Hotbar 1 Build places; hotbar 2 Edit manipulates existing authored parts.
--- Mechanics and Assembly/Simulation retain their contextual subtools.
+-- Mechanics has only Connect; relationship configuration is right-click
+-- in Edit, Mechanics, and Assembly/Simulation. Build retains its original menu.
 -- LegacyMode is an internal compatibility adapter, never server authority.
 local definitions={
     Build={
@@ -15,7 +16,6 @@ local definitions={
         Default="Connect",
         Items={
             {Id="Connect",Key=Enum.KeyCode.C,LegacyMode="Mechanics"},
-            {Id="Configure",Key=Enum.KeyCode.E,LegacyMode="Mechanics"},
         },
     },
     AssemblySimulation={
