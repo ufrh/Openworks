@@ -14,7 +14,7 @@ local OFFSETS = {
 }
 Generator.Keys = table.freeze(KEYS)
 Generator.Offsets = table.freeze(OFFSETS)
-Generator.Version = 1
+Generator.Version = 2
 
 local function make(key: string)
     local mesh = assert(AssetService:CreateEditableMesh(),
@@ -104,15 +104,15 @@ local function make(key: string)
     end
 
     if key == "RearCan" then
-        -- Occupancy mesh: remove cells for three real ventilation slots,
+        -- Occupancy mesh: three short, narrow ventilation slots,
         -- then seal every exposed interior, end, and side wall.
-        local xs = {-1.80,-1.55,-0.76,-0.40}
+        local xs = {-1.80,-1.45,-0.91,-0.40}
         local function has(i: number, j: number): boolean
             if i < 1 or i >= #xs then return false end
             j = j % N
             if i ~= 2 then return true end
             local sector = j % 8
-            return sector < 2 or sector > 5
+            return sector ~= 3 and sector ~= 4
         end
         for i = 1, #xs-1 do
             for j = 0, N-1 do
@@ -162,7 +162,7 @@ local function make(key: string)
             if i < 1 or i >= #rs then return false end
             if i ~= 2 then return true end
             local sector = j % 6
-            return sector == 0 or sector == 5
+            return sector == 0 or sector == 1 or sector == 4 or sector == 5
         end
         for i=1,#rs-1 do
             for j=0,N-1 do
