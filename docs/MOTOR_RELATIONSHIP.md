@@ -2,18 +2,24 @@
 
 **No motor primitive, no mesh publishing, no Studio plugin.**
 
-The Motor relationship is offered in Mechanics > Connect when the selected pair
-is a full cylindrical shaft and a drilled/hole block. Internally it persists as
-a Bearing with `MotorRelationship=true` and `MotorEnabled=true`, reusing the
-existing fitted-geometry validation, undo/redo, autosave, simulation hinge and
-orange motor visualization. It appears as `Motor` in the contextual inspector
-and relationship index. It defaults to key F.
+The Motor relationship is offered by the existing **Build/Edit Smart Fit
+shaft-in-hole popup**, alongside Bearing, Slider and Cylindrical, only when
+the opening is a drilled/hole block. **Do not use Mechanics > Connect to create
+a motor**. Fit the cylinder into the hole exactly as for an ordinary Bearing,
+choose **Motor** in the existing popup, and confirm the insertion.
+Internally Motor persists as a Bearing with `MotorRelationship=true` and
+`MotorEnabled=true`, reusing the fitted-geometry validation, undo/redo,
+autosave, simulation hinge and orange motor visualizer. It appears as
+`Motor` in the contextual inspector and relationship index. The default
+key is F. When multiple shaft/hole pairs fit together, only the selected
+primary drilled hole becomes powered; the other fitted joints remain passive.
 
 ## Configure
 
-In Mechanics, choose Connect, select the drilled hole block and shaft (either
-order), then select **Motor** and confirm the actual shaft fit. Right-click one
-of the parts and open the **Motor** mechanical relationship.
+In Build or Edit, drag the shaft into a drilled hole block (or the
+block onto the shaft), use the normal Smart Fit alignment/depth tools,
+then choose **Motor** in the existing relationship popup. Right-click
+one of the connected parts and open its **Motor** relationship to configure it.
 
 - **Motor enabled:** enable or disable actuation
 - **Motor key:** held/toggled keyboard input, defaults to F
