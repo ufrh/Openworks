@@ -78,7 +78,8 @@ function Kinematics.new(graph,copies)
             if not group then
                 group={Id=key,Models={},Gears={},Racks={},Axis=nil,
                     TravelAxis=nil,Center=nil,Grounded=false,Supported=false,
-                    FallVelocity=0,Followers={},Links={}}
+                    FallVelocity=0,Followers={},Links={},
+                    RotatedAngle=0}
                 groups[key]=group
             end
             table.insert(group.Models,clone)
@@ -188,6 +189,16 @@ function Kinematics:AngularSpeedFor(id,shaftAxis)
     if not group or not group.Axis then return 0 end
     local velocity=self.LastVelocities[group] or 0
     return velocity*group.Axis:Dot(shaftAxis or group.Axis)
+end
+
+-- Signed, unwrapped displacement from the assembly's starting pose.
+-- Used only by authored servo motors that drive a kinematic gear axle.
+-- Reading the angle from the actual transformed group prevents drift
+-- caused by independently integrating command/key packet frequency.
+function Kinematics:AngleFor(id,shaftAxis)
+    local group=self.ById[id]
+    if not group or not group.Axis or not self.Kinematic[group] then return nil end
+    return (group.RotatedAngle or 0)*group.Axis:Dot(shaftAxis or group.Axis)
 end
 
 function Kinematics:CanDriveRack(id)
@@ -638,6 +649,7 @@ function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed)
                 shiftGroup(group,group.TravelAxis*velocity*step)
             else
                 local center=group.Center
+                group.RotatedAngle=(group.RotatedAngle or 0)+velocity*step
                 local delta=CFrame.new(center)
                     *CFrame.fromAxisAngle(group.Axis,velocity*step)
                     *CFrame.new(-center)
