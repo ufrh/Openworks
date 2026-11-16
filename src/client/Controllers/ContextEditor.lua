@@ -234,7 +234,7 @@ function Panel:MakeUI()
     local popup=style(mk("Frame",gui,{
         Name="RightClickEditor",Visible=false,
         BackgroundColor3=Theme.Window,
-        Size=UDim2.fromOffset(370,495),
+        Size=UDim2.fromOffset(330,420),
         Position=UDim2.fromOffset(500,175),ZIndex=20,
     }),Theme.Window)
     self.Surface=popup
@@ -261,6 +261,11 @@ function Panel:MakeUI()
         ScrollBarThickness=4,ZIndex=21,
     })
     list(self.Properties)
+    local propertyLayout=self.Properties:FindFirstChildOfClass("UIListLayout")
+    if propertyLayout then
+        propertyLayout:GetPropertyChangedSignal("AbsoluteContentSize")
+            :Connect(function() self:ResizeContext() end)
+    end
     self.Creator=style(mk("Frame",gui,{
         Name="AssemblyCreator",Visible=false,
         AnchorPoint=Vector2.new(0.5,0.5),
@@ -528,6 +533,26 @@ function Panel:OpenSelectedContext()
     self:OpenForNode(node,UIS:GetMouseLocation())
 end
 
+function Panel:ResizeContext()
+    if not self.ContextOpen or not self.Surface or not self.Properties then
+        return
+    end
+    local layout=self.Properties:FindFirstChildOfClass("UIListLayout")
+    if not layout then return end
+    local viewport=workspace.CurrentCamera and
+        workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
+    local limit=math.max(160,math.min(495,viewport.Y-18))
+    local height=math.clamp(layout.AbsoluteContentSize.Y+67,160,limit)
+    if math.abs(self.Surface.Size.Y.Offset-height)>1 then
+        self.Surface.Size=UDim2.fromOffset(330,height)
+    end
+    local p=self.Surface.Position
+    local top=math.clamp(p.Y.Offset,8,math.max(8,viewport.Y-height-8))
+    if top~=p.Y.Offset then
+        self.Surface.Position=UDim2.fromOffset(p.X.Offset,top)
+    end
+end
+
 function Panel:OpenForNode(node,pos)
     if not node then return end
     self:CloseConnectionChoice(true)
@@ -540,8 +565,8 @@ function Panel:OpenForNode(node,pos)
         workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
     local p=pos or Vector2.new(viewport.X/2,viewport.Y/2)
     self.Surface.Position=UDim2.fromOffset(
-        math.clamp(p.X+25,8,math.max(8,viewport.X-378)),
-        math.clamp(p.Y-75,8,math.max(8,viewport.Y-510)))
+        math.clamp(p.X+15,8,math.max(8,viewport.X-338)),
+        math.clamp(p.Y-50,8,math.max(8,viewport.Y-430)))
     self.ContextOpen=true
     self.Surface.Visible=true
     self:Focus(true)
@@ -743,86 +768,6 @@ function Panel:Field(name,value)
     return text
 end
 
--- Plane Crazy-like suspension slider. The player sees intuitive 0–100
--- travel plus the actual physical value in the adjacent editable textbox.
--- Non-linear scaling gives useful sensitivity to small mechanism springs.
-function Panel:SpringSlider(name,mode,onRelease)
-    local field=self.Fields[name]
-    if not field then return end
-    local line=row(self.Properties,29)
-    local rail=style(mk("TextButton",line,{
-        Name="Spring_"..name,
-        Text="",AutoButtonColor=false,
-        Size=UDim2.new(1,-12,0,24),Position=UDim2.fromOffset(6,2),
-        BackgroundColor3=Theme.Input,BorderSizePixel=0,ZIndex=13,
-    }),Theme.Input)
-    local filled=mk("Frame",rail,{
-        Size=UDim2.fromScale(0,1),BackgroundColor3=Theme.Accent,
-        BackgroundTransparency=0.28,BorderSizePixel=0,ZIndex=14,
-    })
-    local amount=label(rail,"",UDim2.fromOffset(6,0),
-        UDim2.new(1,-12,1,0),Theme.Text)
-    amount.ZIndex=15
-    amount.TextXAlignment=Enum.TextXAlignment.Right
-    local function fraction(value)
-        if mode=="strength" then
-            return math.log(math.clamp(value,10,3000)/10)/math.log(300)
-        elseif mode=="damping" then
-            return (math.clamp(value,0,300)/300)^(1/2.1)
-        else
-            return math.clamp((value-0.25)/19.75,0,1)
-        end
-    end
-    local function mapped(frac)
-        if mode=="strength" then
-            return math.round(10*300^frac)
-        elseif mode=="damping" then
-            return math.round(300*frac^2.1)
-        else
-            return math.round((0.25+19.75*frac)*4)/4
-        end
-    end
-    local function redraw()
-        if not field.Parent or not rail.Parent then return end
-        local frac=math.clamp(fraction(tonumber(field.Text) or 0),0,1)
-        filled.Size=UDim2.fromScale(frac,1)
-        amount.Text=string.format("%s  %d%%",
-            if mode=="strength" then "Strength"
-                elseif mode=="damping" then "Damping" else "Length",
-            math.round(frac*100))
-    end
-    field:GetPropertyChangedSignal("Text"):Connect(redraw)
-    local function setFromX(x)
-        local width=math.max(1,rail.AbsoluteSize.X)
-        local frac=math.clamp((x-rail.AbsolutePosition.X)/width,0,1)
-        field.Text=tostring(mapped(frac))
-        redraw()
-    end
-    local dragging=false
-    rail.InputBegan:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 then
-            dragging=true
-            setFromX(input.Position.X)
-        end
-    end)
-    local moved=UIS.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then
-            setFromX(input.Position.X)
-        end
-    end)
-    local released=UIS.InputEnded:Connect(function(input)
-        if dragging and input.UserInputType==Enum.UserInputType.MouseButton1 then
-            dragging=false
-            if onRelease then onRelease() end
-        end
-    end)
-    rail.Destroying:Connect(function()
-        moved:Disconnect()
-        released:Disconnect()
-    end)
-    redraw()
-end
-
 -- Simple Plane Crazy-like property controls: tap a mode, toggle a
 -- feature, or drag a range. Exact values are still directly editable.
 function Panel:Switch(name,value,tip,onChange)
@@ -960,7 +905,7 @@ function Panel:ActionButton(name,tip,callback)
     return item
 end
 
-function Panel:Cycle(name,values,selected)
+function Panel:Cycle(name,values,selected,onChange)
     local r=row(self.Properties,28)
     label(r,name,UDim2.fromOffset(6,0),
         UDim2.new(0.38,-6,1,0),Theme.Muted)
@@ -971,6 +916,7 @@ function Panel:Cycle(name,values,selected)
             index=index%#values+1
             nextButton.Text=tostring(values[index]).."  ▾"
             self.Flags[name]=values[index]
+            if onChange then onChange(self.Flags[name]) end
         end)
     self.Flags[name]=values[index]
     self:Hint(nextButton,"Cycle "..name:lower().." choices")
@@ -1048,12 +994,9 @@ function Panel:RenderObject(node)
     if not own(member) then self:Value("Selection","Unavailable") return end
     self:Section(if node.kind=="component" then "Component" else "Primitive")
     self:Value("Name",node.name)
-    self:Value("Members",#node.members)
+    if node.kind=="component" then self:Value("Parts",#node.members) end
     local part=member.PrimaryPart
-    if part then
-        self:Value("Position (U)",formatVector(member:GetPivot().Position))
-        self:Value("Size (U)",formatVector(part.Size))
-    end
+    if part then self:Value("Size (U)",formatVector(part.Size)) end
     local assemblyId=member:GetAttribute("AssemblyId")
     if type(assemblyId)=="string" and assemblyId~="" then
         self:Value("Assembly",member:GetAttribute("AssemblyName") or "Assembly")
@@ -1072,32 +1015,44 @@ function Panel:RenderObject(node)
         self:Section("Appearance")
         self:Cycle("Material",Materials.List(),
             member:GetAttribute("ConstructionMaterial") or "Steel")
+        local function showColor(finish)
+            local visible=finish~="Factory"
+            if self.ColorFieldRow then self.ColorFieldRow.Visible=visible end
+            if self.ColorPaletteRow then self.ColorPaletteRow.Visible=visible end
+        end
         self:Cycle("Finish",Paint.List(),
-            member:GetAttribute("PaintFinish") or "Factory")
-        self:Field("Color HEX",member:GetAttribute("PaintColorHex") or "#D61F2C")
+            member:GetAttribute("PaintFinish") or "Factory",showColor)
+        local colorField=self:Field("Color HEX",
+            member:GetAttribute("PaintColorHex") or "#D61F2C")
+        self.ColorFieldRow=colorField.Parent
         local colors=Paint.Palette()
-        local r=row(self.Properties,48)
-        for i=1,math.min(9,#colors) do
+        local r=row(self.Properties,43)
+        self.ColorPaletteRow=r
+        for i=1,math.min(6,#colors) do
             local swatch=colors[i]
             local color=Paint.ToColor(swatch.Hex)
-            local sw=button(r,"",UDim2.new((i-1)/9,1,0,4),
-                UDim2.new(1/9,-3,0,32),function()
+            local sw=button(r,"",UDim2.new((i-1)/6,1,0,4),
+                UDim2.new(1/6,-3,0,30),function()
                     self.Fields["Color HEX"].Text="#"..swatch.Hex
                 end)
             sw.BackgroundColor3=color or Theme.Accent
             self:Hint(sw,swatch.Name)
         end
-        self:ActionButton("CONFIRM APPEARANCE",
+        showColor(self.Flags.Finish)
+        self:ActionButton("SAVE APPEARANCE",
             "Save changed material and finish via original server actions",function()
                 self:ConfirmAppearance(node)
             end)
-        self:ActionButton("Restore factory finish",
-            "Reset cosmetic finish, leaving physical material intact",function()
-                self:Send({action="SetPaint",
-                    scope=if node.kind=="component" then "Component" else "Primitive",
-                    id=if node.kind=="component" then node.componentId
-                        else entityId(member),paintFinish="Factory"})
-            end)
+        if member:GetAttribute("PaintFinish")~="Factory"
+            and member:GetAttribute("PaintFinish")~=nil then
+            self:ActionButton("Reset finish",
+                "Restore the original part finish",function()
+                    self:Send({action="SetPaint",
+                        scope=if node.kind=="component" then "Component" else "Primitive",
+                        id=if node.kind=="component" then node.componentId
+                            else entityId(member),paintFinish="Factory"})
+                end)
+        end
         self:ActionButton("Select / resize",
             "Select actual authored geometry in Build",function()
                 if self.Tools.PrimaryId=="Edit" then
@@ -1510,6 +1465,7 @@ function Panel:RenderContext()
             self:RenderObject(node)
         end
     end
+    self:ResizeContext()
 end
 
 function Panel:RenderProperties()
