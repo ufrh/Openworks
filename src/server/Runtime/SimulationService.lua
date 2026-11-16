@@ -255,12 +255,50 @@ function Simulation:StepCranks(dt)
                 self:StopRack(session)
                 rackId=nil
             end
-            local rackDriven=not powered and rackId~=nil
+            -- A key-bound motor drives the exact same geared shaft ID and
+            -- axis as an LMB hand crank, not a hole-block pivot or a native
+            -- hinge competing with anchored kinematic gear geometry.
+            -- One deterministic input per graph: held crank takes priority,
+            -- then an active motor, then an actively guided rack.
+            local motorInput=nil
+            if not powered then
+                for _,motor in ipairs(session.Motors or {}) do
+                    if motor.Kinematic and motor.DrivenId
+                        and not session.Gears:IsGrounded(motor.DrivenId) then
+                        local command=0
+                        if motor.DriveType=="Servo" then
+                            local position=session.Gears:AngleFor(
+                                motor.DrivenId,motor.Axis)
+                            if position then
+                                local goal=math.rad(if motor.On then
+                                    motor.Angle else 0)
+                                local error=goal-position
+                                -- Smoothly approach the commanded angle.
+                                -- Servo OFF returns to neutral; Hold release
+                                -- does not snap/teleport any geometry.
+                                if math.abs(error)>math.rad(0.2) then
+                                    local cap=math.abs(motor.Speed)
+                                    command=math.sign(error)*math.min(
+                                        cap,math.abs(error)*8)
+                                end
+                            end
+                        elseif motor.On then
+                            command=motor.Speed
+                        end
+                        if math.abs(command)>0.015 then
+                            motorInput={Id=motor.DrivenId,
+                                Axis=motor.Axis,Speed=command}
+                            break
+                        end
+                    end
+                end
+            end
+            local rackDriven=not powered and not motorInput and rackId~=nil
             -- A physical wheel/shaft can backdrive a scripted gear group
             -- through a Vector Joint. Gear speed is still propagated by ONE
             -- server-owned graph rather than external native gear forces.
             local nativeId,nativeAxis,nativeSpeed=nil,nil,0
-            if not powered and not rackDriven then
+            if not powered and not motorInput and not rackDriven then
                 for _,joint in ipairs(session.VectorJoints or {}) do
                     if joint.GearId and joint.NativePart
                         and joint.NativePart.Parent then
@@ -280,11 +318,14 @@ function Simulation:StepCranks(dt)
             end
             session.Gears:Step(dt,
                 if powered then crank.DrivenId
+                    elseif motorInput then motorInput.Id
                     elseif rackDriven then rackId else nativeId,
                 if powered then crank.Axis
+                    elseif motorInput then motorInput.Axis
                     elseif rackDriven then session.Gears:RackAxis(rackId)
                     else nativeAxis,
                 if powered then HandCrankMath.FixedAngularSpeed
+                    elseif motorInput then motorInput.Speed
                     elseif rackDriven then session.RackDirection*RACK_MANUAL_SPEED
                     else nativeSpeed)
             for _,joint in ipairs(session.VectorJoints or {}) do
