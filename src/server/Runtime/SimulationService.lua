@@ -149,15 +149,21 @@ local function configureMotor(motor, relation)
     motor.On=false
     motor.LastInput=0
     local torque=math.clamp(relation:GetAttribute("MotorTorque") or 3000,1,100000)
-    c.AngularVelocity=0
-    c.TargetAngle=0
-    c.MotorMaxTorque=torque
-    c.MotorMaxAcceleration=math.clamp(
+    motor.Torque=torque
+    motor.Acceleration=math.clamp(
         relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
-    c.ServoMaxTorque=torque
-    c.AngularSpeed=math.abs(motor.Speed)
-    c.ActuatorType=if motor.DriveType=="Servo" then Enum.ActuatorType.Servo
-        else Enum.ActuatorType.Motor
+    -- A gear-mounted shaft belongs to GearKinematics. Never create a
+    -- competing physical hinge motor on its anchored kinematic body.
+    if c then
+        c.AngularVelocity=0
+        c.TargetAngle=0
+        c.MotorMaxTorque=torque
+        c.MotorMaxAcceleration=motor.Acceleration
+        c.ServoMaxTorque=torque
+        c.AngularSpeed=math.abs(motor.Speed)
+        c.ActuatorType=if motor.DriveType=="Servo" then Enum.ActuatorType.Servo
+            else Enum.ActuatorType.Motor
+    end
 end
 
 local function applyMotor(motor)
@@ -202,7 +208,7 @@ end
 function Simulation:StepCranks(dt)
     for owner,session in pairs(self.Sessions) do
         for _,motor in ipairs(session.Motors or {}) do
-            if motor.Constraint.Parent and motor.InputMode=="Hold"
+            if motor.InputMode=="Hold"
                 and (session.Paused or not motor.Held
                     or os.clock()-motor.LastInput>0.45) then
                 motor.Held=false
@@ -1176,7 +1182,7 @@ function Simulation:Pause(player)
         motor.Held=false
         motor.Latched=false
         motor.On=false
-        if motor.Constraint.Parent then applyMotor(motor) end
+        applyMotor(motor)
     end
     if session.Gears then session.Gears:StopMotion() end
     local state = {}
