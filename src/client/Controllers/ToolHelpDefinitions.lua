@@ -112,12 +112,8 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
                     "Select second part" else "Select first part")
                 put(rows,"Esc","Reset selection")
             end
-        else
-            stage="CONFIGURE"
-            put(rows,"Click","Inspect connection")
-            put(rows,"Tab","Unlock Properties")
-            put(rows,"Right click","Context actions")
         end
+        put(rows,"Right click","Choose / configure mechanical relationship")
         put(rows,"Ctrl+Z / Y","Undo / redo")
     elseif primary=="AssemblySimulation" then
         if sub=="AssemblyEditor" then
@@ -164,6 +160,9 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
         or (primary=="Mechanics" and
             (stage=="CONNECTION CHOICE" or stage=="INSERTION"
                 or stage=="FINE FIT"))
+    if primary~="Build" then
+        put(rows,"Right click","Mechanical relationship settings")
+    end
     if not fitActive and sub~="Paint" then
         put(rows,"F2","Unlock cursor")
     end
