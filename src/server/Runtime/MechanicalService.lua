@@ -1130,8 +1130,10 @@ function Mechanical:SmartMate(player, request, newSource)
         local function rigidPath(startId,finishId)
             local queue={startId}
             local seen={[startId]=true}
-            for i=1,#queue do
-                local id=queue[i]
+            local index=1
+            while index<=#queue do
+                local id=queue[index]
+                index+=1
                 if id==finishId then return true end
                 for _,nextId in ipairs(neighbors[id] or {}) do
                     if not seen[nextId] then
