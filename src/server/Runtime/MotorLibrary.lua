@@ -10,7 +10,7 @@ local Motor = {}
 local ROOT = "OPENWORKS_PrimitiveLibrary_DRAFT"
 local MANIFEST = "OPENWORKS_PublishedMotorMeshes"
 local ID = "DCMotor"
-local VERSION = 2
+local VERSION = 3
 
 local COLORS = {
     RearCan = Color3.fromRGB(118, 126, 132),
@@ -199,7 +199,7 @@ function Motor.Ensure(forceRebuild: boolean?)
     if prior then
         if not forceRebuild then return prior end
         local priorVersion = prior:GetAttribute("MotorPrefabVersion")
-        assert(prior:IsA("Model") and (priorVersion == VERSION or priorVersion == 1),
+        assert(prior:IsA("Model") and (priorVersion == VERSION or priorVersion == 1 or priorVersion == 2),
             "Refusing to overwrite a custom motor primitive")
     end
     local fresh = build()
