@@ -113,7 +113,6 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
                 put(rows,"Esc","Reset selection")
             end
         end
-        put(rows,"Right click","Choose / configure mechanical relationship")
         put(rows,"Ctrl+Z / Y","Undo / redo")
     elseif primary=="AssemblySimulation" then
         if sub=="AssemblyEditor" then
