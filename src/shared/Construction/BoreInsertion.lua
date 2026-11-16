@@ -4,6 +4,7 @@
 -- Shared construction geometry: this never authorizes an intersection.
 local Alignment=require(script.Parent:WaitForChild("AlignmentMath"))
 local MultiFit=require(script.Parent:WaitForChild("MultiFitMath"))
+local Bore=require(script.Parent:WaitForChild("BoreClearance"))
 local Grid=require(script.Parent:WaitForChild("GridMath"))
 local Config=require(script.Parent:WaitForChild("BuildConfig"))
 
@@ -22,6 +23,32 @@ local function contactSolid(part:BasePart):boolean
     return part:GetAttribute("GearPivotOnly")~=true
         and part:GetAttribute("OpenworksCollisionMode")~="VisualOnly"
         and part:GetAttribute("OpenworksCollisionMode")~="PivotOnly"
+end
+
+local function authorizedBoreContact(moving,other)
+    if not moving or not other then return false end
+    -- A gear may be traversed during a multi-hole insertion, but only if
+    -- it is actually CONCENTRIC and has sufficient positive bore clearance.
+    -- Generic MultiFit.Check uses looser guide tolerances, which could
+    -- show a green ghost for a gear the server then refuses to weld.
+    local movingHub=type(moving:GetAttribute("GearTeeth"))=="number"
+        or moving:GetAttribute("PrimitiveFamily")=="Pulley"
+    local otherHub=type(other:GetAttribute("GearTeeth"))=="number"
+        or other:GetAttribute("PrimitiveFamily")=="Pulley"
+    if movingHub or otherHub then
+        local shaft=if Alignment.IsShaft(moving) then moving
+            elseif Alignment.IsShaft(other) then other else nil
+        local hub=if movingHub then moving else if otherHub then other else nil
+        if not shaft or not hub then return false end
+        local cf=shaft:GetPivot()
+        local offset=hub:GetPivot().Position-cf.Position
+        local axis=cf.RightVector.Unit
+        if (offset-axis*offset:Dot(axis)).Magnitude>0.012 then
+            return false
+        end
+        return Bore.ShaftFits(shaft,hub)==true
+    end
+    return MultiFit.Check(moving,other)~=nil
 end
 
 -- Evaluate the EXACT candidate pose using genuine Roblox collision geometry.
@@ -61,7 +88,7 @@ function Insertion.Clear(ghost:Model,ignored): (boolean,string?)
             local other=part:FindFirstAncestorOfClass("Model")
             if other and other.Parent==built
                 and not (ignored and ignored[other]) then
-                if not (moving and MultiFit.Check(moving,other)) then
+                if not authorizedBoreContact(moving,other) then
                     return false,"Shaft insertion stops before "..other.Name
                 end
             end

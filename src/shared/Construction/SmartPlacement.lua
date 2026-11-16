@@ -1062,6 +1062,13 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     snugDiameter=if kind=="Bore" and isShaft
                         then source:GetAttribute("OPENWORKS_AutoSnugDiameter")
                         else nil}
+                if kind=="Bore" and isShaft and not hub(target) then
+                    -- A shaft through a coaxial gear + drilled opening
+                    -- must choose the HOLE as the primary mate, then the
+                    -- server mounts any engaged gears onto that shaft.
+                    -- A standalone gear remains a Hub mate as before.
+                    score-=3.0
+                end
                 if target==preferred then
                     score-=if kind=="Gear" or kind=="Rack"
                         or kind=="Guide" then 0.08 else 1.5
