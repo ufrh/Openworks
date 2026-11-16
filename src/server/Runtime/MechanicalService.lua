@@ -982,15 +982,18 @@ function Mechanical:SmartMate(player, request, newSource)
     local fitPairs=nil
     local fitMap=nil
     local hubGears=nil
-    if mode=="Hub" then
-        -- One long shaft may pass through and weld several distinct gears.
+    if mode=="Hub" or mode=="Bore" then
+        -- A hole is the primary alignment target; afterwards collect ALL
+        -- genuinely engaged gears on the shaft and rigidly weld them in the
+        -- very same transaction. A gear is NOT a shaft bearing.
+        -- The existing Hub-first workflow shares this verified scan.
         -- Do not stop at the first valid hub, but only attach a gear if its
         -- actual bore overlaps the finite shaft and passes full clearance.
-        hubGears={opening}
-        if Alignment.IsShaft(source) then
+        hubGears=if mode=="Hub" then {opening} else {}
+        if Alignment.IsShaft(shaft) then
             local shaftCF=shaft:GetPivot()
             local axis=shaftCF.RightVector.Unit
-            local seen={[opening]=true}
+            local seen=if mode=="Hub" then {[opening]=true} else {}
             local shaftHalf=shaft.PrimaryPart.Size.X*0.5
             for _,candidate in ipairs(d.folder:GetChildren()) do
                 if candidate:IsA("Model") and candidate~=shaft
@@ -998,25 +1001,27 @@ function Mechanical:SmartMate(player, request, newSource)
                     and candidate:GetAttribute("OwnerUserId")==player.UserId
                     and (type(candidate:GetAttribute("GearTeeth"))=="number"
                         or BeltMath.IsPulley(candidate))
-                    and not excluded[candidate] and not seen[candidate] then
+                    and not seen[candidate] then
                     local delta=candidate:GetPivot().Position-shaftCF.Position
                     local axial=math.abs(delta:Dot(axis))
                     local radial=(delta-axis*delta:Dot(axis)).Magnitude
                     local reach=shaftHalf+candidate.PrimaryPart.Size.X*0.5
                     if axial<reach-0.002 and radial<0.035 then
                         local fits,why=Smart.HubFits(shaft,candidate)
-                        if not fits then
+                        if fits then
+                            seen[candidate]=true
+                            table.insert(hubGears,candidate)
+                        elseif mode=="Hub" then
                             restoreMoving()
                             return false,why or "Another hub cannot fit this shaft"
                         end
-                        seen[candidate]=true
-                        table.insert(hubGears,candidate)
                     end
                 end
             end
         end
-        fitMap={[shaft]={}}
+        fitMap=if mode=="Hub" then {[shaft]={}} else nil
         for _,gear in ipairs(hubGears) do
+            if not fitMap then fitMap={[shaft]={}} end
             fitMap[shaft][gear]=true
             -- The moving object may be the gear rather than the shaft.
             -- Collision authorization must work in BOTH mount directions.
@@ -1096,6 +1101,18 @@ function Mechanical:SmartMate(player, request, newSource)
         end
         fitMap=MultiFit.AllowMap(fitPairs)
     end
+    -- Verify every gear against the FINAL fitted shaft, then allow only
+    -- that precise shaft/hub cavity through the collision broadphase.
+    -- Unrelated gears, plates and obstructions remain solid blockers.
+    if hubGears and #hubGears>0 then
+        fitMap=fitMap or {}
+        fitMap[shaft]=fitMap[shaft] or {}
+        for _,gear in ipairs(hubGears) do
+            fitMap[shaft][gear]=true
+            fitMap[gear]=fitMap[gear] or {}
+            fitMap[gear][shaft]=true
+        end
+    end
 
     for _,member in ipairs(members) do
         if d.intersectsConstructed(member,excluded,
@@ -1152,7 +1169,7 @@ function Mechanical:SmartMate(player, request, newSource)
         restoreMoving()
         return false,"The fitted rods leave no sliding travel; change insertion depth"
     end
-    if typeName=="FreeFit" then
+    if typeName=="FreeFit" and (not hubGears or #hubGears==0) then
         local after={}
         for _,member in ipairs(members) do
             table.insert(after,d.snapshot(member))
@@ -1166,7 +1183,7 @@ function Mechanical:SmartMate(player, request, newSource)
     local desiredSpecs={}
     local fitSetId=if mode=="Bore" and #fitPairs>1
         then HttpService:GenerateGUID(false) else nil
-    if mode=="Bore" then
+    if mode=="Bore" and typeName~="FreeFit" then
         -- Every independently fitted hole/shaft pair gets its OWN real
         -- native relationship. One master slider with cosmetic dots made
         -- the other three guide rods ineffective in simulation.
@@ -1192,21 +1209,7 @@ function Mechanical:SmartMate(player, request, newSource)
             }
             table.insert(desiredSpecs,candidateSpec)
         end
-    elseif mode=="Hub" then
-        for _,gear in ipairs(hubGears) do
-            table.insert(desiredSpecs,{
-                relationId=HttpService:GenerateGUID(false),
-                ownerUserId=player.UserId,
-                kind="Weld",
-                sourceId=shaft:GetAttribute("InstanceId"),
-                targetId=gear:GetAttribute("InstanceId"),
-                componentId=shaft:GetAttribute("ComponentId"),
-                offsetUnits=(gear:GetPivot().Position-shaft:GetPivot().Position)
-                    :Dot(shaft:GetPivot().RightVector)/0.25,
-                rollDegrees=0,
-            })
-        end
-    else
+    elseif mode~="Bore" and mode~="Hub" then
         table.insert(desiredSpecs,{
             relationId=HttpService:GenerateGUID(false),
             ownerUserId=player.UserId,
@@ -1219,6 +1222,21 @@ function Mechanical:SmartMate(player, request, newSource)
         })
     end
 
+    -- The bore's physical joint and every coaxial gear rigid mount are
+    -- authored together; either ALL commit, or NONE do.
+    for _,gear in ipairs(hubGears or {}) do
+        table.insert(desiredSpecs,{
+            relationId=HttpService:GenerateGUID(false),
+            ownerUserId=player.UserId,
+            kind="Weld",
+            sourceId=shaft:GetAttribute("InstanceId"),
+            targetId=gear:GetAttribute("InstanceId"),
+            componentId=shaft:GetAttribute("ComponentId"),
+            offsetUnits=(gear:GetPivot().Position-shaft:GetPivot().Position)
+                :Dot(shaft:GetPivot().RightVector)/0.25,
+            rollDegrees=0,
+        })
+    end
     local existingByPair={}
     for _,relation in ipairs(self.Folder:GetChildren()) do
         if relation:GetAttribute("OwnerUserId")==player.UserId then
@@ -1290,8 +1308,8 @@ function Mechanical:SmartMate(player, request, newSource)
     -- One authored operation, one undo/redo entry, all joints or none.
     d.commitAssembly(player,before,after,createdSpecs,false,relationEdits)
     return true,if mode=="Bore" then
-        string.format("%d physical shaft/hole %s connections fitted",
-            #desiredSpecs,typeName)
+        string.format("%d shaft/hole %s fit(s) • %d gear/pulley weld(s)",
+            #fitPairs,typeName,#hubGears)
         elseif mode=="Hub" then
             string.format("%d pulley/gear hub(s) rigidly welded to shaft",#hubGears)
         else typeName.." connected"
