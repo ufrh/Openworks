@@ -20,17 +20,17 @@ end
 
 local LABELS={
     Bearing="Bearing · rotate",
-    Motor="Motor · powered shaft / hole block",
-    Slider="Slider · translate",
-    Cylindrical="Cylindrical · rotate + slide",
-    FreeFit="Fit only · no joint",
+    Motor="Powered motor",
+    Slider="Slider",
+    Cylindrical="Rotate + slide",
+    FreeFit="Fit only",
     Weld="Rigid weld",
     Spring="Spring",
     CrankCoupling="Couple hand crank",
     Rigid="Rigid gear / pulley hub",
     Belt="Connect pulleys with a friction belt",
     VectorJoint="Vector Joint · zero-space elbow drive",
-    Adjust="Adjust depth / roll",
+    Adjust="Adjust fit",
 }
 Catalog.Labels=table.freeze(LABELS)
 
