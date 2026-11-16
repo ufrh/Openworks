@@ -176,9 +176,19 @@ local function make(key: string)
                 if not has(i,j+1) then side(xs[1],xs[2],rs[i],rs[i+1],b,true) end
             end
         end
-        -- Stepped, full-wall output bearing housing with a through bore.
-        tube(1.13,1.24,0.177,0.47)
-        tube(1.24,1.42,0.177,0.37)
+        -- One stepped watertight bearing wall. In particular, do NOT
+        -- stack two capped tubes: their coincident interior caps create
+        -- four-face edges and z-fighting at the shoulder.
+        for j=0,N-1 do
+            local a,b = TAU*j/N,TAU*(j+1)/N
+            outer(1.13,1.24,0.47,0.47,a,b)
+            outer(1.24,1.42,0.37,0.37,a,b)
+            inner(1.13,1.24,0.177,0.177,a,b)
+            inner(1.24,1.42,0.177,0.177,a,b)
+            radialCap(1.13,0.177,0.47,a,b,false)
+            radialCap(1.24,0.37,0.47,a,b,true)
+            radialCap(1.42,0.177,0.37,a,b,true)
+        end
         -- Annular formed edge lip, sharply separated from the plate surface.
         tube(0.935,1.14,0.998,1.028)
     end
