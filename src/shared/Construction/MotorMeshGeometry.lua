@@ -14,7 +14,7 @@ local OFFSETS = {
 }
 Generator.Keys = table.freeze(KEYS)
 Generator.Offsets = table.freeze(OFFSETS)
-Generator.Version = 2
+Generator.Version = 3
 
 local function make(key: string)
     local mesh = assert(AssetService:CreateEditableMesh(),
@@ -103,6 +103,20 @@ local function make(key: string)
         end
     end
 
+    local function fullDisc(x: number, r: number, positive: boolean)
+        -- A complete end face, not just an annular ring.
+        -- Edge vertices reuse the cylinder ring, giving a sealed end.
+        local center = V(x,0,0)
+        for j=0,N-1 do
+            local a,b=TAU*j/N,TAU*(j+1)/N
+            if positive then
+                T(center,V(x,r,a),V(x,r,b),PX)
+            else
+                T(center,V(x,r,b),V(x,r,a),NX)
+            end
+        end
+    end
+
     if key == "RearCan" then
         -- Occupancy mesh: three short, narrow ventilation slots,
         -- then seal every exposed interior, end, and side wall.
@@ -121,12 +135,22 @@ local function make(key: string)
                 local a,b = TAU*j/N,TAU*(j+1)/N
                 outer(x0,x1,0.99,0.99,a,b)
                 inner(x0,x1,0.87,0.87,a,b)
-                if not has(i-1,j) then radialCap(x0,0.87,0.99,a,b,false) end
-                if not has(i+1,j) then radialCap(x1,0.87,0.99,a,b,true) end
+                -- For the two terminal rings, full disks replace annular caps.
+                if i > 1 and not has(i-1,j) then
+                    radialCap(x0,0.87,0.99,a,b,false)
+                end
+                if i < #xs-1 and not has(i+1,j) then
+                    radialCap(x1,0.87,0.99,a,b,true)
+                end
                 if not has(i,j-1) then side(x0,x1,0.87,0.99,a,false) end
                 if not has(i,j+1) then side(x0,x1,0.87,0.99,b,true) end
             end
         end
+        -- Seal BOTH ends. The far rear is a full metal backplate and
+        -- the other end is a closed internal divider behind the main housing.
+        -- This prevents seeing into an empty pipe from either direction.
+        fullDisc(xs[1],0.99,false)
+        fullDisc(xs[#xs],0.99,true)
     elseif key == "Housing" then
         local xs = {-0.46,0.81,1.04}
         local radii = {1.09,1.09,0.99}
