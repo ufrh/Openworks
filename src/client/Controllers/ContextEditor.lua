@@ -187,8 +187,8 @@ function Panel:ChooseConnection(options,callback,heading)
     return true
 end
 
-function Panel:ChooseFit(kind,callback,count)
-    local options=ConnectionCatalog.Fit(kind)
+function Panel:ChooseFit(kind,callback,count,hole)
+    local options=ConnectionCatalog.Fit(kind,hole)
     if kind=="Hub" then
         callback("Rigid")
         return true
