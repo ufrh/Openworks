@@ -104,6 +104,9 @@ function Mechanical:Snapshot(relation)
         motorTorque=relation:GetAttribute("MotorTorque"),
         motorAcceleration=relation:GetAttribute("MotorAcceleration"),
         motorKey=relation:GetAttribute("MotorKey"),
+        motorDriveType=relation:GetAttribute("MotorDriveType") or "Continuous",
+        motorInputMode=relation:GetAttribute("MotorInputMode") or "Hold",
+        motorTargetAngle=relation:GetAttribute("MotorTargetAngle") or 90,
     }
 end
 
@@ -213,6 +216,9 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("MotorTorque",spec.motorTorque)
     folder:SetAttribute("MotorAcceleration",spec.motorAcceleration)
     folder:SetAttribute("MotorKey",spec.motorKey)
+    folder:SetAttribute("MotorDriveType",spec.motorDriveType or "Continuous")
+    folder:SetAttribute("MotorInputMode",spec.motorInputMode or "Hold")
+    folder:SetAttribute("MotorTargetAngle",spec.motorTargetAngle or 90)
 
     local targetPart, sourcePart = target.PrimaryPart, source.PrimaryPart
     if not targetPart or not sourcePart then
@@ -457,7 +463,14 @@ function Mechanical:TuneBearingMotor(player,request)
     local enabled=request.motorEnabled
     local key,speed,torque,accel=request.motorKey,
         request.motorSpeed,request.motorTorque,request.motorAcceleration
+    local driveType=request.motorDriveType or "Continuous"
+    local inputMode=request.motorInputMode or "Hold"
+    local angle=request.motorTargetAngle
+    if angle==nil then angle=90 end
     if type(enabled)~="boolean"
+        or (driveType~="Continuous" and driveType~="Servo")
+        or (inputMode~="Hold" and inputMode~="Toggle")
+        or type(angle)~="number" or angle~=angle or math.abs(angle)>180
         or type(key)~="string" or not MOTOR_KEYS[key]
         or type(speed)~="number" or speed~=speed
         or math.abs(speed)<0.05 or math.abs(speed)>35
@@ -473,13 +486,20 @@ function Mechanical:TuneBearingMotor(player,request)
     joint:SetAttribute("MotorSpeed",speed)
     joint:SetAttribute("MotorTorque",torque)
     joint:SetAttribute("MotorAcceleration",accel)
+    joint:SetAttribute("MotorDriveType",driveType)
+    joint:SetAttribute("MotorInputMode",inputMode)
+    joint:SetAttribute("MotorTargetAngle",angle)
     local hinge=joint:FindFirstChildOfClass("HingeConstraint")
     if hinge then
-        hinge.ActuatorType=if enabled then Enum.ActuatorType.Motor
-            else Enum.ActuatorType.None
+        hinge.ActuatorType=if not enabled then Enum.ActuatorType.None
+            elseif driveType=="Servo" then Enum.ActuatorType.Servo
+            else Enum.ActuatorType.Motor
         hinge.AngularVelocity=0
         hinge.MotorMaxTorque=torque
         hinge.MotorMaxAcceleration=accel
+        hinge.TargetAngle=0
+        hinge.AngularSpeed=math.abs(speed)
+        hinge.ServoMaxTorque=torque
     end
     if self.D.commitJointEdit then
         self.D.commitJointEdit(player,old,self:Snapshot(joint))
@@ -625,6 +645,9 @@ function Mechanical:Create(player, request)
         motorSpeed = if isMotor then 3 else nil,
         motorTorque = if isMotor then 3000 else nil,
         motorAcceleration = if isMotor then 40 else nil,
+        motorDriveType = "Continuous",
+        motorInputMode = "Hold",
+        motorTargetAngle = 90,
     }
     local created, result = self:Restore(player, spec)
     if not created then
@@ -2659,6 +2682,9 @@ function Mechanical:ApplyJointEdit(player, record, undo)
         relation:SetAttribute("MotorSpeed",spec.motorSpeed)
         relation:SetAttribute("MotorTorque",spec.motorTorque)
         relation:SetAttribute("MotorAcceleration",spec.motorAcceleration)
+        relation:SetAttribute("MotorDriveType",spec.motorDriveType or "Continuous")
+        relation:SetAttribute("MotorInputMode",spec.motorInputMode or "Hold")
+        relation:SetAttribute("MotorTargetAngle",spec.motorTargetAngle or 90)
     end
     local constraint = relation:FindFirstChildWhichIsA("Constraint")
     if constraint then
@@ -2666,9 +2692,14 @@ function Mechanical:ApplyJointEdit(player, record, undo)
         if spec.kind == "Bearing" then
             constraint.LowerAngle = spec.lowerLimit or -180
             constraint.UpperAngle = spec.upperLimit or 180
-            constraint.ActuatorType=if spec.motorEnabled then Enum.ActuatorType.Motor
-                else Enum.ActuatorType.None
+            constraint.ActuatorType=if not spec.motorEnabled
+                then Enum.ActuatorType.None
+                elseif spec.motorDriveType=="Servo" then Enum.ActuatorType.Servo
+                else Enum.ActuatorType.Motor
             constraint.AngularVelocity=0
+            constraint.TargetAngle=0
+            constraint.AngularSpeed=math.abs(spec.motorSpeed or 3)
+            constraint.ServoMaxTorque=math.clamp(spec.motorTorque or 3000,1,100000)
             constraint.MotorMaxTorque=math.clamp(spec.motorTorque or 3000,1,100000)
             constraint.MotorMaxAcceleration=math.clamp(
                 spec.motorAcceleration or 40,0.1,1000)
