@@ -1,6 +1,6 @@
 --!strict
--- OPENWORKS temporary unified UI language: Roblox Studio-like editor
--- panels, narrow borders, square corners, small labels, neutral palette.
+-- OPENWORKS compact editor UI: subdued surfaces, readable controls and
+-- light borders. Technical details live behind context and advanced settings.
 -- This is only styling; it does not alter engine/physics interactions.
 local Theme={}
 Theme.Window=Color3.fromRGB(34,36,41)
@@ -14,7 +14,7 @@ Theme.Accent=Color3.fromRGB(0,162,255)
 Theme.Active=Color3.fromRGB(48,85,113)
 Theme.Error=Color3.fromRGB(234,132,123)
 Theme.Success=Color3.fromRGB(111,204,143)
-Theme.Radius=2
+Theme.Radius=5
 
 function Theme.Chrome(object,color)
     if not object or not object:IsA("GuiObject") then return object end
@@ -33,7 +33,7 @@ function Theme.Chrome(object,color)
     end
     stroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border
     stroke.Color=Theme.Edge
-    stroke.Transparency=0.35
+    stroke.Transparency=0.65
     stroke.Thickness=1
     return object
 end
@@ -67,7 +67,7 @@ function Theme.Apply(object)
     if object:IsA("UIStroke") then
         if object.Parent and object.Parent:IsA("GuiObject") then
             object.Color=Theme.Edge
-            object.Transparency=0.35
+            object.Transparency=0.65
             object.Thickness=1
         end
         return
