@@ -26,7 +26,6 @@ local ProceduralPrefabLibrary = require(construction:WaitForChild("ProceduralPre
 local PulleyLibrary = require(script.Parent:WaitForChild("PulleyLibrary"))
 local FastenerLibrary = require(script.Parent:WaitForChild("FastenerLibrary"))
 local HandCrankLibrary = require(script.Parent:WaitForChild("HandCrankLibrary"))
-local MotorLibrary = require(script.Parent:WaitForChild("MotorLibrary"))
 local ShaftLibrary = require(script.Parent:WaitForChild("ShaftLibrary"))
 local CompactHoleLibrary = require(script.Parent:WaitForChild("CompactHoleLibrary"))
 local AssemblyService = require(script.Parent:WaitForChild("AssemblyService"))
@@ -1597,7 +1596,17 @@ function Service.Start()
     PulleyLibrary.Ensure()
     FastenerLibrary.Ensure()
     HandCrankLibrary.Ensure()
-    MotorLibrary.Ensure()
+    -- The motor is a mechanical relation, never a prefab.
+    -- Remove only the abandoned generated DCMotor template from older Studio
+    -- places. Do not touch authored constructions or other actuator stock.
+    local primitiveRoot=ReplicatedStorage:FindFirstChild("OPENWORKS_PrimitiveLibrary_DRAFT")
+    local actuators=primitiveRoot and primitiveRoot:FindFirstChild("Actuators")
+    local obsolete=actuators and actuators:FindFirstChild("DCMotor")
+    if obsolete and obsolete:IsA("Model")
+        and obsolete:GetAttribute("ActuatorKind")=="ElectricMotor"
+        and obsolete:GetAttribute("MotorPrefabVersion")~=nil then
+        obsolete:Destroy()
+    end
     ShaftLibrary.Ensure()
     CompactHoleLibrary.Ensure()
     -- Baked procedural gear / bolt templates are session-scoped static mesh
