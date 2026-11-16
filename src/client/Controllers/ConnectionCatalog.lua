@@ -10,8 +10,17 @@ local HandCrankMath=require(construction:WaitForChild("HandCrankMath"))
 local BeltMath=require(construction:WaitForChild("BeltMath"))
 local Catalog={}
 
+local function drilledBlock(model)
+    if not model then return false end
+    local name=string.lower(tostring(model:GetAttribute("TemplateId") or model.Name))
+        :gsub("[%s_%-]","")
+    return name:find("drilledblock",1,true)~=nil
+        or name:find("holeblock",1,true)~=nil
+end
+
 local LABELS={
     Bearing="Bearing · rotate",
+    Motor="Motor · powered shaft / hole block",
     Slider="Slider · translate",
     Cylindrical="Cylindrical · rotate + slide",
     FreeFit="Fit only · no joint",
@@ -63,6 +72,7 @@ function Catalog.Pair(first,second)
     elseif bore then
         add("Cylindrical")
         add("Bearing")
+        if drilledBlock(hole) then add("Motor") end
         add("Slider")
         add("FreeFit")
     end
