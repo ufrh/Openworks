@@ -1165,14 +1165,8 @@ function Controller:Start()
             if self.UnifiedExplorer then
                 self.UnifiedExplorer:SelectWorldAtCenter()
             end
-        elseif mode=="Mechanics" then
-            if self.Tools.SubtoolId=="Configure" then
-                if self.UnifiedExplorer then
-                    self.UnifiedExplorer:SelectWorldAtCenter()
-                end
-            elseif self.Tools.SubtoolId=="Connect" then
-                self:ConnectClick()
-            end
+        elseif mode=="Mechanics" and self.Tools.SubtoolId=="Connect" then
+            self:ConnectClick()
         end
     end))
     table.insert(self.Connections,UserInputService.InputBegan:Connect(function(input,processed)
@@ -1212,8 +1206,9 @@ function Controller:Start()
             return
         end
 
-        -- Mechanics owns authoring history in both Connect and Configure.
-        -- Build/Edit remains responsible for construction geometry.
+        -- Mechanics owns connection authoring; right-click context handles
+        -- relationship configuration in every non-Build mode.
+        -- Build/Edit remain responsible for construction geometry.
         if self.Mode~="Mechanics" or processed then return end
         local control=UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
