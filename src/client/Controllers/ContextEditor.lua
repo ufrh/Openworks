@@ -20,6 +20,13 @@ local player=Players.LocalPlayer
 
 local Panel={}
 Panel.__index=Panel
+-- Matches the approved server motor-bindable key set. Keyboard capture
+-- removes case-sensitive manual entry and prevents invalid binds.
+local MOTOR_BINDINGS={
+    F=true,R=true,T=true,Y=true,H=true,J=true,K=true,L=true,
+    B=true,N=true,M=true,V=true,Z=true,X=true,C=true,
+    One=true,Two=true,Three=true,Four=true,
+}
 local function mk(kind,parent,properties)
     local obj=Instance.new(kind)
     for key,val in pairs(properties or {}) do obj[key]=val end
@@ -133,6 +140,10 @@ function Panel:Focus(value)
 end
 
 function Panel:CloseMenu()
+    if self.KeyCapture then
+        self.KeyCapture:Disconnect()
+        self.KeyCapture=nil
+    end
     self.ContextOpen=false
     if self.Surface then self.Surface.Visible=false end
     if self.Tooltip then self.Tooltip.Visible=false end
@@ -827,6 +838,45 @@ end
 
 -- Paired with a normal editable TextBox above it. No technical percentages:
 -- the displayed number is the value applied to the actual relationship.
+-- Click the key field and press a valid key. No typing or key-name
+-- memorization needed; the server still validates every binding.
+function Panel:KeyPicker(name,current)
+    local holder=row(self.Properties,31)
+    label(holder,name,UDim2.fromOffset(6,0),
+        UDim2.new(0.45,-6,1,0),Theme.Text)
+    local control
+    local function endCapture()
+        if self.KeyCapture then self.KeyCapture:Disconnect() end
+        self.KeyCapture=nil
+    end
+    control=button(holder,tostring(current or "F"),
+        UDim2.new(0.45,0,0,1),UDim2.new(0.55,-7,1,-2),function()
+            endCapture()
+            local previous=if MOTOR_BINDINGS[control.Text] then control.Text
+                else tostring(current or "F")
+            control.Text="PRESS A KEY"
+            self.KeyCapture=UIS.InputBegan:Connect(function(input)
+                if not self.ContextOpen or not control.Parent then
+                    endCapture()
+                    return
+                end
+                local key=input.KeyCode.Name
+                if key=="Escape" then
+                    control.Text=previous
+                    endCapture()
+                elseif MOTOR_BINDINGS[key] then
+                    control.Text=key
+                    endCapture()
+                elseif input.UserInputType==Enum.UserInputType.Keyboard then
+                    self:Message("Choose a supported letter or 1–4")
+                end
+            end)
+        end)
+    self:Hint(control,"Click, then press the key to control the motor")
+    self.Fields[name]=control
+    return control
+end
+
 function Panel:RangeSlider(name,low,high,step,logarithmic,onRelease)
     local field=self.Fields[name]
     if not field then return nil end
@@ -1227,7 +1277,7 @@ function Panel:RenderRelation(node)
                 {id="Hold",label="Hold",tip="Run while the key is down"},
                 {id="Toggle",label="Toggle",tip="Press to start, press again to stop"},
             },rel:GetAttribute("MotorInputMode") or "Hold")
-            self:Field("Key",rel:GetAttribute("MotorKey") or "F")
+            self:KeyPicker("Key",rel:GetAttribute("MotorKey") or "F")
 
             local savedSpeed=rel:GetAttribute("MotorSpeed") or 3
             self:Field("Speed",math.abs(savedSpeed))
@@ -1318,6 +1368,10 @@ function Panel:RenderRelation(node)
                         self:Message("Check rotation limits")
                         return
                     end
+                end
+                if not MOTOR_BINDINGS[self.Fields.Key.Text] then
+                    self:Message("Choose a motor key first")
+                    return
                 end
                 local signedSpeed=math.abs(speed)
                     *(if self.Flags.Reverse then -1 else 1)
@@ -1440,6 +1494,10 @@ end
 
 function Panel:RenderContext()
     if not self.ContextOpen or not self.Properties then return end
+    if self.KeyCapture then
+        self.KeyCapture:Disconnect()
+        self.KeyCapture=nil
+    end
     if self.Tooltip then self.Tooltip.Visible=false end
     clear(self.Properties)
     self.Fields={}
