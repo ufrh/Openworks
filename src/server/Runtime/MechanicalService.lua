@@ -711,11 +711,25 @@ function Mechanical:SmartMate(player, request, newSource)
         (if source:GetAttribute("GearTeeth") or BeltMath.IsPulley(source)
             then source else target)
         else (if reverse then source else target)
-    local typeName=if mode=="Bore" then (request.relationKind or "Cylindrical")
+    local motorRequested=mode=="Bore" and request.relationKind=="Motor"
+    local typeName=if motorRequested then "Bearing"
+        elseif mode=="Bore" then (request.relationKind or "Cylindrical")
         elseif mode=="Gear" or mode=="Rack"
             or mode=="Guide" then mode
         elseif mode=="Hub" then "Weld"
         else "Fixed"
+    -- Powered Motor is a rotation-only bearing fitted into a real
+    -- drilled/hole block. The server validates both insertion directions.
+    if motorRequested then
+        local name=string.lower(tostring(opening:GetAttribute("TemplateId")
+            or opening.Name)):gsub("[%s_%-]","")
+        if not (name:find("drilledblock",1,true)
+            or name:find("holeblock",1,true))
+            or not Alignment.IsShaft(shaft)
+            or not Alignment.TargetAxis(opening) then
+            return false,"Powered Motor requires a Cylinder shaft and drilled hole block"
+        end
+    end
     -- Gear/shaft mounts ALWAYS create explicit WeldConstraints.
     -- Shaft/housing bearings alone determine rotational freedom.
     if mode=="Bore" and typeName~="Bearing"
@@ -1302,6 +1316,26 @@ function Mechanical:SmartMate(player, request, newSource)
                 kind=typeName,
                 sourceId=pair.shaft:GetAttribute("InstanceId"),
                 targetId=pair.hole:GetAttribute("InstanceId"),
+                -- Only the explicitly selected primary hole becomes
+                -- powered in a multipoint fit; other coaxial holes stay
+                -- ordinary passive bearings.
+                motorRelationship=motorRequested
+                    and pair.shaft:GetAttribute("InstanceId")
+                        ==shaft:GetAttribute("InstanceId")
+                    and pair.hole:GetAttribute("InstanceId")
+                        ==opening:GetAttribute("InstanceId"),
+                motorEnabled=motorRequested
+                    and pair.shaft:GetAttribute("InstanceId")
+                        ==shaft:GetAttribute("InstanceId")
+                    and pair.hole:GetAttribute("InstanceId")
+                        ==opening:GetAttribute("InstanceId"),
+                motorKey=if motorRequested then "F" else nil,
+                motorSpeed=if motorRequested then 3 else nil,
+                motorTorque=if motorRequested then 3000 else nil,
+                motorAcceleration=if motorRequested then 40 else nil,
+                motorDriveType="Continuous",
+                motorInputMode="Hold",
+                motorTargetAngle=90,
                 componentId=pair.shaft:GetAttribute("ComponentId"),
                 offsetUnits=pair.depthU,
                 rollDegrees=roll,
@@ -1364,6 +1398,14 @@ function Mechanical:SmartMate(player, request, newSource)
                 if reverse then d.applyState(shaft,fixedShaftBefore) end
                 restoreMoving()
                 return false,"An existing relationship has a different motion type"
+            end
+            if mode=="Bore" and candidate.kind=="Bearing"
+                and (prior:GetAttribute("MotorRelationship")==true)
+                    ~= (candidate.motorRelationship==true) then
+                if reverse then d.applyState(shaft,fixedShaftBefore) end
+                restoreMoving()
+                return false,"A bearing or motor already exists for this pair. "
+                    .."Remove it before choosing a different drive type"
             end
             table.insert(reused,{relation=prior,spec=candidate})
         else
