@@ -1101,6 +1101,58 @@ function Mechanical:SmartMate(player, request, newSource)
         end
         fitMap=MultiFit.AllowMap(fitPairs)
     end
+    if mode=="Bore" and typeName~="FreeFit"
+        and hubGears and #hubGears>0 then
+        -- Never close a rigid loop around a moving bearing. In particular,
+        -- a gear previously welded to its hole housing cannot ALSO be
+        -- welded onto the rotating shaft without locking the mechanism.
+        -- ComponentId alone is not a weld, so un-welded components pass.
+        local neighbors={}
+        local function link(a,b)
+            if type(a)~="string" or type(b)~="string" then return end
+            neighbors[a]=neighbors[a] or {}
+            neighbors[b]=neighbors[b] or {}
+            table.insert(neighbors[a],b)
+            table.insert(neighbors[b],a)
+        end
+        for _,rel in ipairs(self.Folder:GetChildren()) do
+            if rel:GetAttribute("OwnerUserId")~=player.UserId then continue end
+            local kind=rel:GetAttribute("Kind")
+            if kind=="Weld" or kind=="Fixed" or kind=="Bolt" then
+                local a=rel:GetAttribute("SourceId")
+                local b=rel:GetAttribute("TargetId")
+                link(a,b)
+                if kind=="Bolt" then
+                    link(a,rel:GetAttribute("SecondTargetId"))
+                end
+            end
+        end
+        local function rigidPath(startId,finishId)
+            local queue={startId}
+            local seen={[startId]=true}
+            for i=1,#queue do
+                local id=queue[i]
+                if id==finishId then return true end
+                for _,nextId in ipairs(neighbors[id] or {}) do
+                    if not seen[nextId] then
+                        seen[nextId]=true
+                        table.insert(queue,nextId)
+                    end
+                end
+            end
+            return false
+        end
+        for _,gear in ipairs(hubGears) do
+            for _,pair in ipairs(fitPairs) do
+                if rigidPath(gear:GetAttribute("InstanceId"),
+                    pair.hole:GetAttribute("InstanceId")) then
+                    restoreMoving()
+                    return false,"Gear is rigidly welded to its hole housing. "
+                        .."Release that weld so the gear can rotate with the shaft"
+                end
+            end
+        end
+    end
     -- Verify every gear against the FINAL fitted shaft, then allow only
     -- that precise shaft/hub cavity through the collision broadphase.
     -- Unrelated gears, plates and obstructions remain solid blockers.
