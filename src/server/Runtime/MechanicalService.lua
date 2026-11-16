@@ -376,8 +376,13 @@ function Mechanical:Restore(player, spec)
         -- Only a physical shaft fitted through an opening can be driven.
         -- The bearing keeps its real rotation axis and no fake joint exists.
         if constraint:IsA("HingeConstraint") and spec.motorEnabled==true then
-            constraint.ActuatorType=Enum.ActuatorType.Motor
+            constraint.ActuatorType=if spec.motorDriveType=="Servo"
+                then Enum.ActuatorType.Servo else Enum.ActuatorType.Motor
             constraint.AngularVelocity=0
+            constraint.TargetAngle=0
+            constraint.AngularSpeed=math.abs(tonumber(spec.motorSpeed) or 3)
+            constraint.ServoMaxTorque=math.clamp(
+                tonumber(spec.motorTorque) or 3000,1,100000)
             constraint.MotorMaxTorque=math.clamp(
                 tonumber(spec.motorTorque) or 3000,1,100000)
             constraint.MotorMaxAcceleration=math.clamp(
