@@ -823,6 +823,134 @@ function Panel:SpringSlider(name,mode,onRelease)
     redraw()
 end
 
+-- Simple Plane Crazy-like property controls: tap a mode, toggle a
+-- feature, or drag a range. Exact values are still directly editable.
+function Panel:Switch(name,value,tip)
+    self.Flags[name]=value==true
+    local holder=row(self.Properties,31)
+    label(holder,name,UDim2.fromOffset(6,0),
+        UDim2.new(0.64,-6,1,0),Theme.Text)
+    local control
+    local function redraw()
+        control.Text=if self.Flags[name] then "ON" else "OFF"
+        control.BackgroundColor3=if self.Flags[name] then Theme.Active
+            else Theme.Raised
+    end
+    control=button(holder,"",UDim2.new(0.64,0,0,1),
+        UDim2.new(0.36,-6,1,-2),function()
+            self.Flags[name]=not self.Flags[name]
+            redraw()
+        end)
+    if tip then self:Hint(control,tip) end
+    redraw()
+    return holder
+end
+
+function Panel:Segment(name,options,selected,onChange)
+    self.Flags[name]=selected
+    local heading=row(self.Properties,21)
+    label(heading,name,UDim2.fromOffset(6,0),
+        UDim2.new(1,-12,1,0),Theme.Muted)
+    local holder=row(self.Properties,34)
+    local buttons={}
+    local function redraw()
+        for id,control in pairs(buttons) do
+            control.BackgroundColor3=if self.Flags[name]==id
+                then Theme.Active else Theme.Raised
+        end
+    end
+    for i,option in ipairs(options) do
+        local chosen=option.id
+        local control=button(holder,option.label,
+            UDim2.new((i-1)/#options,2,0,1),
+            UDim2.new(1/#options,-5,1,-2),function()
+                self.Flags[name]=chosen
+                redraw()
+                if onChange then onChange(chosen) end
+            end)
+        buttons[chosen]=control
+        if option.tip then self:Hint(control,option.tip) end
+    end
+    redraw()
+    return holder
+end
+
+-- Paired with a normal editable TextBox above it. No technical percentages:
+-- the displayed number is the value applied to the actual relationship.
+function Panel:RangeSlider(name,low,high,step,logarithmic,onRelease)
+    local field=self.Fields[name]
+    if not field then return nil end
+    local holder=row(self.Properties,18)
+    local track=mk("TextButton",holder,{
+        Name="Range_"..name,Text="",AutoButtonColor=false,
+        Position=UDim2.fromOffset(6,5),
+        Size=UDim2.new(1,-12,0,8),BorderSizePixel=0,
+        BackgroundColor3=Theme.Input,ZIndex=13,
+    })
+    local fill=mk("Frame",track,{
+        Name="Fill",Size=UDim2.fromScale(0,1),
+        BorderSizePixel=0,BackgroundColor3=Theme.Accent,
+        ZIndex=14,
+    })
+    local thumb=mk("Frame",track,{
+        Name="Thumb",AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.fromScale(0,0.5),
+        Size=UDim2.fromOffset(9,15),BorderSizePixel=0,
+        BackgroundColor3=Theme.Text,ZIndex=15,
+    })
+    local function fraction(value)
+        local n=math.clamp(value,low,high)
+        if logarithmic and low>0 then
+            return math.log(n/low)/math.log(high/low)
+        end
+        return (n-low)/(high-low)
+    end
+    local function mapped(t)
+        local raw=if logarithmic and low>0 then
+            low*(high/low)^t else low+(high-low)*t
+        local result=math.round(raw/step)*step
+        return math.clamp(math.round(result*1000)/1000,low,high)
+    end
+    local function redraw()
+        if not field.Parent or not track.Parent then return end
+        local value=tonumber(field.Text)
+        if value==nil then return end
+        local t=fraction(value)
+        fill.Size=UDim2.fromScale(t,1)
+        thumb.Position=UDim2.fromScale(t,0.5)
+    end
+    field:GetPropertyChangedSignal("Text"):Connect(redraw)
+    local function setAt(x)
+        local width=math.max(1,track.AbsoluteSize.X)
+        local t=math.clamp((x-track.AbsolutePosition.X)/width,0,1)
+        field.Text=tostring(mapped(t))
+    end
+    local dragging=false
+    track.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 then
+            dragging=true
+            setAt(input.Position.X)
+        end
+    end)
+    local moved=UIS.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then
+            setAt(input.Position.X)
+        end
+    end)
+    local released=UIS.InputEnded:Connect(function(input)
+        if dragging and input.UserInputType==Enum.UserInputType.MouseButton1 then
+            dragging=false
+            if onRelease then onRelease() end
+        end
+    end)
+    track.Destroying:Connect(function()
+        moved:Disconnect()
+        released:Disconnect()
+    end)
+    redraw()
+    return holder
+end
+
 function Panel:ActionButton(name,tip,callback)
     local r=row(self.Properties,29)
     local item=button(r,name,UDim2.fromOffset(3,0),
