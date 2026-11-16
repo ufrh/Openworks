@@ -968,8 +968,12 @@ function Controller:OpenMateChoice(mode)
         self:RefreshPointer()
         self:RefreshHUD()
     end
+    -- Reverse fits have a moving drilled block and stationary shaft.
+    -- The popup must inspect the actual HOLE, not just match.target.
+    local opening=if match.kind=="Bore" then
+        (if match.reverse then match.source else match.target) else nil
     if not (self.UnifiedExplorer and self.UnifiedExplorer:ChooseFit(
-        match.kind,onChoice,match.fittedCount or 1)) then
+        match.kind,onChoice,match.fittedCount or 1,opening)) then
         -- No second hidden menu owner; this cancels safely if the shared
         -- chooser is temporarily unavailable during initialization.
         onChoice(nil)
