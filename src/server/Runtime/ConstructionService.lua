@@ -1320,6 +1320,7 @@ local function handle(player, payload)
         or action == "SetGrounded" or action == "GetMechanismInfo"
         or action == "CreateSpring" or action == "TuneSpring"
         or action == "CreateWeld" or action == "CreateMultiWeld"
+        or action == "WeldComponent"
         or action == "CreateBolt"
         or action == "CoupleHandCrank" or action == "TuneBearingMotor"
         or action == "CreateBelt" or action == "RemoveBelt"
@@ -1517,6 +1518,9 @@ local function handle(player, payload)
         end
         if action=="CreateMultiWeld" then
             return mechanical:CreateMultiWeld(player,payload)
+        end
+        if action=="WeldComponent" then
+            return mechanical:WeldComponent(player,payload)
         end
         if action=="CoupleHandCrank" then
             return mechanical:CoupleHandCrank(player,payload,false)

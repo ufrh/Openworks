@@ -1966,6 +1966,126 @@ function Mechanical:CreateMultiWeld(player,request)
         #models,#planned)
 end
 
+-- A REGISTERED component is an explicit group of primitives, not a
+-- physical weld. This Mechanics command makes the entire group one rigid
+-- body with a minimum spanning tree of real WeldConstraints. Unlike Edit's
+-- Shift+K multi-weld, it intentionally permits separated component members:
+-- the user registered them into ONE component and explicitly requested it.
+-- Existing internal rigid paths are reused, never duplicated.
+function Mechanical:WeldComponent(player,request)
+    local cid=request and request.componentId
+    if type(cid)~="string" or #cid==0 or #cid>64 then
+        return false,"Select a registered component to weld"
+    end
+    local members,why=self.D.components:RequireMembers(player,cid)
+    if not members then return false,why end
+    if #members>128 then return false,"Component exceeds 128 members" end
+    local parent={}
+    local byId={}
+    for i,model in ipairs(members) do
+        if not model.PrimaryPart or not self.D.nearPlayer(player,
+            model:GetPivot().Position) then
+            return false,"A component member is unavailable or outside build range"
+        end
+        if HandCrankMath.IsCrank(model) then
+            return false,"Hand cranks require their dedicated shaft coupling"
+        end
+        parent[i]=i
+        byId[model:GetAttribute("InstanceId")]=i
+    end
+    local function root(i)
+        while parent[i]~=i do
+            parent[i]=parent[parent[i]]
+            i=parent[i]
+        end
+        return i
+    end
+    local function join(a,b)
+        local ra,rb=root(a),root(b)
+        if ra==rb then return false end
+        parent[rb]=ra
+        return true
+    end
+    for _,rel in ipairs(self.Folder:GetChildren()) do
+        if rel:GetAttribute("OwnerUserId")~=player.UserId then continue end
+        local a=byId[rel:GetAttribute("SourceId")]
+        local b=byId[rel:GetAttribute("TargetId")]
+        local kind=rel:GetAttribute("Kind")
+        if a and b then
+            if kind=="Weld" or kind=="Fixed" or kind=="Bolt" then
+                join(a,b)
+            else
+                return false,"Component contains an internal "..tostring(kind)
+                    .." joint; remove it before rigid welding"
+            end
+        end
+        if kind=="Bolt" and a then
+            local third=byId[rel:GetAttribute("SecondTargetId")]
+            if third then join(a,third) end
+        end
+    end
+    local planned={}
+    while true do
+        local bestA,bestB,bestDistance=nil,nil,math.huge
+        for i,a in ipairs(members) do
+            for j,b in ipairs(members) do
+                if i==j or root(i)==root(j) then continue end
+                local shaft=if Alignment.IsShaft(a) then a
+                    elseif Alignment.IsShaft(b) then b else nil
+                local hub=if shaft==a then b else a
+                local hubKind=type(hub:GetAttribute("GearTeeth"))=="number"
+                    or BeltMath.IsPulley(hub)
+                local valid=not (shaft and hubKind)
+                    or Smart.HubFits(shaft,hub)
+                if valid then
+                    local dist=(a:GetPivot().Position-b:GetPivot().Position).Magnitude
+                    if dist<bestDistance then
+                        bestA,bestB,bestDistance=i,j,dist
+                    end
+                end
+            end
+        end
+        if not bestA then break end
+        table.insert(planned,{
+            relationId=HttpService:GenerateGUID(false),
+            ownerUserId=player.UserId,
+            kind="Weld",
+            sourceId=members[bestA]:GetAttribute("InstanceId"),
+            targetId=members[bestB]:GetAttribute("InstanceId"),
+            componentId=cid,
+        })
+        join(bestA,bestB)
+    end
+    local initial=root(1)
+    for i=2,#members do
+        if root(i)~=initial then
+            return false,"Cannot safely weld this component: gear/shaft geometry conflicts"
+        end
+    end
+    if #planned==0 then
+        return true,"All "..#members.." component primitives are already rigidly connected"
+    end
+    if self:Count(player)+#planned>MAX_RELATIONSHIPS_PER_PLAYER then
+        return false,"Not enough relationship slots to weld this component"
+    end
+    local created={}
+    for _,spec in ipairs(planned) do
+        local ok,detail=self:Restore(player,spec)
+        if not ok then
+            for _,id in ipairs(created) do
+                local relation=self:OwnedRelation(player,id)
+                if relation then self:DestroyRelation(relation) end
+            end
+            return false,"Component weld aborted: "..tostring(detail)
+        end
+        table.insert(created,spec.relationId)
+    end
+    -- One history record for ALL welds; undo restores the original free parts.
+    self.D.commitAssembly(player,{},{},planned)
+    return true,string.format("Smart welded %d component primitives (%d new welds)",
+        #members,#planned)
+end
+
 function Mechanical:CreateBolt(player,request)
     request.kind="Bolt"
     local first,second,why=validEndpoints(self,player,request)

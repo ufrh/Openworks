@@ -998,6 +998,15 @@ function Panel:RenderObject(node)
                 end)
         end
     end
+    if node.kind=="component" and self.Tools.PrimaryId=="Mechanics"
+        and not simulating() then
+        self:Section("Rigid fabrication")
+        self:ActionButton("SMART WELD COMPONENT",
+            "Join every primitive in this registered component into one rigid body; reuse existing welds and preserve offsets",function()
+                self:Send({action="WeldComponent",
+                    componentId=node.componentId},true)
+            end)
+    end
     local related=self:RelevantRelations(node)
     self:Section("Mechanical relationships · "..tostring(#related))
     if #related==0 then
