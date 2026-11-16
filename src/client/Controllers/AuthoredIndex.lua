@@ -123,6 +123,9 @@ function Data.Snapshot(player)
                 local id=relation:GetAttribute("RelationId")
                 if type(id)=="string" and id~="" then
                     local kind=tostring(relation:GetAttribute("Kind") or "Connection")
+                    if kind=="Bearing" and relation:GetAttribute("MotorRelationship")==true then
+                        kind="Motor"
+                    end
                     local first=byId[relation:GetAttribute("SourceId")]
                     local second=byId[relation:GetAttribute("TargetId")]
                     table.insert(relations,{
