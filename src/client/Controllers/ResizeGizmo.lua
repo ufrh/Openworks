@@ -267,11 +267,18 @@ function Gizmo:FinishDrag()
         or (self.Size - drag.StartSize).Magnitude > 0.0001
     if not changed then return end
 
-    local accepted = self.OnCommit(self.CFrame, self.Size, drag.StartCF, drag.StartSize)
+    local accepted,actualCF,actualSize=self.OnCommit(
+        self.CFrame,self.Size,drag.StartCF,drag.StartSize)
     if not accepted then
-        self.CFrame = drag.StartCF
-        self.Size = drag.StartSize
-        self.OnChange(self.CFrame, self.Size)
+        self.CFrame=drag.StartCF
+        self.Size=drag.StartSize
+        self.OnChange(self.CFrame,self.Size)
+    elseif actualCF and actualSize then
+        -- Server may have reduced a marginal resize further than the
+        -- local preview. Never leave stale handles showing rejected size.
+        self.CFrame=actualCF
+        self.Size=actualSize
+        self.OnChange(actualCF,actualSize)
     end
 end
 
