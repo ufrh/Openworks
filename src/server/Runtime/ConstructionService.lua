@@ -29,6 +29,7 @@ local HandCrankLibrary = require(script.Parent:WaitForChild("HandCrankLibrary"))
 local ShaftLibrary = require(script.Parent:WaitForChild("ShaftLibrary"))
 local CompactHoleLibrary = require(script.Parent:WaitForChild("CompactHoleLibrary"))
 local SeatLibrary = require(script.Parent:WaitForChild("SeatLibrary"))
+local SeatControlService = require(script.Parent:WaitForChild("SeatControlService"))
 local AssemblyService = require(script.Parent:WaitForChild("AssemblyService"))
 local PlotService = require(script.Parent:WaitForChild("PlotService"))
 local PlotPersistence = require(script.Parent:WaitForChild("PlotPersistence"))
@@ -52,6 +53,7 @@ local alignmentService
 local mechanical
 local simulation
 local assemblies
+local seatControls
 local plots
 local persistence
 
@@ -1441,6 +1443,8 @@ local function handle(player, payload)
         or action == "CreateBelt" or action == "RemoveBelt"
         or action == "CreateVectorJoint"
 
+    local seatAction=action=="SetSeatRole"
+        or action=="RouteControl" or action=="ConfigureRoutedControl"
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
         or action=="TuneRope" or action=="TuneBearingMotor"
     local simulationAction = action == "StartSimulation"
@@ -1469,7 +1473,7 @@ local function handle(player, payload)
         and action ~= "Undo" and action ~= "Redo"
         and not componentAction and not smartAction and not assemblyAction
         and not verticalAction and not materialAction and not fitOriginAction
-        and not bankAction
+        and not bankAction and not seatAction
         and not alignmentAction and not mechanicalAction
         and not simulationAction then
         return { ok = false, message = "Unknown action" }
@@ -1483,6 +1487,11 @@ local function handle(player, payload)
     elseif simulation and simulation:IsRunning(player)
         and action~="TuneSpring" and action~="TuneRope" then
         return { ok = false, message = "Stop simulation before changing construction" }
+    elseif seatAction then
+        if not hasEquippedTool(player,"Mechanics")
+            and not hasEquippedTool(player,"Edit") then
+            return {ok=false,message="Use Mechanics or Edit to configure seats"}
+        end
     elseif mechanicalAction then
         if propertyAction or action=="RemoveRelation" then
             -- Contextual right-click editing and relationship removal are
@@ -1605,6 +1614,7 @@ local function handle(player, payload)
         if action == "StopSimulation" then return simulation:Stop(player) end
         if action == "PauseSimulation" then return simulation:Pause(player) end
         if action == "ResetSimulation" then return simulation:Reset(player) end
+        if seatAction then return seatControls:Handle(player,action,payload) end
         if bankAction then return componentBank:Handle(player,action,payload) end
         if action=="SetFitPivot" then return setFitPivot(player,payload) end
         if action == "Place" then return place(player, payload) end
@@ -1848,6 +1858,12 @@ function Service.Start()
         commitBatch=commitBatch,
         commitMetadata=commitMetadata,
         mechanical=mechanical,
+    })
+
+    seatControls=SeatControlService.new({
+        folder=folder,findOwned=findOwned,snapshot=snapshot,
+        mechanical=mechanical,commitRecord=commitRecord,
+        commitJointEdit=commitJointEdit,
     })
 
     simulation = SimulationService.new({
