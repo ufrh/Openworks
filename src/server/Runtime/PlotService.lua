@@ -118,11 +118,29 @@ function Plots:Spawn(player,character)
         local function hide(descendant)
             if descendant:IsA("BasePart")
                 and not descendant:FindFirstAncestorOfClass("Tool") then
+                -- Preserve the actual Roblox character properties before
+                -- making the permanent build-avatar invisible. A simulated
+                -- vehicle seat restores these values so accessories/limbs
+                -- never turn into a pile of colliding physics parts.
+                if descendant:GetAttribute("OPENWORKS_OriginalTransparency")==nil then
+                    descendant:SetAttribute("OPENWORKS_OriginalTransparency",
+                        descendant.Transparency)
+                    descendant:SetAttribute("OPENWORKS_OriginalCollision",
+                        descendant.CanCollide)
+                    descendant:SetAttribute("OPENWORKS_OriginalTouch",
+                        descendant.CanTouch)
+                    descendant:SetAttribute("OPENWORKS_OriginalShadow",
+                        descendant.CastShadow)
+                end
                 descendant.Transparency=1
                 descendant.CanCollide=false
                 descendant.CanTouch=false
                 descendant.CastShadow=false
             elseif descendant:IsA("Decal") then
+                if descendant:GetAttribute("OPENWORKS_OriginalTransparency")==nil then
+                    descendant:SetAttribute("OPENWORKS_OriginalTransparency",
+                        descendant.Transparency)
+                end
                 descendant.Transparency=1
             end
         end
