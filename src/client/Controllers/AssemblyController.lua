@@ -248,7 +248,7 @@ function Controller:RefreshHUD()
     if self.Mode=="Mechanics" and self.WeldMode then
         self.Header.Text="OPENWORKS / WELD"
         self.Detail.Text=if self.WeldFirst
-            then "Choose touching surfaces or an inserted shaft in a drilled block"
+            then "Choose adjoining surfaces • rigid welds do not require shaft-hole fitting"
             else "Choose the first solid to weld"
         self.Help.Text="Click both solids • Esc cancels selection"
         if self.LastMessage and os.clock()<self.MessageUntil then
