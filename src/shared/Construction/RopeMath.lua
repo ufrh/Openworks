@@ -133,6 +133,7 @@ function Rope.NewRuntime(rope,relation)
     return {
         Constraint=rope,
         RelationId=relation:GetAttribute("RelationId"),
+        SeatId=relation:GetAttribute("SeatId"),
         InKey=settings.ropeInKey or Rope.DefaultInKey,
         OutKey=settings.ropeOutKey or Rope.DefaultOutKey,
         SpeedU=settings.ropeSpeedU or Rope.DefaultSpeedU,
