@@ -37,7 +37,9 @@ checks = {
         and 'session.GroundKeys["p:"..tostring(id)]=nil' not in physical,
     "Physical native servo/hold/toggle": all(x in physical for x in (
         'motor.DriveType=="Servo"', 'motor.InputMode=="Toggle"',
-        "hinge.TargetAngle=if motor.On then motor.TargetAngle else 0")),
+        "local goal=if motor.On then motor.TargetAngle else 0",
+        "if hinge.TargetAngle~=goal then hinge.TargetAngle=goal end",
+        "hinge.AngularResponsiveness=12")),
     "Rack motors register before kinematic skip": 'makeMotor(edge,nil,p1,runtime,true)' in rack,
     "Rack motors use actual kinematic solver": "if motorDrive then motorDrive.Speed" in rack
         and "session.Gears:Step(dt," in rack,
