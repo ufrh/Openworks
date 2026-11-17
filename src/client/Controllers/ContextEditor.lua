@@ -567,7 +567,7 @@ function Panel:ResizeContext()
     end
 end
 
-function Panel:OpenForNode(node,pos,page)
+function Panel:OpenForNode(node,pos,page,preserveBuildSelection)
     if not node then return end
     self:CloseConnectionChoice(true)
     self.Selected=node
@@ -585,7 +585,7 @@ function Panel:OpenForNode(node,pos,page)
     self.ContextOpen=true
     self.Surface.Visible=true
     self:Focus(true)
-    self:Select(node,true)
+    self:Select(node,not preserveBuildSelection)
     self:RenderContext()
 end
 
@@ -1622,8 +1622,12 @@ function Panel:Start()
             and not player:GetAttribute("OPENWORKS_PlotMenuOpen")
             and not player:GetAttribute("OPENWORKS_PropertiesOpen") then
             local node=self:SelectWorldAtCenter(self.Tools.PrimaryId=="Edit")
-            if node then self:OpenForNode(node,UIS:GetMouseLocation())
-            else self:CloseContext() end
+            if node then
+                self:OpenForNode(node,UIS:GetMouseLocation(),nil,
+                    self.Tools.PrimaryId=="Edit")
+            else
+                self:CloseContext()
+            end
         end
     end))
     for _,attribute in ipairs({
