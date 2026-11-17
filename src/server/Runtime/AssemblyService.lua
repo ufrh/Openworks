@@ -84,15 +84,10 @@ function Service:DetectConnected(player,payload)
         for _,relation in ipairs(self.D.mechanical.Folder:GetChildren()) do
             if relation:IsA("Folder")
                 and relation:GetAttribute("OwnerUserId")==player.UserId then
-                local ids={
-                    relation:GetAttribute("SourceId"),
-                    relation:GetAttribute("TargetId"),
-                    relation:GetAttribute("SecondTargetId"),
-                    relation:GetAttribute("BoltId"),
-                }
-                for i=2,#ids do
-                    join(ids[1],ids[i])
-                end
+                local source=relation:GetAttribute("SourceId")
+                join(source,relation:GetAttribute("TargetId"))
+                join(source,relation:GetAttribute("SecondTargetId"))
+                join(source,relation:GetAttribute("BoltId"))
             end
         end
     end
