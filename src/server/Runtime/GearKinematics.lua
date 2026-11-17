@@ -16,8 +16,6 @@ local Alignment=require(ReplicatedStorage:WaitForChild("Openworks")
 
 local Kinematics={}
 Kinematics.__index=Kinematics
-local MAX_GEARS=40
-local MAX_RACKS=24
 local SCAN_PERIOD=0.08
 local IDLE_SCAN_PERIOD=0.25 -- retain automatic meshing without 12 idle rescans/s
 local ROTATION_PERIOD=0 -- integrate EVERY server Heartbeat; no 1/60 gate / double-step jitter
@@ -152,17 +150,11 @@ function Kinematics.new(graph,copies)
                     Teeth=original:GetAttribute("GearTeeth")}
                 table.insert(gears,entry)
                 table.insert(group.Gears,entry)
-                if #gears>MAX_GEARS then
-                    error("Too many kinematic gears (maximum 40 per assembly)")
-                end
             elseif isRack(original) then
                 local entry={Group=group,Model=clone,
                     Pitch=original:GetAttribute("RackPitchStuds")}
                 table.insert(racks,entry)
                 table.insert(group.Racks,entry)
-                if #racks>MAX_RACKS then
-                    error("Too many kinematic racks (maximum 24 per assembly)")
-                end
             end
         end
     end
