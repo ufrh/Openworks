@@ -2552,7 +2552,8 @@ function Controller:BeginScale()
     local mode=if aligned then "LengthOnly_1U" else entry.ResizeMode
     self.ScaleHandles:Open(
         cf, self.ScaleSize, mode, entry.Model.PrimaryPart.Size,
-        step, model:GetAttribute("FitPrecision") == true,
+        step, model:GetAttribute("FitPrecision") == true
+            or id=="Shaft",
         self.NumericPrecision==true
             or model:GetAttribute("NumericPrecision")==true
     )
