@@ -135,31 +135,147 @@ function Simulation:StopRack(session)
     session.RackDirection=0
 end
 
--- Only liveness/key state is accepted from the client. Speed and
--- torque always come from saved, owner-verified relationship attributes.
+-- Rack assemblies have KINEMATIC geared shafts and native ungeared
+-- shafts. Both use the same saved motor settings and key transitions.
+-- Never use a powered HingeConstraint to rotate the hole-block housing.
+local function configureMotor(motor,relation)
+    motor.Key=relation:GetAttribute("MotorKey") or "F"
+    motor.Speed=relation:GetAttribute("MotorSpeed") or 3
+    motor.Torque=math.clamp(relation:GetAttribute("MotorTorque") or 3000,1,100000)
+    motor.Acceleration=math.clamp(
+        relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
+    motor.DriveType=if relation:GetAttribute("MotorDriveType")=="Servo"
+        then "Servo" else "Continuous"
+    motor.InputMode=if relation:GetAttribute("MotorInputMode")=="Toggle"
+        then "Toggle" else "Hold"
+    motor.TargetAngle=math.clamp(
+        relation:GetAttribute("MotorTargetAngle") or 90,-180,180)
+    motor.On=false
+    motor.Held=false
+    motor.Latched=false
+    motor.LastInput=0
+    motor.NativeSpeed=0
+    if motor.Constraint then
+        motor.Constraint.ActuatorType=Enum.ActuatorType.None
+        motor.Constraint.AngularVelocity=0
+    end
+    if motor.Drive then
+        motor.Drive.MaxTorque=motor.Torque
+        motor.Drive.AngularVelocity=Vector3.zero
+        motor.Drive.Enabled=false
+    end
+end
+
+local function stopMotor(motor)
+    motor.On=false
+    motor.Held=false
+    motor.Latched=false
+    motor.LastInput=0
+    motor.NativeSpeed=0
+    if motor.Drive and motor.Drive.Parent then
+        motor.Drive.Enabled=false
+        motor.Drive.AngularVelocity=Vector3.zero
+    end
+end
+
+local function makeMotor(edge,constraint,shaft,runtime,kinematic)
+    local motor={
+        Constraint=constraint,Shaft=shaft,
+        Kinematic=kinematic,
+        ShaftId=edge.source:GetAttribute("InstanceId"),
+        RelationId=edge.relation:GetAttribute("RelationId"),
+        Axis=shaft.CFrame.RightVector.Unit,
+    }
+    if not kinematic then
+        local attachment=Instance.new("Attachment")
+        attachment.Name="PoweredMotorShaftAxis"
+        attachment.Parent=shaft
+        local drive=Instance.new("AngularVelocity")
+        drive.Name="PoweredMotor_ShaftOnlyDrive"
+        drive.Attachment0=attachment
+        drive.RelativeTo=Enum.ActuatorRelativeTo.World
+        drive.AngularVelocity=Vector3.zero
+        drive.MaxTorque=3000
+        drive.Enabled=false
+        drive.Parent=runtime
+        motor.Drive=drive
+    end
+    configureMotor(motor,edge.relation)
+    return motor
+end
+
 function Simulation:InputMotor(player,key,holding)
     local session=self.Sessions[player]
     if not session or session.Paused or type(key)~="string"
         or #key>20 or type(holding)~="boolean" then return end
     local now=os.clock()
     for _,motor in ipairs(session.Motors or {}) do
-        if motor.Key==key then
+        if motor.Key~=key then continue end
+        if motor.InputMode=="Toggle" then
+            if holding and not motor.Latched then motor.On=not motor.On end
+            motor.Latched=holding
+        else
             motor.Held=holding
-            motor.LastInput=if holding then now else 0
-            if motor.Constraint and motor.Constraint.Parent then
-                motor.Constraint.AngularVelocity=if holding then motor.Speed else 0
-            end
+            motor.On=holding
         end
+        motor.LastInput=if holding then now else 0
     end
 end
 
 function Simulation:StepCranks(dt)
     for owner,session in pairs(self.Sessions) do
+        local motorCommand=nil
         for _,motor in ipairs(session.Motors or {}) do
-            if motor.Constraint.Parent and (session.Paused
-                or not motor.Held or os.clock()-motor.LastInput>0.45) then
+            if session.Paused then
+                stopMotor(motor)
+                continue
+            end
+            if motor.InputMode=="Hold" and (not motor.Held
+                or os.clock()-motor.LastInput>0.45) then
                 motor.Held=false
-                motor.Constraint.AngularVelocity=0
+                motor.On=false
+            end
+            local desired=if motor.On then motor.Speed else 0
+            local servoGoal=nil
+            if motor.DriveType=="Servo" then
+                servoGoal=math.rad(if motor.On then motor.TargetAngle else 0)
+                local angle=if motor.Kinematic then
+                    session.Gears:AngleFor(motor.ShaftId,motor.Axis)
+                    else motor.Constraint and
+                        math.rad(motor.Constraint.CurrentAngle)
+                if angle then
+                    local diff=servoGoal-angle
+                    diff=math.atan2(math.sin(diff),math.cos(diff))
+                    desired=if math.abs(diff)<math.rad(0.2) then 0
+                        else math.clamp(diff*5,
+                            -math.abs(motor.Speed),math.abs(motor.Speed))
+                else
+                    desired=0
+                end
+            end
+            local dtSafe=math.clamp(dt,0,0.07)
+            local ease=(desired-motor.NativeSpeed)
+                *(1-math.exp(-8*dtSafe))
+            local ramp=motor.Acceleration*dtSafe
+            motor.NativeSpeed+=math.clamp(ease,-ramp,ramp)
+            if math.abs(motor.NativeSpeed)<0.008 and desired==0 then
+                motor.NativeSpeed=0
+            end
+            if motor.Drive and motor.Drive.Parent and motor.Shaft.Parent then
+                motor.Drive.AngularVelocity=motor.Shaft.CFrame.RightVector
+                    *motor.NativeSpeed
+                motor.Drive.Enabled=motor.DriveType=="Servo"
+                    or math.abs(motor.NativeSpeed)>0.0001
+            end
+            if motor.Kinematic and not motorCommand
+                and (math.abs(motor.NativeSpeed)>0.008
+                    or servoGoal~=nil) then
+                motorCommand={
+                    ShaftId=motor.ShaftId,
+                    Axis=motor.Axis,
+                    Speed=motor.NativeSpeed,
+                    ServoGoal=servoGoal,
+                }
             end
         end
         local character=owner.Character
@@ -201,16 +317,21 @@ function Simulation:StepCranks(dt)
                 self:StopRack(session)
                 rackId=nil
             end
-            local rackDriven=not powered and rackId~=nil
+            local motorDrive=if powered then nil else motorCommand
+            local rackDriven=not powered and not motorDrive and rackId~=nil
             session.Gears:Step(dt,
                 if powered then crank.DrivenId
+                    elseif motorDrive then motorDrive.ShaftId
                     elseif rackDriven then rackId else nil,
                 if powered then crank.Axis
+                    elseif motorDrive then motorDrive.Axis
                     elseif rackDriven then session.Gears:RackAxis(rackId)
                     else nil,
                 if powered then HandCrankMath.FixedAngularSpeed
+                    elseif motorDrive then motorDrive.Speed
                     elseif rackDriven then session.RackDirection*RACK_MANUAL_SPEED
-                    else 0)
+                    else 0,
+                if motorDrive then motorDrive.ServoGoal else nil)
         end
     end
 end
