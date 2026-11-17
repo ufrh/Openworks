@@ -1707,6 +1707,7 @@ local function handle(player, payload)
     local metadataOnly=bankAction or action=="SetFitPivot"
         or action=="CreateAssembly" or action=="UpdateAssembly"
         or action=="DetectConnectedAssembly"
+        or seatAction
         or action=="Group" or action=="Ungroup"
         or action=="SetGrounded"
     -- Mark dirty BEFORE optional geometry rebuild: a rebuild error must
@@ -1960,7 +1961,13 @@ function Service.Start()
     motorEvent.Name="OPENWORKS_MotorControl"
     motorEvent.Parent=ReplicatedStorage
     motorEvent.OnServerEvent:Connect(function(player,key,holding)
-        if not hasEquippedTool(player,"AssemblySimulation") then return end
+        -- Sitting can unequip Roblox Tools. The authenticated running
+        -- session remains authoritative even when the tool is in Backpack.
+        if not hasEquippedTool(player,"AssemblySimulation")
+            and not (simulation:IsRunning(player)
+                and player:GetAttribute("OPENWORKS_SimulationHasSeat")==true) then
+            return
+        end
         if type(key)~="string" or type(holding)~="boolean" then return end
         simulation:InputMotor(player,key,holding)
     end)
@@ -1971,7 +1978,11 @@ function Service.Start()
     ropeEvent.Name="OPENWORKS_RopeControl"
     ropeEvent.Parent=ReplicatedStorage
     ropeEvent.OnServerEvent:Connect(function(player,key,holding)
-        if not hasEquippedTool(player,"AssemblySimulation") then return end
+        if not hasEquippedTool(player,"AssemblySimulation")
+            and not (simulation:IsRunning(player)
+                and player:GetAttribute("OPENWORKS_SimulationHasSeat")==true) then
+            return
+        end
         if type(key)~="string" or #key>20
             or type(holding)~="boolean" then return end
         -- The live engine accepts only keys from saved owned rope bindings.
