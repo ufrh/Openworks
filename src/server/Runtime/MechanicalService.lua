@@ -1361,7 +1361,7 @@ function Mechanical:SmartMate(player, request, newSource)
             targetId=gear:GetAttribute("InstanceId"),
             componentId=shaft:GetAttribute("ComponentId"),
             offsetUnits=(gear:GetPivot().Position-shaft:GetPivot().Position)
-                :Dot(shaft:GetPivot().RightVector)/0.25,
+                :Dot(shaft:GetPivot().RightVector)/d.Grid.Unit,
             rollDegrees=0,
         })
     end
@@ -1547,7 +1547,8 @@ function Mechanical:CreateBelt(player,request)
     if not ok then return false,why end
     self.D.commitAssembly(player,{},{},spec)
     return true,string.format(
-        "Belt fitted • %.2f U circumference • %.1f%% preload",path.Length/0.25,preload)
+        "Belt fitted • %.2f U circumference • %.1f%% preload",
+        path.Length/self.D.Grid.Unit,preload)
 end
 
 -- Explicit pair removal prevents Shift+Delete from accidentally removing
@@ -2865,12 +2866,12 @@ function Mechanical:Fit(player, request)
     end
 
     local current = source.PrimaryPart.Size
-    local stepU = 0.05
+    local stepU = d.Grid.FitDiameterStepU
     local oldDiameterU = current.Y / d.Grid.Unit
     -- Diameter is uniform in Y/Z; X is never altered by fitting.
     local nextTicks = math.round(oldDiameterU / stepU) + request.step
     local nextDiameter = nextTicks * stepU * d.Grid.Unit
-    if nextDiameter < 0.25 * d.Grid.Unit - 1e-6 then
+    if nextDiameter < d.Grid.MinSizeStepU*d.Grid.Unit-1e-6 then
         return false, "Minimum shaft diameter reached (0.25 U)"
     end
     if nextDiameter > maxDiameter + 1e-6 then
