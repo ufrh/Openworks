@@ -16,12 +16,12 @@ local function finite(n)
     return type(n)=="number" and n==n and n~=math.huge and n~=-math.huge
 end
 local function allowedKey(key)
+    -- Steering ropes may use A/D even though drivetrain motor bindings
+    -- intentionally avoid character-movement keys.
     return type(key)=="string" and (
-        key=="F" or key=="R" or key=="T" or key=="Y"
-        or key=="H" or key=="J" or key=="K" or key=="L"
-        or key=="B" or key=="N" or key=="M" or key=="V"
-        or key=="Z" or key=="X" or key=="C"
-        or key=="One" or key=="Two" or key=="Three" or key=="Four")
+        key:match("^[A-Z]$")~=nil
+        or key=="One" or key=="Two"
+        or key=="Three" or key=="Four")
 end
 
 function Rope.Frames(source,target)
