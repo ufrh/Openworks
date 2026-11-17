@@ -486,6 +486,55 @@ function ComponentService:Duplicate(player, payload)
         else tostring(#after).." primitives duplicated with internal joints"
 end
 
+-- Atomic deletion of a Shift-selected set, including complete component
+-- groups. Connected relations are captured in the SAME undo transaction.
+function ComponentService:DeleteSelection(player,payload)
+    local ids=payload.ids
+    if type(ids)~="table" or #ids<2 or #ids>128 then
+        return false,"Select between 2 and 128 parts to delete"
+    end
+    local selected,seen={},{}
+    for _,id in ipairs(ids) do
+        if type(id)~="string" or seen[id] then
+            return false,"Invalid multi-selection"
+        end
+        seen[id]=true
+        local model=self.D.findOwned(player,id)
+        if not model or not self.D.nearPlayer(player,model:GetPivot().Position) then
+            return false,"Selected part is unavailable or out of range"
+        end
+        table.insert(selected,model)
+    end
+    local full,reason=self:ValidateCompleteSelection(player,selected)
+    if not full then return false,reason end
+    local before,removed={},{}
+    for _,model in ipairs(selected) do table.insert(before,self.D.snapshot(model)) end
+    if self.D.mechanical then
+        for _,relation in ipairs(self.D.mechanical.Folder:GetChildren()) do
+            if relation:IsA("Folder")
+                and relation:GetAttribute("OwnerUserId")==player.UserId then
+                local spec=self.D.mechanical:Snapshot(relation)
+                if seen[spec.sourceId] or seen[spec.targetId]
+                    or (spec.boltId and seen[spec.boltId])
+                    or (spec.secondTargetId and seen[spec.secondTargetId]) then
+                    table.insert(removed,spec)
+                end
+            end
+        end
+        for _,spec in ipairs(removed) do
+            local relation=self.D.mechanical:OwnedRelation(player,spec.relationId)
+            if relation then self.D.mechanical:DestroyRelation(relation) end
+        end
+    end
+    for _,model in ipairs(selected) do model:Destroy() end
+    if #removed>0 then
+        self.D.commitAssembly(player,before,{},removed,true)
+    else
+        self.D.commitBatch(player,before,{})
+    end
+    return true,tostring(#selected).." parts deleted"
+end
+
 function ComponentService:Delete(player, payload)
     local members, reason = self:RequireMembers(player, payload.componentId)
     if not members then return false, reason end
@@ -538,6 +587,9 @@ function ComponentService:Handle(player, action, payload)
         return self:Duplicate(player, payload)
     end
     if action == "DeleteComponent" then return self:Delete(player, payload) end
+    if action == "DeleteSelection" then
+        return self:DeleteSelection(player,payload)
+    end
     return false, "Unknown component action"
 end
 
