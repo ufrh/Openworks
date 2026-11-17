@@ -64,8 +64,8 @@ checks = {
         "session.GroundKeys=explicitGround" in rack
         and "session.GroundKeys[edge.b]=true" not in rack
         and 'session.GroundKeys["p:"..tostring(id)]=nil' not in rack,
-    "Motor spin uses exact bearing hinge axis":
-        "motor.Constraint.Attachment1.WorldAxis" in physical,
+    "Continuous motor spin uses exact bearing hinge axis":
+        "hinge.Attachment1.WorldAxis" in physical,
     "Authoring hinges never power the housing":
         "constraint.ActuatorType=Enum.ActuatorType.None" in mechanics
         and "hinge.ActuatorType=Enum.ActuatorType.None" in mechanics
