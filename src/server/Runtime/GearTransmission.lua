@@ -17,9 +17,14 @@ Transmission.__index=Transmission
 local MAX_GEARS=40
 local SCAN_INTERVAL=0.20
 local STALL_REPORT_INTERVAL=2.0
-local MAX_SPEED=35
+-- Input motors already validate their maximum speed (35 rad/s).
+-- SMALLER meshed output gears can legitimately rotate many times faster
+-- than that. The former one-size 35-rad/s cap broke tooth ratios.
+local MAX_INPUT_SPEED=35
+local MAX_OUTPUT_SPEED=240 -- physical simulation stability guard
 local RELEASE_STOP_EPS=0.035 -- residual shaft spin must not linger forever
 local DRIVE_BUDGET=HandCrankMath.MaxTorque*0.72
+local MAX_OUTPUT_TORQUE=500000
 local function identifier(model)
     return model:GetAttribute("InstanceId")
 end
@@ -330,7 +335,7 @@ function Transmission:SetDrive(id,speed,budget,worldAxis)
     local group=self.ById[id]
     if not group or #group.Gears==0
         or type(speed)~="number" or speed~=speed then return end
-    local signed=math.clamp(speed,-MAX_SPEED,MAX_SPEED)
+    local signed=math.clamp(speed,-MAX_INPUT_SPEED,MAX_INPUT_SPEED)
     if worldAxis and typeof(worldAxis)=="Vector3" and worldAxis.Magnitude>0 then
         signed*=axis(group):Dot(worldAxis.Unit)
     end
@@ -428,13 +433,27 @@ function Transmission:Step(dt)
             end
             for _,group in ipairs(component) do
                 local commanded=(factor[group] or 0)*drive.Speed
-                group.TargetSpeed=math.clamp(commanded,-MAX_SPEED,MAX_SPEED)
+                group.TargetSpeed=math.clamp(commanded,
+                    -MAX_OUTPUT_SPEED,MAX_OUTPUT_SPEED)
                 group.VirtualSpeed=group.TargetSpeed
                 group.Braking=true
                 if group~=lead and unanchored(group) then
                     local actuator=group.VelocityActuator
                     if actuator then
-                        actuator.MaxTorque=DRIVE_BUDGET
+                        -- Correct speed in proportion to actual gear TEETH,
+                        -- not physical shaft mass or a fixed shared torque
+                        -- budget. Native AngularVelocity is a velocity
+                        -- controller, but it needs enough torque to TRACK
+                        -- that target under the load of a vehicle.
+                        local ratio=math.max(0.05,math.abs(factor[group] or 1))
+                        local outputTorque=drive.Weight/ratio
+                        local actual=group.Root.AssemblyAngularVelocity
+                            :Dot(axis(group))
+                        local error=math.abs(group.TargetSpeed-actual)
+                        local tracking=group.Root.AssemblyMass*error*80
+                        actuator.MaxTorque=math.clamp(math.max(
+                            DRIVE_BUDGET,outputTorque*6,tracking),
+                            DRIVE_BUDGET,MAX_OUTPUT_TORQUE)
                         actuator.AngularVelocity=axis(group)*group.TargetSpeed
                         actuator.Enabled=true
                         commandedGroups[group]=true
