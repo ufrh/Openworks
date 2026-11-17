@@ -12,6 +12,7 @@ local MOTOR_KEYS={
     B=true,N=true,M=true,V=true,Z=true,X=true,C=true,
     One=true,Two=true,Three=true,Four=true,
 }
+local OPERATOR_KEYS={W=true,A=true,S=true,D=true,Q=true,E=true}
 local function safeName(value)
     return type(value)=="string" and #value>0 and #value<=40
         and value:match("%S")~=nil and not value:find("[%c]")
@@ -77,8 +78,10 @@ function SeatControl:Handle(player,action,payload)
         local first=payload.key
         local second=payload.secondKey
         if kind=="Bearing" then
-            if not MOTOR_KEYS[first] then
-                return false,"Choose a supported motor key"
+            if not (MOTOR_KEYS[first]
+                or (relation:GetAttribute("SeatId")~=nil
+                    and OPERATOR_KEYS[first])) then
+                return false,"W/A/S/D/Q/E need an operator-seat route"
             end
         else
             if type(first)~="string" or type(second)~="string"
