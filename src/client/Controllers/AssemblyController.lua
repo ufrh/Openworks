@@ -295,7 +295,7 @@ function Controller:RefreshHUD()
         self.Help.Text=if self.PairKind=="CrankCoupling"
             then "Choose hand crank, then the shaft END • rigid coupling • Esc cancel"
             elseif self.PairKind=="Spring"
-            then "Select any two components • spring force only • Esc cancel"
+            then "Select two components • spring slides on one axis only • Esc cancel"
             elseif self.PairKind=="Bolt"
             then "Choose two aligned holes • physical bolt inserted"
             else "Choose two touching surfaces • permanent weld"
