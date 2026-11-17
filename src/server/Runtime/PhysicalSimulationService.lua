@@ -314,8 +314,17 @@ local function setMotorDrive(motor, relation)
     motor.On=false
     motor.NativeSpeed=0
     motor.LastInput=0
-    motor.Constraint.ActuatorType=Enum.ActuatorType.None
+    -- Positional servos must actuate the relative HINGE, not spin the
+    -- wheel/shaft assembly against world space. World-space velocity
+    -- motors can whip an otherwise free chassis when steering.
+    motor.Constraint.ActuatorType=if motor.DriveType=="Servo"
+        then Enum.ActuatorType.Servo else Enum.ActuatorType.None
     motor.Constraint.AngularVelocity=0
+    motor.Constraint.TargetAngle=0
+    motor.Constraint.ServoMaxTorque=motor.Torque
+    motor.Constraint.AngularSpeed=math.max(0.05,math.abs(motor.Speed))
+    motor.Constraint.AngularResponsiveness=
+        math.clamp(motor.Acceleration/8,2,12)
     motor.Drive.MaxTorque=motor.Torque
     motor.Drive.AngularVelocity=Vector3.zero
     motor.Drive.Enabled=false
@@ -348,6 +357,9 @@ local function stopMotor(motor)
     motor.On=false
     motor.NativeSpeed=0
     motor.LastInput=0
+    if motor.Constraint and motor.Constraint.Parent then
+        motor.Constraint.ActuatorType=Enum.ActuatorType.None
+    end
     if motor.Drive and motor.Drive.Parent then
         motor.Drive.AngularVelocity=Vector3.zero
         motor.Drive.Enabled=false
@@ -411,16 +423,23 @@ function Simulation:StepCranks(dt)
             end
             local desired=if motor.On then motor.Speed else 0
             if motor.DriveType=="Servo" then
-                -- The native hinge measures the actual shaft position.
-                -- Drive its shaft toward target or back to neutral; no
-                -- teleporting, no second actuator on the housing.
-                local current=motor.Constraint.CurrentAngle
+                -- Use the HingeConstraint's native relative-angle servo.
+                -- It rotates the shaft against its housing, rather than
+                -- enforcing world angular velocity on a free vehicle.
+                local constraint=motor.Constraint
+                local current=constraint.CurrentAngle
                 local goal=if motor.On then motor.TargetAngle else 0
                 local diff=math.rad(goal-current)
                 diff=math.atan2(math.sin(diff),math.cos(diff))
                 desired=if math.abs(diff)<math.rad(0.2) then 0
                     else math.clamp(diff*5,
                         -math.abs(motor.Speed),math.abs(motor.Speed))
+                constraint.TargetAngle=goal
+                constraint.AngularSpeed=math.max(0.05,math.abs(motor.Speed))
+                constraint.AngularResponsiveness=
+                    math.clamp(motor.Acceleration/8,2,12)
+                constraint.ServoMaxTorque=motor.Torque
+                constraint.ActuatorType=Enum.ActuatorType.Servo
             end
             local dtSafe=math.clamp(dt,0,0.07)
             local ease=(desired-motor.NativeSpeed)
@@ -436,11 +455,13 @@ function Simulation:StepCranks(dt)
             local bearingAxis=if motor.Constraint.Attachment1
                 then motor.Constraint.Attachment1.WorldAxis
                 else shaft.CFrame.RightVector
-            drive.AngularVelocity=bearingAxis*motor.NativeSpeed
-            -- A servo at rest still holds its position. Continuous motors
-            -- release force at rest as a hand crank does.
-            drive.Enabled=motor.DriveType=="Servo"
-                or math.abs(motor.NativeSpeed)>0.0001
+            -- Only continuous shaft drives use world AngularVelocity.
+            -- Servo joints are controlled by their ONE native relative
+            -- hinge actuator; running both would over-constrain the car.
+            drive.AngularVelocity=if motor.DriveType=="Servo"
+                then Vector3.zero else bearingAxis*motor.NativeSpeed
+            drive.Enabled=motor.DriveType~="Servo"
+                and math.abs(motor.NativeSpeed)>0.0001
             if session.Gears and math.abs(motor.NativeSpeed)>0.008 then
                 session.Gears:SetDrive(motor.ShaftId,motor.NativeSpeed,
                     motor.Torque,bearingAxis)
