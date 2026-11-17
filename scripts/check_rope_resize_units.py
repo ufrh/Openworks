@@ -85,21 +85,35 @@ checks={
     "Resize is clamped locally before submitting":
         "self.OnResolve(drag,requestedSteps,candidate)" in scale
         and "function Controller:ClampScaleSteps" in build,
-    "Numerical sizes clamp in U increments":
+    "Numeric sizing resolves actual obstruction below selected increment":
         "function Controller:ClampNumericScale" in build
-        and "Grid.QuantizeSize" in build
+        and "oldSize:Lerp(newSize,chosen)" in build
+        and "for _=1,16 do" in build
         and "Grid.NumericSizeStepU" in numeric,
     "Server rechecks actual geometry and constraints":
         "local function maximumClearResize" in construction
         and "mechanical:ValidateResize(player,before.instanceId)" in construction
         and "intersectsConstructed(model,ignore," in construction,
-    "Grip respects current-operation precision":
-        "payload.numericPrecision==true)" in construction
-        and "local stepU=if numericOperation" in construction,
+    "Grip snap does not quantize the collision-stop boundary":
+        "numericPrecision=true" in construction
+        and "state.size=before.size:Lerp(targetSize,fraction)" in construction
+        and "chosen=low*sign" in build
+        and "math.abs(steps-math.round(steps))" in scale,
     "Server communicates accepted dimension to UI":
         "clamped=resizeClamped" in construction
         and 'or action=="DetectConnectedAssembly" or action=="Update"' in construction
         and "local acceptedSize=if data" in build,
+    "Copied parts can aim at original source faces":
+        'local hit = self:CastCenter(self.Pending == "Move"' in build
+        and 'or self.Pending == "ComponentMove")' in build
+        and 'self.Pending~="Copy" and self.Pending~="ComponentCopy"' in build,
+    "Component shafts can snug-fit into holes":
+        '#members~=1 or members[1]~=shaft' not in mechanical
+        and "allowedSnug=Bore.SnugDiameter(shaft,opening)" in mechanical,
+    "Servo uses single relative hinge actuator on free vehicle":
+        "constraint.ActuatorType=Enum.ActuatorType.Servo" in physical
+        and 'drive.Enabled=motor.DriveType~="Servo"' in physical
+        and "constraint.TargetAngle=goal" in physical,
     "Build and Resize show two-decimal U":
         "%.2f × %.2f × %.2f U" in build,
 }
