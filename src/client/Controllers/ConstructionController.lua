@@ -1667,14 +1667,36 @@ function Controller:UpdatePreview()
     if self.Preview.PrimaryPart then
         local originalSize=if self.Mode=="Build" and self.CurrentId
                 and not self.CurrentBank then self.CurrentSize
-            elseif self.Pending=="Move" and self.Selected
-                and self.Selected.PrimaryPart then self.Selected.PrimaryPart.Size
+            elseif (self.Pending=="Move" or self.Pending=="Copy")
+                and self.Selected and self.Selected.PrimaryPart
+                then self.Selected.PrimaryPart.Size
             else nil
         if originalSize then
             -- Restore original geometry before every matching pass. The
             -- actual chosen snap may reapply a verified snug fit below.
             self.Preview.PrimaryPart.Size=originalSize
             self.Preview:SetAttribute("OPENWORKS_AutoSnugDiameter",nil)
+        end
+    end
+
+    -- A component's individual shaft may be temporarily diameter-snugged
+    -- while hovering a bore. Reset every member to its authored size
+    -- before the next scan so rejected fits cannot change its geometry.
+    if (self.Pending=="ComponentMove" or self.Pending=="ComponentCopy")
+        and not self.LockedAlignment then
+        local sourceSizes={}
+        for _,member in ipairs(self.SelectedParts) do
+            if member and member.PrimaryPart then
+                sourceSizes[member:GetAttribute("InstanceId")]=
+                    member.PrimaryPart.Size
+            end
+        end
+        for _,member in ipairs(self.Preview:GetChildren()) do
+            if member:IsA("Model") and member.PrimaryPart then
+                local original=sourceSizes[member:GetAttribute("InstanceId")]
+                if original then member.PrimaryPart.Size=original end
+                member:SetAttribute("OPENWORKS_AutoSnugDiameter",nil)
+            end
         end
     end
 
