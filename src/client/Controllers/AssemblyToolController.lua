@@ -1,8 +1,8 @@
 --!strict
--- Dedicated Assembly TOOL. Name a set, select any combination of standalone
--- primitives and whole editor components, and explicitly confirm membership.
--- Alt+click selects only one primitive even when it has a ComponentId.
--- No automatic mechanical traversal, hidden welds, or arbitrary scope.
+-- Dedicated Assembly TOOL. Click one connected mechanism to select the
+-- complete authored construction; Alt+click remains single-part override.
+-- Names and membership are still explicitly confirmed and saved.
+-- Detection is server-authoritative and traverses real mechanical links.
 -- Simulate previews the entire aimed registered assembly in PURPLE.
 local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
@@ -244,7 +244,7 @@ function Tool:Refresh()
         self.Title.Text="ASSEMBLY / "..self.Name
         self.Status.Text=tostring(count).." primitives selected"
             ..(if self.EditingId then "  /  EDITING" else "  /  NEW")
-        self.Instruction.Text="Click component / primitive • Alt+click: single"
+        self.Instruction.Text="Click connected mechanism • Alt+click: one part"
     elseif self.Stage=="Naming" then
         self.Title.Text="ASSEMBLY / NAME"
         self.Status.Text="Enter the name to begin selecting"
@@ -252,7 +252,7 @@ function Tool:Refresh()
     else
         self.Title.Text="ASSEMBLY / EDITOR"
         self.Status.Text="N  /  Create named assembly"
-        self.Instruction.Text="Aim and click an existing assembly to edit"
+        self.Instruction.Text="Click mechanism to auto-detect • N to name first"
     end
     if self.LastMessage and os.clock()<self.MessageUntil then
         self.Instruction.Text=self.LastMessage
@@ -373,23 +373,64 @@ function Tool:ToggleMember(model,forceSingle)
         return
     end
     if self.Stage~="Selecting" then
-        self:LoadExisting(model)
-        return
+        local existingId=model:GetAttribute("AssemblyId")
+        if type(existingId)=="string" and existingId~="" then
+            self:LoadExisting(model)
+            return
+        end
+        -- New one-click workflow: start a draft immediately, without
+        -- forcing N/naming before selecting a connected mechanism.
+        self.Stage="Selecting"
+        self.Name="Assembly"
+        self.EditingId=nil
+        self.Selected={}
     end
     local alt=UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
-    local targets={model}
-    local group=not (alt or forceSingle) and model:GetAttribute("ComponentId")
-    if type(group)=="string" and group~="" then
-        targets={}
+    local single=alt or forceSingle
+    local targets={}
+    if single then
+        targets={model}
+    else
+        -- One click auto-selects every authored member of the mechanical
+        -- network. Validation is read-only and never silently registers
+        -- nearby unrelated/previously saved assemblies.
+        self.Busy=true
+        local remote=RS:WaitForChild(Config.RequestName)
+        local ok,result=pcall(function()
+            return remote:InvokeServer({
+                action="DetectConnectedAssembly",
+                seedId=instanceId(model),
+                assemblyId=self.EditingId,
+            })
+        end)
+        self.Busy=false
+        if not ok or type(result)~="table" or result.ok~=true
+            or type(result.data)~="table" then
+            self:Tell(if ok and type(result)=="table"
+                then tostring(result.message)
+                else "Could not detect mechanical connections")
+            return
+        end
+        local byId={}
         for _,member in ipairs(ownedModels()) do
-            if member:GetAttribute("ComponentId")==group then
-                table.insert(targets,member)
+            byId[instanceId(member)]=member
+        end
+        for _,id in ipairs(result.data) do
+            local item=byId[id]
+            if not item then
+                self:Tell("Mechanism changed; click again after replication")
+                return
             end
+            table.insert(targets,item)
+        end
+        if #targets==0 then
+            self:Tell("No connected construction found")
+            return
         end
     end
-    -- Clicking a component selects its ENTIRE primitive membership; Alt
-    -- lets authors select only one member from inside the editor component.
+    -- A normal click adds/removes its entire connected mechanism; Alt
+    -- explicitly opts into selecting only one primitive.
     local allSelected=true
     for _,item in ipairs(targets) do
         if not self.Selected[instanceId(item)] then
@@ -601,17 +642,11 @@ function Tool:ShowVisuals(members,_color)
     self.PreviewCache=signature
     self.PreviewModels=byId
     if #ids==0 then return end
-    if selecting then
-        -- Membership is shown as one purple box PER actual primitive.
-        for _,id in ipairs(ids) do
-            self.Feedback:Set("assembly",id,{byId[id]},"assembly",false)
-        end
-    else
-        -- Hover/selection previews the WHOLE assembly as one local box.
-        local ordered={}
-        for _,id in ipairs(ids) do table.insert(ordered,byId[id]) end
-        self.Feedback:Set("assembly","outer",ordered,"assembly",true)
-    end
+    -- The connected assembly gets ONE cohesive purple selection box
+    -- rather than a forest of individual primitive outlines.
+    local ordered={}
+    for _,id in ipairs(ids) do table.insert(ordered,byId[id]) end
+    self.Feedback:Set("assembly","outer",ordered,"assembly",true)
 end
 
 function Tool:OnModeChanged(mode)
