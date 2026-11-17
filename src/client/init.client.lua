@@ -16,6 +16,7 @@ local ConstructionController = require(controllers:WaitForChild("ConstructionCon
 local AssemblyController = require(controllers:WaitForChild("AssemblyController"))
 local AssemblyToolController=require(controllers:WaitForChild("AssemblyToolController"))
 local ContextEditor = require(controllers:WaitForChild("ContextEditor"))
+local RoutingController=require(controllers:WaitForChild("RoutingController"))
 local ToolPalette = require(controllers:WaitForChild("ToolPalette"))
 local WorldVisuals = require(controllers:WaitForChild("WorldVisuals"))
 local VisualFeedback = require(controllers:WaitForChild("VisualFeedback"))
@@ -69,11 +70,13 @@ local unifiedExplorer=ContextEditor.new(tools,
 constructionController.UnifiedExplorer=unifiedExplorer
 assemblyController.UnifiedExplorer=unifiedExplorer
 assemblyToolController.UnifiedExplorer=unifiedExplorer
+local routingController=RoutingController.new(tools,assemblyController,unifiedExplorer)
 
 constructionController:Start()
 assemblyController:Start()
 assemblyToolController:Start()
 unifiedExplorer:Start()
+routingController:Start()
 -- Left column uses the exact shared subtool KeyCodes, and tool-specific
 -- hints reflect the active controller state without extra HUD owners.
 local toolPalette=ToolPalette.new(tools,
