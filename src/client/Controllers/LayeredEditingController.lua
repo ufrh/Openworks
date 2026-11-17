@@ -757,13 +757,15 @@ function Layered:ConfirmAlignment()
             return
         end
         if not choice or choice=="__Adjust" then
-            -- The next click after Adjust opens relationship choices
-            -- without another Adjust action, preventing a modal loop.
             if choice=="__Adjust" then selected.AdjustRequested=true end
             parent:RefreshPointer()
             parent:RefreshHUD()
             return
         end
+        -- A failed server commit preserves the selected relationship
+        -- for a direct retry after adjusting depth. It never opens an
+        -- identical relationship picker a second time.
+        selected.CommitKind=choice
         -- The gear uses the same atomic Hub transaction as drag-snap.
         -- This creates a validated unpowered hinge or rigid shaft weld.
         local approach=selected.Target:GetPivot().Position
@@ -794,21 +796,24 @@ function Layered:ConfirmAlignment()
             orientation=exact.Rotation,
         })
         if ok then
-            -- A relationship choice is the FINAL atomic fit transaction.
-            -- Do not enter the legacy Fit stage or reopen a choice on the
-            -- next click. Fine positioning was already available before
-            -- confirmation.
             self:CancelAlignment()
             parent:Message("Fit and relationship committed")
+        else
+            -- Parent:Request already displays the exact server error.
+            -- Keep the same relationship choice, not another popup.
+            selected.AdjustRequested=true
         end
         parent:RefreshPointer()
         parent:RefreshHUD()
     end
-    if not (parent.UnifiedExplorer and parent.UnifiedExplorer:ChooseFit(
+    if selected.CommitKind then
+        -- The selection has already been made. Retry the SAME transaction
+        -- after manual adjustment instead of looping back to ChooseFit.
+        onChoice(selected.CommitKind)
+    elseif not (parent.UnifiedExplorer and parent.UnifiedExplorer:ChooseFit(
         if isGear then "Hub" else "Bore",onChoice,
         selected.FittedCount or 1,nil,
         selected.AdjustRequested==true)) then
-        -- Never silently open a second legacy modal.
         onChoice(nil)
     end
 end
