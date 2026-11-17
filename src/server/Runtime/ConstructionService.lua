@@ -1833,6 +1833,7 @@ function Service.Start()
         findOwned = findOwned,
         nearPlayer = nearPlayer,
         mechanical = mechanical,
+        assemblies = assemblies,
     })
     persistence=PlotPersistence.new({
         folder=folder,
