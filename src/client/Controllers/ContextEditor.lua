@@ -1322,6 +1322,7 @@ function Panel:RenderRelation(node)
     if kind=="Rope" then
         self:Section("Rope · tension only")
         self:Value("Behavior","Slack shortens freely; winch pulls, never pushes")
+        self:Field("Control name",rel:GetAttribute("ControlName") or "Winch")
         local currentLength=(rel:GetAttribute("RopeLength") or 0.5)/Grid.Unit
         local minLength=(rel:GetAttribute("RopeMinLength")
             or Grid.Unit*Grid.MinSizeStepU)/Grid.Unit
@@ -1354,7 +1355,8 @@ function Panel:RenderRelation(node)
                 ropeMaxLength=maximum*Grid.Unit,
                 ropeSpeedU=speed,ropeForce=force,
                 ropeInKey=self.Fields["Retract key"].Text,
-                ropeOutKey=self.Fields["Pay out key"].Text},true)
+                ropeOutKey=self.Fields["Pay out key"].Text,
+                controlName=self.Fields["Control name"].Text},true)
             if ok then self:Message("Rope saved") end
         end
         self:ActionButton("SAVE","Apply rope limits, winch and keybinds",
@@ -1420,6 +1422,7 @@ function Panel:RenderRelation(node)
 
         if hasMotor then
             self:Section("Power")
+            self:Field("Control name",rel:GetAttribute("ControlName") or "Motor")
             self:Switch("Powered",rel:GetAttribute("MotorEnabled")==true,
                 "Allow the motor to drive the shaft")
 
@@ -1540,6 +1543,7 @@ function Panel:RenderRelation(node)
                     motorDriveType=self.Flags.Type,
                     motorInputMode=self.Flags.Control,
                     motorTargetAngle=angle,
+                    controlName=self.Fields["Control name"].Text,
                 },true)
                 if ok then self:Message("Motor saved") end
             end)
