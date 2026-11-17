@@ -33,7 +33,6 @@ local VectorJoint=require(script.Parent:WaitForChild("VectorJoint"))
 
 local Mechanical = {}
 Mechanical.__index = Mechanical
-local MAX_RELATIONSHIPS_PER_PLAYER = 128
 
 local function relationValid(kind)
     return kind == "Bearing" or kind == "Slider"
@@ -130,10 +129,6 @@ function Mechanical:Restore(player, spec)
     if self:OwnedRelation(player, spec.relationId) then
         return false, "Relationship already exists"
     end
-    if self:Count(player) >= MAX_RELATIONSHIPS_PER_PLAYER then
-        return false, "Relationship limit reached"
-    end
-
     local target = self.D.findOwned(player, spec.targetId)
     local source = self.D.findOwned(player, spec.sourceId)
     if not source or not target or source == target then
@@ -703,18 +698,10 @@ function Mechanical:SmartMate(player, request, newSource)
         and typeName~="FreeFit" then
         return false,"Choose Rotate + Slide, Slide, Rotate or Fit Only"
     end
-    -- Auto-meshing gears are a PLACEMENT operation, not a permanent
-    -- authored relationship or a consumer of joint slots.
-    if mode~="Gear" and mode~="Rack" and mode~="Guide"
-        and typeName~="FreeFit"
-        and self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
-        return false,"Relationship limit reached"
-    end
-
     local transient=nil
     if request.selectedIds~=nil then
         if newSource or type(request.selectedIds)~="table"
-            or #request.selectedIds<2 or #request.selectedIds>128 then
+            or #request.selectedIds<2 then
             return false,"Invalid temporary multi-fit selection"
         end
         local seen={}
@@ -776,7 +763,7 @@ function Mechanical:SmartMate(player, request, newSource)
     local members=if transient then transient
         elseif movingComponent then d.components:Members(player,movingComponent)
         else {source}
-    if #members==0 or #members>128 then
+    if #members==0 then
         return false,"Moving construction is unavailable"
     end
     local excluded={}
@@ -1378,11 +1365,6 @@ function Mechanical:SmartMate(player, request, newSource)
             table.insert(need,candidate)
         end
     end
-    if self:Count(player)+#need>MAX_RELATIONSHIPS_PER_PLAYER then
-        if reverse then d.applyState(shaft,fixedShaftBefore) end
-        restoreMoving()
-        return false,"Not enough relationship slots for all fitted rods"
-    end
     for _,candidate in ipairs(need) do
         local made,why=self:Restore(player,candidate)
         if not made then
@@ -1450,9 +1432,6 @@ local function validEndpoints(self,player,request)
         or not d.nearPlayer(player,target:GetPivot().Position) then
         return nil,nil,"Both parts must be within construction range"
     end
-    if self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
-        return nil,nil,"Relationship limit reached"
-    end
     for _,relation in ipairs(self.Folder:GetChildren()) do
         if relation:GetAttribute("OwnerUserId")==player.UserId
             and ((relation:GetAttribute("SourceId")==request.sourceId
@@ -1482,9 +1461,6 @@ function Mechanical:CreateBelt(player,request)
     end
     local path,reason=BeltMath.Path(source,target)
     if not path then return false,reason end
-    if self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
-        return false,"Relationship limit reached"
-    end
     local function mounted(pulley)
         local pid=pulley:GetAttribute("InstanceId")
         for _,relation in ipairs(self.Folder:GetChildren()) do
@@ -1585,9 +1561,6 @@ function Mechanical:CreateVectorJoint(player,request)
     end
     local pivot,why=VectorJoint.Measure(a,b)
     if not pivot then return false,why end
-    if self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
-        return false,"Relationship limit reached"
-    end
     for _,existing in ipairs(self.Folder:GetChildren()) do
         if existing:GetAttribute("OwnerUserId")==player.UserId then
             local kind=existing:GetAttribute("Kind")
@@ -1756,9 +1729,6 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
     if not d.nearPlayer(player,source:GetPivot().Position)
         or not d.nearPlayer(player,target:GetPivot().Position) then
         return false,"Both parts must be in building range"
-    end
-    if self:Count(player)>=MAX_RELATIONSHIPS_PER_PLAYER then
-        return false,"Mechanical relationship limit reached"
     end
     for _,relation in ipairs(self.Folder:GetChildren()) do
         if relation:GetAttribute("OwnerUserId")==player.UserId
@@ -2063,9 +2033,6 @@ function Mechanical:CreateMultiWeld(player,request)
         end
     end
     if #planned==0 then return false,"These parts are already rigidly welded" end
-    if self:Count(player)+#planned>MAX_RELATIONSHIPS_PER_PLAYER then
-        return false,"Relationship limit reached for this multi-weld"
-    end
     local completed={}
     for _,spec in ipairs(planned) do
         local ok,reason=self:Restore(player,spec)
@@ -2095,7 +2062,6 @@ function Mechanical:WeldComponent(player,request)
     end
     local members,why=self.D.components:RequireMembers(player,cid)
     if not members then return false,why end
-    if #members>128 then return false,"Component exceeds 128 members" end
     local parent={}
     local byId={}
     for i,model in ipairs(members) do
@@ -2180,9 +2146,6 @@ function Mechanical:WeldComponent(player,request)
     end
     if #planned==0 then
         return true,"All "..#members.." component primitives are already rigidly connected"
-    end
-    if self:Count(player)+#planned>MAX_RELATIONSHIPS_PER_PLAYER then
-        return false,"Not enough relationship slots to weld this component"
     end
     local created={}
     for _,spec in ipairs(planned) do
