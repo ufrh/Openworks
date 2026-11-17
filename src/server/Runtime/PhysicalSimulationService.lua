@@ -22,6 +22,7 @@ local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
 local GearTransmission=require(script.Parent:WaitForChild("GearTransmission"))
+local BearingSupport=require(script.Parent:WaitForChild("BearingSupport"))
 local VectorJoint=require(script.Parent:WaitForChild("VectorJoint"))
 local BeltTransmission=require(script.Parent:WaitForChild("BeltTransmission"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
@@ -1219,40 +1220,36 @@ function Simulation:Start(player, payload)
         end
         local hasExplicitGround = next(explicitGround) ~= nil
         session.GroundKeys = explicitGround
-        -- Motor stators are always fixed. A previously saved grounded
-        -- drive shaft/gear cannot be the rotating motor output: release
-        -- that entire rigid group ONLY in the simulation copy. This never
-        -- modifies authored Grounded flags or the persistent assembly.
+        -- Do not ground an entire moving car merely because its frame
+        -- carries a motor bearing. Only a free-standing, otherwise loose
+        -- drilled housing becomes stationary. Housings welded to a
+        -- chassis stay on that chassis and receive no motor actuation.
         local motorStators={}
         for _,edge in ipairs(graph.edges) do
-            if edge.kind=="Bearing"
+            if edge.kind=="Bearing" and edge.relation
                 and edge.relation:GetAttribute("MotorEnabled")==true then
                 local shaftId=edge.source:GetAttribute("InstanceId")
-                local housingId=edge.target:GetAttribute("InstanceId")
-                local shaftGroup=session.Gears.ById[shaftId]
-                local housingGroup=session.Gears.ById[housingId]
-                if shaftGroup and shaftGroup==housingGroup then
-                    error("Motor shaft is welded to its hole housing; "
-                        .."remove that weld to allow shaft-only rotation")
-                end
-                -- Keep the complete rigid rotor (shaft and drive gear)
-                -- free. Only a housing-side rigid body is anchored.
-                if shaftGroup then
+                local rotor=session.Gears.ById[shaftId]
+                if rotor then
                     for id,group in pairs(session.Gears.ById) do
-                        if group==shaftGroup then
+                        if group==rotor then
                             session.GroundKeys["p:"..tostring(id)]=nil
                         end
                     end
                 else
                     session.GroundKeys[edge.a]=nil
                 end
-                motorStators[edge.b]=true
             end
         end
-        for key in pairs(motorStators) do
-            session.GroundKeys[key]=true
+        local standaloneSupports=BearingSupport.Resolve(
+            graph,session.Gears,session.GroundKeys)
+        if standaloneSupports>0 then
+            print(string.format(
+                "[OPENWORKS][BEARING] Fixed %d isolated housings; "
+                .."shaft torque stays on shafts, chassis mounts remain movable",
+                standaloneSupports))
         end
-        if not hasExplicitGround and not next(motorStators)
+        if not hasExplicitGround and standaloneSupports==0
             and session.Grounded then
             -- Never anchor the clicked shaft/gear just because it was used
             -- as the Simulation seed. That silently locks the input shaft
