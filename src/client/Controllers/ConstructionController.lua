@@ -2653,7 +2653,8 @@ function Controller:ClampNumericScale(cf,oldSize,newSize)
         then self.Selected:GetAttribute("TemplateId") else self.CurrentId
     local entry=id and Registry.Get(id)
     local function clear(step)
-        local size=oldSize:Lerp(newSize,step/ticks)
+        local size=Grid.QuantizeSize(oldSize:Lerp(newSize,step/ticks),
+            Grid.NumericSizeStepU)
         if not entry or not Grid.ValidSize(entry.Model.PrimaryPart.Size,size,
             entry.ResizeMode,true,true) then return false end
         return self:ScaleClear(cf,size)
@@ -2670,7 +2671,8 @@ function Controller:ClampNumericScale(cf,oldSize,newSize)
     end
     ghost.PrimaryPart.Size=oldGhostSize
     ghost:PivotTo(oldCF)
-    return oldSize:Lerp(newSize,chosen/ticks),chosen<ticks
+    return Grid.QuantizeSize(oldSize:Lerp(newSize,chosen/ticks),
+        Grid.NumericSizeStepU),chosen<ticks
 end
 
 function Controller:UpdateScalePreview(cf, size)
