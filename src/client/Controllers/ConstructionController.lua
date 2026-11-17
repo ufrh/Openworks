@@ -142,6 +142,7 @@ function Controller.new(tools)
         Numeric = nil,
         PendingMateChoice = nil,
         LockedAlignment = nil,
+        FitAdjustRequested = false,
         Assembly = nil,
         ScaleStepU = Grid.DefaultSizeStepU,
         PreviewValid = true,
@@ -772,6 +773,7 @@ function Controller:ClearSmartMatch()
     self.SmartRollDelta=0
     self.SmartBoreKind="Cylindrical"
     self.LockedAlignment=nil
+    self.FitAdjustRequested=false
     self.SmartLastScan=0
     if self.Feedback then
         self.Feedback:Clear("snap")
@@ -955,14 +957,19 @@ function Controller:OpenMateChoice(mode)
             self.PreviewValid=chosenValid
         end
         if kind=="__Adjust" then
+            self.FitAdjustRequested=true
             -- Continue with the pre-existing depth/roll adjustment stage.
             -- No construction or relationship has been created yet.
             self:RefreshPointer()
             self:RefreshHUD()
             return
         elseif kind and requestMode=="Build" then
+            -- The choice belongs to a frozen exact preview pose, not a
+            -- visually interpolated ghost or a newly detected hole.
+            self.Preview:PivotTo(chosenPose)
             self:Place(kind)
         elseif kind and requestMode=="Edit" then
+            self.Preview:PivotTo(chosenPose)
             self:SmartDrop(kind)
         elseif requestMode=="Edit" then
             self:CancelPending()
@@ -975,7 +982,8 @@ function Controller:OpenMateChoice(mode)
     local opening=if match.kind=="Bore" then
         (if match.reverse then match.source else match.target) else nil
     if not (self.UnifiedExplorer and self.UnifiedExplorer:ChooseFit(
-        match.kind,onChoice,match.fittedCount or 1,opening)) then
+        match.kind,onChoice,match.fittedCount or 1,opening,
+        self.FitAdjustRequested)) then
         -- No second hidden menu owner; this cancels safely if the shared
         -- chooser is temporarily unavailable during initialization.
         onChoice(nil)
@@ -1047,6 +1055,7 @@ function Controller:SmartDrop(chosenKind)
         rollDegrees=match.rollDegrees,
         reverse=match.reverse==true,
         fitTargets=match.fitTargets,
+        fitMovingIds=match.fitMovingIds,
         shaftDiameter=if match.kind=="Bore" and not match.reverse
             then match.snugDiameter else nil,
         approach=match.approach or exactSourcePosition,
@@ -1875,7 +1884,30 @@ function Controller:UpdatePreview()
                     table.insert(names,pair.stationaryId)
                 end
                 table.sort(names)
-                match.fitTargets=names
+                local fixed={}
+                local moved={}
+                for _,pair in ipairs(matches) do
+                    fixed[pair.stationaryId]=true
+                    moved[pair.movingId]=true
+                end
+                for _,id in ipairs(match.requiredFitTargets or {}) do
+                    if not fixed[id] then
+                        self.PreviewValid=false
+                        self.PreviewReason=
+                            "Shaft must reach the midpoint of all guide holes"
+                        break
+                    end
+                end
+                for _,id in ipairs(match.requiredMovingFitIds or {}) do
+                    if not moved[id] then
+                        self.PreviewValid=false
+                        self.PreviewReason=
+                            "Every moving hole must remain on the shaft"
+                        break
+                    end
+                end
+                match.fitTargets=match.requiredFitTargets or names
+                match.fitMovingIds=match.requiredMovingFitIds
                 local primary=false
                 for _,pair in ipairs(matches) do
                     if pair.moving==match.source
@@ -2040,6 +2072,7 @@ function Controller:Place(chosenKind)
             rollDegrees=self.SmartMatch.rollDegrees,
             reverse=self.SmartMatch.reverse==true,
             fitTargets=self.SmartMatch.fitTargets,
+            fitMovingIds=self.SmartMatch.fitMovingIds,
         } else nil,
     })
     if success then
