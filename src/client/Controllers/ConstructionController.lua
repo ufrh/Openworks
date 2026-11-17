@@ -645,7 +645,7 @@ function Controller:RefreshHUD()
         self.HelpLabel.Text = "Tab depth • Shift+Tab reverse • X X-ray • I isolate"
     elseif self.ScaleMode then
         self.DetailLabel.Text = current .. (if self.ScaleSize then
-            "  •  " .. string.format("%.2g × %.2g × %.2g U",
+            "  •  " .. string.format("%.2f × %.2f × %.2f U",
                 self.ScaleSize.X / Grid.Unit, self.ScaleSize.Y / Grid.Unit, self.ScaleSize.Z / Grid.Unit)
             else "")
         local aligned=self.Mode=="Edit" and self.Selected
@@ -656,7 +656,7 @@ function Controller:RefreshHUD()
             .. tostring(self.ScaleHandles.IncrementU)
             .. " U • sphere drag • N enter exact U size • V exit"
     elseif mode == "Build" then
-        self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2g × %.2g × %.2g U",
+        self.DetailLabel.Text = current .. (if size then "  •  " .. string.format("%.2f × %.2f × %.2f U",
             size.X / Grid.Unit, size.Y / Grid.Unit, size.Z / Grid.Unit) else "")
         self.HelpLabel.Text = if self.CatalogOpen then "Search library • B/Enter close"
             elseif self.CurrentBank then "Click stamp component • Enter select • B library"
