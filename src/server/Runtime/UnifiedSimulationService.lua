@@ -79,6 +79,10 @@ function Unified:Start(player,payload)
     end
     local engine,reason=self:Choose(player,payload)
     if not engine then return false,reason end
+    local selected=if engine==self.Rack then "RackSimulationService"
+        else "PhysicalSimulationService"
+    print("[OPENWORKS][SIM ROUTER] "..selected..
+        " selected for "..player.Name)
     local ok,message=engine:Start(player,payload)
     if ok then self.Active[player]=engine end
     return ok,message
