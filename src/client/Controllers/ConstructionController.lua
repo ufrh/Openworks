@@ -143,6 +143,7 @@ function Controller.new(tools)
         PendingMateChoice = nil,
         LockedAlignment = nil,
         FitAdjustRequested = false,
+        PendingFitRelationKind=nil,
         Assembly = nil,
         ScaleStepU = Grid.DefaultSizeStepU,
         PreviewValid = true,
@@ -774,6 +775,7 @@ function Controller:ClearSmartMatch()
     self.SmartBoreKind="Cylindrical"
     self.LockedAlignment=nil
     self.FitAdjustRequested=false
+    self.PendingFitRelationKind=nil
     self.SmartLastScan=0
     if self.Feedback then
         self.Feedback:Clear("snap")
@@ -964,11 +966,16 @@ function Controller:OpenMateChoice(mode)
             self:RefreshHUD()
             return
         elseif kind and requestMode=="Build" then
+            -- Once the user chooses a relationship, keep that choice if
+            -- the server rejects the pose. A retry must never bounce into
+            -- another modal; adjust the geometry and click to retry.
+            self.PendingFitRelationKind=kind
             -- The choice belongs to a frozen exact preview pose, not a
             -- visually interpolated ghost or a newly detected hole.
             self.Preview:PivotTo(chosenPose)
             self:Place(kind)
         elseif kind and requestMode=="Edit" then
+            self.PendingFitRelationKind=kind
             self.Preview:PivotTo(chosenPose)
             self:SmartDrop(kind)
         elseif requestMode=="Edit" then
@@ -1031,7 +1038,11 @@ function Controller:SmartDrop(chosenKind)
     if match.kind=="Pivot" then return false end
     if match.kind=="Hub" and not chosenKind then chosenKind="Weld" end
     if match.kind=="Bore" and not chosenKind then
-        return self:OpenMateChoice("Edit")
+        if self.PendingFitRelationKind then
+            chosenKind=self.PendingFitRelationKind
+        else
+            return self:OpenMateChoice("Edit")
+        end
     end
     -- A multi-primitive ghost pivots at its central anchor, but the
     -- mechanical source may be a different member. Convert its LOCAL
@@ -1080,6 +1091,7 @@ function Controller:SmartDrop(chosenKind)
             self.Feedback:FlashSuccess(participants)
         end
         self:CancelPending()
+        self:ClearSmartMatch()
         self:RefreshHUD()
     end
     self:FinishPendingHandoff(handoff,goal,models,ok)
@@ -2019,8 +2031,12 @@ function Controller:Place(chosenKind)
         and not chosenKind then chosenKind="Weld" end
     if self.SmartMatch and self.SmartMatch.kind=="Bore"
         and not chosenKind then
-        self:OpenMateChoice("Build")
-        return
+        if self.PendingFitRelationKind then
+            chosenKind=self.PendingFitRelationKind
+        else
+            self:OpenMateChoice("Build")
+            return
+        end
     end
     local placedMate=self.SmartMatch
     local success,reply = self:Request({
