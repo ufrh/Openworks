@@ -372,14 +372,16 @@ function Tool:ToggleMember(model,forceSingle)
         self:Tell("Aim at a constructed primitive or editor component")
         return
     end
-    local startNew=self.Stage~="Selecting"
-    if startNew then
+    local entering=self.Stage~="Selecting"
+    local loadedExisting=false
+    if entering then
         local existingId=model:GetAttribute("AssemblyId")
         if type(existingId)=="string" and existingId~="" then
             self:LoadExisting(model)
-            return
+            loadedExisting=true
         end
     end
+    local startNew=entering and not loadedExisting
     local alt=UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
     local single=alt or forceSingle
@@ -434,10 +436,12 @@ function Tool:ToggleMember(model,forceSingle)
     end
     -- A normal click adds/removes its entire connected mechanism; Alt
     -- explicitly opts into selecting only one primitive.
-    local allSelected=true
-    for _,item in ipairs(targets) do
-        if not self.Selected[instanceId(item)] then
-            allSelected=false break
+    local allSelected=not loadedExisting
+    if allSelected then
+        for _,item in ipairs(targets) do
+            if not self.Selected[instanceId(item)] then
+                allSelected=false break
+            end
         end
     end
     if not allSelected then
