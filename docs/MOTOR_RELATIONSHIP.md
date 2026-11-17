@@ -27,9 +27,13 @@ OpenWorks now routes simulation through
   the motor controls its input shaft through the same
   `GearKinematics:Step` path as the hand crank.
 
-Both routes anchor the drilled hole block at simulation start, release
-any previously grounded shaft/drive-gear rigid group in temporary simulation
-state only, and reject a shaft actually welded to its hole-block housing.
+Both engines use `BearingSupport`: a drilled housing that is genuinely
+standalone is kept stationary when supporting a powered or geared shaft.
+A housing structurally welded into a vehicle chassis is **not automatically
+anchored**; it stays on the moving chassis and the bearing never receives
+motor actuation. Previously grounded motor shaft/drive-gear groups are
+released in temporary simulation state only. A shaft welded to its housing
+is rejected as mechanically locked.
 
 Studio Output prints `[OPENWORKS][SIM ROUTER]` with the selected engine and
 `[OPENWORKS][MOTOR] ACTIVE ...` with motor and gear counts.
@@ -62,34 +66,31 @@ one of the connected parts and open its **Motor** relationship to configure it.
 | Continuous | rotates while pressed, stops on release | press to run, press again to stop |
 | Servo | approaches target while held, returns to neutral 0° on release | press to target angle, press again to neutral 0° |
 
-The motor drives the **shaft**, never the hole-block housing. If the assembly
-has no explicit grounding, its motor hole block is grounded automatically
-to keep the housing stationary. **The motor's hole block is always fixed in
-simulation**, even when other parts were explicitly grounded. The driven
-shaft and every gear welded to its rigid group are always released from
-grounding during simulation; this does not modify saved construction flags.
+The motor drives the **shaft**, never the hole-block housing. Standalone
+motor and passive bearing housings along the powered/geared shaft are fixed
+in simulation so they cannot counter-rotate. Housing blocks welded to a
+moving chassis stay with that chassis instead of freezing the whole car.
+The driven shaft and every gear welded to its rigid group are released
+from grounding in temporary simulation state; authored flags remain saved.
 
-- **No mounted gear:** the continuous drive uses a passive
-  `HingeConstraint` with a smooth, torque-limited `AngularVelocity`
-  actuator attached to the shaft, matching the standalone hand-crank
-  drive. Servo uses the physical hinge's `ActuatorType=Servo`, target
-  angle, angular speed and `ServoMaxTorque`.
-- **Gear rigidly welded onto shaft:** the kinematic gear solver owns the
-  complete shaft-and-gear rigid group. No native hinge motor is allowed to
-  compete with it. The motor's key input drives the **same shaft ID and axle
-  orientation** as a hand crank; its welded input gear, meshed output gears
-  and compound trains advance together. For older builds where a
-  concentric, clearance-validated gear sits on the shaft but the Hub weld is
-  absent, the simulation temporarily includes that orphan gear in the shaft
-  group. The author should Smart Fit that gear to save the weld permanently;
-  geometrically invalid hubs are rejected with a useful error. Server
-  Heartbeat integrates rotation without a fixed 60 Hz gate. Geared servo
-  control uses a signed, unwrapped
-  shaft angle with a capped target displacement to prevent overshoot.
-- **Torque:** native shaft motors and servos honor physical drive budgets.
-  Geared groups are kinematic, like hand-crank-driven gear trains, so their
-  `Max torque` cannot yet model dynamic gear loads or stall force. It remains
-  persisted for future load-aware transmission.
+- **No mounted gear:** the active physical engine keeps a passive
+  `HingeConstraint` for axle positioning and a shaft-only
+  `AngularVelocity` actuator, with continuous and servo settings
+  enforced on the shaft. No powered hinge actuator acts on the housing.
+- **Gear rigidly welded onto shaft:** for normal assemblies,
+  `GearTransmission` commands physical `AngularVelocity` on the meshed
+  output shaft with tooth-count speed ratios. Small output gears can run
+  proportionally faster than the 35 rad/s motor-input ceiling; a separate
+  240 rad/s physical-output safeguard applies. Output drive torque adapts
+  to gearing and measured shaft load to avoid the previous slow gear bug.
+  The rack-specific engine instead uses `GearKinematics` and its exact
+  ratio-based scripted rotation, including servo goals. The shaft and its
+  rigidly fitted gear always belong to the same rotor group.
+- **Torque:** the physical motor has a configurable torque budget.
+  Meshed physical output shafts use a boosted, load-aware speed actuator
+  so actual angular speeds track the tooth ratios rather than stalling
+  against an obsolete fixed output torque limit. This is not a fully
+  physically accurate torque/power simulation.
 
 Servo returns toward 0° using controlled rotation, not teleports. Existing
 angular travel limits constrain native hinge servos; kinematic gears do not
