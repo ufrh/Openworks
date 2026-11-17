@@ -135,6 +135,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
                 put(rows,"U","Reset")
                 put(rows,"I","Inspect mechanism")
                 put(rows,"Motor key","Drive motor")
+                put(rows,"Rope keys","Hold retract / pay out (Z / X default)")
                 put(rows,"Hold LMB","Hand crank")
             else
                 put(rows,"G","Ground part")
