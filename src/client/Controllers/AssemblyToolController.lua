@@ -716,11 +716,20 @@ end
 function Tool:RefreshConnectedPreview(seed)
     local id=instanceId(seed)
     if id~=self.ConnectedSeedId then
+        -- Crossing from the wheel to its shaft should NOT flash a single
+        -- object while re-fetching the exact same connected mechanism.
+        -- Keep the resolved group until a different component is aimed.
+        local sameGroup=false
+        for _,connectedId in ipairs(self.ConnectedIds or {}) do
+            if connectedId==id then sameGroup=true break end
+        end
+        if not sameGroup then
+            self.ConnectedIds=nil
+            self.ConnectedQueryAt=0
+            self.ConnectedRequest+=1
+            self.PreviewCache=""
+        end
         self.ConnectedSeedId=id
-        self.ConnectedIds=nil
-        self.ConnectedQueryAt=0
-        self.ConnectedRequest+=1
-        self.PreviewCache=""
     end
     if not id or self.ConnectedBusy
         or os.clock()-self.ConnectedQueryAt<0.8 then return end
@@ -741,9 +750,9 @@ function Tool:RefreshConnectedPreview(seed)
             and type(response.data)=="table" then
             self.ConnectedIds=response.data
         else
-            -- On a brief rate limit retain the last known good preview;
-            -- P/start always recomputes on the server independently.
-            if not self.ConnectedIds then self.ConnectedIds={id} end
+            -- On a rate limit retain ONLY an already resolved group.
+            -- Never invent a one-part purple assembly while the complete
+            -- graph is being fetched; P recomputes from scratch anyway.
         end
     end)
 end
@@ -766,10 +775,9 @@ function Tool:Tick()
     elseif self.Mode=="Simulate"
         and player:GetAttribute("OPENWORKS_Simulating")~=true then
         local aimed=self:Pick()
-        local chosen=self.UnifiedExplorer and self.UnifiedExplorer.Selected
-        local seed=aimed or (chosen and chosen.members
-            and chosen.members[1] or nil)
-        self:RefreshConnectedPreview(seed)
+        -- Hover has exactly one owner: the aimed component, not a
+        -- previously clicked individual part from ContextEditor.
+        self:RefreshConnectedPreview(aimed)
         local byId={}
         for _,model in ipairs(ownedModels()) do
             byId[instanceId(model)]=model
@@ -778,7 +786,9 @@ function Tool:Tick()
             local model=byId[id]
             if model then table.insert(members,model) end
         end
-        if #members==0 and seed then members={seed} end
+        -- Until the server resolves the complete set, show no outline.
+        -- A one-part preview that grows into a whole-machine box is a
+        -- misleading flicker, not a legitimate assembly transition.
     end
     self:ShowGroundingVisuals()
     self:ShowVisuals(members,PURPLE)
