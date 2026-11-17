@@ -881,8 +881,12 @@ function Simulation:Start(player, payload)
                     constraint.UpperLimit=upper*Grid.Unit
                 end
                 if constraint:IsA("HingeConstraint") then
+                    -- Powered motor bearings are continuously free to spin:
+                    -- a hidden angular hard-stop would transmit motor
+                    -- reaction torque into a freely moving housing.
                     constraint.LimitsEnabled =
                         edge.relation:GetAttribute("LimitsEnabled") == true
+                        and edge.relation:GetAttribute("MotorEnabled")~=true
                     constraint.LowerAngle =
                         edge.relation:GetAttribute("LowerLimit") or -180
                     constraint.UpperAngle =
@@ -1004,8 +1008,8 @@ function Simulation:Start(player, payload)
             end
         end
 
-        -- 5. Ground every explicitly grounded rigid body, if any.
-        -- Otherwise retain the established aim-at-housing grounding fallback.
+        -- 5. Only explicitly authored Grounded bodies are anchored.
+        -- A powered or passive bearing NEVER grounds its housing implicitly.
         local explicitGround = {}
         -- Ungrounded-by-default means no IMPLICIT grounding of the
         -- aimed body. Player-authored Grounded supports always remain
@@ -1152,7 +1156,9 @@ function Simulation:SyncRelationship(player,relation)
                     SpringMath.ApplyPhysical(constraint,p0,p1)
                 end
             elseif kind=="Bearing" and constraint:IsA("HingeConstraint") then
-                constraint.LimitsEnabled=relation:GetAttribute("LimitsEnabled")==true
+                constraint.LimitsEnabled=
+                    relation:GetAttribute("LimitsEnabled")==true
+                    and relation:GetAttribute("MotorEnabled")~=true
                 constraint.LowerAngle=relation:GetAttribute("LowerLimit") or -180
                 constraint.UpperAngle=relation:GetAttribute("UpperLimit") or 180
                 constraint.ActuatorType=Enum.ActuatorType.None
