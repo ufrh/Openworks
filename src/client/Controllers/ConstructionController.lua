@@ -606,7 +606,7 @@ function Controller:RefreshHUD()
                     else "Release to fasten bolt")
                 .. " • shaft connects all pierced aligned holes"
             else (if self.Mode=="Build" then "Click to place" else "Release to place")
-                .. " • touching is NOT welded • Shift/Alt free"
+                .. " • touching is NOT welded • Shift face center • Alt free"
     elseif self.Layered and self.Layered.Alignment then
         local alignment = self.Layered.Alignment
         if alignment.Stage == "PickTarget" then
@@ -1741,6 +1741,12 @@ function Controller:UpdatePreview()
         end
         local target=hit.Instance and topBuiltModel(
             hit.Instance,workspace:FindFirstChild(Config.FolderName))
+        -- Shift prioritizes the EXACT center of the hovered target face.
+        -- Existing smart mechanical fitting stays disabled while Shift is
+        -- held, so the resulting ordinary face placement cannot be
+        -- overridden by bore/hub/pivot magnets.
+        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
         local proposed=if target then
             -- Neighbor placement stays in the target's local face frame;
             -- world-zero grid parity can offset different sized primitives.
@@ -1748,20 +1754,20 @@ function Controller:UpdatePreview()
             else Grid.FromSurface(hit.Position,hit.Normal,
                 self.CurrentSize,rotation)
         if not self.Preview.Parent then self.Preview.Parent=workspace end
-        cf=if self.DirectDragActive and self.DragGrabLocal then
-            -- The grab point stays underneath the crosshair, not the
-            -- component center; free drag still undergoes collision checks.
+        cf=if self.DirectDragActive and self.DragGrabLocal
+            and not (shift and target) then
+            -- Ordinary grabbed-face dragging stays cursor-relative.
+            -- Shift overrides this to center the whole moved geometry.
             CFrame.new(hit.Position)*rotation*CFrame.new(-self.DragGrabLocal)
             elseif target then SurfacePlacement.SnapToNearbyFace(
-                self.Preview,proposed,hit.Position,hit.Normal,hit.Instance)
+                self.Preview,proposed,hit.Position,hit.Normal,hit.Instance,
+                shift)
             else SurfacePlacement.SnapToSurface(self.Preview,proposed,
                 hit.Position,hit.Normal)
         local alt=UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
             or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
-        -- Hold Shift to bypass every automatic smart fit (including
-        -- origin/pivot magnetism) while retaining precise face placement.
-        local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-            or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+        -- Shift face-center placement wins over all automatic smart fits
+        -- (including pivot magnetism), retaining normal contact validation.
         local originPose=if not alt and not shift then FitSolver.SurfacePose(
             self.Preview,cf.Rotation,hit.Position) else nil
         if originPose then cf=originPose end
@@ -3136,6 +3142,12 @@ function Controller:Start()
         Enum.KeyCode.Left,Enum.KeyCode.Right
     )
     table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, processed)
+        if input.KeyCode==Enum.KeyCode.LeftShift
+            or input.KeyCode==Enum.KeyCode.RightShift then
+            -- Do not reuse a mouse-position preview after switching between
+            -- free and centered face fit. Immediately recalculate next frame.
+            self.LastPreviewCheck=0
+        end
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             if not (self.ScaleReference and self.ScaleReference.Moving) then
                 self:BeginDirectDrag()
@@ -3144,6 +3156,10 @@ function Controller:Start()
         self:OnInput(input, processed)
     end))
     table.insert(self.Connections, UserInputService.InputEnded:Connect(function(input)
+        if input.KeyCode==Enum.KeyCode.LeftShift
+            or input.KeyCode==Enum.KeyCode.RightShift then
+            self.LastPreviewCheck=0
+        end
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             self:FinishDirectDrag()
         elseif input.KeyCode==self.VerticalHeld then
