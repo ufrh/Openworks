@@ -897,10 +897,11 @@ def main() -> int:
           and 'allowedSnug=Bore.SnugDiameter(shaft,opening)' in mechanical
           and 'state.fitPrecision=true' in mechanical
           and 'self:ValidateResize(player,shaft:GetAttribute("InstanceId"))' in mechanical)
-    check("Shaft/hole snap searches obstruction-free depth on 0.5U lattice",
+    check("Shaft/hole snap preserves exact multi-guide center, searches single-hole depth",
           'function Insertion.Resolve(ghost:Model,source:Model,target:Model,' in bore_insertion
-          and 'local anchorU=math.clamp(math.round(preferredU*2)' in bore_insertion
+          and 'local anchorU=if centered then preferredU else' in bore_insertion
           and 'local found=attempt(anchorU)' in bore_insertion
+          and 'if not found and not centered then' in bore_insertion
           and 'ghost:PivotTo(candidate)' in bore_insertion
           and 'MultiFit.Check(' in bore_insertion
           and 'Insertion.Clear(ghost,ignored)' in bore_insertion
