@@ -91,8 +91,14 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
         end
     elseif primary=="Mechanics" then
         local state=mechanics.Stage
-        title="MECHANICS"
-        if state=="Preview" or state=="Fit" then
+        title=if sub=="Route" then "MECHANICS • ROUTE" else "MECHANICS"
+        if sub=="Route" then
+            put(rows,"Drag","Motor / winch dot to orange operator seat")
+            put(rows,"Click seat","Motor names and centralized keybinds")
+            put(rows,"C","Connect mode")
+            put(rows,"R","Route mode")
+            put(rows,"Right click","Inspect connected part")
+        elseif state=="Preview" or state=="Fit" then
             put(rows,"Click","Confirm fit")
             put(rows,"Wheel","Insertion")
             put(rows,"Q / E","Rotate")
@@ -105,7 +111,9 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
                 else "First part")
             put(rows,"Esc","Reset")
         end
-        put(rows,"Right click","Connections")
+        if sub~="Route" then
+            put(rows,"Right click","Connections")
+        end
         put(rows,"Ctrl+Z / Y","Undo / redo")
     elseif primary=="AssemblySimulation" then
         local running=player:GetAttribute("OPENWORKS_Simulating")==true
