@@ -472,6 +472,26 @@ function Layered:UpdateAlignPreview()
             align.Shaft:GetAttribute("InstanceId"),
             align.Target:GetAttribute("InstanceId")) or {}
         align.FittedCount=#fitted
+        local fixed,moving={},{}
+        for _,pair in ipairs(fitted) do
+            fixed[pair.stationaryId]=true
+            moving[pair.movingId]=true
+        end
+        align.FitTargets={}
+        for _,pair in ipairs(fitted) do
+            table.insert(align.FitTargets,pair.stationaryId)
+        end
+        align.FitMovingIds=align.RequiredMovingFitIds
+        local allGuidesPresent=true
+        for _,id in ipairs(align.RequiredFitTargets or {}) do
+            if not fixed[id] then allGuidesPresent=false break end
+        end
+        for _,id in ipairs(align.RequiredMovingFitIds or {}) do
+            if not moving[id] then allGuidesPresent=false break end
+        end
+        if align.RequiredFitTargets then
+            align.FitTargets=align.RequiredFitTargets
+        end
         local primary=MultiFit.Contains(fitted,
             align.Shaft:GetAttribute("InstanceId"),
             align.Target:GetAttribute("InstanceId"))
@@ -484,6 +504,9 @@ function Layered:UpdateAlignPreview()
         elseif not complete then
             align.Valid=false
             align.ConflictReason=reason
+        elseif not allGuidesPresent then
+            align.Valid=false
+            align.ConflictReason="Not every guide hole is engaged"
         else
             align.Valid,align.ConflictReason=PreviewFeedback.Check(
                 align.Preview,ignore,nil,nil,MultiFit.AllowMap(fitted))
@@ -575,6 +598,41 @@ function Layered:ChooseTarget()
     self.HoveredCandidate = nil
     align.OffsetUnits = 0
     align.RollDegrees = 0
+    align.RequiredFitTargets=nil
+    align.RequiredMovingFitIds=nil
+    -- Manual L alignment should use the SAME full-hole midpoint as
+    -- drag smart fit. Selecting the first lug must not bias the shaft.
+    if align.Reverse then
+        local centered,count,holes=MultiFit.CenteredReverseOffset(
+            align.Members,align.Shaft,target)
+        if centered and count and count>1 then
+            align.OffsetUnits=centered
+            align.RequiredMovingFitIds={}
+            for _,hole in ipairs(holes) do
+                table.insert(align.RequiredMovingFitIds,
+                    hole:GetAttribute("InstanceId"))
+            end
+        end
+    elseif AlignmentMath.IsShaft(align.Shaft) then
+        local all={}
+        local built=self:Built()
+        if built then
+            for _,candidate in ipairs(built:GetChildren()) do
+                if owned(candidate) and not table.find(align.Members,candidate)
+                    then table.insert(all,candidate) end
+            end
+        end
+        local centered,count,holes=MultiFit.CenteredShaftOffset(
+            align.Shaft,target,all)
+        if centered and count and count>1 then
+            align.OffsetUnits=centered
+            align.RequiredFitTargets={}
+            for _,hole in ipairs(holes) do
+                table.insert(align.RequiredFitTargets,
+                    hole:GetAttribute("InstanceId"))
+            end
+        end
+    end
     player:SetAttribute("OPENWORKS_Inserting", true)
     self:CreatePreview()
     self.Parent:Message("Scroll to adjust insertion depth, click to confirm")
@@ -698,9 +756,10 @@ function Layered:ConfirmAlignment()
             parent:RefreshPointer()
             return
         end
-        -- Adjust (or dismiss the picker) returns to the live positioning
-        -- preview; the user can scroll depth/roll then click to choose again.
         if not choice or choice=="__Adjust" then
+            -- The next click after Adjust opens relationship choices
+            -- without another Adjust action, preventing a modal loop.
+            if choice=="__Adjust" then selected.AdjustRequested=true end
             parent:RefreshPointer()
             parent:RefreshHUD()
             return
@@ -729,30 +788,26 @@ function Layered:ConfirmAlignment()
             offsetUnits=offset,
             rollDegrees=roll,
             reverse=selected.Reverse,
+            fitTargets=selected.FitTargets,
+            fitMovingIds=selected.FitMovingIds,
             position=exact.Position,
             orientation=exact.Rotation,
         })
         if ok then
-            if isGear or selected.Reverse then
-                -- The moved object is not the shaft, so old FitShaft
-                -- commands are inapplicable. End this fit cleanly.
-                self:CancelAlignment()
-                parent:Message("Fit completed • select another part in Edit")
-            else
-                if selected.Preview then selected.Preview:Destroy() end
-                selected.Preview=nil
-                selected.Stage="Fit"
-                self:RefreshVisuals()
-                player:SetAttribute("OPENWORKS_Inserting",true)
-                parent:Message("Aligned • scroll to fine-fit shaft • click/Esc to finish")
-            end
+            -- A relationship choice is the FINAL atomic fit transaction.
+            -- Do not enter the legacy Fit stage or reopen a choice on the
+            -- next click. Fine positioning was already available before
+            -- confirmation.
+            self:CancelAlignment()
+            parent:Message("Fit and relationship committed")
         end
         parent:RefreshPointer()
         parent:RefreshHUD()
     end
     if not (parent.UnifiedExplorer and parent.UnifiedExplorer:ChooseFit(
         if isGear then "Hub" else "Bore",onChoice,
-        selected.FittedCount or 1)) then
+        selected.FittedCount or 1,nil,
+        selected.AdjustRequested==true)) then
         -- Never silently open a second legacy modal.
         onChoice(nil)
     end
