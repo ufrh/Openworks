@@ -14,6 +14,29 @@ autosave, simulation hinge and orange motor visualizer. It appears as
 key is F. When multiple shaft/hole pairs fit together, only the selected
 primary drilled hole becomes powered; the other fitted joints remain passive.
 
+## Runtime implementation
+
+OpenWorks now routes simulation through
+`ConstructionService -> UnifiedSimulationService`, not the retired
+`SimulationService`. The router starts:
+
+- **PhysicalSimulationService** for normal shaft/gear/belt assemblies,
+  using native `AngularVelocity` on the motor's shaft and
+  `GearTransmission:SetDrive` to transmit speed through welded gears.
+- **RackSimulationService** if the assembly contains a Rack or RackGuide;
+  the motor controls its input shaft through the same
+  `GearKinematics:Step` path as the hand crank.
+
+Both routes anchor the drilled hole block at simulation start, release
+any previously grounded shaft/drive-gear rigid group in temporary simulation
+state only, and reject a shaft actually welded to its hole-block housing.
+
+Studio Output prints `[OPENWORKS][SIM ROUTER]` with the selected engine and
+`[OPENWORKS][MOTOR] ACTIVE ...` with motor and gear counts.
+These are source-level changes; actual Studio behavior still needs testing.
+Run `python scripts/check_active_motor_routes.py` after future motor changes
+so retired simulation code cannot be mistaken for the active runtime.
+
 ## Configure
 
 In Build or Edit, drag the shaft into a drilled hole block (or the
