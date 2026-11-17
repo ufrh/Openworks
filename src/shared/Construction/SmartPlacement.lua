@@ -432,7 +432,9 @@ local function socketPlan(members, shaft, target, forcedByAim)
     end
     local snugDiameter=nil
     if not Bore.CanInsert(shaft,target) then
-        if #members~=1 or members[1]~=shaft then return nil end
+        -- A shaft stays fit-capable when its parent component is moved.
+        -- Change only this member's diameter in the preview; the server
+        -- validates the resulting clearance and every existing joint.
         snugDiameter=Bore.SnugDiameter(shaft,target)
         if not snugDiameter then return nil end
         local original=shaft.PrimaryPart.Size
