@@ -1370,9 +1370,33 @@ function Controller:RefreshSelectionHighlights()
         end
         self.Feedback:Set("selection","component",ordered,"selection",true)
     else
-        -- Separate boxes for independent multi-selection.
-        for i,model in ipairs(self.SelectedParts) do
-            self.Feedback:Set("selection",tostring(i),{model},"selection",false)
+        -- Whole components remain ONE selection outline even when Shift-
+        -- selected alongside other components or free primitives.
+        local groups,order={},{}
+        for _,model in ipairs(self.SelectedParts) do
+            local cid=model:GetAttribute("ComponentId")
+            if type(cid)=="string" and cid~="" then
+                if not groups[cid] then
+                    groups[cid]={}
+                    table.insert(order,cid)
+                end
+                table.insert(groups[cid],model)
+            else
+                local id=tostring(model:GetAttribute("InstanceId") or model)
+                self.Feedback:Set("selection","part:"..id,{model},
+                    "selection",false)
+            end
+        end
+        for _,cid in ipairs(order) do
+            local members=groups[cid]
+            local anchor=ComponentGeometry.CentralPrimitive(members)
+            local ordered={}
+            if anchor then table.insert(ordered,anchor) end
+            for _,member in ipairs(members) do
+                if member~=anchor then table.insert(ordered,member) end
+            end
+            self.Feedback:Set("selection","component:"..cid,ordered,
+                "selection",true)
         end
     end
 end
