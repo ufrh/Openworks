@@ -110,14 +110,14 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             local drafting=assemblyTool.Stage=="Selecting"
             title=if drafting then "ASSEMBLY / SELECT" else "ASSEMBLY"
             if drafting then
-                put(rows,"Click","Toggle part / component")
-                put(rows,"Alt+Click","Select one primitive")
+                put(rows,"Click","Select connected mechanism")
+                put(rows,"Alt+Click","Toggle one primitive")
                 put(rows,"R","Choose assembled parts")
                 put(rows,"Enter","Save assembly")
                 put(rows,"Esc","Cancel")
             else
-                put(rows,"N","New assembly")
-                put(rows,"Click","Select assembly")
+                put(rows,"Click","Detect connected assembly")
+                put(rows,"N","New / rename assembly")
             end
             put(rows,"G","Ground / unground")
             put(rows,"Alt+Arrows","Nudge assembly")
