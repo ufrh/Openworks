@@ -691,17 +691,13 @@ end
 -- size, but the server probes the actual authored CSG and mechanical fits,
 -- returning the LARGEST clear Unit increment. All probes are restored
 -- before committing the single chosen history transaction.
+-- Server-authoritative continuous collision stop. Grip snap controls the
+-- requested endpoint; the first obstruction is resolved at sub-Unit
+-- precision without rounding back to the 0.25 U construction lattice.
+-- Every probe uses real authored geometry, joint validation and bore
+-- clearance. Only the final accepted state is committed to history.
 local function maximumClearResize(player,model,entry,before,proposed,opening,
-    numericOperation)
-    local difference=proposed.size-before.size
-    local largest=math.max(math.abs(difference.X),
-        math.abs(difference.Y),math.abs(difference.Z))
-    -- The precision of THIS operation controls increments. A part that
-    -- was once numerically sized must not make normal grip drags start
-    -- stepping in 0.01-U increments.
-    local stepU=if numericOperation then Grid.NumericSizeStepU
-        else Grid.MinSizeStepU
-    local ticks=math.max(1,math.round(largest/(Grid.Unit*stepU)))
+    _numericOperation)
     local targetSize=proposed.size
     local targetPosition=proposed.position
     local ignore={[model]=true}
@@ -712,14 +708,14 @@ local function maximumClearResize(player,model,entry,before,proposed,opening,
         end
     end
 
-    local function trial(tick)
-        local fraction=tick/ticks
+    local function trial(fraction)
         local state=table.clone(proposed)
-        state.size=if numericOperation then
-            Grid.QuantizeSize(before.size:Lerp(targetSize,fraction),
-                Grid.NumericSizeStepU)
-            else before.size:Lerp(targetSize,fraction)
+        state.size=before.size:Lerp(targetSize,fraction)
         state.position=before.position:Lerp(targetPosition,fraction)
+        -- The limit can fall BETWEEN any two ordinary size increments.
+        -- Keep its precise dimensions valid when editing or loading later.
+        state.numericPrecision=true
+        state.resizePrecision=true
         if not validState(player,entry,state) then return false,state end
         applyState(model,state)
         local okay=mechanical:ValidateResize(player,before.instanceId)
@@ -749,18 +745,23 @@ local function maximumClearResize(player,model,entry,before,proposed,opening,
             if aligned then before.instanceId else nil,fitMap),state
     end
 
-    local accepted,state=trial(ticks)
+    local accepted,state=trial(1)
     if not accepted then
-        local low,high=0,ticks-1
-        while low<high do
-            local midpoint=math.floor((low+high+1)/2)
-            local valid=trial(midpoint)
-            if valid then low=midpoint else high=midpoint-1 end
+        local low,high=0,1
+        local span=math.max((targetSize-before.size).Magnitude,
+            (targetPosition-before.position).Magnitude)
+        local clear=trial(0)
+        if clear then
+            for _=1,16 do
+                if (high-low)*span<0.00025 then break end
+                local middle=(low+high)*0.5
+                local good=trial(middle)
+                if good then low=middle else high=middle end
+            end
         end
         local _,candidate=trial(low)
         state=candidate
     end
-    -- The actual edit happens ONCE in update(), not on probe attempts.
     applyState(model,before)
     return state,not accepted
 end
