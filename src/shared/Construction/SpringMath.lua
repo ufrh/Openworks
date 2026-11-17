@@ -1,8 +1,8 @@
 --!strict
--- Shape-independent, native-physics springs. A spring connects two selected
--- primitives (which may belong to two larger manually joined components).
--- It does not require matching plates, centered faces or a particular shape.
--- A spring never creates a hidden slider, even between a shaft and a tube.
+-- Shape-independent, single-axis native springs. The spring connects two
+-- selected primitives, and a prismatic guide permits ONLY translation
+-- along the axis between their mount points. Component membership alone
+-- never creates a physical weld.
 local Grid=require(script.Parent:WaitForChild("GridMath"))
 
 local Spring={}
@@ -92,6 +92,24 @@ function Spring.Frames(source,target,mode)
     end
     return targetCenter+direction*fromTarget,
         sourceCenter-direction*fromSource
+end
+
+-- Both attachments of the spring and its prismatic guide must share
+-- exactly the SAME world orientation. Roblox PrismaticConstraint slides
+-- along attachment local X; the other two translations and all relative
+-- rotations are locked by native physics. The guide has no fabricated
+-- travel stops; the spring itself controls compression and extension.
+function Spring.AxisFrames(world0:Vector3,world1:Vector3,
+    fallbackAxis:Vector3?):(CFrame,CFrame)
+    local delta=world1-world0
+    local axis=if delta.Magnitude>1e-4 then delta.Unit
+        elseif fallbackAxis and fallbackAxis.Magnitude>1e-4
+            then fallbackAxis.Unit else Vector3.yAxis
+    local reference=if math.abs(axis:Dot(Vector3.yAxis))<0.94
+        then Vector3.yAxis else Vector3.zAxis
+    local up=(reference-axis*reference:Dot(axis)).Unit
+    return CFrame.fromMatrix(world0,axis,up),
+        CFrame.fromMatrix(world1,axis,up)
 end
 
 function Spring.Radius(source,target,mode)
