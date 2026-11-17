@@ -691,11 +691,15 @@ end
 -- size, but the server probes the actual authored CSG and mechanical fits,
 -- returning the LARGEST clear Unit increment. All probes are restored
 -- before committing the single chosen history transaction.
-local function maximumClearResize(player,model,entry,before,proposed,opening)
+local function maximumClearResize(player,model,entry,before,proposed,opening,
+    numericOperation)
     local difference=proposed.size-before.size
     local largest=math.max(math.abs(difference.X),
         math.abs(difference.Y),math.abs(difference.Z))
-    local stepU=if proposed.numericPrecision then Grid.NumericSizeStepU
+    -- The precision of THIS operation controls increments. A part that
+    -- was once numerically sized must not make normal grip drags start
+    -- stepping in 0.01-U increments.
+    local stepU=if numericOperation then Grid.NumericSizeStepU
         else Grid.MinSizeStepU
     local ticks=math.max(1,math.round(largest/(Grid.Unit*stepU)))
     local targetSize=proposed.size
@@ -711,7 +715,7 @@ local function maximumClearResize(player,model,entry,before,proposed,opening)
     local function trial(tick)
         local fraction=tick/ticks
         local state=table.clone(proposed)
-        state.size=if proposed.numericPrecision then
+        state.size=if numericOperation then
             Grid.QuantizeSize(before.size:Lerp(targetSize,fraction),
                 Grid.NumericSizeStepU)
             else before.size:Lerp(targetSize,fraction)
@@ -851,7 +855,8 @@ local function update(player, payload)
         and typeof(proposed.position)=="Vector3"
         and (proposed.size-before.size).Magnitude>0.0001 then
         proposed,resizeClamped=maximumClearResize(
-            player,model,entry,before,proposed,opening)
+            player,model,entry,before,proposed,opening,
+            payload.numericPrecision==true)
         if (proposed.size-before.size).Magnitude<0.0001
             and (proposed.position-before.position).Magnitude<0.0001 then
             return true,"",{
