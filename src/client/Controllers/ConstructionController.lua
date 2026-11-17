@@ -2653,11 +2653,10 @@ end
 -- Numeric entry may change several dimensions simultaneously. Clamp along
 -- that requested size vector at the same 0.01-U resolution as Grid.ValidSize,
 -- keeping the existing pivot fixed (unlike a dragged face grip).
+-- Numeric resize uses the same physical collision boundary as face grips.
+-- Requested dimensions may be entered in 0.01 U, but an obstruction
+-- must not be rounded away to the preceding numeric increment.
 function Controller:ClampNumericScale(cf,oldSize,newSize)
-    local span=newSize-oldSize
-    local largest=math.max(math.abs(span.X),math.abs(span.Y),math.abs(span.Z))
-    local ticks=math.max(1,math.round(largest/
-        (Grid.Unit*Grid.NumericSizeStepU)))
     local ghost=if self.Mode=="Edit" then self.ScaleGhost else self.Preview
     if not ghost or not ghost.PrimaryPart then return oldSize,true end
     local oldCF=ghost:GetPivot()
@@ -2665,27 +2664,29 @@ function Controller:ClampNumericScale(cf,oldSize,newSize)
     local id=if self.Mode=="Edit" and self.Selected
         then self.Selected:GetAttribute("TemplateId") else self.CurrentId
     local entry=id and Registry.Get(id)
-    local function clear(step)
-        local size=Grid.QuantizeSize(oldSize:Lerp(newSize,step/ticks),
-            Grid.NumericSizeStepU)
+    local function clear(fraction)
+        local size=oldSize:Lerp(newSize,fraction)
         if not entry or not Grid.ValidSize(entry.Model.PrimaryPart.Size,size,
             entry.ResizeMode,true,true) then return false end
         return self:ScaleClear(cf,size)
     end
-    local good=clear(ticks)
-    local chosen=ticks
-    if not good then
-        local low,high=0,ticks-1
-        while low<high do
-            local middle=math.floor((low+high+1)/2)
-            if clear(middle) then low=middle else high=middle-1 end
+    local accepted=clear(1)
+    local chosen=1
+    if not accepted then
+        chosen=0
+        if clear(0) then
+            local low,high=0,1
+            for _=1,16 do
+                if (high-low)*(newSize-oldSize).Magnitude<0.00025 then break end
+                local midpoint=(low+high)*0.5
+                if clear(midpoint) then low=midpoint else high=midpoint end
+            end
+            chosen=low
         end
-        chosen=low
     end
     ghost.PrimaryPart.Size=oldGhostSize
     ghost:PivotTo(oldCF)
-    return Grid.QuantizeSize(oldSize:Lerp(newSize,chosen/ticks),
-        Grid.NumericSizeStepU),chosen<ticks
+    return oldSize:Lerp(newSize,chosen),not accepted
 end
 
 function Controller:UpdateScalePreview(cf, size)
