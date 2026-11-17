@@ -9,6 +9,10 @@ local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local GearMath=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
 local VectorJoint=require(script.Parent:WaitForChild("VectorJoint"))
+local Smart=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("SmartPlacement"))
+local Alignment=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("AlignmentMath"))
 
 local Kinematics={}
 Kinematics.__index=Kinematics
@@ -62,6 +66,58 @@ function Kinematics.new(graph,copies)
             local a=root(identifier(edge.source))
             local b=root(identifier(edge.target))
             if a and b and a~=b then parent[a]=b end
+        end
+    end
+
+    -- Older or interrupted Smart Fit operations can leave a gear seated
+    -- concentrically on a motor shaft without its intended rigid Hub weld.
+    -- The visible gear must rotate WITH that shaft, just as it does when
+    -- hand-crank driven. Repair only exact, clearance-validated fitted hubs
+    -- in the simulation graph (not the authored world or its save).
+    -- Do not infer a joint from mere touching / gear tooth contact.
+    local motorShafts={}
+    local rootByModel={}
+    for _,model in ipairs(graph.models) do
+        rootByModel[model]=identifier(model)
+    end
+    for _,edge in ipairs(graph.edges) do
+        if edge.kind=="Bearing"
+            and edge.relation:GetAttribute("MotorEnabled")==true
+            and Alignment.IsShaft(edge.source) then
+            motorShafts[identifier(edge.source)]=edge.source
+        end
+    end
+    local inferredMounts=0
+    local usedGear={}
+    for _,original in ipairs(graph.models) do
+        if isGear(original) and identifier(original) then
+            -- A gear already in a welded rigid group cannot be stolen by
+            -- a second shaft: it may belong to a separate compound stage.
+            for _,shaft in pairs(motorShafts) do
+                local shaftId=identifier(shaft)
+                local gearId=identifier(original)
+                local shaftGroup=root(shaftId)
+                local gearGroup=root(gearId)
+                if shaftGroup and gearGroup and shaftGroup~=gearGroup
+                    and not usedGear[gearId] then
+                    local fits=Smart.HubFits(shaft,original)
+                    if fits then
+                        -- Never merge a gear from a separately welded
+                        -- housing/other-shaft group: only orphan hubs.
+                        local groupMembers=0
+                        for _,model in ipairs(graph.models) do
+                            if root(identifier(model))==gearGroup then
+                                groupMembers+=1
+                            end
+                        end
+                        if groupMembers==1 then
+                            parent[gearGroup]=shaftGroup
+                            usedGear[gearId]=true
+                            inferredMounts+=1
+                        end
+                    end
+                end
+            end
         end
     end
 
@@ -169,6 +225,7 @@ function Kinematics.new(graph,copies)
         Groups=groups,ById=byId,Gears=gears,Racks=racks,
         VectorLinks=vectorLinks,LastVelocities={},
         Kinematic=kinematic,
+        InferredMotorMounts=inferredMounts,
         ScanElapsed=SCAN_PERIOD,MotionElapsed=0,Contacts=0,
         CurrentSpeed=0,LastDrivenId=nil,LastAxis=nil,
         RayParams=nil,
