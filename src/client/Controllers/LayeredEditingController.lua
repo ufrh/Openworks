@@ -212,7 +212,7 @@ function Layered:PickCurrent()
 
     local now=os.clock()
     local id=choice:GetAttribute("ComponentId")
-    local doubleClick=type(id)=="string"
+    local doubleClick=not shift and type(id)=="string"
         and self.LastClickedModel==choice
         and now-self.LastClickAt<=0.34
     self.DepthIndex=0
