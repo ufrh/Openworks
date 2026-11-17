@@ -266,8 +266,11 @@ function Simulation:StepCranks(dt)
                 motor.NativeSpeed=0
             end
             if motor.Drive and motor.Drive.Parent and motor.Shaft.Parent then
-                motor.Drive.AngularVelocity=motor.Shaft.CFrame.RightVector
-                    *motor.NativeSpeed
+                local bearingAxis=if motor.Constraint
+                    and motor.Constraint.Attachment1 then
+                    motor.Constraint.Attachment1.WorldAxis
+                    else motor.Shaft.CFrame.RightVector
+                motor.Drive.AngularVelocity=bearingAxis*motor.NativeSpeed
                 motor.Drive.Enabled=motor.DriveType=="Servo"
                     or math.abs(motor.NativeSpeed)>0.0001
             end
