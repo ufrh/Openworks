@@ -1,5 +1,8 @@
 --!strict
--- SimulationService: compile ONLY explicitly registered named assemblies.
+-- ACTIVE physical engine routed by UnifiedSimulationService for normal
+-- gear/belt assemblies. A Motor here MUST drive its shaft like HandCrank,
+-- not the housing; retired SimulationService is never launched.
+-- PhysicalSimulationService: compile only registered named assemblies.
 -- Each primitive is an independent body; component grouping never welds.
 -- Authored models remain unchanged; temporary clones receive passive native
 -- physics constraints and separately powered, input-limited actuator parts.
