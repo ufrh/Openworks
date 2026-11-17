@@ -1328,6 +1328,27 @@ function Simulation:Start(player, payload)
     print(string.format(
         "[OPENWORKS][MOTOR] ACTIVE PhysicalSimulationService | motors=%d gears=%d",
         #session.Motors,#session.Gears.Gears))
+    -- Expose actual live physics (not authored editor metadata) so a
+    -- formerly spinning housing can be diagnosed in Studio immediately.
+    for _,motor in ipairs(session.Motors) do
+        local housingPart=motor.Constraint.Attachment0
+            and motor.Constraint.Attachment0.Parent
+        if housingPart and housingPart:IsA("BasePart") then
+            local housingModel=housingPart:FindFirstAncestorOfClass("Model")
+            local housingId=housingModel
+                and housingModel:GetAttribute("InstanceId")
+            local rigidGroup=housingId and session.Gears.ById[housingId]
+            local root=housingPart.AssemblyRootPart
+            local anchored=housingPart.Anchored or
+                (root~=nil and root.Anchored)
+            print(string.format(
+                "[OPENWORKS][BEARING][PhysicalSimulationService] "
+                .."motor housing=%s, rigid members=%d, physics anchored=%s",
+                housingModel and housingModel.Name or "unknown",
+                rigidGroup and #rigidGroup.Models or 0,
+                tostring(anchored)))
+        end
+    end
 
     self:SetStatus(player,true,next(session.GroundKeys)~=nil)
     player:SetAttribute("OPENWORKS_SimulationPaused",false)
