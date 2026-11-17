@@ -1037,13 +1037,13 @@ function Simulation:Start(player, payload)
                 end
             end
         end
-        local standaloneSupports=BearingSupport.Resolve(
-            graph,session.Gears,session.GroundKeys)
-        if standaloneSupports>0 then
-            print(string.format(
-                "[OPENWORKS][BEARING] Fixed %d isolated housings in rack engine",
-                standaloneSupports))
-        end
+        local standaloneSupports,supportCandidates,structuralSupports=
+            BearingSupport.Resolve(graph,session.Gears,session.GroundKeys)
+        print(string.format(
+            "[OPENWORKS][BEARING][RackSimulationService] "
+            .."support groups anchored=%d, eligible=%d, "
+            .."welded into moving structure=%d",
+            standaloneSupports,supportCandidates,structuralSupports))
         if not hasExplicitGround and standaloneSupports==0
             and session.Grounded then
             -- Aim-at-crank must not ground the actuator you're about to
