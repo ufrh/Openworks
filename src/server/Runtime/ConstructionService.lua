@@ -44,6 +44,7 @@ local folder
 local remote
 local histories = {}
 local lastRequest = {}
+local lastDetection = {}
 local components
 local componentBank
 local alignmentService
@@ -1537,8 +1538,11 @@ local function handle(player, payload)
             return {ok=false,message="Use Edit for components or Assembly & Simulation for assemblies"}
         end
     elseif assemblyAction then
+        if action~="DetectConnectedAssembly" then
+            return {ok=false,message="Assemblies are automatic; connect parts to group them"}
+        end
         if not hasEquippedTool(player,"AssemblySimulation") then
-            return {ok=false,message="Use Assembly Editor to create or edit assemblies"}
+            return {ok=false,message="Equip Simulate to inspect a connected mechanism"}
         end
     elseif componentAction or alignmentAction or smartAction then
         if componentAction and not hasEquippedTool(player,"Edit") then
@@ -1570,12 +1574,21 @@ local function handle(player, payload)
     -- Wheel-fitting is a short, discrete, server-validated operation.
     -- Give it a slightly shorter cooldown than placement so a normal
     -- wheel notch doesn't feel missed, without disabling request throttling.
-    local interval = if action == "FitShaft"
-        then 0.035 else Config.MinActionInterval
-    if now - (lastRequest[player] or 0) < interval then
-        return { ok = false, message = "Try again" }
+    if action=="DetectConnectedAssembly" then
+        -- Hover previews are read-only and must not throttle P/simulation
+        -- or normal construction. Guard their own modest request rate.
+        if now-(lastDetection[player] or 0)<0.25 then
+            return {ok=false,message="Try again"}
+        end
+        lastDetection[player]=now
+    else
+        local interval=if action=="FitShaft" then 0.035
+            else Config.MinActionInterval
+        if now-(lastRequest[player] or 0)<interval then
+            return {ok=false,message="Try again"}
+        end
+        lastRequest[player]=now
     end
-    lastRequest[player] = now
 
     local ok,result,extra,detail=pcall(function()
         if action == "StartSimulation" then return simulation:Start(player, payload) end
@@ -1962,6 +1975,7 @@ function Service.Start()
         if plots then plots:Release(player) end
         histories[player] = nil
         lastRequest[player] = nil
+        lastDetection[player] = nil
     end)
 
     game:BindToClose(function()
