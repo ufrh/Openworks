@@ -711,7 +711,10 @@ local function maximumClearResize(player,model,entry,before,proposed,opening)
     local function trial(tick)
         local fraction=tick/ticks
         local state=table.clone(proposed)
-        state.size=before.size:Lerp(targetSize,fraction)
+        state.size=if proposed.numericPrecision then
+            Grid.QuantizeSize(before.size:Lerp(targetSize,fraction),
+                Grid.NumericSizeStepU)
+            else before.size:Lerp(targetSize,fraction)
         state.position=before.position:Lerp(targetPosition,fraction)
         if not validState(player,entry,state) then return false,state end
         applyState(model,state)
