@@ -1153,6 +1153,23 @@ function Mechanical:SmartMate(player, request, newSource)
                 end
             end
         end
+        if request.fitMovingIds~=nil then
+            if type(request.fitMovingIds)~="table"
+                or #request.fitMovingIds>MultiFit.MaxPairs then
+                restoreMoving()
+                return false,"Invalid moving guide selection"
+            end
+            local confirmed={}
+            for _,pair in ipairs(fitPairs) do
+                confirmed[pair.movingId]=true
+            end
+            for _,id in ipairs(request.fitMovingIds) do
+                if type(id)~="string" or #id>64 or not confirmed[id] then
+                    restoreMoving()
+                    return false,"Every moving hole must still fit the shaft"
+                end
+            end
+        end
         fitMap=MultiFit.AllowMap(fitPairs)
     end
     if mode=="Bore" and typeName~="FreeFit"
