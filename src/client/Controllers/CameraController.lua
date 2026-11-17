@@ -134,6 +134,21 @@ function Camera:Start()
         Enum.RenderPriority.Camera.Value+1,function(dt)
         local camera=workspace.CurrentCamera
         if not camera then return end
+        -- Only seat-bearing mechanisms activate the real character.
+        -- In that state Roblox owns third-person camera and walking;
+        -- the engineering freecam is suspended, not fighting it each frame.
+        if player:GetAttribute("OPENWORKS_SimulationHasSeat")==true then
+            if camera.CameraType~=Enum.CameraType.Custom then
+                camera.CameraType=Enum.CameraType.Custom
+            end
+            local character=player.Character
+            local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+            if humanoid and camera.CameraSubject~=humanoid then
+                camera.CameraSubject=humanoid
+            end
+            self.Velocity=Vector3.zero
+            return
+        end
         if camera.CameraType~=Enum.CameraType.Scriptable then
             camera.CameraType=Enum.CameraType.Scriptable
         end
@@ -236,6 +251,11 @@ function Camera:Start()
     end)
     RunService:BindToRenderStep(RENDER_BINDING.."_Pointer",
         Enum.RenderPriority.Camera.Value+3,function()
+        if player:GetAttribute("OPENWORKS_SimulationHasSeat")==true then
+            UIS.MouseBehavior=Enum.MouseBehavior.Default
+            UIS.MouseIconEnabled=true
+            return
+        end
         if uiCapturesPointer() then
             UIS.MouseBehavior=Enum.MouseBehavior.Default
             UIS.MouseIconEnabled=true
