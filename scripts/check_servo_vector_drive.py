@@ -19,20 +19,22 @@ router=src("src/server/Runtime/UnifiedSimulationService.lua")
 checks={
     "Normal assemblies route through active physical runtime":
         'return if rack then self.Rack else self.Physical' in router,
-    "Physical native Servo receives direct key-selected target angle":
-        'hinge.TargetAngle=if motor.On then motor.TargetAngle else 0' in physical
+    "Physical native servo retains player speed/torque with stable damping":
+        'local goal=if motor.On then motor.TargetAngle else 0' in physical
+        and 'if hinge.TargetAngle~=goal then hinge.TargetAngle=goal end' in physical
         and 'hinge.AngularSpeed=math.abs(motor.Speed)' in physical
         and 'hinge.ServoMaxTorque=motor.Torque' in physical
-        and 'hinge.AngularResponsiveness=45' in physical,
+        and 'hinge.AngularResponsiveness=12' in physical,
     "Physical servo has no custom controller or second world drive":
         'ServoVelocity' not in physical
         and 'ServoTarget' not in physical
         and 'motor.DriveType=="Servo" then' in physical
         and 'if motor.DriveType=="Servo" then\n                -- Direct native servo control' in physical
         and 'if motor.On then\n                markVectorSource(session,shaft,motor.Torque)' in physical,
-    "Rack physical servo is native; kinematic rack servo fails explicitly":
-        'hinge.TargetAngle=if motor.On then motor.TargetAngle else 0' in rack
-        and 'hinge.ActuatorType=Enum.ActuatorType.Servo' in rack
+    "Rack native servo holds neutral without repeat actuator writes":
+        'local goal=if motor.On then motor.TargetAngle else 0' in rack
+        and 'if hinge.TargetAngle~=goal then hinge.TargetAngle=goal end' in rack
+        and 'hinge.AngularResponsiveness=12' in rack
         and 'if motor.Kinematic and motor.DriveType=="Servo" then' in rack
         and 'ServoVelocity' not in rack
         and 'ServoTarget' not in rack,
