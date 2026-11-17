@@ -2626,6 +2626,8 @@ function Controller:Delete()
     local payload
     if self.SelectedComponentId then
         payload = { action = "DeleteComponent", componentId = self.SelectedComponentId }
+    elseif #self.SelectedParts>1 then
+        payload = {action="DeleteSelection",ids=self:SelectedIds()}
     elseif self.Selected then
         payload = {
             action = "Delete",
