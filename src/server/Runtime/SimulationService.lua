@@ -1,5 +1,9 @@
 --!strict
--- SimulationService: compile ONLY explicitly registered named assemblies.
+-- RETIRED / NOT USED BY ConstructionService.
+-- Active engine: UnifiedSimulationService -> PhysicalSimulationService
+-- for normal gears, or RackSimulationService for rack/guide assemblies.
+-- DO NOT implement new motor or gear behavior in this file.
+-- Legacy SimulationService: compile only named assemblies.
 -- Each primitive is an independent body; component grouping never welds.
 -- Authored models remain unchanged; temporary clones receive passive native
 -- physics constraints and separately powered, input-limited actuator parts.
