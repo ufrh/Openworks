@@ -1323,6 +1323,7 @@ local function handle(player, payload)
         or action == "AdjustJoint" or action == "PoseShaft"
         or action == "SetGrounded" or action == "GetMechanismInfo"
         or action == "CreateSpring" or action == "TuneSpring"
+        or action == "CreateRope" or action == "TuneRope"
         or action == "CreateWeld" or action == "CreateMultiWeld"
         or action == "WeldComponent"
         or action == "CreateBolt"
@@ -1331,7 +1332,7 @@ local function handle(player, payload)
         or action == "CreateVectorJoint"
 
     local propertyAction=action=="AdjustJoint" or action=="TuneSpring"
-        or action=="TuneBearingMotor"
+        or action=="TuneRope" or action=="TuneBearingMotor"
     local simulationAction = action == "StartSimulation"
         or action == "BeginCrank"
         or action == "BeginRack"
@@ -1370,7 +1371,7 @@ local function handle(player, payload)
             return {ok=false,message="Equip Simulate to run a mechanism"}
         end
     elseif simulation and simulation:IsRunning(player)
-        and action~="TuneSpring" then
+        and action~="TuneSpring" and action~="TuneRope" then
         return { ok = false, message = "Stop simulation before changing construction" }
     elseif mechanicalAction then
         if propertyAction or action=="RemoveRelation" then
@@ -1518,6 +1519,12 @@ local function handle(player, payload)
         end
         if action=="TuneSpring" then
             return mechanical:TuneSpring(player,payload)
+        end
+        if action=="CreateRope" then
+            return mechanical:CreateRope(player,payload)
+        end
+        if action=="TuneRope" then
+            return mechanical:TuneRope(player,payload)
         end
         if action=="CreateWeld" then
             return mechanical:CreateWeld(player,payload)
@@ -1812,6 +1819,19 @@ function Service.Start()
         if not hasEquippedTool(player,"AssemblySimulation") then return end
         if type(key)~="string" or type(holding)~="boolean" then return end
         simulation:InputMotor(player,key,holding)
+    end)
+
+    local oldRope=ReplicatedStorage:FindFirstChild("OPENWORKS_RopeControl")
+    if oldRope then oldRope:Destroy() end
+    local ropeEvent=Instance.new("RemoteEvent")
+    ropeEvent.Name="OPENWORKS_RopeControl"
+    ropeEvent.Parent=ReplicatedStorage
+    ropeEvent.OnServerEvent:Connect(function(player,key,holding)
+        if not hasEquippedTool(player,"AssemblySimulation") then return end
+        if type(key)~="string" or #key>20
+            or type(holding)~="boolean" then return end
+        -- The live engine accepts only keys from saved owned rope bindings.
+        simulation:InputRope(player,key,holding)
     end)
 
     Players.PlayerRemoving:Connect(function(player)
