@@ -21,6 +21,7 @@ local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("HandCrankMath"))
 local GearKinematics = require(script.Parent:WaitForChild("GearKinematics"))
+local BearingSupport=require(script.Parent:WaitForChild("BearingSupport"))
 local GearMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GearMath"))
 local PrefabCollision=require(ReplicatedStorage:WaitForChild("Openworks")
@@ -1017,21 +1018,14 @@ function Simulation:Start(player, payload)
         end
         local hasExplicitGround = next(explicitGround) ~= nil
         session.GroundKeys = explicitGround
-        -- The motor's drilled hole is a stator, not the rotor.
-        -- Release grounded shaft/gear groups at runtime and always
-        -- anchor the hole housing, even with another grounded support.
-        local motorStators={}
+        -- Retain real mobile chassis dynamics. Only isolated drilled
+        -- housings supporting powered/geared shafts become stationary.
+        -- Bearing constraints transfer no commanded motor rotation.
         for _,edge in ipairs(graph.edges) do
-            if edge.kind=="Bearing"
+            if edge.kind=="Bearing" and edge.relation
                 and edge.relation:GetAttribute("MotorEnabled")==true then
                 local rotor=session.Gears.ById[
                     edge.source:GetAttribute("InstanceId")]
-                local stator=session.Gears.ById[
-                    edge.target:GetAttribute("InstanceId")]
-                if rotor and stator and rotor==stator then
-                    error("Motor shaft and hole housing are rigidly welded. "
-                        .."Remove that weld so only the shaft rotates")
-                end
                 if rotor then
                     for id,group in pairs(session.Gears.ById) do
                         if group==rotor then
@@ -1041,11 +1035,16 @@ function Simulation:Start(player, payload)
                 else
                     session.GroundKeys[edge.a]=nil
                 end
-                motorStators[edge.b]=true
             end
         end
-        for key in pairs(motorStators) do session.GroundKeys[key]=true end
-        if not hasExplicitGround and not next(motorStators)
+        local standaloneSupports=BearingSupport.Resolve(
+            graph,session.Gears,session.GroundKeys)
+        if standaloneSupports>0 then
+            print(string.format(
+                "[OPENWORKS][BEARING] Fixed %d isolated housings in rack engine",
+                standaloneSupports))
+        end
+        if not hasExplicitGround and standaloneSupports==0
             and session.Grounded then
             -- Aim-at-crank must not ground the actuator you're about to
             -- turn. Prefer the BEARING HOUSING of a crank mechanism.
