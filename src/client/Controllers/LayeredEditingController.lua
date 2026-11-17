@@ -472,10 +472,10 @@ function Layered:UpdateAlignPreview()
             align.Shaft:GetAttribute("InstanceId"),
             align.Target:GetAttribute("InstanceId")) or {}
         align.FittedCount=#fitted
-        local fixed,moving={},{}
+        local fixed,seenMoving={},{}
         for _,pair in ipairs(fitted) do
             fixed[pair.stationaryId]=true
-            moving[pair.movingId]=true
+            seenMoving[pair.movingId]=true
         end
         align.FitTargets={}
         for _,pair in ipairs(fitted) do
@@ -487,7 +487,7 @@ function Layered:UpdateAlignPreview()
             if not fixed[id] then allGuidesPresent=false break end
         end
         for _,id in ipairs(align.RequiredMovingFitIds or {}) do
-            if not moving[id] then allGuidesPresent=false break end
+            if not seenMoving[id] then allGuidesPresent=false break end
         end
         if align.RequiredFitTargets then
             align.FitTargets=align.RequiredFitTargets
