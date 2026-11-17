@@ -137,9 +137,26 @@ function Simulation:StopRack(session)
     session.RackDirection=0
 end
 
--- Rack assemblies have KINEMATIC geared shafts and native ungeared
--- shafts. Both use the same saved motor settings and key transitions.
--- Never use a powered HingeConstraint to rotate the hole-block housing.
+-- Native bearings use the stock Roblox HingeConstraint Servo.
+-- Kinematic rack gear groups have no physical hinge; only continuous
+-- scripted rack/gear drive is supported for those special groups.
+local function ensureContinuousDrive(motor)
+    if motor.Drive and motor.Drive.Parent then return motor.Drive end
+    local attachment=Instance.new("Attachment")
+    attachment.Name="PoweredMotorShaftAxis"
+    attachment.Parent=motor.Shaft
+    local drive=Instance.new("AngularVelocity")
+    drive.Name="PoweredMotor_ShaftOnlyDrive"
+    drive.Attachment0=attachment
+    drive.RelativeTo=Enum.ActuatorRelativeTo.World
+    drive.AngularVelocity=Vector3.zero
+    drive.MaxTorque=3000
+    drive.Enabled=false
+    drive.Parent=motor.Runtime
+    motor.Drive=drive
+    return drive
+end
+
 local function configureMotor(motor,relation)
     motor.Key=relation:GetAttribute("MotorKey") or "F"
     motor.Speed=relation:GetAttribute("MotorSpeed") or 3
@@ -157,22 +174,36 @@ local function configureMotor(motor,relation)
     motor.Latched=false
     motor.LastInput=0
     motor.NativeSpeed=0
-    motor.ServoVelocity=0
-    motor.ServoTarget=if motor.Constraint then motor.Constraint.CurrentAngle else 0
-    if motor.Constraint then
-        motor.Constraint.ActuatorType=if motor.DriveType=="Servo"
-            then Enum.ActuatorType.Servo else Enum.ActuatorType.None
-        motor.Constraint.AngularVelocity=0
-        motor.Constraint.TargetAngle=motor.ServoTarget
-        motor.Constraint.AngularSpeed=math.max(0.05,math.abs(motor.Speed))
-        motor.Constraint.AngularResponsiveness=
-            math.clamp(math.sqrt(motor.Acceleration)*0.65,2,6)
-        motor.Constraint.ServoMaxTorque=motor.Torque
+    if motor.Kinematic and motor.DriveType=="Servo" then
+        error("Motor native Servo requires a physical HingeConstraint; "
+            .."rack-kinematic geared shafts cannot use a native servo")
     end
-    if motor.Drive then
-        motor.Drive.MaxTorque=motor.Torque
-        motor.Drive.AngularVelocity=Vector3.zero
-        motor.Drive.Enabled=false
+    if motor.DriveType=="Servo" then
+        if motor.Drive then
+            local axis=motor.Drive.Attachment0
+            motor.Drive:Destroy()
+            if axis then axis:Destroy() end
+            motor.Drive=nil
+        end
+        local hinge=motor.Constraint
+        if not hinge then error("Motor native Servo is missing its hinge") end
+        hinge.AngularVelocity=0
+        hinge.AngularSpeed=math.abs(motor.Speed)
+        hinge.ServoMaxTorque=motor.Torque
+        hinge.AngularResponsiveness=45
+        hinge.TargetAngle=0
+        hinge.ActuatorType=Enum.ActuatorType.Servo
+    else
+        if motor.Constraint then
+            motor.Constraint.ActuatorType=Enum.ActuatorType.None
+            motor.Constraint.AngularVelocity=0
+        end
+        if not motor.Kinematic then
+            local drive=ensureContinuousDrive(motor)
+            drive.MaxTorque=motor.Torque
+            drive.AngularVelocity=Vector3.zero
+            drive.Enabled=false
+        end
     end
 end
 
@@ -182,9 +213,8 @@ local function stopMotor(motor)
     motor.Latched=false
     motor.LastInput=0
     motor.NativeSpeed=0
-    motor.ServoVelocity=0
     if motor.Constraint and motor.Constraint.Parent then
-        motor.ServoTarget=motor.Constraint.CurrentAngle
+        motor.Constraint.TargetAngle=0
         motor.Constraint.ActuatorType=Enum.ActuatorType.None
     end
     if motor.Drive and motor.Drive.Parent then
@@ -195,27 +225,13 @@ end
 
 local function makeMotor(edge,constraint,shaft,runtime,kinematic)
     local motor={
-        Constraint=constraint,Shaft=shaft,
+        Constraint=constraint,Shaft=shaft,Runtime=runtime,
         Kinematic=kinematic,
         ShaftId=if edge.source then edge.source:GetAttribute("InstanceId")
             else edge.relation:GetAttribute("SourceId"),
         RelationId=edge.relation:GetAttribute("RelationId"),
         Axis=shaft.CFrame.RightVector.Unit,
     }
-    if not kinematic then
-        local attachment=Instance.new("Attachment")
-        attachment.Name="PoweredMotorShaftAxis"
-        attachment.Parent=shaft
-        local drive=Instance.new("AngularVelocity")
-        drive.Name="PoweredMotor_ShaftOnlyDrive"
-        drive.Attachment0=attachment
-        drive.RelativeTo=Enum.ActuatorRelativeTo.World
-        drive.AngularVelocity=Vector3.zero
-        drive.MaxTorque=3000
-        drive.Enabled=false
-        drive.Parent=runtime
-        motor.Drive=drive
-    end
     configureMotor(motor,edge.relation)
     return motor
 end
@@ -269,77 +285,42 @@ function Simulation:StepCranks(dt)
                 motor.Held=false
                 motor.On=false
             end
-            local dtSafe=math.clamp(dt,0,0.07)
-            local desired=if motor.On then motor.Speed else 0
-            local servoGoal=nil
-            if motor.DriveType=="Servo" and motor.Kinematic then
-                -- Kinematic gears already have a positional solver.
-                servoGoal=math.rad(if motor.On then motor.TargetAngle else 0)
-                local angle=session.Gears:AngleFor(motor.ShaftId,motor.Axis)
-                if angle then
-                    local diff=servoGoal-angle
-                    diff=math.atan2(math.sin(diff),math.cos(diff))
-                    desired=if math.abs(diff)<math.rad(0.2) then 0
-                        else math.clamp(diff*5,
-                            -math.abs(motor.Speed),math.abs(motor.Speed))
-                else
-                    desired=0
-                end
-            elseif motor.DriveType=="Servo" and motor.Constraint then
-                -- Same angle-ramped servo as PhysicalSimulationService.
-                -- Never run a world AngularVelocity motor on this hinge
-                -- at the same time as its positional actuator.
+            if motor.DriveType=="Servo" then
+                -- No kinematic or Lua servo control. Directly set the
+                -- native hinge's target; Roblox applies all motion.
                 local hinge=motor.Constraint
-                local current=hinge.CurrentAngle
-                local goal=if motor.On then motor.TargetAngle else 0
-                local error=math.rad(goal-motor.ServoTarget)
-                local topSpeed=math.abs(motor.Speed)
-                local wanted=math.clamp(error*5,-topSpeed,topSpeed)
-                local advance=motor.Acceleration*dtSafe
-                motor.ServoVelocity=math.clamp(
-                    motor.ServoVelocity+math.clamp(
-                        wanted-motor.ServoVelocity,-advance,advance),
-                    -topSpeed,topSpeed)
-                local nextAngle=motor.ServoTarget
-                    +math.deg(motor.ServoVelocity*dtSafe)
-                if (goal-motor.ServoTarget)*(goal-nextAngle)<=0 then
-                    nextAngle=goal
-                    motor.ServoVelocity=0
+                if hinge and hinge.Parent then
+                    hinge.TargetAngle=if motor.On then motor.TargetAngle else 0
+                    hinge.ActuatorType=Enum.ActuatorType.Servo
                 end
-                local lead=math.clamp(math.deg(topSpeed*0.09),4,15)
-                nextAngle=math.clamp(nextAngle,current-lead,current+lead)
-                motor.ServoTarget=nextAngle
-                motor.NativeSpeed=motor.ServoVelocity
-                hinge.TargetAngle=nextAngle
-                hinge.ActuatorType=Enum.ActuatorType.Servo
+                continue
             end
-            if motor.DriveType~="Servo" or motor.Kinematic then
-                local ease=(desired-motor.NativeSpeed)
-                    *(1-math.exp(-8*dtSafe))
-                local ramp=motor.Acceleration*dtSafe
-                motor.NativeSpeed+=math.clamp(ease,-ramp,ramp)
-                if math.abs(motor.NativeSpeed)<0.008 and desired==0 then
-                    motor.NativeSpeed=0
-                end
+
+            -- Continuous rack/motor behavior stays unchanged.
+            local desired=if motor.On then motor.Speed else 0
+            local dtSafe=math.clamp(dt,0,0.07)
+            local ease=(desired-motor.NativeSpeed)
+                *(1-math.exp(-8*dtSafe))
+            local ramp=motor.Acceleration*dtSafe
+            motor.NativeSpeed+=math.clamp(ease,-ramp,ramp)
+            if math.abs(motor.NativeSpeed)<0.008 and desired==0 then
+                motor.NativeSpeed=0
             end
             if motor.Drive and motor.Drive.Parent and motor.Shaft.Parent then
                 local bearingAxis=if motor.Constraint
                     and motor.Constraint.Attachment1 then
                     motor.Constraint.Attachment1.WorldAxis
                     else motor.Shaft.CFrame.RightVector
-                motor.Drive.AngularVelocity=if motor.DriveType=="Servo"
-                    then Vector3.zero else bearingAxis*motor.NativeSpeed
-                motor.Drive.Enabled=motor.DriveType~="Servo"
-                    and math.abs(motor.NativeSpeed)>0.0001
+                motor.Drive.AngularVelocity=bearingAxis*motor.NativeSpeed
+                motor.Drive.Enabled=math.abs(motor.NativeSpeed)>0.0001
             end
             if motor.Kinematic and not motorCommand
-                and (math.abs(motor.NativeSpeed)>0.008
-                    or servoGoal~=nil) then
+                and math.abs(motor.NativeSpeed)>0.008 then
                 motorCommand={
                     ShaftId=motor.ShaftId,
                     Axis=motor.Axis,
                     Speed=motor.NativeSpeed,
-                    ServoGoal=servoGoal,
+                    ServoGoal=nil,
                 }
             end
         end
