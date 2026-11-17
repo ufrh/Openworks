@@ -325,6 +325,7 @@ function Fit.CenteredReverseOffset(movingMembers,primaryHole,fixedShaft)
     local lowU,highU=Alignment.InsertionBounds(fixedShaft,primaryHole)
     if not lowU then return nil end
     local minDepth,maxDepth,count=0,0,1
+    local holes={primaryHole}
     for _,hole in ipairs(movingMembers) do
         if hole==primaryHole or not hole.PrimaryPart
             or not Alignment.TargetAxis(hole)
@@ -343,12 +344,13 @@ function Fit.CenteredReverseOffset(movingMembers,primaryHole,fixedShaft)
         minDepth=math.min(minDepth,depth)
         maxDepth=math.max(maxDepth,depth)
         count+=1
+        table.insert(holes,hole)
     end
     if count<2 then return nil end
     local midpointU=(minDepth+maxDepth)*0.5/Grid.Unit
     local step=math.clamp(math.round(midpointU*2),
         math.ceil(lowU*2-1e-6),math.floor(highU*2+1e-6))
-    return step*0.5,count
+    return step*0.5,count,holes
 end
 
 -- If both sides contain the same number of guide sockets (e.g. four
