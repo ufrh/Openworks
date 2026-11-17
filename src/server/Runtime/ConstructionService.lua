@@ -1013,11 +1013,13 @@ local function verticalMove(player,payload)
             end
             seen[primitiveId]=true
             local model=findOwned(player,primitiveId)
-            if not model or model:GetAttribute("ComponentId") then
-                return false,"Multi-nudge requires independent primitives"
+            if not model then
+                return false,"Multi-nudge selection has an unavailable part"
             end
             table.insert(selected,model)
         end
+        local complete,why=components:ValidateCompleteSelection(player,selected)
+        if not complete then return false,why end
     else
         if type(id)~="string" or #id==0 or #id>64 then
             return false,"Select an existing primitive, component or assembly"
