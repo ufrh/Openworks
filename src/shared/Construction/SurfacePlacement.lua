@@ -45,8 +45,51 @@ local function quantize(value,step)
     return math.floor(value/step+0.5)*step
 end
 
+-- A Shift face-center fit aligns the moving shape's TRUE combined
+-- footprint, not necessarily its Model pivot (which authors can relocate).
+-- Only genuine flat faces are centered. Cylindrical/curved sides continue
+-- using their normal mouse-based behavior rather than inventing a center.
+local function flatFaceAxis(part:BasePart,normal:Vector3):Vector3?
+    local candidate=nil
+    local best=0
+    for _,axis in ipairs({part.CFrame.RightVector,part.CFrame.UpVector,
+        part.CFrame.LookVector}) do
+        local dot=normal:Dot(axis)
+        if math.abs(dot)>best then
+            best=math.abs(dot)
+            candidate=axis
+        end
+    end
+    if best<0.995 then return nil end
+    if part:IsA("Part") and part.Shape==Enum.PartType.Ball then
+        return nil
+    end
+    -- Cylinder's round side is not a rectangular face.
+    if part:IsA("Part") and part.Shape==Enum.PartType.Cylinder
+        and math.abs(normal:Dot(part.CFrame.RightVector))<0.995 then
+        return nil
+    end
+    return candidate
+end
+
+local function footprintCenterAlong(ghost:Model,axis:Vector3):number?
+    local lower,upper=math.huge,-math.huge
+    for _,part in ipairs(ghost:GetDescendants()) do
+        if part:IsA("BasePart")
+            and part:GetAttribute("GearPivotOnly")~=true then
+            local center=part.Position:Dot(axis)
+            local radius=axisRadius(part,axis)
+            lower=math.min(lower,center-radius)
+            upper=math.max(upper,center+radius)
+        end
+    end
+    if lower==math.huge then return nil end
+    return (lower+upper)*0.5
+end
+
 function SurfacePlacement.SnapToNearbyFace(ghost:Model,desired:CFrame,
-    hitPosition:Vector3,hitNormal:Vector3,hitPart:BasePart?):CFrame
+    hitPosition:Vector3,hitNormal:Vector3,hitPart:BasePart?,
+    centerOnFace:boolean?):CFrame
     if not hitPart or not hitPart:IsA("BasePart") then
         return SurfacePlacement.SnapToSurface(ghost,desired,
             hitPosition,hitNormal)
@@ -76,6 +119,23 @@ function SurfacePlacement.SnapToNearbyFace(ghost:Model,desired:CFrame,
     local delta=Vector3.zero
     local axisVectors={targetCF.RightVector,targetCF.UpVector,
         targetCF.LookVector}
+    if centerOnFace and flatFaceAxis(hitPart,n) then
+        -- Surface contact is already exact along the normal. The two
+        -- tangential axes are centered around the target's geometric
+        -- face center, irrespective of cursor position, size, or rotation.
+        -- This intentionally takes priority over edge/lattice snapping.
+        for _,axis in ipairs(axisVectors) do
+            if math.abs(n:Dot(axis))<0.6 then
+                local movingCenter=footprintCenterAlong(ghost,axis)
+                if movingCenter then
+                    delta+=axis*(hitPart.Position:Dot(axis)-movingCenter)
+                end
+            end
+        end
+        local centered=cf+delta
+        ghost:PivotTo(centered)
+        return centered
+    end
     local targetSize=hitPart.Size
     local components={targetSize.X,targetSize.Y,targetSize.Z}
     for i,axis in ipairs(axisVectors) do
