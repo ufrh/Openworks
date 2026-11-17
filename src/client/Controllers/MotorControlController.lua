@@ -14,7 +14,8 @@ function Controller.new(assembly)
         Held={},Connections={},Elapsed=0},Controller)
 end
 function Controller:Active()
-    return self.Assembly.Mode=="Simulate"
+    return (self.Assembly.Mode=="Simulate"
+            or player:GetAttribute("OPENWORKS_SimulationHasSeat")==true)
         and self.Assembly:IsSimulating()
         and player:GetAttribute("OPENWORKS_SimulationPaused")~=true
         and player:GetAttribute("OPENWORKS_PropertiesOpen")~=true
