@@ -203,8 +203,17 @@ function Panel:ChooseConnection(options,callback,heading)
     return true
 end
 
-function Panel:ChooseFit(kind,callback,count,hole)
+function Panel:ChooseFit(kind,callback,count,hole,adjusting)
     local options=ConnectionCatalog.Fit(kind,hole)
+    if adjusting then
+        local choices={}
+        for _,option in ipairs(options) do
+            if option.id~="__Adjust" then
+                table.insert(choices,option)
+            end
+        end
+        options=choices
+    end
     if kind=="Hub" then
         callback("Rigid")
         return true
