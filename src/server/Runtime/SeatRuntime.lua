@@ -115,5 +115,19 @@ function Runtime.Stop(player,session)
     end
     session.Seats=nil
     player:SetAttribute("OPENWORKS_SimulationHasSeat",false)
+    -- Seating may have unequipped the native Simulate Tool. Return it
+    -- to the character so P and the normal build UI keep working.
+    if hum and char and char.Parent then
+        local backpack=player:FindFirstChildOfClass("Backpack")
+        if backpack then
+            for _,tool in ipairs(backpack:GetChildren()) do
+                if tool:IsA("Tool")
+                    and tool:GetAttribute("OpenworksToolId")=="AssemblySimulation" then
+                    hum:EquipTool(tool)
+                    break
+                end
+            end
+        end
+    end
 end
 return table.freeze(Runtime)
