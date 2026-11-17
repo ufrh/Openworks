@@ -873,13 +873,15 @@ def main() -> int:
           and 'if isOpening and Alignment.IsShaft(target) then' in smart_placement
           and 'if isShaft and Alignment.TargetAxis(target) then' in smart_placement)
     bore_clearance=read("src/shared/Construction/BoreClearance.lua")
-    check("New default 1U cylinders auto-snug to clear 0.98U drilled bores",
+    check("Single cylinders and component shafts both auto-snug into drilled bores",
           'function Bore.SnugDiameter(source,target)' in bore_clearance
           and 'current>opening*1.08' in bore_clearance
-          and '#members~=1 or members[1]~=shaft' in smart_placement
+          and '#members~=1 or members[1]~=shaft' not in smart_placement
           and 'shaft.PrimaryPart.Size=Vector3.new(original.X,snugDiameter,snugDiameter)' in smart_placement
           and 'OPENWORKS_AutoSnugDiameter' in selection
-          and 'self.SmartMatch.snugDiameter' in selection)
+          and 'self.SmartMatch.snugDiameter' in selection
+          and 'allowedSnug=Bore.SnugDiameter(shaft,opening)' in mechanical
+          and 'newSource or reverse or #members~=1' not in mechanical)
     grid=read("src/shared/Construction/GridMath.lua")
     check("Fine-fit cylinder diameter also works in older XYZ-resizable Studio stock",
           'local radialStep=if fineDiameter and diameterXY' in grid
