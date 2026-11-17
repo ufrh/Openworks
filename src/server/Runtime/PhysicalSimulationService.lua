@@ -1224,7 +1224,6 @@ function Simulation:Start(player, payload)
         -- carries a motor bearing. Only a free-standing, otherwise loose
         -- drilled housing becomes stationary. Housings welded to a
         -- chassis stay on that chassis and receive no motor actuation.
-        local motorStators={}
         for _,edge in ipairs(graph.edges) do
             if edge.kind=="Bearing" and edge.relation
                 and edge.relation:GetAttribute("MotorEnabled")==true then
@@ -1241,14 +1240,13 @@ function Simulation:Start(player, payload)
                 end
             end
         end
-        local standaloneSupports=BearingSupport.Resolve(
-            graph,session.Gears,session.GroundKeys)
-        if standaloneSupports>0 then
-            print(string.format(
-                "[OPENWORKS][BEARING] Fixed %d isolated housings; "
-                .."shaft torque stays on shafts, chassis mounts remain movable",
-                standaloneSupports))
-        end
+        local standaloneSupports,supportCandidates,structuralSupports=
+            BearingSupport.Resolve(graph,session.Gears,session.GroundKeys)
+        print(string.format(
+            "[OPENWORKS][BEARING][PhysicalSimulationService] "
+            .."support groups anchored=%d, eligible=%d, "
+            .."welded into moving structure=%d",
+            standaloneSupports,supportCandidates,structuralSupports))
         if not hasExplicitGround and standaloneSupports==0
             and session.Grounded then
             -- Never anchor the clicked shaft/gear just because it was used
