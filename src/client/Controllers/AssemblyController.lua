@@ -20,6 +20,7 @@ local WorldMotion = require(script.Parent:WaitForChild("WorldMotion"))
 local HandCrankController=require(script.Parent:WaitForChild("HandCrankController"))
 local RackControlController=require(script.Parent:WaitForChild("RackControlController"))
 local MotorControlController=require(script.Parent:WaitForChild("MotorControlController"))
+local RopeControlController=require(script.Parent:WaitForChild("RopeControlController"))
 local HandCrankMath=require(construction:WaitForChild("HandCrankMath"))
 local ConnectionCatalog=require(script.Parent:WaitForChild("ConnectionCatalog"))
 local Theme=require(script.Parent:WaitForChild("StudioTheme"))
@@ -1153,6 +1154,8 @@ function Controller:Start()
     self.RackControl:Start()
     self.MotorControl=MotorControlController.new(self)
     self.MotorControl:Start()
+    self.RopeControl=RopeControlController.new(self)
+    self.RopeControl:Start()
     table.insert(self.Connections,self.Tools.Changed.Event:Connect(function(mode)
         self:OnModeChanged(mode)
     end))
@@ -1339,6 +1342,7 @@ function Controller:Destroy()
     if self.HandCrank then self.HandCrank:Destroy() end
     if self.RackControl then self.RackControl:Destroy() end
     if self.MotorControl then self.MotorControl:Destroy() end
+    if self.RopeControl then self.RopeControl:Destroy() end
     self:Reset()
     for _, conn in ipairs(self.Connections) do conn:Disconnect() end
     table.clear(self.Connections)
