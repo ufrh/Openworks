@@ -1,9 +1,7 @@
 --!strict
--- Assemblies are manually named, explicitly selected sets of owned primitive
--- models. A component selection EXPANDS to its primitives on the client,
--- but ComponentId never welds them, and mechanical connectivity never
--- implicitly registers unrelated parts. Each primitive stores AssemblyId/
--- AssemblyName for existing snapshot, undo and manual DataStore persistence.
+-- Assembly membership is inferred from real authored mechanical connectivity.
+-- This detector never writes AssemblyId or AssemblyName: no registration,
+-- naming or membership editing is needed to simulate a mechanism.
 local HttpService=game:GetService("HttpService")
 local RS=game:GetService("ReplicatedStorage")
 local GearMath=require(RS:WaitForChild("Openworks")
@@ -39,20 +37,15 @@ function Service:Members(player,id)
     return result
 end
 
--- Discover one coherent mechanism from a clicked primitive, without
--- registering anything yet. Authoritative owned-model graph, not geometry
--- touching or client-supplied membership. Gear teeth and rack engagements
--- count only when GearMath's real mesh validator recognizes them.
+-- Discover exactly one connected mechanism from the clicked primitive.
+-- Authoritative owned-model graph, no proximity or client-supplied membership.
+-- Gear/rack contact joins only when GearMath validates real engagement.
 function Service:DetectConnected(player,payload)
     local seed=self.D.findOwned(player,payload.seedId)
     if not seed then return false,"Aim at your own constructed part" end
-    local requestedAssemblyId=payload.assemblyId
-    if requestedAssemblyId~=nil and (type(requestedAssemblyId)~="string"
-        or #requestedAssemblyId>64) then
-        return false,"Invalid assembly editing context"
-    end
-
-    local byId,models,components={}, {}, {}
+    -- Legacy AssemblyId and editor ComponentId are deliberately ignored.
+    -- Neither one proves that two bodies are physically connected.
+    local byId,models={}, {}
     for _,model in ipairs(self.D.folder:GetChildren()) do
         if model:IsA("Model") and model.PrimaryPart
             and model:GetAttribute("OwnerUserId")==player.UserId then
@@ -60,11 +53,6 @@ function Service:DetectConnected(player,payload)
             if type(uid)=="string" and uid~="" then
                 byId[uid]=model
                 table.insert(models,model)
-                local cid=model:GetAttribute("ComponentId")
-                if type(cid)=="string" and cid~="" then
-                    components[cid]=components[cid] or {}
-                    table.insert(components[cid],uid)
-                end
             end
         end
     end
@@ -75,9 +63,6 @@ function Service:DetectConnected(player,payload)
         adjacent[b]=adjacent[b] or {}
         adjacent[a][b]=true
         adjacent[b][a]=true
-    end
-    for _,members in pairs(components) do
-        for i=2,#members do join(members[1],members[i]) end
     end
     if self.D.mechanical then
         for _,relation in ipairs(self.D.mechanical.Folder:GetChildren()) do
@@ -124,17 +109,6 @@ function Service:DetectConnected(player,payload)
                 visited[nextId]=true
                 table.insert(queue,nextId)
             end
-        end
-    end
-    -- Never quietly steal a whole connected mechanism already saved in
-    -- a different named assembly. Prefer a clear, actionable error.
-    for _,uid in ipairs(queue) do
-        local member=byId[uid]
-        local registered=member:GetAttribute("AssemblyId")
-        if type(registered)=="string" and registered~=""
-            and registered~=requestedAssemblyId then
-            return false,"Connected mechanism includes another saved assembly: "
-                ..tostring(member:GetAttribute("AssemblyName") or registered)
         end
     end
     table.sort(queue)
