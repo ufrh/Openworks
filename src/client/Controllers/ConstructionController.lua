@@ -1720,9 +1720,10 @@ function Controller:UpdatePreview()
         match.cf=cf
         self.Preview:PivotTo(cf)
     else
+        -- Copies must be allowed to aim at the ORIGINAL face they are copied
+        -- from. Only a moved body's old geometry is hidden from the ray.
         local hit = self:CastCenter(self.Pending == "Move"
-            or self.Pending == "ComponentMove" or self.Pending == "ComponentCopy"
-            or self.Pending == "Copy")
+            or self.Pending == "ComponentMove")
         if not hit or not self.CurrentSize then
             self.PreviewCF = nil
             if self.SmartMatch then self:ClearSmartMatch() self:RefreshHUD() end
@@ -1757,6 +1758,7 @@ function Controller:UpdatePreview()
                 self.CurrentSize,rotation)
         if not self.Preview.Parent then self.Preview.Parent=workspace end
         cf=if self.DirectDragActive and self.DragGrabLocal
+            and self.Pending~="Copy" and self.Pending~="ComponentCopy"
             and not (shift and target) then
             -- Ordinary grabbed-face dragging stays cursor-relative.
             -- Shift overrides this to center the whole moved geometry.
@@ -1770,7 +1772,9 @@ function Controller:UpdatePreview()
             or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
         -- Shift face-center placement wins over all automatic smart fits
         -- (including pivot magnetism), retaining normal contact validation.
-        local originPose=if not alt and not shift then FitSolver.SurfacePose(
+        local originPose=if not alt and not shift
+            and self.Pending~="Copy" and self.Pending~="ComponentCopy"
+            then FitSolver.SurfacePose(
             self.Preview,cf.Rotation,hit.Position) else nil
         if originPose then cf=originPose end
         self.Preview:PivotTo(cf)
@@ -2720,7 +2724,8 @@ function Controller:CommitScale(cf, size, oldCF, oldSize)
         size = size,
         resizePrecision = true,
         clampResize = true,
-        numericPrecision=self.Numeric and self.Numeric.Active,
+        -- Collision-limited grip dimensions are independent of snap increments.
+        numericPrecision=true,
     })
     if ok then
         local data=result and result.data
