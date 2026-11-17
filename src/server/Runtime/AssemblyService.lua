@@ -5,6 +5,9 @@
 -- implicitly registers unrelated parts. Each primitive stores AssemblyId/
 -- AssemblyName for existing snapshot, undo and manual DataStore persistence.
 local HttpService=game:GetService("HttpService")
+local RS=game:GetService("ReplicatedStorage")
+local GearMath=require(RS:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("GearMath"))
 
 local Service={}
 Service.__index=Service
@@ -35,6 +38,114 @@ function Service:Members(player,id)
         end
     end
     return result
+end
+
+-- Discover one coherent mechanism from a clicked primitive, without
+-- registering anything yet. Authoritative owned-model graph, not geometry
+-- touching or client-supplied membership. Gear teeth and rack engagements
+-- count only when GearMath's real mesh validator recognizes them.
+function Service:DetectConnected(player,payload)
+    local seed=self.D.findOwned(player,payload.seedId)
+    if not seed then return false,"Aim at your own constructed part" end
+    local requestedAssemblyId=payload.assemblyId
+    if requestedAssemblyId~=nil and (type(requestedAssemblyId)~="string"
+        or #requestedAssemblyId>64) then
+        return false,"Invalid assembly editing context"
+    end
+
+    local byId,models,components={}, {}, {}
+    for _,model in ipairs(self.D.folder:GetChildren()) do
+        if model:IsA("Model") and model.PrimaryPart
+            and model:GetAttribute("OwnerUserId")==player.UserId then
+            local uid=model:GetAttribute("InstanceId")
+            if type(uid)=="string" and uid~="" then
+                byId[uid]=model
+                table.insert(models,model)
+                local cid=model:GetAttribute("ComponentId")
+                if type(cid)=="string" and cid~="" then
+                    components[cid]=components[cid] or {}
+                    table.insert(components[cid],uid)
+                end
+            end
+        end
+    end
+    local adjacent={}
+    local function join(a,b)
+        if a==b or not byId[a] or not byId[b] then return end
+        adjacent[a]=adjacent[a] or {}
+        adjacent[b]=adjacent[b] or {}
+        adjacent[a][b]=true
+        adjacent[b][a]=true
+    end
+    for _,members in pairs(components) do
+        for i=2,#members do join(members[1],members[i]) end
+    end
+    if self.D.mechanical then
+        for _,relation in ipairs(self.D.mechanical.Folder:GetChildren()) do
+            if relation:IsA("Folder")
+                and relation:GetAttribute("OwnerUserId")==player.UserId then
+                local ids={
+                    relation:GetAttribute("SourceId"),
+                    relation:GetAttribute("TargetId"),
+                    relation:GetAttribute("SecondTargetId"),
+                    relation:GetAttribute("BoltId"),
+                }
+                for i=2,#ids do
+                    join(ids[1],ids[i])
+                end
+            end
+        end
+    end
+    -- Gear contacts are implicit in simulation. Include the same
+    -- legitimately meshed gears / racks even without authored Gear edges.
+    local toothed={}
+    for _,model in ipairs(models) do
+        local kind=GearMath.Kind(model)
+        if kind=="Spur" or kind=="Bevel45" or kind=="Bevel90"
+            or kind=="Rack" or kind=="RackGuide" then
+            table.insert(toothed,model)
+        end
+    end
+    for i=1,#toothed-1 do
+        for j=i+1,#toothed do
+            if GearMath.AutoMeshable(toothed[i],toothed[j]) then
+                join(toothed[i]:GetAttribute("InstanceId"),
+                    toothed[j]:GetAttribute("InstanceId"))
+            end
+        end
+    end
+
+    local seedId=seed:GetAttribute("InstanceId")
+    local queue={seedId}
+    local visited={[seedId]=true}
+    local i=1
+    while i<=#queue do
+        local current=queue[i]
+        i+=1
+        for nextId in pairs(adjacent[current] or {}) do
+            if not visited[nextId] then
+                visited[nextId]=true
+                table.insert(queue,nextId)
+                if #queue>MAX_MEMBERS then
+                    return false,"Mechanism exceeds 128 parts; split into assemblies"
+                end
+            end
+        end
+    end
+    -- Never quietly steal a whole connected mechanism already saved in
+    -- a different named assembly. Prefer a clear, actionable error.
+    for _,uid in ipairs(queue) do
+        local member=byId[uid]
+        local registered=member:GetAttribute("AssemblyId")
+        if type(registered)=="string" and registered~=""
+            and registered~=requestedAssemblyId then
+            return false,"Connected mechanism includes another saved assembly: "
+                ..tostring(member:GetAttribute("AssemblyName") or registered)
+        end
+    end
+    table.sort(queue)
+    return true,"Detected "..tostring(#queue)
+        .." connected parts",queue
 end
 
 function Service:Requested(player,payload)
