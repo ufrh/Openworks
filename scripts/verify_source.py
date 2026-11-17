@@ -204,10 +204,10 @@ def main() -> int:
           and 'action=if self.EditingId then "UpdateAssembly" else "CreateAssembly"' in assembly_tool_v2
           and 'memberIds=ids' in assembly_tool_v2
           and 'function Tool:ToggleMember(model,forceSingle)' in assembly_tool_v2)
-    check("Simulation controls retain registered-assembly startup and stop",
+    check("Simulation controls start implicit connected mechanism from aimed part",
           'function Controller:StartRegisteredAssembly(seed)' in simulate_ui_v2
           and 'function Controller:StopRegisteredAssembly()' in simulate_ui_v2
-          and 'self:StartRegisteredAssembly(seed or self:Pick())' in simulate_ui_v2
+          and 'self:Pick() or (chosen and chosen.members' in simulate_ui_v2
           and 'self.Mechanics:StartRegisteredAssembly(seed)' in explorer_v2
           and 'self.Mechanics:StopRegisteredAssembly()' in explorer_v2
           and 'Name="SimulationControls"' in explorer_v2
@@ -451,13 +451,15 @@ def main() -> int:
           and 'if not hasExplicitGround and session.Grounded then' in simulation
           and 'action="StartSimulation",seedId=id,grounded=false' in read("src/client/Controllers/AssemblyController.lua")
           and 'Shift+P free' not in read("src/client/Controllers/AssemblyController.lua"))
-    check("Assembly only accepts explicit owned primitive ID lists",
-          "payload.memberIds" in assembly
-          and "self.D.findOwned(player,id)" in assembly
-          and "function Service:Connected(" not in assembly)
-    check("Assembly supports named create/update", all(
-        s in assembly for s in ("function Service:Create(", "function Service:Update(",
-                               "MAX_NAME=48", "MAX_MEMBERS=128")))
+    check("Implicit assembly graph is owned and ignores saved membership",
+          'function Service:DetectConnected(player,payload)' in assembly
+          and 'self.D.findOwned(player,payload.seedId)' in assembly
+          and 'GearMath.AutoMeshable(toothed[i],toothed[j])' in assembly
+          and 'local byId,models={}, {}' in assembly)
+    check("Manual assembly registration is disabled in favor of graph detection",
+          'if action~="DetectConnectedAssembly" then' in service
+          and 'Assemblies are automatic; connect parts to group them' in service
+          and 'return assemblies:DetectConnected(player,payload)' in service)
     assembly_tool=read("src/client/Controllers/AssemblyToolController.lua")
     check("Cardinal X/Y/Z nudge is scoped to owned registered members",
           'local function verticalMove(player,payload)' in service
@@ -600,11 +602,11 @@ def main() -> int:
           and 'if self.GroupAnchor then table.insert(ordered,self.GroupAnchor) end' in selection
           and 'self.Feedback:Set("selection",tostring(i),{model},"selection",false)' in selection
           and 'Instance.new("Highlight")' not in feedback)
-    check("Assembly outline reflects explicitly selected draft members only",
-          'self.Feedback:Set("assembly",id,{byId[id]},"assembly",false)' in tool_ui
-          and 'if self.Mode=="Assembly" and self.Stage=="Selecting" then' in tool_ui
-          and 'self:ShowVisuals(members,PURPLE)' in tool_ui
-          and 'mode=="Simulate"' not in tool_ui[tool_ui.index('function Tool:Tick()'):tool_ui.index('function Tool:Start()')])
+    check("Purple assembly outline follows live connected mechanism",
+          'self.Feedback:Set("assembly","outer",ordered,"assembly",true)' in tool_ui
+          and 'self:RefreshConnectedPreview(seed)' in tool_ui
+          and 'action="DetectConnectedAssembly",seedId=id' in tool_ui
+          and 'self:ShowVisuals(members,PURPLE)' in tool_ui)
     check("UI v2 orange/red/green connection feedback is server-confirmed",
           'self.Feedback:Set("connection","first",{first},"pending",false)' in alignment_editor
           and 'if valid then "pending" else "invalid"' in alignment_editor
@@ -1765,11 +1767,11 @@ def main() -> int:
     check("Old CV axle saves are preserved, not silently deleted",
           'or spec.kind=="CVAxle"' in persistence
           and 'relation:GetAttribute("Kind")=="VectorJoint"' in joint_visuals)
-    check("Assembly tool shows scoped blue-green grounding and purple simulation target",
+    check("Simulate tool highlights current mechanism and retains authored grounding",
           'self.Feedback:Set("assembly-grounding",id,{model}' in assembly_tool
           and 'then "grounded" else "free"' in assembly_tool
           and 'self.Mode=="Simulate"' in assembly_tool
-          and 'members=self:OwnedAssembly(assemblyId)' in assembly_tool
+          and 'self:RefreshConnectedPreview(seed)' in assembly_tool
           and 'self.Feedback:Set("assembly","outer",ordered,"assembly",true)' in assembly_tool)
     check("Current docs and regressions documented",
           (ROOT / "docs/ARCHITECTURE.md").is_file()
