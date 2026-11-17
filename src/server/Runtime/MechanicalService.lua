@@ -30,6 +30,8 @@ local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
 local MultiFit = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("MultiFitMath"))
 local VectorJoint=require(script.Parent:WaitForChild("VectorJoint"))
+local RopeMath=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("RopeMath"))
 
 local Mechanical = {}
 Mechanical.__index = Mechanical
@@ -38,7 +40,7 @@ local function relationValid(kind)
     return kind == "Bearing" or kind == "Slider"
         or kind == "Cylindrical" or kind == "Fixed" or kind == "Gear"
         or kind == "Spring" or kind == "Weld" or kind == "Bolt"
-        or kind == "Belt" or kind=="VectorJoint"
+        or kind == "Belt" or kind=="VectorJoint" or kind=="Rope"
 end
 
 function Mechanical.new(deps)
@@ -89,6 +91,13 @@ function Mechanical:Snapshot(relation)
         stiffness = relation:GetAttribute("Stiffness"),
         damping = relation:GetAttribute("Damping"),
         freeLength = relation:GetAttribute("FreeLength"),
+        ropeLength=relation:GetAttribute("RopeLength"),
+        ropeMinLength=relation:GetAttribute("RopeMinLength"),
+        ropeMaxLength=relation:GetAttribute("RopeMaxLength"),
+        ropeSpeedU=relation:GetAttribute("RopeSpeedU"),
+        ropeForce=relation:GetAttribute("RopeForce"),
+        ropeInKey=relation:GetAttribute("RopeInKey"),
+        ropeOutKey=relation:GetAttribute("RopeOutKey"),
         boltId = relation:GetAttribute("BoltId"),
         secondTargetId = relation:GetAttribute("SecondTargetId"),
         fitPointsJSON = relation:GetAttribute("FitPointsJSON"),
@@ -196,6 +205,15 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("Stiffness",spec.stiffness)
     folder:SetAttribute("Damping",spec.damping)
     folder:SetAttribute("FreeLength",spec.freeLength)
+    if spec.kind=="Rope" then
+        local p0,p1=RopeMath.Frames(source,target)
+        local settings,why=RopeMath.Settings(spec,(p1-p0).Magnitude)
+        if not settings then
+            folder:Destroy()
+            return false,why
+        end
+        RopeMath.Write(folder,settings)
+    end
     folder:SetAttribute("BoltId",spec.boltId)
     folder:SetAttribute("SecondTargetId",spec.secondTargetId)
     folder:SetAttribute("FitPointsJSON",spec.fitPointsJSON)
@@ -221,7 +239,10 @@ function Mechanical:Restore(player, spec)
         return false, "Missing relationship geometry"
     end
 
-    if spec.kind=="VectorJoint" then
+    if spec.kind=="Rope" then
+        RopeMath.Compile(source,target,targetPart,sourcePart,folder,
+            RopeMath.Attributes(folder),folder:GetAttribute("RelationId"),true)
+    elseif spec.kind=="VectorJoint" then
         local joint,why=VectorJoint.Measure(source,target)
         if not joint then
             folder:Destroy()
@@ -1597,6 +1618,58 @@ function Mechanical:CreateVectorJoint(player,request)
     return true,"Vector Joint: shaft ends coupled at one pivot • 1:1 reversible drive"
 end
 
+-- Create a physical tension-only rope with individually keyed winch
+-- directions. Unlike spring or prismatic constraints this does not resist
+-- either endpoint moving closer than the paid-out rope length.
+function Mechanical:CreateRope(player,request)
+    if type(request)~="table" then return false,"Invalid rope request" end
+    request.kind="Rope"
+    local source,target,reason=validEndpoints(self,player,request)
+    if not source then return false,reason end
+    local p0,p1=RopeMath.Frames(source,target)
+    local settings,why=RopeMath.Settings(request,(p1-p0).Magnitude)
+    if not settings then return false,why end
+    local spec={
+        relationId=HttpService:GenerateGUID(false),
+        ownerUserId=player.UserId,kind="Rope",
+        sourceId=request.sourceId,targetId=request.targetId,
+        componentId=source:GetAttribute("ComponentId"),
+    }
+    for name,value in pairs(settings) do spec[name]=value end
+    local ok,message=self:Restore(player,spec)
+    if not ok then return false,message end
+    self.D.commitAssembly(player,{}, {},spec)
+    return true,"Rope connected • Z retract / X pay out (rebind in Properties)"
+end
+
+function Mechanical:TuneRope(player,request)
+    local relation=self:OwnedRelation(player,request.relationId)
+    if not relation or relation:GetAttribute("Kind")~="Rope" then
+        return false,"Choose a rope relationship"
+    end
+    local source=self.D.findOwned(player,relation:GetAttribute("SourceId"))
+    local target=self.D.findOwned(player,relation:GetAttribute("TargetId"))
+    if not source or not target then return false,"Rope endpoints are missing" end
+    local p0,p1=RopeMath.Frames(source,target)
+    local current=RopeMath.Attributes(relation)
+    for name in pairs(current) do
+        if request[name]~=nil then current[name]=request[name] end
+    end
+    local settings,why=RopeMath.Settings(current,(p1-p0).Magnitude)
+    if not settings then return false,why end
+    local before=self:Snapshot(relation)
+    RopeMath.Write(relation,settings)
+    local rope=relation:FindFirstChildOfClass("RopeConstraint")
+    if rope then
+        rope.Length=settings.ropeLength
+        rope.WinchTarget=settings.ropeLength
+        rope.WinchSpeed=settings.ropeSpeedU*self.D.Grid.Unit
+        rope.WinchForce=settings.ropeForce
+    end
+    self.D.commitJointEdit(player,before,self:Snapshot(relation))
+    return true,"Rope length "..string.format("%.2f U",settings.ropeLength/self.D.Grid.Unit)
+end
+
 function Mechanical:CreateSpring(player,request)
     if type(request)~="table" then return false,"Invalid spring request" end
     request.kind="Spring"
@@ -2648,6 +2721,23 @@ function Mechanical:ApplyJointEdit(player, record, undo)
     local spec = if undo then record.before else record.after
     local relation = self:OwnedRelation(player, spec.relationId)
     if not relation then return false, "Joint was deleted" end
+    if spec.kind=="Rope" then
+        local source=self.D.findOwned(player,spec.sourceId)
+        local target=self.D.findOwned(player,spec.targetId)
+        if not source or not target then return false,"Rope endpoints are missing" end
+        local p0,p1=RopeMath.Frames(source,target)
+        local settings,why=RopeMath.Settings(spec,(p1-p0).Magnitude)
+        if not settings then return false,why end
+        RopeMath.Write(relation,settings)
+        local rope=relation:FindFirstChildOfClass("RopeConstraint")
+        if rope then
+            rope.Length=settings.ropeLength
+            rope.WinchTarget=settings.ropeLength
+            rope.WinchSpeed=settings.ropeSpeedU*self.D.Grid.Unit
+            rope.WinchForce=settings.ropeForce
+        end
+        return true
+    end
     if spec.kind=="Spring" then
         relation:SetAttribute("Stiffness",spec.stiffness)
         relation:SetAttribute("Damping",spec.damping)
@@ -2938,7 +3028,7 @@ local function stillTouching(a,b)
 end
 
 -- A normal construction transform must not keep invisible joints spanning
--- independently moved geometry. Springs are intentionally exempt: stretching
+-- independently moved geometry. Springs and ropes are exempt: stretching
 -- a spring is an ordinary operation, not an authoring error.
 -- Both endpoints may move together ONLY under the same rigid world delta.
 -- Collect snapshots before removing constraints so undo restores every joint.
@@ -2986,6 +3076,7 @@ function Mechanical:DisconnectMoved(player,beforeStates,afterStates,exemptRelati
         if not relation:IsA("Folder")
             or relation:GetAttribute("OwnerUserId")~=player.UserId
             or relation:GetAttribute("Kind")=="Spring"
+            or relation:GetAttribute("Kind")=="Rope"
             or (exemptRelations and exemptRelations[relation:GetAttribute("RelationId")])
             then continue end
         local ids={}
