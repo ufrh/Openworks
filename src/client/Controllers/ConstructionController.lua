@@ -2441,14 +2441,18 @@ function Controller:OpenNumericSize()
         local current=self.ScaleSize
         local cf=self.ScaleCF
         if not cf then return false,"Select a valid construction first" end
+        local clamped,wasClamped=self:ClampNumericScale(cf,current,newSize)
+        if wasClamped then
+            self:Message("Maximum clear size reached")
+        end
         if self.Mode=="Build" then
             self.NumericPrecision=true
-            self:UpdateScalePreview(cf,newSize)
+            self:UpdateScalePreview(cf,clamped)
             self:EndScale()
             return true
         end
         if not self.Selected then return false,"Select a primitive first" end
-        local ok=self:CommitScale(cf,newSize,cf,current)
+        local ok=self:CommitScale(cf,clamped,cf,current)
         if not ok then return false,"Size rejected: check bore and collisions" end
         self:EndScale()
         return true
@@ -2633,6 +2637,42 @@ function Controller:ClampScaleSteps(drag,requestedSteps,candidate):number
     return chosen
 end
 
+-- Numeric entry may change several dimensions simultaneously. Clamp along
+-- that requested size vector at the same 0.01-U resolution as Grid.ValidSize,
+-- keeping the existing pivot fixed (unlike a dragged face grip).
+function Controller:ClampNumericScale(cf,oldSize,newSize)
+    local span=newSize-oldSize
+    local largest=math.max(math.abs(span.X),math.abs(span.Y),math.abs(span.Z))
+    local ticks=math.max(1,math.round(largest/
+        (Grid.Unit*Grid.NumericSizeStepU)))
+    local ghost=if self.Mode=="Edit" then self.ScaleGhost else self.Preview
+    if not ghost or not ghost.PrimaryPart then return oldSize,true end
+    local oldCF=ghost:GetPivot()
+    local oldGhostSize=ghost.PrimaryPart.Size
+    local id=if self.Mode=="Edit" and self.Selected
+        then self.Selected:GetAttribute("TemplateId") else self.CurrentId
+    local entry=id and Registry.Get(id)
+    local function clear(step)
+        local size=oldSize:Lerp(newSize,step/ticks)
+        if not entry or not Grid.ValidSize(entry.Model.PrimaryPart.Size,size,
+            entry.ResizeMode,true,true) then return false end
+        return self:ScaleClear(cf,size)
+    end
+    local good=clear(ticks)
+    local chosen=ticks
+    if not good then
+        local low,high=0,ticks-1
+        while low<high do
+            local middle=math.floor((low+high+1)/2)
+            if clear(middle) then low=middle else high=middle-1 end
+        end
+        chosen=low
+    end
+    ghost.PrimaryPart.Size=oldGhostSize
+    ghost:PivotTo(oldCF)
+    return oldSize:Lerp(newSize,chosen/ticks),chosen<ticks
+end
+
 function Controller:UpdateScalePreview(cf, size)
     if not self.ScaleMode then return end
 
@@ -2669,21 +2709,30 @@ function Controller:CommitScale(cf, size, oldCF, oldSize)
     if not self.Selected or not self.Selected.Parent then return false end
 
     -- A full drag is one history entry; no per-frame server calls.
-    local ok = self:Request({
+    local ok,result=self:Request({
         action = "Update",
         instanceId = self.Selected:GetAttribute("InstanceId"),
         position = cf.Position,
         steps = stepsCopy(self.Steps),
         size = size,
         resizePrecision = true,
+        clampResize = true,
         numericPrecision=self.Numeric and self.Numeric.Active,
     })
     if ok then
-        self.CurrentSize = size
-    else
-        self.CurrentSize = oldSize
+        local data=result and result.data
+        local acceptedSize=if data and typeof(data.size)=="Vector3"
+            then data.size else size
+        local acceptedPosition=if data and typeof(data.position)=="Vector3"
+            then data.position else cf.Position
+        local acceptedCF=CFrame.new(acceptedPosition)*cf.Rotation
+        self.ScaleSize=acceptedSize
+        self.ScaleCF=acceptedCF
+        self.CurrentSize=acceptedSize
+        return true,acceptedCF,acceptedSize
     end
-    return ok
+    self.CurrentSize=oldSize
+    return false
 end
 
 function Controller:EndScale()
