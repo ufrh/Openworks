@@ -444,7 +444,12 @@ function Simulation:StepCranks(dt)
             local now=os.clock()
             for _,rope in ipairs(session.Ropes or {}) do
                 if rope.SeatId and not SeatRuntime.CanControl(owner,session,rope.SeatId) then
-                    RopeMath.Stop(rope)
+                    -- Stop a once-active winch, but don't keep rewriting
+                    -- neutral rope lengths on every idle physics heartbeat.
+                    if rope.InHeld or rope.OutHeld
+                        or (rope.Constraint and rope.Constraint.WinchEnabled) then
+                        RopeMath.Stop(rope)
+                    end
                 else
                     RopeMath.Step(rope,dt,now)
                 end
