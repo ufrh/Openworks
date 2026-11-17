@@ -30,6 +30,20 @@ local function isStandaloneSupportGroup(group)
             or GearMath.Kind(member)~="None" then
             return false
         end
+        if #group.Models>1 then
+            -- Structural chassis are frequently built from hollow TUBES.
+            -- Never anchor a mobile vehicle just because all its chassis
+            -- beams happen to have a bore axis. A rigid group of ONLY
+            -- drilled mounting blocks is a legitimate fixed bracket.
+            local kind=string.lower(tostring(
+                member:GetAttribute("TemplateId") or member.Name)
+                ..tostring(member:GetAttribute("PrimitiveFamily") or ""))
+                :gsub("[%s_%-]","")
+            if not string.find(kind,"drilledblock",1,true)
+                and not string.find(kind,"holeblock",1,true) then
+                return false
+            end
+        end
     end
     return true
 end
