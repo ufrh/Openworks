@@ -97,9 +97,9 @@ function Insertion.Clear(ghost:Model,ignored): (boolean,string?)
     return true
 end
 
--- Snap to existing 0.5U insertion lattice. Keep the cursor's chosen depth
--- when clear. If obstructed, try each shallower/deeper candidate in order
--- of distance from the intended position, without modifying dimensions.
+-- For multiple coaxial guides, preserve the exact geometry midpoint.
+-- Single-hole fits may search nearby 0.5 U increments around the cursor
+-- if obstructed. Multi-hole fits fail instead of shifting off center.
 -- Both directions supported: shaft->hole and hole->shaft.
 function Insertion.Resolve(ghost:Model,source:Model,target:Model,
     movingShaft:boolean,previewCF:CFrame,preferredU:number,ignored,
@@ -111,10 +111,17 @@ function Insertion.Resolve(ghost:Model,source:Model,target:Model,
     if not low then return nil,nil,"No valid insertion range" end
     local lowStep=math.ceil(low*2-1e-6)
     local highStep=math.floor(high*2+1e-6)
-    if lowStep>highStep then return nil,nil,"No allowable insertion depth" end
+    local centered=(requiredHoles and #requiredHoles>1)
+        or (requiredMovingHoles and #requiredMovingHoles>1)
+    if not centered and lowStep>highStep then
+        return nil,nil,"No allowable insertion depth"
+    end
 
     local original=ghost:GetPivot()
-    local anchorU=math.clamp(math.round(preferredU*2),lowStep,highStep)
+    -- Preserve the EXACT solved center for multi-guide fits. The old
+    -- round(preferredU*2) silently moved odd-spaced patterns off center.
+    local anchorU=if centered then preferredU else
+        math.clamp(math.round(preferredU*2)*0.5,low,high)
     -- Compute the movement axis from the ALREADY SOLVED aligned pose.
     -- In reverse mode the hole moves opposite to positive shaft offset.
     ghost:PivotTo(previewCF)
@@ -130,9 +137,10 @@ function Insertion.Resolve(ghost:Model,source:Model,target:Model,
 
     local bestCF,bestU=nil,nil
     local failure="No unobstructed shaft insertion depth"
-    local function attempt(step:number):boolean
-        if step<lowStep or step>highStep then return false end
-        local units=step*0.5
+    local function attempt(units:number):boolean
+        if units<low-0.00001 or units>high+0.00001 then
+            return false
+        end
         local candidate=CFrame.new(axis*((units-preferredU)*Grid.Unit))*previewCF
         ghost:PivotTo(candidate)
         local actualSource=source
@@ -176,20 +184,23 @@ function Insertion.Resolve(ghost:Model,source:Model,target:Model,
     end
 
     local found=attempt(anchorU)
-    if not found then
+    if not found and not centered then
+        -- Ordinary single-hole fitting can still seek a nearby unblocked
+        -- depth on the familiar 0.5 U adjustment lattice.
+        local anchorStep=math.round(anchorU*2)
         local limit=math.min(Insertion.MaxSearchSteps,
-            math.max(anchorU-lowStep,highStep-anchorU))
+            math.max(anchorStep-lowStep,highStep-anchorStep))
         for radius=1,limit do
-            -- Bias toward the entry side the player was already using,
-            -- but allow the opposite side if that is the only clear path.
             local inwardFirst=if preferredU<0 then -1 else 1
-            if attempt(anchorU+inwardFirst*radius)
-                or attempt(anchorU-inwardFirst*radius) then
+            if attempt((anchorStep+inwardFirst*radius)*0.5)
+                or attempt((anchorStep-inwardFirst*radius)*0.5) then
                 found=true
                 break
             end
         end
     end
+    -- If the exact midpoint is blocked or cannot engage EVERY guide,
+    -- reject the preview; do not "resolve" it by shifting to one hole.
     ghost:PivotTo(original)
     return bestCF,bestU,if found then nil else failure
 end
