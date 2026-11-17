@@ -26,6 +26,7 @@ local MOTOR_BINDINGS={
     F=true,R=true,T=true,Y=true,H=true,J=true,K=true,L=true,
     B=true,N=true,M=true,V=true,Z=true,X=true,C=true,
     One=true,Two=true,Three=true,Four=true,
+    W=true,A=true,S=true,D=true,Q=true,E=true,
 }
 local function ropeBindable(key)
     return MOTOR_BINDINGS[key] or
@@ -890,7 +891,7 @@ function Panel:KeyPicker(name,current,ropeBinding)
                     control.Text=key
                     endCapture()
                 elseif input.UserInputType==Enum.UserInputType.Keyboard then
-                    self:Message("Choose a supported letter or 1–4")
+                    self:Message("Choose a supported motor/seat key")
                 end
             end)
         end)
