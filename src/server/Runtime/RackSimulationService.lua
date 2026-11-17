@@ -182,7 +182,8 @@ local function makeMotor(edge,constraint,shaft,runtime,kinematic)
     local motor={
         Constraint=constraint,Shaft=shaft,
         Kinematic=kinematic,
-        ShaftId=edge.source:GetAttribute("InstanceId"),
+        ShaftId=if edge.source then edge.source:GetAttribute("InstanceId")
+            else edge.relation:GetAttribute("SourceId"),
         RelationId=edge.relation:GetAttribute("RelationId"),
         Axis=shaft.CFrame.RightVector.Unit,
     }
@@ -1204,15 +1205,8 @@ function Simulation:SyncRelationship(player,relation)
                         and constraint.Attachment1.Parent
                     local joints=session.World:FindFirstChild("PhysicsJoints")
                     if shaft and shaft:IsA("BasePart") and joints then
-                        table.insert(session.Motors,makeMotor({
-                            source={GetAttribute=function(_,attribute)
-                                if attribute=="InstanceId" then
-                                    return relation:GetAttribute("SourceId")
-                                end
-                                return nil
-                            end},
-                            relation=relation,
-                        },constraint,shaft,joints,false))
+                        table.insert(session.Motors,makeMotor(
+                            {relation=relation},constraint,shaft,joints,false))
                     end
                 end
             elseif (kind=="Slider" or kind=="Cylindrical")
