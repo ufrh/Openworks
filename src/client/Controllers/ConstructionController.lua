@@ -314,6 +314,8 @@ function Controller:MakeUI()
     end, function(axis, sign)
         self:Message("Resizing " .. ({ "X", "Y", "Z" })[axis]
             .. (if sign > 0 then "+" else "-") .. " — drag to change size")
+    end, function(drag,requestedSteps,candidate)
+        return self:ClampScaleSteps(drag,requestedSteps,candidate)
     end)
 end
 
@@ -2500,9 +2502,10 @@ function Controller:BeginScale()
     self.ScaleMode = true
     player:SetAttribute("OPENWORKS_ScaleActive",true)
     self.ScaleCF=cf
-    self.ScaleSize=self.CurrentSize
+    self.ScaleSize=model.PrimaryPart.Size
+    self.CurrentSize=self.ScaleSize
     self.ScaleVisualCF=cf
-    self.ScaleVisualSize=self.CurrentSize
+    self.ScaleVisualSize=self.ScaleSize
     -- Scale preview and neon grips share one visual-motion profile.
     -- The size and pivot sent to the server remain exact, unsmoothed.
     if self.Mode=="Build" and self.Preview and self.Preview.PrimaryPart then
@@ -2552,6 +2555,82 @@ function Controller:BeginScale()
     if self.Layered then self.Layered:RefreshVisuals() end
     self:RefreshPointer()
     self:RefreshHUD()
+end
+
+-- Check the EXACT ghost geometry before moving a handle. Unlike a
+-- visual-only hitbox probe, this is the same constructed-part collision
+-- predicate that normal Build placement uses. The server still validates
+-- every completed resize independently.
+function Controller:ScaleClear(cf,size):boolean
+    local ghost=if self.Mode=="Edit" then self.ScaleGhost else self.Preview
+    if not ghost or not ghost.PrimaryPart then return false end
+    ghost.PrimaryPart.Size=size
+    ghost:PivotTo(cf)
+    local ignore={}
+    local opening=nil
+    if self.Mode=="Edit" and self.Selected then
+        ignore[self.Selected]=true
+        local cid=self.Selected:GetAttribute("ComponentId")
+        if type(cid)=="string" and cid~="" then
+            for _,member in ipairs(self:ComponentMembers(cid)) do
+                ignore[member]=true
+            end
+        end
+        local holeId=self.Selected:GetAttribute("AlignedOpeningId")
+        if type(holeId)=="string" then
+            local built=workspace:FindFirstChild(Config.FolderName)
+            if built then
+                for _,model in ipairs(built:GetChildren()) do
+                    if model:IsA("Model")
+                        and model:GetAttribute("InstanceId")==holeId then
+                        opening=model
+                        break
+                    end
+                end
+            end
+            if opening and not BoreClearance.ShaftFits(ghost,opening) then
+                return false
+            end
+        end
+    end
+    local ok=PreviewFeedback.Check(ghost,ignore,
+        if opening then ghost:GetAttribute("InstanceId") else nil,opening)
+    return ok==true
+end
+
+-- Maximal clear resize on the common 0.25 U lattice. A binary search
+-- takes at most ~9 physics tests even for a 64-U primitive, and always
+-- starts from the original opposite-face-anchored grip pose.
+-- Both growth and shrink requests are handled. If already blocked at
+-- the old size, keep that size rather than jumping through a neighbor.
+function Controller:ClampScaleSteps(drag,requestedSteps,candidate):number
+    if not self.ScaleMode then return 0 end
+    local ghost=if self.Mode=="Edit" then self.ScaleGhost else self.Preview
+    if not ghost or not ghost.PrimaryPart or requestedSteps==0 then return 0 end
+    local originalCF=ghost:GetPivot()
+    local originalSize=ghost.PrimaryPart.Size
+    local function clear(steps)
+        local cf,size=candidate(steps)
+        return cf~=nil and self:ScaleClear(cf,size)
+    end
+    local sign=if requestedSteps>0 then 1 else -1
+    local requested=math.abs(requestedSteps)
+    local chosen=0
+    -- Monotonic face expansion intersects a solid once; shrink/retract
+    -- can only reduce an initially clear footprint.
+    if clear(requestedSteps) then
+        chosen=requestedSteps
+    else
+        local low,high=0,requested
+        while low<high do
+            local mid=math.floor((low+high+1)/2)
+            if clear(mid*sign) then low=mid else high=mid-1 end
+        end
+        chosen=low*sign
+    end
+    ghost.PrimaryPart.Size=originalSize
+    ghost:PivotTo(originalCF)
+    return chosen
 end
 
 function Controller:UpdateScalePreview(cf, size)
