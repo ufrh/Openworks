@@ -950,6 +950,10 @@ function Simulation:Start(player, payload)
                 table.insert(session.Constraints, constraint)
             end
 
+            -- Rope is a tensile link, not a bearing/solid interface.
+            -- Do NOT disable contact across a rope: wheels, chassis and
+            -- tethered mechanisms must still collide normally.
+            if edge.kind~="Rope" then
             -- Avoid numerical instability from deliberately intersecting
             -- shaft and housing collision surfaces.
             local targetBody = graph.bodies[edge.b]
@@ -982,6 +986,7 @@ function Simulation:Start(player, payload)
                     end
                 end
             end
+            end -- no collision exclusion for Rope
         end
 
         -- Only standalone, ungeared crank shafts receive a native
