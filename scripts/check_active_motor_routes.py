@@ -26,16 +26,18 @@ checks = {
     "ConstructionService boots Unified": 'require(script.Parent:WaitForChild("UnifiedSimulationService"))' in construction,
     "Unified dispatches Physical/Rack": "return if rack then self.Rack else self.Physical" in router,
     "Physical shaft-only actuator": 'drive.Name="PoweredMotor_ShaftOnlyDrive"' in physical,
-    "Physical bearing is passive": "constraint.ActuatorType=Enum.ActuatorType.None" in physical,
+    "Physical passive bearing or native servo": 
+        "constraint.ActuatorType=Enum.ActuatorType.None" in physical
+        and "hinge.ActuatorType=Enum.ActuatorType.Servo" in physical,
     "Physical motor transmits to mounted gears": "session.Gears:SetDrive(motor.ShaftId,motor.NativeSpeed" in physical,
     "Physical resolves actual rigid bearing supports": "BearingSupport.Resolve(" in physical,
     "Physical honors authored grounds only":
         "session.GroundKeys=explicitGround" in physical
         and "session.GroundKeys[edge.b]=true" not in physical
         and 'session.GroundKeys["p:"..tostring(id)]=nil' not in physical,
-    "Physical servo/hold/toggle": all(x in physical for x in (
+    "Physical native servo/hold/toggle": all(x in physical for x in (
         'motor.DriveType=="Servo"', 'motor.InputMode=="Toggle"',
-        "motor.Constraint.CurrentAngle")),
+        "hinge.TargetAngle=if motor.On then motor.TargetAngle else 0")),
     "Rack motors register before kinematic skip": 'makeMotor(edge,nil,p1,runtime,true)' in rack,
     "Rack motors use actual kinematic solver": "if motorDrive then motorDrive.Speed" in rack
         and "session.Gears:Step(dt," in rack,
@@ -44,7 +46,9 @@ checks = {
         'motor.DriveType=="Servo"', 'motor.InputMode=="Toggle"',
         "motor.ShaftId")),
     "Gear transmission accepts shaft commands": "function Transmission:SetDrive(id,speed,budget,worldAxis)" in transmission,
-    "Kinematic solver accepts servo goals": "function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed,servoGoal)" in kinematics,
+    "Rack kinematic shafts reject unsupported native servo": 
+        'if motor.Kinematic and motor.DriveType=="Servo" then' in rack
+        and 'Motor native Servo requires a physical HingeConstraint' in rack,
     "Runtime path is visible in Studio Output": "[OPENWORKS][SIM ROUTER]" in router,
     "Physical isolated bearings": "BearingSupport.Resolve(" in physical,
     "Rack isolated bearings": "BearingSupport.Resolve(" in rack,
