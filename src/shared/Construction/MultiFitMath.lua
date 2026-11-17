@@ -302,12 +302,15 @@ function Fit.CenteredShaftOffset(shaft,primary,candidates)
         table.insert(holes,hole)
     end
     if count<2 then return nil end
-    -- The midpoint of the extreme guides, not an average biased toward
-    -- a cluster of closely packed internal lugs.
+    -- Exact midpoint in world units. Rounding to the 0.5 U insertion
+    -- step was visibly off-center for odd guide spacings. Snapping a
+    -- mechanism is a geometry operation; manual wheel adjustments alone
+    -- use the 0.5 U increment.
     local midpointU=(minDepth+maxDepth)*0.5/Grid.Unit
-    local step=math.clamp(math.round(midpointU*2),
-        math.ceil(lowU*2-1e-6),math.floor(highU*2+1e-6))
-    return step*0.5,count,holes
+    if midpointU<lowU-0.00001 or midpointU>highU+0.00001 then
+        return nil
+    end
+    return midpointU,count,holes
 end
 
 -- Reverse case: a cluster of coaxial MOVING hole blocks should be
@@ -347,10 +350,13 @@ function Fit.CenteredReverseOffset(movingMembers,primaryHole,fixedShaft)
         table.insert(holes,hole)
     end
     if count<2 then return nil end
+    -- Matching reverse fits require the exact same center fidelity.
+    -- Never round an odd-distance guide pattern to the nearest wheel step.
     local midpointU=(minDepth+maxDepth)*0.5/Grid.Unit
-    local step=math.clamp(math.round(midpointU*2),
-        math.ceil(lowU*2-1e-6),math.floor(highU*2+1e-6))
-    return step*0.5,count,holes
+    if midpointU<lowU-0.00001 or midpointU>highU+0.00001 then
+        return nil
+    end
+    return midpointU,count,holes
 end
 
 -- If both sides contain the same number of guide sockets (e.g. four
