@@ -742,9 +742,21 @@ function Simulation:Start(player, payload)
                 continue
             elseif session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))
                 or session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")) then
-                -- No native hinge/bearing/spring/rigid constraint may
-                -- exert ANY physical influence on geared rigid bodies.
-                -- Rigid members move cohesively under GearKinematics.
+                -- Scripted gear groups use the SAME Kinematics:Step as a
+                -- hand crank. A physical hinge motor cannot move them.
+                -- Register the powered input BEFORE skipping constraints.
+                if edge.kind=="Bearing"
+                    and edge.relation:GetAttribute("MotorEnabled")==true then
+                    local shaftId=edge.source:GetAttribute("InstanceId")
+                    local housingId=edge.target:GetAttribute("InstanceId")
+                    if not session.Gears:IsKinematic(shaftId)
+                        or session.Gears:IsKinematic(housingId) then
+                        error("Motor shaft must rotate independently of "
+                            .."its stationary hole housing")
+                    end
+                    table.insert(session.Motors,
+                        makeMotor(edge,nil,p1,runtime,true))
+                end
                 continue
             elseif edge.kind == "Fixed" or edge.kind=="Weld"
                 or edge.kind=="Bolt" then
@@ -869,28 +881,16 @@ function Simulation:Start(player, payload)
                     constraint.UpperAngle =
                         edge.relation:GetAttribute("UpperLimit") or 180
                 end
-                -- Optional motor drive applies ONLY to a validated physical
-                -- shaft/housing bearing; all other relationships are passive.
                 if constraint:IsA("HingeConstraint")
-                    and edge.kind=="Bearing"
-                    and edge.relation:GetAttribute("MotorEnabled")==true then
-                    constraint.ActuatorType=Enum.ActuatorType.Motor
-                    constraint.AngularVelocity=0
-                    constraint.MotorMaxTorque=math.clamp(
-                        edge.relation:GetAttribute("MotorTorque") or 3000,1,100000)
-                    constraint.MotorMaxAcceleration=math.clamp(
-                        edge.relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
-                    table.insert(session.Motors,{
-                        Constraint=constraint,
-                        RelationId=edge.relation:GetAttribute("RelationId"),
-                        Key=edge.relation:GetAttribute("MotorKey") or "F",
-                        Speed=edge.relation:GetAttribute("MotorSpeed") or 3,
-                        LastInput=0,Held=false,
-                    })
-                elseif constraint:IsA("HingeConstraint")
                     or constraint:IsA("PrismaticConstraint")
                     or constraint:IsA("CylindricalConstraint") then
                     constraint.ActuatorType=Enum.ActuatorType.None
+                end
+                if constraint:IsA("HingeConstraint")
+                    and edge.kind=="Bearing"
+                    and edge.relation:GetAttribute("MotorEnabled")==true then
+                    table.insert(session.Motors,
+                        makeMotor(edge,constraint,p1,runtime,false))
                 end
                 constraint.Parent = runtime
                 table.insert(session.Constraints, constraint)
@@ -1014,7 +1014,36 @@ function Simulation:Start(player, payload)
         end
         local hasExplicitGround = next(explicitGround) ~= nil
         session.GroundKeys = explicitGround
-        if not hasExplicitGround and session.Grounded then
+        -- The motor's drilled hole is a stator, not the rotor.
+        -- Release grounded shaft/gear groups at runtime and always
+        -- anchor the hole housing, even with another grounded support.
+        local motorStators={}
+        for _,edge in ipairs(graph.edges) do
+            if edge.kind=="Bearing"
+                and edge.relation:GetAttribute("MotorEnabled")==true then
+                local rotor=session.Gears.ById[
+                    edge.source:GetAttribute("InstanceId")]
+                local stator=session.Gears.ById[
+                    edge.target:GetAttribute("InstanceId")]
+                if rotor and stator and rotor==stator then
+                    error("Motor shaft and hole housing are rigidly welded. "
+                        .."Remove that weld so only the shaft rotates")
+                end
+                if rotor then
+                    for id,group in pairs(session.Gears.ById) do
+                        if group==rotor then
+                            session.GroundKeys["p:"..tostring(id)]=nil
+                        end
+                    end
+                else
+                    session.GroundKeys[edge.a]=nil
+                end
+                motorStators[edge.b]=true
+            end
+        end
+        for key in pairs(motorStators) do session.GroundKeys[key]=true end
+        if not hasExplicitGround and not next(motorStators)
+            and session.Grounded then
             -- Aim-at-crank must not ground the actuator you're about to
             -- turn. Prefer the BEARING HOUSING of a crank mechanism.
             local hasCrank=false
@@ -1088,10 +1117,14 @@ function Simulation:Start(player, payload)
     end)
 
     if not success then
-        warn("[OPENWORKS] Simulation compile failed: " .. tostring(failure))
+        warn("[OPENWORKS] Rack simulation compile failed: " .. tostring(failure))
         self:Stop(player)
-        return false, "Could not compile simulation (see Studio Output)"
+        local problem=tostring(failure):match("(Motor [^\r\n]+)")
+        return false,problem or "Could not compile simulation (see Studio Output)"
     end
+    print(string.format(
+        "[OPENWORKS][MOTOR] ACTIVE RackSimulationService | motors=%d gears=%d",
+        #session.Motors,#session.Gears.Gears))
 
     self:SetStatus(player,true,next(session.GroundKeys)~=nil)
     player:SetAttribute("OPENWORKS_SimulationPaused",false)
@@ -1218,8 +1251,7 @@ function Simulation:Pause(player)
     end
     self:StopRack(session)
     for _,motor in ipairs(session.Motors or {}) do
-        motor.Held=false
-        if motor.Constraint.Parent then motor.Constraint.AngularVelocity=0 end
+        stopMotor(motor)
     end
     if session.Gears then session.Gears:StopMotion() end
     local state = {}
