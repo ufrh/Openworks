@@ -234,6 +234,64 @@ function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
     return result
 end
 
+-- A single shaft running through several COAXIAL holes should stop
+-- halfway between the outer guide centers, not at whichever hole the
+-- cursor happened to hit. This is the pattern midpoint in world space,
+-- expressed as a normal 0.5 U offset relative to the primary hole.
+-- Separate radial holes (a four-post plate) are deliberately ignored;
+-- their centering/roll is solved by the multi-pair alignment step.
+function Fit.CenteredShaftOffset(shaft,primary,candidates)
+    if not Alignment.IsShaft(shaft) or not Alignment.TargetAxis(primary)
+        or not shaft.PrimaryPart then return nil end
+    local axis=primary:GetPivot():VectorToWorldSpace(
+        Alignment.TargetAxis(primary)).Unit
+    local center=primary:GetPivot().Position
+    local diameter=math.max(shaft.PrimaryPart.Size.Y,
+        shaft.PrimaryPart.Size.Z)
+    local lowU,highU=Alignment.InsertionBounds(shaft,primary)
+    if not lowU then return nil end
+    local minDepth,maxDepth=0,0
+    local count=1
+    local primarySize=primary.PrimaryPart.Size
+    local primaryLocal=Alignment.TargetAxis(primary)
+    local primaryThickness=math.abs(primaryLocal.X)*primarySize.X
+        +math.abs(primaryLocal.Y)*primarySize.Y
+        +math.abs(primaryLocal.Z)*primarySize.Z
+    for _,hole in ipairs(candidates or {}) do
+        if hole==primary or not hole.PrimaryPart
+            or transmissionHub(hole)
+            or not Alignment.TargetAxis(hole) then continue end
+        local candidateAxis=hole:GetPivot():VectorToWorldSpace(
+            Alignment.TargetAxis(hole)).Unit
+        if math.abs(candidateAxis:Dot(axis))<Fit.AxisTolerance then continue end
+        local delta=hole:GetPivot().Position-center
+        local depth=delta:Dot(axis)
+        local radial=(delta-axis*depth).Magnitude
+        if radial>math.min(Fit.RadialTolerance,Grid.Unit*0.09) then continue end
+        local opening=Bore.OpeningDiameter(hole)
+        if not opening or opening<diameter+0.002 then continue end
+        local localAxis=Alignment.TargetAxis(hole)
+        local size=hole.PrimaryPart.Size
+        local thickness=math.abs(localAxis.X)*size.X
+            +math.abs(localAxis.Y)*size.Y
+            +math.abs(localAxis.Z)*size.Z
+        -- Limit membership to holes a real shaft could bridge. Never
+        -- magnetically capture distant coincident machinery on the plot.
+        if math.abs(depth)>shaft.PrimaryPart.Size.X
+            +(thickness+primaryThickness)*0.5 then continue end
+        minDepth=math.min(minDepth,depth)
+        maxDepth=math.max(maxDepth,depth)
+        count+=1
+    end
+    if count<2 then return nil end
+    -- The midpoint of the extreme guides, not an average biased toward
+    -- a cluster of closely packed internal lugs.
+    local midpointU=(minDepth+maxDepth)*0.5/Grid.Unit
+    local step=math.clamp(math.round(midpointU*2),
+        math.ceil(lowU*2-1e-6),math.floor(highU*2+1e-6))
+    return step*0.5,count
+end
+
 -- If both sides contain the same number of guide sockets (e.g. four
 -- holes and four rods), require ALL of them to fit uniquely. This stops a
 -- red/misaligned fourth rod from being overlooked just because one good
