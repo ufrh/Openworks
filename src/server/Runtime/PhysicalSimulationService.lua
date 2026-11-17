@@ -400,8 +400,24 @@ function Simulation:InputRope(player,key,holding)
     end
 end
 
+-- Identify real powered rigid shaft bodies each physics heartbeat.
+-- Vector Joints may drive ONLY the opposite body; this prevents a pair
+-- of world velocity actuators from chasing each other indefinitely.
+local function markVectorSource(session,part,torque)
+    if not part or not part.Parent then return end
+    local root=part.AssemblyRootPart
+    if not root or root.Anchored then return end
+    local sources=session.VectorDriveBodies
+    local old=sources[root]
+    local strength=math.clamp(torque or 3000,1,100000)
+    if not old or strength>old.Torque then
+        sources[root]={Torque=strength}
+    end
+end
+
 function Simulation:StepCranks(dt)
     for owner,session in pairs(self.Sessions) do
+        session.VectorDriveBodies={}
         -- A rope operates as a native, force-limited winch only while
         -- its saved key is held. Letting go leaves tension-only slack.
         if not session.Paused then
@@ -487,6 +503,10 @@ function Simulation:StepCranks(dt)
                 then Vector3.zero else bearingAxis*motor.NativeSpeed
             drive.Enabled=motor.DriveType~="Servo"
                 and math.abs(motor.NativeSpeed)>0.0001
+            if motor.On or (motor.DriveType=="Servo"
+                and math.abs(motor.NativeSpeed)>0.008) then
+                markVectorSource(session,shaft,motor.Torque)
+            end
             if session.Gears and math.abs(motor.NativeSpeed)>0.008 then
                 session.Gears:SetDrive(motor.ShaftId,motor.NativeSpeed,
                     motor.Torque,bearingAxis)
@@ -525,6 +545,7 @@ function Simulation:StepCranks(dt)
                 crank.NativeSpeed+=(HandCrankMath.FixedAngularSpeed
                     -crank.NativeSpeed)*(1-math.exp(-8*math.clamp(dt,0,0.07)))
                 drive.AngularVelocity=crank.Axis*crank.NativeSpeed
+                markVectorSource(session,root,HandCrankMath.MaxTorque)
                 if session.Gears then
                     session.Gears:SetDrive(crank.DrivenId,crank.NativeSpeed,
                         HandCrankMath.MaxTorque,crank.Axis)
@@ -557,6 +578,14 @@ function Simulation:StepCranks(dt)
         -- virtual torque is used only for acceleration and load estimates.
         if session.Gears and not session.Paused then
             session.Gears:Step(dt)
+            -- A gear's commanded OUTPUT can feed a Vector Joint even
+            -- when the input motor is mounted somewhere else in the
+            -- tooth-ratio train. Unpowered/coasting groups never qualify.
+            for _,group in pairs(session.Gears.Groups) do
+                if group.ActiveDrive and group.Root and group.Root.Parent then
+                    markVectorSource(session,group.Root,group.DriveTorque)
+                end
+            end
         end
         if session.Belts and not session.Paused then
             session.Belts:Step(dt)
@@ -567,7 +596,12 @@ function Simulation:StepCranks(dt)
         -- SimulationService which the UI router never starts.
         if not session.Paused then
             for _,joint in ipairs(session.VectorJoints or {}) do
-                VectorJoint.Step(joint,dt,nil,nil)
+                local sources=session.VectorDriveBodies
+                local rootA=joint.PartA.AssemblyRootPart
+                local rootB=joint.PartB.AssemblyRootPart
+                VectorJoint.Step(joint,dt,nil,nil,
+                    rootA and sources[rootA] or nil,
+                    rootB and sources[rootB] or nil)
             end
         else
             for _,joint in ipairs(session.VectorJoints or {}) do
