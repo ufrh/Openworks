@@ -2,6 +2,7 @@
 -- Shared support-plane placement for multi-part previews.
 -- Given a preview at desired rotation/pivot, shift EVERY member together so
 -- its lowest world-space geometry rests on the aimed surface, not below it.
+local Grid=require(script.Parent:WaitForChild("GridMath"))
 local SurfacePlacement = {}
 -- Face planes must be exactly coincident: clearance creates visible seams.
 local EPSILON = 0
@@ -38,7 +39,7 @@ end
 -- local coordinate frame instead of the world-origin construction grid.
 -- This eliminates parity drift between independently sized parts and
 -- makes edges, centers and neighboring faces align exactly.
-local FACE_LATTICE=0.0625 -- 0.25 U; smallest ordinary size quantum
+local FACE_LATTICE=Grid.Unit*Grid.MinSizeStepU -- 0.25 U in studs
 local EDGE_CAPTURE=0.05
 
 local function quantize(value,step)
