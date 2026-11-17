@@ -28,7 +28,7 @@ local TOOL_NAMES={
 }
 local SUBTOOL_NAMES={
     Build="Build",Edit="Edit",
-    Connect="Connect",
+    Connect="Connect",Route="Route",
     AssemblyEditor="Assembly Editor",Simulation="Simulation",
 }
 
