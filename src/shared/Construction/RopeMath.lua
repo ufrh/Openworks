@@ -198,7 +198,17 @@ function Rope.Step(runtime,dt,now)
         rope.WinchTarget=runtime.Target
         rope.WinchSpeed=runtime.SpeedU*Grid.Unit
         rope.WinchForce=runtime.Force
-        rope.WinchEnabled=runtime.Target<rope.Length-0.00001
+        -- A Roblox winch is a separation servo: if activated while the
+        -- rope is slack it could PUSH the anchors toward a longer target.
+        -- Only enable it when the actual separation EXCEEDS target length.
+        -- Otherwise shorten the passive maximum without applying force.
+        if rope.CurrentDistance>runtime.Target+Grid.Unit*0.01 then
+            rope.Length=math.max(rope.Length,rope.CurrentDistance)
+            rope.WinchEnabled=true
+        else
+            rope.WinchEnabled=false
+            rope.Length=runtime.Target
+        end
     end
 end
 
