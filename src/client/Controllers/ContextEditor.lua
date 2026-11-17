@@ -27,6 +27,10 @@ local MOTOR_BINDINGS={
     B=true,N=true,M=true,V=true,Z=true,X=true,C=true,
     One=true,Two=true,Three=true,Four=true,
 }
+local function ropeBindable(key)
+    return MOTOR_BINDINGS[key] or
+        (type(key)=="string" and key:match("^[A-Z]$")~=nil)
+end
 local function mk(kind,parent,properties)
     local obj=Instance.new(kind)
     for key,val in pairs(properties or {}) do obj[key]=val end
@@ -841,7 +845,7 @@ end
 -- the displayed number is the value applied to the actual relationship.
 -- Click the key field and press a valid key. No typing or key-name
 -- memorization needed; the server still validates every binding.
-function Panel:KeyPicker(name,current)
+function Panel:KeyPicker(name,current,ropeBinding)
     local holder=row(self.Properties,31)
     label(holder,name,UDim2.fromOffset(6,0),
         UDim2.new(0.45,-6,1,0),Theme.Text)
@@ -853,8 +857,9 @@ function Panel:KeyPicker(name,current)
     control=button(holder,tostring(current or "F"),
         UDim2.new(0.45,0,0,1),UDim2.new(0.55,-7,1,-2),function()
             endCapture()
-            local previous=if MOTOR_BINDINGS[control.Text] then control.Text
-                else tostring(current or "F")
+            local previous=if (if ropeBinding
+                then ropeBindable(control.Text) else MOTOR_BINDINGS[control.Text])
+                then control.Text else tostring(current or "F")
             control.Text="PRESS A KEY"
             self.KeyCapture=UIS.InputBegan:Connect(function(input)
                 if not self.ContextOpen or not control.Parent then
@@ -865,7 +870,8 @@ function Panel:KeyPicker(name,current)
                 if key=="Escape" then
                     control.Text=previous
                     endCapture()
-                elseif MOTOR_BINDINGS[key] then
+                elseif (if ropeBinding then ropeBindable(key)
+                    else MOTOR_BINDINGS[key]) then
                     control.Text=key
                     endCapture()
                 elseif input.UserInputType==Enum.UserInputType.Keyboard then
@@ -1232,8 +1238,8 @@ function Panel:RenderRelation(node)
         self:RangeSlider("Speed (U/s)",0.25,64,0.25,false)
         self:Field("Winch force",rel:GetAttribute("RopeForce") or 15000)
         self:RangeSlider("Winch force",10,1000000,10,true)
-        self:KeyPicker("Retract key",rel:GetAttribute("RopeInKey") or "Z")
-        self:KeyPicker("Pay out key",rel:GetAttribute("RopeOutKey") or "X")
+        self:KeyPicker("Retract key",rel:GetAttribute("RopeInKey") or "Z",true)
+        self:KeyPicker("Pay out key",rel:GetAttribute("RopeOutKey") or "X",true)
         local function applyRope()
             local length=tonumber(self.Fields["Length (U)"].Text)
             local minimum=tonumber(self.Fields["Min (U)"].Text)
