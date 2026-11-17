@@ -41,30 +41,51 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             put(rows,"N","Enter size")
             put(rows,"V / Esc","Done")
         elseif primary=="Build" then
-            title="BUILD"
-            put(rows,"Click","Place")
+            title="BUILD • KEYBINDS"
+            put(rows,"Click","Place part")
             put(rows,"B","Parts library")
-            put(rows,"R / T / Y","Rotate")
-            put(rows,"V","Resize")
+            put(rows,"R / T / Y","Rotate axes")
+            put(rows,"V","Resize grips")
+            put(rows,"N","Exact dimensions")
             put(rows,"Shift / Alt","Disable snap")
+            put(rows,"J / Shift+J","Avatar reference / move")
             put(rows,"Right click","Part options")
-            put(rows,"Enter","Finish")
+            put(rows,"Enter","Finish placement")
+            put(rows,"Ctrl+Z / Y","Undo / redo")
         elseif pending then
             title="EDIT / MOVE"
             put(rows,"Click","Place")
             put(rows,"R / T / Y","Rotate")
             put(rows,"Esc","Cancel")
         else
-            title="EDIT"
-            put(rows,"Click","Select")
-            put(rows,"Drag / G","Move")
-            put(rows,"F","Duplicate")
-            put(rows,"V","Resize")
+            local count=#(build.SelectedParts or {})
+            title=if count>1 then "EDIT • "..tostring(count).." SELECTED"
+                else "EDIT • KEYBINDS"
+            -- Show the complete Edit workflow instead of hiding the
+            -- shortcuts required to build a real chassis.
+            put(rows,"Click","Select part or component")
+            put(rows,"Shift+Click","Add / remove selection")
+            put(rows,"Alt+Click","Pick behind geometry")
+            put(rows,"Tab / Shift+Tab","Cycle depth")
+            put(rows,"G / Drag","Move selection")
+            put(rows,"F / Ctrl+D","Duplicate selection")
+            put(rows,"C","Group loose parts")
+            put(rows,"E","Enter / exit component")
+            put(rows,"U","Ungroup component")
+            put(rows,"Shift+K","Weld selected parts")
+            put(rows,"R / T / Y","Rotate axes")
+            put(rows,"V","Resize grips")
+            put(rows,"N","Exact dimensions")
+            put(rows,"Alt+Arrows","Move in small steps")
+            put(rows,"Shift+Alt+Arrows","Fine move")
+            put(rows,"O / Shift+O","Set / reset fit pivot")
+            put(rows,"L","Fit shaft to opening")
             put(rows,"M","Appearance")
-            put(rows,"R / T / Y","Rotate")
-            put(rows,"Right click","Connections")
-            put(rows,"Delete","Delete")
-            put(rows,"Ctrl+Z","Undo")
+            put(rows,"X / I","X-ray / isolate")
+            put(rows,"J / Shift+J","Avatar reference / move")
+            put(rows,"Right click","Mechanical settings")
+            put(rows,"Backspace","Delete selected part")
+            put(rows,"Ctrl+Z / Y","Undo / redo")
         end
     elseif primary=="Mechanics" then
         local state=mechanics.Stage
@@ -83,21 +104,26 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             put(rows,"Esc","Reset")
         end
         put(rows,"Right click","Connections")
-        put(rows,"Ctrl+Z","Undo")
+        put(rows,"Ctrl+Z / Y","Undo / redo")
     elseif primary=="AssemblySimulation" then
         if sub=="AssemblyEditor" then
             local drafting=assemblyTool.Stage=="Selecting"
             title=if drafting then "ASSEMBLY / SELECT" else "ASSEMBLY"
             if drafting then
-                put(rows,"Click","Add / remove part")
+                put(rows,"Click","Toggle part / component")
+                put(rows,"Alt+Click","Select one primitive")
+                put(rows,"R","Choose assembled parts")
                 put(rows,"Enter","Save assembly")
                 put(rows,"Esc","Cancel")
             else
                 put(rows,"N","New assembly")
                 put(rows,"Click","Select assembly")
             end
-            put(rows,"G","Ground part")
+            put(rows,"G","Ground / unground")
+            put(rows,"Alt+Arrows","Nudge assembly")
+            put(rows,"Shift+Alt+Arrows","Fine nudge")
             put(rows,"Right click","Connections")
+            put(rows,"Ctrl+Z / Y","Undo / redo")
         else
             local running=player:GetAttribute("OPENWORKS_Simulating")==true
             title=if running then "SIMULATING" else "SIMULATION"
@@ -105,6 +131,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             if running then
                 put(rows,"O","Pause / resume")
                 put(rows,"U","Reset")
+                put(rows,"I","Inspect mechanism")
                 put(rows,"Motor key","Drive motor")
                 put(rows,"Hold LMB","Hand crank")
             else
@@ -113,8 +140,8 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             put(rows,"Right click","Inspect connections")
         end
     end
-    -- The complete keybinds remain in the existing controllers; this is
-    -- intentionally a short, legible help strip, not a tutorial wall.
+    -- Every important action is discoverable in each tool, with a
+    -- scrollable sidebar rather than a truncated handful of shortcuts.
     return {title=title,rows=rows}
 end
 
