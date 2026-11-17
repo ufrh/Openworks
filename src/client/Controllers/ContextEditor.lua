@@ -467,7 +467,11 @@ function Panel:Select(node,propagate)
     self.Selected=node
     if self.Feedback then
         self.Feedback:Clear("context-selection")
-        if self.Tools.PrimaryId~="Edit" then
+        if self.Tools.PrimaryId~="Edit"
+            and self.Tools.PrimaryId~="AssemblySimulation" then
+            -- Simulate owns ONE purple mechanism outline. A clicked
+            -- primitive can still be inspected in the context panel,
+            -- but may not install a competing aqua single-part box.
             local members={}
             for _,model in ipairs(node.members or {}) do
                 if own(model) then table.insert(members,model) end
@@ -646,6 +650,9 @@ function Panel:OnAssemblyDraftChanged()
 end
 
 function Panel:OnSimulationSessionChanged()
+    if self.Tools.PrimaryId=="AssemblySimulation" and self.Feedback then
+        self.Feedback:Clear("context-selection")
+    end
     if not self.SimulationBar then return end
     local running=simulating()
     self.SimulationBar.Visible=running
