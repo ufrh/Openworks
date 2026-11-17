@@ -1,8 +1,11 @@
 --!strict
--- Shared runtime support policy for shaft-in-hole bearings.
--- A HingeConstraint never powers the housing. Isolated hole blocks
--- supporting a drive shaft become stationary pivots. A hole welded
--- into a chassis/body MUST remain free to move with that body.
+-- Support for passive bearing housings in the ACTIVE physical/rack engines.
+--
+-- IMPORTANT: ComponentId is just an EDITOR selection group. It does NOT
+-- create any physical weld. Only actual Weld/Fixed/Bolt relationships
+-- (represented by transmission.ById rigid groups) can make a hole block
+-- part of a moving chassis. This avoids the old bug where grouped but
+-- mechanically loose motor housings spun with the shaft.
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
 local construction=ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction")
@@ -15,66 +18,97 @@ local function id(model)
     return model and model:GetAttribute("InstanceId")
 end
 
--- Works with GearTransmission (native physics) and GearKinematics (racks).
--- Returns how many previously ungrounded standalone housings were fixed.
-function Support.Resolve(graph,transmission,groundKeys)
-    local componentCounts={}
-    for _,model in ipairs(graph.models) do
-        local cid=model:GetAttribute("ComponentId")
-        if type(cid)=="string" and cid~="" then
-            componentCounts[cid]=(componentCounts[cid] or 0)+1
+-- A single housing, or a bracket rigidly built solely from several bored
+-- supports, is a stationary support. A welded chassis also contains
+-- structural members and MUST stay dynamically free to travel/steer.
+-- Model count and geometry are from actual rigid groups, never ComponentId.
+local function isStandaloneSupportGroup(group)
+    if not group or #group.Models==0 then return false end
+    for _,member in ipairs(group.Models) do
+        if Alignment.IsShaft(member)
+            or not Alignment.TargetAxis(member)
+            or GearMath.Kind(member)~="None" then
+            return false
         end
     end
+    return true
+end
 
-    local rotorGroups={}
-    local gearedGroups={}
+-- groundKeys are simulation-local. The authored construction and its saved
+-- Grounded / ComponentId attributes are never changed.
+-- Returns count of newly anchored support groups, plus candidate/skip
+-- diagnostics for Studio Output to make misclassified housings obvious.
+function Support.Resolve(graph,transmission,groundKeys)
+    local motorRotorGroups={}
+    local gearRotorGroups={}
     for _,edge in ipairs(graph.edges) do
         if edge.kind=="Bearing" and Alignment.IsShaft(edge.source) then
             local rotor=transmission.ById[id(edge.source)]
             local housing=transmission.ById[id(edge.target)]
             if rotor and housing and rotor==housing then
-                error("Bearing shaft is rigidly welded to its hole housing. "
-                    .."Remove the weld so the shaft can rotate independently")
+                error("Motor/bearing shaft is rigidly welded to its hole "
+                    .."housing. Remove the welded connection; a bearing "
+                    .."must allow relative shaft rotation")
             end
-            if edge.relation and edge.relation:GetAttribute("MotorEnabled")==true
+            if edge.relation
+                and edge.relation:GetAttribute("MotorEnabled")==true
                 and rotor then
-                rotorGroups[rotor]=true
+                motorRotorGroups[rotor]=true
             end
         end
     end
     for _,entry in ipairs(transmission.Gears or {}) do
-        gearedGroups[entry.Group]=true
+        gearRotorGroups[entry.Group]=true
     end
 
-    -- A housing can be used by multiple bearings; the shaft can be
-    -- motor-driven OR receive movement from meshed output gears.
+    local fixedGroups={}
     local seen={}
     local anchored=0
+    local candidates=0
+    local structural=0
     for _,edge in ipairs(graph.edges) do
-        if edge.kind~="Bearing" or not Alignment.IsShaft(edge.source)
+        if edge.kind~="Bearing"
+            or not Alignment.IsShaft(edge.source)
             or not Alignment.TargetAxis(edge.target)
             or GearMath.Kind(edge.target)~="None" then continue end
+
         local rotor=transmission.ById[id(edge.source)]
         local housing=transmission.ById[id(edge.target)]
-        local cid=edge.target:GetAttribute("ComponentId")
-        local grouped=type(cid)=="string" and cid~=""
-            and (componentCounts[cid] or 0)>1
-        local standalone=housing and #housing.Models==1
-            and not grouped
-        if standalone and rotor and (rotorGroups[rotor]
-            or gearedGroups[rotor]) then
-            -- Never fix a structure that also acts as a shaft/gear rotor.
-            -- No constraint reaction from the shaft is transferred to a
-            -- free-standing drilled support.
-            if not rotorGroups[housing] and not gearedGroups[housing]
-                and not groundKeys[edge.b] and not seen[edge.b] then
-                groundKeys[edge.b]=true
-                seen[edge.b]=true
+        if not rotor or not housing then continue end
+
+        -- Consider a housing whenever the shaft is powered or geared.
+        -- A motor on ONE hole applies to EVERY bearing on that shaft.
+        if not (motorRotorGroups[rotor] or gearRotorGroups[rotor]) then
+            continue
+        end
+        if seen[housing] then continue end
+        seen[housing]=true
+        candidates+=1
+
+        -- A hole that is welded into a real chassis stays mobile WITH the
+        -- chassis, but is never driven by the shaft's angular actuator.
+        -- We cannot infer mechanical rigidity from editor grouping.
+        if not isStandaloneSupportGroup(housing)
+            or motorRotorGroups[housing] or gearRotorGroups[housing] then
+            structural+=1
+            continue
+        end
+
+        -- Anchor the entire true rigid housing group: anchoring one
+        -- member of a welded support bracket is sufficient for physics.
+        -- Pick the encountered drilled housing's actual primitive key;
+        -- never the shaft/gear group or a ComponentId key.
+        if not fixedGroups[housing] then
+            fixedGroups[housing]=true
+            local key=edge.b
+            if not groundKeys[key] then
+                groundKeys[key]=true
                 anchored+=1
             end
         end
     end
-    return anchored
+
+    return anchored,candidates,structural
 end
 
 return table.freeze(Support)
