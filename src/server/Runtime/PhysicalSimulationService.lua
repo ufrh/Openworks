@@ -324,7 +324,8 @@ local function setMotorDrive(motor, relation)
     motor.Constraint.ActuatorType=if motor.DriveType=="Servo"
         then Enum.ActuatorType.Servo else Enum.ActuatorType.None
     motor.Constraint.AngularVelocity=0
-    motor.Constraint.TargetAngle=0
+    motor.Constraint.TargetAngle=if motor.DriveType=="Servo"
+        then motor.ServoTarget else 0
     motor.Constraint.ServoMaxTorque=motor.Torque
     motor.Constraint.AngularSpeed=math.max(0.05,math.abs(motor.Speed))
     motor.Constraint.AngularResponsiveness=
@@ -1702,9 +1703,14 @@ function Simulation:Info(player,payload)
             if joint.IdA==id or joint.IdB==id then
                 local pivotGap=(joint.Attachment0.WorldPosition
                     -joint.Attachment1.WorldPosition).Magnitude
+                local spinA=joint.PartA.AssemblyAngularVelocity:Dot(
+                    joint.PartA.CFrame.RightVector)
+                local spinB=joint.PartB.AssemblyAngularVelocity:Dot(
+                    joint.PartB.CFrame.RightVector)
                 table.insert(lines,string.format(
-                    "Vector Joint ACTIVE • socket %s • pin drift %.4f studs",
-                    if joint.Constraint.Enabled then "ON" else "OFF",pivotGap))
+                    "Vector Joint • socket %s • input %s • spin %.2f/%.2f rad/s • gap %.4f studs",
+                    if joint.Constraint.Enabled then "ON" else "OFF",
+                    joint.RelaySide or "passive",spinA,spinB,pivotGap))
             end
         end
         if session.UnregisteredGears and session.UnregisteredGears>0 then
