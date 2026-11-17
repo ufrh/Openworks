@@ -604,7 +604,7 @@ def main() -> int:
           and 'Instance.new("Highlight")' not in feedback)
     check("Purple assembly outline follows live connected mechanism",
           'self.Feedback:Set("assembly","outer",ordered,"assembly",true)' in tool_ui
-          and 'self:RefreshConnectedPreview(seed)' in tool_ui
+          and 'self:RefreshConnectedPreview(aimed)' in tool_ui
           and 'action="DetectConnectedAssembly",seedId=id' in tool_ui
           and 'self:ShowVisuals(members,PURPLE)' in tool_ui)
     check("UI v2 orange/red/green connection feedback is server-confirmed",
@@ -1772,7 +1772,7 @@ def main() -> int:
           'self.Feedback:Set("assembly-grounding",id,{model}' in assembly_tool
           and 'then "grounded" else "free"' in assembly_tool
           and 'self.Mode=="Simulate"' in assembly_tool
-          and 'self:RefreshConnectedPreview(seed)' in assembly_tool
+          and 'self:RefreshConnectedPreview(aimed)' in assembly_tool
           and 'self.Feedback:Set("assembly","outer",ordered,"assembly",true)' in assembly_tool)
     check("Current docs and regressions documented",
           (ROOT / "docs/ARCHITECTURE.md").is_file()
