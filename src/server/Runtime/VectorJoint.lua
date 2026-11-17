@@ -115,6 +115,23 @@ local function torque(runtime,attach,name,id)
     return device
 end
 
+-- An explicitly driven upstream shaft can power the opposite side
+-- without relying on a tiny passive slip torque. Drive only the output:
+-- each relay is inactive until the real source shaft is commanded.
+local function angularRelay(runtime,attach,name,id)
+    local drive=Instance.new("AngularVelocity")
+    drive.Name=name
+    drive.Attachment0=attach
+    drive.RelativeTo=Enum.ActuatorRelativeTo.World
+    drive.ReactionTorqueEnabled=false
+    drive.MaxTorque=3000
+    drive.AngularVelocity=Vector3.zero
+    drive.Enabled=false
+    drive:SetAttribute("AuthoredRelationId",id)
+    drive.Parent=runtime
+    return drive
+end
+
 -- Always attach at the same mathematical pivot on BOTH existing shafts.
 -- The ball socket carries position, not axial spin; the paired Torques
 -- carry equal/opposite axial efforts without locking steering articulation.
@@ -152,6 +169,8 @@ function VectorJoint.Compile(relation,a,b,runtime,kinematicA,kinematicB)
     if not kinematicA and not kinematicB then
         result.TorqueA=torque(runtime,at0,"VectorDriveReaction",id)
         result.TorqueB=torque(runtime,at1,"VectorDriveOutput",id)
+        result.DriveA=angularRelay(runtime,at0,"VectorDriveShaftA",id)
+        result.DriveB=angularRelay(runtime,at1,"VectorDriveShaftB",id)
     elseif kinematicA~=kinematicB then
         -- The existing kinematic gear engine cannot receive physical
         -- torque. Native shaft receives a bounded speed actuator while
@@ -178,18 +197,70 @@ end
 function VectorJoint.Stop(j)
     if j.TorqueA then j.TorqueA.Torque=Vector3.zero end
     if j.TorqueB then j.TorqueB.Torque=Vector3.zero end
-    if j.Motor then j.Motor.Enabled=false end
+    if j.Motor then
+        j.Motor.AngularVelocity=Vector3.zero
+        j.Motor.Enabled=false
+    end
+    if j.DriveA then
+        j.DriveA.AngularVelocity=Vector3.zero
+        j.DriveA.Enabled=false
+    end
+    if j.DriveB then
+        j.DriveB.AngularVelocity=Vector3.zero
+        j.DriveB.Enabled=false
+    end
+    j.RelaySide=nil
+    j.RelaySpeed=0
 end
 
-function VectorJoint.Step(j,dt,gears,backdriven)
+-- A live motor, crank or gear train is an authoritative drive source.
+-- The Vector Joint never runs two opposing speed actuators at once.
+-- In the absence of a driven source it is a bidirectional passive
+-- torque coupling, preserving coast and backdrive.
+local function relay(j,dt,input,output,source,sign,side)
+    if j.RelaySide~=side then
+        j.RelaySide=side
+        j.RelaySpeed=0
+    end
+    local axis=input.CFrame.RightVector.Unit
+    local target=input.AssemblyAngularVelocity:Dot(axis)*sign
+    local dtSafe=math.clamp(dt,0,0.07)
+    -- Smooth the measured input so one physics solver tick cannot kick
+    -- the entire downstream wheel or gear assembly sideways.
+    local filtered=j.RelaySpeed+(target-j.RelaySpeed)
+        *(1-math.exp(-16*dtSafe))
+    local maxChange=math.max(3,math.abs(target)*4)*dtSafe
+    j.RelaySpeed+=math.clamp(filtered-j.RelaySpeed,
+        -maxChange,maxChange)
+    local active=math.abs(j.RelaySpeed)>0.02
+    output.MaxTorque=math.clamp(source.Torque or 3000,10,100000)
+    local outputPart=if side=="A" then j.PartB else j.PartA
+    output.AngularVelocity=outputPart.CFrame.RightVector.Unit*j.RelaySpeed
+    output.Enabled=active
+    if j.TorqueA then j.TorqueA.Torque=Vector3.zero end
+    if j.TorqueB then j.TorqueB.Torque=Vector3.zero end
+end
+
+function VectorJoint.Step(j,dt,gears,backdriven,driveA,driveB)
     if not j.PartA.Parent or not j.PartB.Parent then
         VectorJoint.Stop(j)
         return
     end
-    local axisA=j.PartA.CFrame.RightVector
-    local axisB=j.PartB.CFrame.RightVector
-    -- Native ball socket alone owns translation: never add AlignPosition
-    -- to the same attachments or the two solvers fight and jitter.
+    local axisA=j.PartA.CFrame.RightVector.Unit
+    local axisB=j.PartB.CFrame.RightVector.Unit
+    -- A vector joint cannot connect two already welded shafts: that is
+    -- one rigid body with no relative rotational degree of freedom.
+    local rootA=j.PartA.AssemblyRootPart
+    local rootB=j.PartB.AssemblyRootPart
+    if rootA and rootB and rootA==rootB then
+        if not j.WarnedRigid then
+            warn("[OPENWORKS][VECTOR] Shaft ends belong to the same "
+                .."rigid body; remove the redundant weld")
+            j.WarnedRigid=true
+        end
+        VectorJoint.Stop(j)
+        return
+    end
     local gap=(j.Attachment0.WorldPosition-j.Attachment1.WorldPosition).Magnitude
     if gap>math.max(0.11,j.PartA.Size.Y*0.5) then
         if not j.ReportedDrift then
@@ -205,11 +276,9 @@ function VectorJoint.Step(j,dt,gears,backdriven)
             gearPart.CFrame.RightVector) or 0
         local native=j.NativePart
         local nativeAxis=native.CFrame.RightVector
-        local sign=j.Sign
-        -- Native->gear input must remain free of a competing motor.
         local driven=backdriven==j.GearId
         j.Motor.Enabled=not driven and math.abs(speed)>0.02
-        j.Motor.AngularVelocity=nativeAxis*(speed*sign)
+        j.Motor.AngularVelocity=nativeAxis*(speed*j.Sign)
         return
     end
     if not j.TorqueA or not j.TorqueB then return end
@@ -219,27 +288,46 @@ function VectorJoint.Step(j,dt,gears,backdriven)
         VectorJoint.Stop(j)
         return
     end
-    -- Passive bidirectional viscous coupling. There is no integrator:
-    -- the previous speed+phase controller accumulated energy while the
-    -- freely swinging shaft moved, violently kicking the whole mechanism.
-    -- Resist only relative shaft-axis spin; do NOT stabilize pitch/yaw.
-    local slip=omegaA-j.Sign*omegaB
-    local effort=0
-    if math.abs(slip)>0.025 then
-        -- Use a conservative estimate of rotational inertia so small
-        -- shafts cannot receive enormous torque from a high P/PI gain.
-        local radiusA=math.max(0.03,math.min(j.PartA.Size.Y,j.PartA.Size.Z)*0.5)
-        local radiusB=math.max(0.03,math.min(j.PartB.Size.Y,j.PartB.Size.Z)*0.5)
-        local inertiaA=0.5*math.max(j.PartA.AssemblyMass,0.01)*radiusA^2
-        local inertiaB=0.5*math.max(j.PartB.AssemblyMass,0.01)*radiusB^2
-        local reduced=(inertiaA*inertiaB)/(inertiaA+inertiaB)
-        -- Approximate a 12/s speed-equalization response, with hard
-        -- acceleration and speed bounds. No torque at rest, no windup.
-        effort=math.clamp(math.clamp(slip,-20,20)*reduced*12,
-            -reduced*120,reduced*120)
+
+    -- The active input stays controlled by its actual motor/gear drive.
+    -- Only the other shaft is velocity-driven: no competing motors and
+    -- no PI windup. This is the crucial loaded-output torque path.
+    if driveA and not driveB and j.DriveB then
+        j.DriveA.Enabled=false
+        relay(j,dt,j.PartA,j.DriveB,driveA,j.Sign,"A")
+        return
+    elseif driveB and not driveA and j.DriveA then
+        j.DriveB.Enabled=false
+        relay(j,dt,j.PartB,j.DriveA,driveB,j.Sign,"B")
+        return
     end
-    -- Axial reaction torques transmit power in either direction; the
-    -- native BallSocketConstraint remains solely responsible for the pivot.
+
+    if j.DriveA then
+        j.DriveA.Enabled=false
+        j.DriveA.AngularVelocity=Vector3.zero
+    end
+    if j.DriveB then
+        j.DriveB.Enabled=false
+        j.DriveB.AngularVelocity=Vector3.zero
+    end
+    j.RelaySide=nil
+    j.RelaySpeed=0
+
+    -- Passive bidirectional coupling for unpowered motion. Do not
+    -- regulate elbow tilt: only the two shaft-local spin components.
+    -- The old controller used the REDUCED INERTIA of a tiny input rod,
+    -- reducing efforts to effectively zero for a large wheel. Use a
+    -- bounded assembly-aware inertial scale instead.
+    local radiusA=math.max(0.10,
+        math.min(j.PartA.Size.Y,j.PartA.Size.Z)*0.5)
+    local radiusB=math.max(0.10,
+        math.min(j.PartB.Size.Y,j.PartB.Size.Z)*0.5)
+    local inertiaA=0.5*math.max(j.PartA.AssemblyMass,0.01)*radiusA^2
+    local inertiaB=0.5*math.max(j.PartB.AssemblyMass,0.01)*radiusB^2
+    local inertia=math.max(0.1,inertiaA,inertiaB)
+    local slip=math.clamp(omegaA-j.Sign*omegaB,-25,25)
+    local effort=math.clamp(slip*inertia*10,
+        -math.min(2000,inertia*60),math.min(2000,inertia*60))
     j.TorqueA.Torque=-axisA*effort
     j.TorqueB.Torque=axisB*(j.Sign*effort)
 end
