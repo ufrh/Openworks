@@ -1,6 +1,8 @@
 --!strict
 -- UI v2 rack-and-pinion legacy kinematic path for assemblies containing racks.
--- Retained intentionally; pure gear/belt assemblies use shaft-centric SimulationService.
+-- ACTIVE when UnifiedSimulationService detects a Rack or RackGuide.
+-- All other assemblies use PhysicalSimulationService / GearTransmission.
+-- Never implement rack motor behavior only in retired SimulationService.
 -- Each primitive is an independent body; component grouping never welds.
 -- Authored models remain unchanged; temporary clones receive passive native
 -- physics constraints and separately powered, input-limited actuator parts.
