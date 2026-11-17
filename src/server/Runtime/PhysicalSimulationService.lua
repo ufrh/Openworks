@@ -340,12 +340,14 @@ local function setMotorDrive(motor,relation)
             if axis then axis:Destroy() end
             motor.Drive=nil
         end
-        -- Roblox's native servo owns all acceleration, torque and angle
-        -- convergence. AngularResponsiveness=45 is the engine default;
-        -- legacy MotorAcceleration is for continuous motors ONLY.
+        -- Keep only Roblox's native servo, with a moderately damped
+        -- response. Its default responsiveness of 45 is very aggressive
+        -- for tiny/low-inertia shafts at high torque and can repeatedly
+        -- overshoot the neutral target. Speed and torque remain exactly
+        -- what the player configured; no Lua acceleration controller.
         hinge.AngularSpeed=math.abs(motor.Speed)
         hinge.ServoMaxTorque=motor.Torque
-        hinge.AngularResponsiveness=45
+        hinge.AngularResponsiveness=12
         hinge.TargetAngle=0
         hinge.ActuatorType=Enum.ActuatorType.Servo
     else
@@ -462,8 +464,14 @@ function Simulation:StepCranks(dt)
                 -- Direct native servo control: the key changes ONLY the
                 -- HingeConstraint target. Roblox handles movement, speed,
                 -- damping and torque without a Lua motion controller.
-                hinge.TargetAngle=if motor.On then motor.TargetAngle else 0
-                hinge.ActuatorType=Enum.ActuatorType.Servo
+                local goal=if motor.On then motor.TargetAngle else 0
+                -- Set native servo targets only when input STATE changes.
+                -- Redundant TargetAngle/ActuatorType writes every Heartbeat
+                -- can continually wake or destabilize a settling hinge.
+                if hinge.TargetAngle~=goal then hinge.TargetAngle=goal end
+                if hinge.ActuatorType~=Enum.ActuatorType.Servo then
+                    hinge.ActuatorType=Enum.ActuatorType.Servo
+                end
                 continue
             end
 
