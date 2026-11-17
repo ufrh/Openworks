@@ -235,7 +235,9 @@ function Gizmo:UpdateDrag()
     local function candidate(steps)
         local size=nextSize(self.Mode,drag.StartSize,drag.Axis,steps,drag.StepU)
         if not size or not Grid.ValidSize(self.TemplateSize,size,
-            self.Mode,self.FineDiameter,self.NumericPrecision) then return nil end
+            self.Mode,self.FineDiameter,
+            self.NumericPrecision or math.abs(steps-math.round(steps))>0.000001)
+            then return nil end
         local shifted=drag.StartCF.Position
             +drag.Direction*(steps*Grid.Unit*drag.StepU/2)
         return CFrame.new(shifted)*drag.StartCF.Rotation,size
@@ -243,8 +245,8 @@ function Gizmo:UpdateDrag()
 
     local steps=requestedSteps
     if self.OnResolve then
-        -- Collision resolution searches on the same exact integer Unit
-        -- lattice as the final authoring request, not arbitrary floats.
+        -- A blocked integer step can resolve to a fractional Unit stop.
+        -- Ordinary unblocked grip positions still use the chosen increment.
         steps=self.OnResolve(drag,requestedSteps,candidate)
     end
     if type(steps)~="number" then return end
