@@ -23,6 +23,9 @@ function Runtime.OperatorSeatId(player,session)
 end
 function Runtime.CanControl(player,session,seatId)
     if type(seatId)~="string" or seatId=="" then return true end
+    -- When the active mechanism has NO seat, freecam/manual bindings
+    -- remain compatible even if a motor was routed elsewhere on the plot.
+    if not session or not session.Seats then return true end
     return Runtime.OperatorSeatId(player,session)==seatId
 end
 function Runtime.Start(player,graph,copies,session)
