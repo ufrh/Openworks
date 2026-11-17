@@ -25,8 +25,11 @@ function Library.Apply(model,role)
             part.MaterialVariant=""
             part.Reflectance=0.03
             if part:IsA("Seat") then
-                part.Disabled=false
-                part.CanTouch=true
+                -- In Build/Edit the plate is only construction geometry:
+                -- it must not seat the invisible anchored building avatar.
+                -- SeatRuntime enables and touches only the simulation clone.
+                part.Disabled=true
+                part.CanTouch=false
             end
         end
     end
