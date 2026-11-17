@@ -1189,9 +1189,11 @@ def main() -> int:
     check("Placement shaft offsets quantize within tube faces",
           smart_placement.count('local loSnap=math.ceil(low*2-1e-6)*0.5')>=2
           and smart_placement.count('local hiSnap=math.floor(high*2+1e-6)*0.5')>=2)
-    check("Clearance weld requires real drilled bore fit",
-          'Bore.ShaftFits(shaft,hole)' in mechanical
-          and 'string.find(name,"drilledblock",1,true)' in mechanical)
+    check("Manual weld permits flush drilled-housing faces without bore insertion",
+          'stillTouching(source,target,0.03)' in mechanical
+          and 'Rigid weld requires adjoining surfaces' in mechanical
+          and 'Bore.ShaftFits(shaft,hole)' not in mechanical
+          and 'Bore.ShaftFits(source,target)' in mechanical)
     layered=read("src/client/Controllers/LayeredEditingController.lua")
     check("Relationship picker is the single contextual mouse interface",
           'Name="UnifiedConnectionChoice"' in unified_panel
