@@ -115,6 +115,10 @@ function Unified:InputMotor(player,key,holding)
     local engine=self:Engine(player)
     if engine then engine:InputMotor(player,key,holding) end
 end
+function Unified:InputRope(player,key,holding)
+    local engine=self:Engine(player)
+    if engine then engine:InputRope(player,key,holding) end
+end
 function Unified:InputRack(player,id,direction,holding,release)
     if self:Engine(player)==self.Rack then
         self.Rack:InputRack(player,id,direction,holding,release)
