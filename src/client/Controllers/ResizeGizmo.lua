@@ -89,12 +89,13 @@ local function canUse(mode, axis)
         and (mode ~= "LengthAndDiameter_1U" or axis ~= 3)
 end
 
-function Gizmo.new(gui, onChange, onCommit, onDragStarted)
+function Gizmo.new(gui, onChange, onCommit, onDragStarted, onResolve)
     local self = setmetatable({
         Gui = gui,
         OnChange = onChange,
         OnCommit = onCommit,
         OnDragStarted = onDragStarted,
+        OnResolve = onResolve,
         Visual = PhysicalHandles.new("Scale"),
         Connections = {},
         CFrame=CFrame.identity,
@@ -202,6 +203,7 @@ function Gizmo:BeginDrag()
         PlaneNormal = planeNormal,
         StartAxisCoordinate = (startHit - startFace):Dot(outward),
         LastSteps = 0,
+        LastRequestedSteps=nil,
         StepU = self.IncrementU,
     }
 
@@ -223,30 +225,36 @@ function Gizmo:UpdateDrag()
 
     local axisCoordinate = (hit - drag.PlanePoint):Dot(drag.Direction)
     local distance = axisCoordinate - drag.StartAxisCoordinate
-    local steps = math.floor(distance / (Grid.Unit * drag.StepU) + 0.5)
+    local requestedSteps=math.floor(distance/(Grid.Unit*drag.StepU)+0.5)
+    if drag.LastRequestedSteps==requestedSteps then return end
+    drag.LastRequestedSteps=requestedSteps
 
-    if steps == drag.LastSteps then return end
-
-    local size = nextSize(self.Mode, drag.StartSize, drag.Axis, steps, drag.StepU)
-    if not size or not Grid.ValidSize(self.TemplateSize,size,
-        self.Mode,self.FineDiameter,self.NumericPrecision) then
-        return
+    -- The moving face advances in exact U increments, leaving the
+    -- opposite face anchored. Each candidate is calculated from the
+    -- ORIGINAL grab pose, never from an already clamped or eased preview.
+    local function candidate(steps)
+        local size=nextSize(self.Mode,drag.StartSize,drag.Axis,steps,drag.StepU)
+        if not size or not Grid.ValidSize(self.TemplateSize,size,
+            self.Mode,self.FineDiameter,self.NumericPrecision) then return nil end
+        local shifted=drag.StartCF.Position
+            +drag.Direction*(steps*Grid.Unit*drag.StepU/2)
+        return CFrame.new(shifted)*drag.StartCF.Rotation,size
     end
 
-    -- The grabbed face moves along its world-space outward axis while the
-    -- opposite face remains anchored. The grid function only resolves
-    -- center parity; no pixel scaling or camera locking is involved.
-    local shifted = drag.StartCF.Position
-        + drag.Direction * (steps * Grid.Unit * drag.StepU / 2)
-    local rotation = drag.StartCF.Rotation
-    -- Preserve the opposite face exactly. The server validates dimensions
-    -- and interference, not arbitrary center-grid parity.
-    local cf = CFrame.new(shifted) * rotation
-
-    drag.LastSteps = steps
-    self.CFrame = cf
-    self.Size = size
-    self.OnChange(cf, size)
+    local steps=requestedSteps
+    if self.OnResolve then
+        -- Collision resolution searches on the same exact integer Unit
+        -- lattice as the final authoring request, not arbitrary floats.
+        steps=self.OnResolve(drag,requestedSteps,candidate)
+    end
+    if type(steps)~="number" then return end
+    if steps==drag.LastSteps then return end
+    local cf,size=candidate(steps)
+    if not cf then return end
+    drag.LastSteps=steps
+    self.CFrame=cf
+    self.Size=size
+    self.OnChange(cf,size)
 end
 
 function Gizmo:FinishDrag()
