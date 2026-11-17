@@ -1224,64 +1224,38 @@ function Simulation:Start(player, payload)
                 end
             end
         end
-        local hasExplicitGround = next(explicitGround) ~= nil
-        session.GroundKeys = explicitGround
-        -- Do not ground an entire moving car merely because its frame
-        -- carries a motor bearing. Only a free-standing, otherwise loose
-        -- drilled housing becomes stationary. Housings welded to a
-        -- chassis stay on that chassis and receive no motor actuation.
+        -- A motor bearing never grants grounding to its housing.
+        -- Nor may simulation silently remove a player's explicit ground.
+        -- Both bodies stay physically mobile unless the builder chose
+        -- Grounded on a member of their actual rigid welded group.
+        session.GroundKeys=explicitGround
+        local mobileHousings,bearingGroups,groundedHousings=
+            BearingSupport.Resolve(graph,session.Gears,session.GroundKeys)
         for _,edge in ipairs(graph.edges) do
             if edge.kind=="Bearing" and edge.relation
                 and edge.relation:GetAttribute("MotorEnabled")==true then
-                local shaftId=edge.source:GetAttribute("InstanceId")
-                local rotor=session.Gears.ById[shaftId]
+                local rotor=session.Gears.ById[
+                    edge.source:GetAttribute("InstanceId")]
                 if rotor then
-                    for id,group in pairs(session.Gears.ById) do
-                        if group==rotor then
-                            session.GroundKeys["p:"..tostring(id)]=nil
+                    for _,part in ipairs(graph.models) do
+                        local id=part:GetAttribute("InstanceId")
+                        if session.Gears.ById[id]==rotor
+                            and explicitGround["p:"..tostring(id)] then
+                            error("Motor rotor is explicitly grounded. "
+                                .."Unground its shaft/drive gear to rotate")
                         end
                     end
-                else
-                    session.GroundKeys[edge.a]=nil
                 end
             end
         end
-        local standaloneSupports,supportCandidates,structuralSupports=
-            BearingSupport.Resolve(graph,session.Gears,session.GroundKeys)
         print(string.format(
             "[OPENWORKS][BEARING][PhysicalSimulationService] "
-            .."support groups anchored=%d, eligible=%d, "
-            .."welded into moving structure=%d",
-            standaloneSupports,supportCandidates,structuralSupports))
-        if not hasExplicitGround and standaloneSupports==0
-            and session.Grounded then
-            -- Never anchor the clicked shaft/gear just because it was used
-            -- as the Simulation seed. That silently locks the input shaft
-            -- and makes a correctly meshed gear train appear broken.
-            -- Only a stationary housing behind a genuine passive bearing
-            -- is a safe automatic support candidate. A welded housing is
-            -- NOT a support if it shares the rotating shaft's rigid body.
-            for _,edge in ipairs(graph.edges) do
-                if (edge.kind=="Bearing" or edge.kind=="Slider"
-                        or edge.kind=="Cylindrical")
-                    and Alignment.TargetAxis(edge.target)
-                    and not Alignment.IsShaft(edge.target)
-                    and not HandCrankMath.IsCrank(edge.target)
-                    and type(edge.target:GetAttribute("GearTeeth"))~="number"
-                    and not session.Gears:IsGeared(
-                        edge.target:GetAttribute("InstanceId")) then
-                    session.GroundKeys[edge.b]=true
-                    break
-                end
-            end
-            if next(session.GroundKeys)==nil then
-                session.SupportWarning="No stationary bearing housing to "
-                    .."ground; shafts remain free. Ground the housing "
-                    .."explicitly for a stable transmission."
-            end
-        end
+            .."passive groups=%d, free housings=%d, "
+            .."explicitly grounded housings=%d (no auto-grounding)",
+            bearingGroups,mobileHousings,groundedHousings))
 
-        -- Native shaft bearings remain active and enforce rotational freedom.
+        -- Native bearings are passive revolute joints; motor inputs apply
+        -- shaft-only world-relative AngularVelocity with no grounded stator.
         session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,
             created,player.Character,d.folder)
         for _,entry in ipairs(session.Gears.Gears) do
