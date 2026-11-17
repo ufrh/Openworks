@@ -171,7 +171,10 @@ function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter, numeri
         local ticks = u / increment
         return u >= (minU or Grid.MinSizeStepU) - 0.0001
             and u <= Grid.MaxUnits + 0.0001
-            and math.abs(ticks - math.floor(ticks + 0.5)) < 0.0001
+            -- Explicit precise sizes (numeric entry / collision-stop grip)
+            -- are bounded in U but do not need a lattice multiple.
+            and (numericPrecision==true
+                or math.abs(ticks - math.floor(ticks + 0.5)) < 0.0001)
     end
 
     -- Numeric sizing has 0.01-U resolution; the world still imposes
