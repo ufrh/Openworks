@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify smooth live servos and powered Vector Joint transmission
         run: python3 scripts/check_servo_vector_drive.py
+      - name: Verify manual housing face welds without bore fitting
+        run: python3 scripts/check_manual_housing_weld.py
       - name: Verify OPENWORKS current architecture
         run: python3 scripts/verify_source.py
       - name: Verify procedural prefab geometry topology
