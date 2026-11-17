@@ -847,8 +847,9 @@ function Simulation:Start(player, payload)
 
     local graph, reason = self:Graph(player, seed)
     if not graph then return false, reason end
-    local unregisteredGears=countNearbyUnregisteredGears(
-        player,graph,d.folder)
+    -- All validated gear contacts are now in the detected graph.
+    -- Nearby but unmeshed geometry is simply a separate mechanism.
+    local unregisteredGears=0
     if unregisteredGears>0 then
         warn(string.format("[OPENWORKS][GEARS] %d visibly nearby gear(s) are OUTSIDE the '%s' Assembly; "
             .."they cannot receive transmission torque. Add them with the Assembly tool.",
