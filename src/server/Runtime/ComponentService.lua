@@ -53,6 +53,31 @@ function ComponentService:RequireMembers(player, componentId)
     return members
 end
 
+-- For mixed Shift selections, grouped members must be all-in or all-out.
+-- This authorization is performed on the SERVER and shared by batch
+-- transforms and nudges; untrusted clients cannot move half a component.
+function ComponentService:ValidateCompleteSelection(player,members)
+    local selected={}
+    local components={}
+    for _,member in ipairs(members) do
+        selected[member]=true
+        local cid=member:GetAttribute("ComponentId")
+        if type(cid)=="string" and cid~="" then components[cid]=true end
+    end
+    for cid in pairs(components) do
+        local all=self:Members(player,cid)
+        if #all==0 then
+            return false,"Component is no longer available"
+        end
+        for _,member in ipairs(all) do
+            if not selected[member] then
+                return false,"Select the entire component to move it with other parts"
+            end
+        end
+    end
+    return true
+end
+
 function ComponentService:Group(player, payload)
     if type(payload.ids) ~= "table" then return false, "Select multiple primitives" end
     if #payload.ids < 2 or #payload.ids > MAX_GROUP then
@@ -131,11 +156,11 @@ function ComponentService:Plan(player, payload)
     local d = self.D
     local members, reason
     if payload.ids~=nil then
-        -- Temporary multi-selection is NOT a persistent component. Verify
-        -- each independently owned ID instead of trusting client instances.
+        -- Temporary selection may include complete grouped components.
+        -- Verify ownership and whole-component membership on the server.
         if type(payload.ids)~="table" or #payload.ids<2
             or #payload.ids>128 then
-            return nil,nil,"Select between 2 and 128 independent primitives"
+            return nil,nil,"Select between 2 and 128 primitives"
         end
         local seen={}
         members={}
@@ -145,14 +170,16 @@ function ComponentService:Plan(player, payload)
             end
             seen[id]=true
             local model=d.findOwned(player,id)
-            if not model or model:GetAttribute("ComponentId") then
-                return nil,nil,"Multi-move requires selected independent primitives"
+            if not model then
+                return nil,nil,"Selection contains an unavailable primitive"
             end
             if not d.nearPlayer(player,model:GetPivot().Position) then
                 return nil,nil,"Selected primitive outside build range"
             end
             table.insert(members,model)
         end
+        local full,why=self:ValidateCompleteSelection(player,members)
+        if not full then return nil,nil,why end
     else
         members,reason=self:RequireMembers(player,payload.componentId)
     end
