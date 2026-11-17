@@ -58,6 +58,16 @@ checks={
         and 'task.spawn(function()' in preview
         and 'self:ShowVisuals(members,PURPLE)' in preview
         and 'self.Feedback:Set("assembly","outer",ordered,"assembly",true)' in preview,
+    "Hover stays whole-group as cursor crosses connected parts":
+        'if connectedId==id then sameGroup=true break end' in preview
+        and 'if not sameGroup then' in preview
+        and 'self.ConnectedIds=nil' in preview
+        and 'if #members==0 and seed then members={seed} end' not in preview
+        and 'self.ConnectedIds={id}' not in preview
+        and 'self:RefreshConnectedPreview(aimed)' in preview,
+    "Hover selection outline has one owner in Simulate":
+        'and self.Tools.PrimaryId~="AssemblySimulation"' in editor
+        and 'self.Feedback:Clear("context-selection")' in editor,
     "Hover detection cannot throttle P or construction writes":
         'local lastDetection = {}' in service
         and 'if action=="DetectConnectedAssembly" then' in service
