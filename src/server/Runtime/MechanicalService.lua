@@ -542,8 +542,8 @@ function Mechanical:Create(player, request)
 
     local members = if componentId then d.components:Members(player, componentId)
         else { source }
-    if #members == 0 or #members > 128 then
-        return false, "Invalid source component"
+    if #members==0 then
+        return false,"Invalid source component"
     end
     for _, member in ipairs(members) do
         if member == target then return false, "Opening belongs to the moving body" end
