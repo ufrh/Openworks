@@ -291,21 +291,81 @@ function Simulation:StopCrank(session,id)
     if session.ActiveCrankId==id then session.ActiveCrankId=nil end
 end
 
--- Only liveness/key state is accepted from the client. Speed and
--- torque always come from saved, owner-verified relationship attributes.
+-- Motor is a powered SHAFT bearing, not a motorized housing. Use the
+-- identical native AngularVelocity actuator as a HandCrank. The bearing
+-- constraint remains passive so it only holds the shaft on its axle.
+local function setMotorDrive(motor, relation)
+    motor.Key=relation:GetAttribute("MotorKey") or "F"
+    motor.Speed=relation:GetAttribute("MotorSpeed") or 3
+    motor.Torque=math.clamp(relation:GetAttribute("MotorTorque") or 3000,1,100000)
+    motor.Acceleration=math.clamp(
+        relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
+    motor.DriveType=if relation:GetAttribute("MotorDriveType")=="Servo"
+        then "Servo" else "Continuous"
+    motor.InputMode=if relation:GetAttribute("MotorInputMode")=="Toggle"
+        then "Toggle" else "Hold"
+    motor.TargetAngle=math.clamp(
+        relation:GetAttribute("MotorTargetAngle") or 90,-180,180)
+    motor.Held=false
+    motor.Latched=false
+    motor.On=false
+    motor.NativeSpeed=0
+    motor.LastInput=0
+    motor.Constraint.ActuatorType=Enum.ActuatorType.None
+    motor.Constraint.AngularVelocity=0
+    motor.Drive.MaxTorque=motor.Torque
+    motor.Drive.AngularVelocity=Vector3.zero
+    motor.Drive.Enabled=false
+end
+
+local function makeMotor(constraint, shaft,relation,runtime)
+    local attachment=Instance.new("Attachment")
+    attachment.Name="PoweredMotorShaftAxis"
+    attachment.Parent=shaft
+    local drive=Instance.new("AngularVelocity")
+    drive.Name="PoweredMotor_ShaftOnlyDrive"
+    drive.Attachment0=attachment
+    drive.RelativeTo=Enum.ActuatorRelativeTo.World
+    drive.MaxTorque=3000
+    drive.Enabled=false
+    drive.AngularVelocity=Vector3.zero
+    drive.Parent=runtime
+    local motor={
+        Constraint=constraint,Drive=drive,Shaft=shaft,
+        ShaftId=relation:GetAttribute("SourceId"),
+        RelationId=relation:GetAttribute("RelationId"),
+    }
+    setMotorDrive(motor,relation)
+    return motor
+end
+
+local function stopMotor(motor)
+    motor.Held=false
+    motor.Latched=false
+    motor.On=false
+    motor.NativeSpeed=0
+    motor.LastInput=0
+    if motor.Drive and motor.Drive.Parent then
+        motor.Drive.AngularVelocity=Vector3.zero
+        motor.Drive.Enabled=false
+    end
+end
+
 function Simulation:InputMotor(player,key,holding)
     local session=self.Sessions[player]
     if not session or session.Paused or type(key)~="string"
         or #key>20 or type(holding)~="boolean" then return end
     local now=os.clock()
     for _,motor in ipairs(session.Motors or {}) do
-        if motor.Key==key then
+        if motor.Key~=key then continue end
+        if motor.InputMode=="Toggle" then
+            if holding and not motor.Latched then motor.On=not motor.On end
+            motor.Latched=holding
+        else
             motor.Held=holding
-            motor.LastInput=if holding then now else 0
-            if motor.Constraint and motor.Constraint.Parent then
-                motor.Constraint.AngularVelocity=if holding then motor.Speed else 0
-            end
+            motor.On=holding
         end
+        motor.LastInput=if holding then now else 0
     end
 end
 
@@ -313,13 +373,50 @@ function Simulation:StepCranks(dt)
     for owner,session in pairs(self.Sessions) do
         if session.Gears then session.Gears:ClearDrives() end
         for _,motor in ipairs(session.Motors or {}) do
-            if motor.Constraint.Parent and (session.Paused
-                or not motor.Held or os.clock()-motor.LastInput>0.45) then
+            local drive=motor.Drive
+            local shaft=motor.Shaft
+            if not drive or not drive.Parent or not shaft or not shaft.Parent then
+                stopMotor(motor)
+                continue
+            end
+            if session.Paused then
+                stopMotor(motor)
+                continue
+            end
+            if motor.InputMode=="Hold" and (not motor.Held
+                or os.clock()-motor.LastInput>0.45) then
                 motor.Held=false
-                motor.Constraint.AngularVelocity=0
-            elseif motor.Held and session.Gears and not session.Paused then
-                session.Gears:SetDrive(motor.ShaftId,motor.Speed,
-                    motor.Constraint.MotorMaxTorque)
+                motor.On=false
+            end
+            local desired=if motor.On then motor.Speed else 0
+            if motor.DriveType=="Servo" then
+                -- The native hinge measures the actual shaft position.
+                -- Drive its shaft toward target or back to neutral; no
+                -- teleporting, no second actuator on the housing.
+                local current=motor.Constraint.CurrentAngle
+                local goal=if motor.On then motor.TargetAngle else 0
+                local diff=math.rad(goal-current)
+                diff=math.atan2(math.sin(diff),math.cos(diff))
+                desired=if math.abs(diff)<math.rad(0.2) then 0
+                    else math.clamp(diff*5,
+                        -math.abs(motor.Speed),math.abs(motor.Speed))
+            end
+            local dtSafe=math.clamp(dt,0,0.07)
+            local ease=(desired-motor.NativeSpeed)
+                *(1-math.exp(-8*dtSafe))
+            local ramp=motor.Acceleration*dtSafe
+            motor.NativeSpeed+=math.clamp(ease,-ramp,ramp)
+            if math.abs(motor.NativeSpeed)<0.008 and desired==0 then
+                motor.NativeSpeed=0
+            end
+            drive.AngularVelocity=shaft.CFrame.RightVector*motor.NativeSpeed
+            -- A servo at rest still holds its position. Continuous motors
+            -- release force at rest as a hand crank does.
+            drive.Enabled=motor.DriveType=="Servo"
+                or math.abs(motor.NativeSpeed)>0.0001
+            if session.Gears and math.abs(motor.NativeSpeed)>0.008 then
+                session.Gears:SetDrive(motor.ShaftId,motor.NativeSpeed,
+                    motor.Torque,shaft.CFrame.RightVector)
             end
         end
         local character=owner.Character
@@ -965,29 +1062,19 @@ function Simulation:Start(player, payload)
                     constraint.UpperAngle =
                         edge.relation:GetAttribute("UpperLimit") or 180
                 end
-                -- Optional motor drive applies ONLY to a validated physical
-                -- shaft/housing bearing; all other relationships are passive.
+                -- The hinge is ALWAYS passive. Only the shaft gets
+                -- the HandCrank-style motor. GearTransmission receives
+                -- the same shaft ID and speed as from a hand crank.
                 if constraint:IsA("HingeConstraint")
-                    and edge.kind=="Bearing"
-                    and edge.relation:GetAttribute("MotorEnabled")==true then
-                    constraint.ActuatorType=Enum.ActuatorType.Motor
-                    constraint.AngularVelocity=0
-                    constraint.MotorMaxTorque=math.clamp(
-                        edge.relation:GetAttribute("MotorTorque") or 3000,1,100000)
-                    constraint.MotorMaxAcceleration=math.clamp(
-                        edge.relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
-                    table.insert(session.Motors,{
-                        Constraint=constraint,
-                        ShaftId=edge.source:GetAttribute("InstanceId"),
-                        RelationId=edge.relation:GetAttribute("RelationId"),
-                        Key=edge.relation:GetAttribute("MotorKey") or "F",
-                        Speed=edge.relation:GetAttribute("MotorSpeed") or 3,
-                        LastInput=0,Held=false,
-                    })
-                elseif constraint:IsA("HingeConstraint")
                     or constraint:IsA("PrismaticConstraint")
                     or constraint:IsA("CylindricalConstraint") then
                     constraint.ActuatorType=Enum.ActuatorType.None
+                end
+                if constraint:IsA("HingeConstraint")
+                    and edge.kind=="Bearing"
+                    and edge.relation:GetAttribute("MotorEnabled")==true then
+                    table.insert(session.Motors,
+                        makeMotor(constraint,p1,edge.relation,runtime))
                 end
                 constraint.Parent = runtime
                 table.insert(session.Constraints, constraint)
@@ -1129,7 +1216,41 @@ function Simulation:Start(player, payload)
         end
         local hasExplicitGround = next(explicitGround) ~= nil
         session.GroundKeys = explicitGround
-        if not hasExplicitGround and session.Grounded then
+        -- Motor stators are always fixed. A previously saved grounded
+        -- drive shaft/gear cannot be the rotating motor output: release
+        -- that entire rigid group ONLY in the simulation copy. This never
+        -- modifies authored Grounded flags or the persistent assembly.
+        local motorStators={}
+        for _,edge in ipairs(graph.edges) do
+            if edge.kind=="Bearing"
+                and edge.relation:GetAttribute("MotorEnabled")==true then
+                local shaftId=edge.source:GetAttribute("InstanceId")
+                local housingId=edge.target:GetAttribute("InstanceId")
+                local shaftGroup=session.Gears.ById[shaftId]
+                local housingGroup=session.Gears.ById[housingId]
+                if shaftGroup and shaftGroup==housingGroup then
+                    error("Motor shaft is welded to its hole housing; "
+                        .."remove that weld to allow shaft-only rotation")
+                end
+                -- Keep the complete rigid rotor (shaft and drive gear)
+                -- free. Only a housing-side rigid body is anchored.
+                if shaftGroup then
+                    for id,group in pairs(session.Gears.ById) do
+                        if group==shaftGroup then
+                            session.GroundKeys["p:"..tostring(id)]=nil
+                        end
+                    end
+                else
+                    session.GroundKeys[edge.a]=nil
+                end
+                motorStators[edge.b]=true
+            end
+        end
+        for key in pairs(motorStators) do
+            session.GroundKeys[key]=true
+        end
+        if not hasExplicitGround and not next(motorStators)
+            and session.Grounded then
             -- Never anchor the clicked shaft/gear just because it was used
             -- as the Simulation seed. That silently locks the input shaft
             -- and makes a correctly meshed gear train appear broken.
@@ -1195,10 +1316,14 @@ function Simulation:Start(player, payload)
     end)
 
     if not success then
-        warn("[OPENWORKS] Simulation compile failed: " .. tostring(failure))
+        warn("[OPENWORKS] Physical simulation compile failed: " .. tostring(failure))
         self:Stop(player)
-        return false, "Could not compile simulation (see Studio Output)"
+        local problem=tostring(failure):match("(Motor [^\r\n]+)")
+        return false,problem or "Could not compile simulation (see Studio Output)"
     end
+    print(string.format(
+        "[OPENWORKS][MOTOR] ACTIVE PhysicalSimulationService | motors=%d gears=%d",
+        #session.Motors,#session.Gears.Gears))
 
     self:SetStatus(player,true,next(session.GroundKeys)~=nil)
     player:SetAttribute("OPENWORKS_SimulationPaused",false)
