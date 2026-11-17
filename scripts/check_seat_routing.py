@@ -62,9 +62,13 @@ checks={
     all('SeatRuntime.Start(player,graph,copies,session)' in s
         and 'SeatRuntime.Stop(player,session)' in s for s in (physical,rack)),
  "Routed motors and winches require server-verified operator occupancy":
-    'Runtime.OperatorSeatId(player,session)==seatId' in runtime
-    and all('SeatRuntime.CanControl(owner,session,motor.SeatId)' in s
-        and 'SeatRuntime.CanControl(player,session,rope.SeatId)' in s for s in (physical,rack)),
+    'local operatorId=Runtime.OperatorSeatId(player,session)' in runtime
+    and 'return operatorId==seatId' in runtime
+    and all('SeatRuntime.CanControl(owner,session,motor.SeatId)' in engine
+        and 'SeatRuntime.CanControl(player,session,motor.SeatId)' in engine
+        and 'SeatRuntime.CanControl(owner,session,rope.SeatId)' in engine
+        and 'SeatRuntime.CanControl(player,session,rope.SeatId)' in engine
+        for engine in (physical,rack)),
  "No-seat freecam controls and seated tool-unequip remain valid":
     'if not session or not session.Seats then return true end' in runtime
     and 'or player:GetAttribute("OPENWORKS_SimulationHasSeat")==true' in motor
