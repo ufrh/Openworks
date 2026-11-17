@@ -372,18 +372,13 @@ function Tool:ToggleMember(model,forceSingle)
         self:Tell("Aim at a constructed primitive or editor component")
         return
     end
-    if self.Stage~="Selecting" then
+    local startNew=self.Stage~="Selecting"
+    if startNew then
         local existingId=model:GetAttribute("AssemblyId")
         if type(existingId)=="string" and existingId~="" then
             self:LoadExisting(model)
             return
         end
-        -- New one-click workflow: start a draft immediately, without
-        -- forcing N/naming before selecting a connected mechanism.
-        self.Stage="Selecting"
-        self.Name="Assembly"
-        self.EditingId=nil
-        self.Selected={}
     end
     local alt=UIS:IsKeyDown(Enum.KeyCode.LeftAlt)
         or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
@@ -401,7 +396,7 @@ function Tool:ToggleMember(model,forceSingle)
             return remote:InvokeServer({
                 action="DetectConnectedAssembly",
                 seedId=instanceId(model),
-                assemblyId=self.EditingId,
+                assemblyId=if startNew then nil else self.EditingId,
             })
         end)
         self.Busy=false
@@ -428,6 +423,14 @@ function Tool:ToggleMember(model,forceSingle)
             self:Tell("No connected construction found")
             return
         end
+    end
+    -- Commit the implicit draft only after successful detection. Failed
+    -- or stale server responses must leave Assembly mode idle and usable.
+    if startNew then
+        self.Stage="Selecting"
+        self.Name="Assembly"
+        self.EditingId=nil
+        self.Selected={}
     end
     -- A normal click adds/removes its entire connected mechanism; Alt
     -- explicitly opts into selecting only one primitive.
