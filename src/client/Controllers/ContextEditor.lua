@@ -1073,12 +1073,103 @@ function Panel:ConfirmAppearance(node)
     self:Message("Appearance confirmed")
 end
 
+-- The plate itself is the seat. Its role changes the plate color and
+-- whether it can accept control wires. All routed motors are centrally
+-- named/rebound here, not scattered across individual motor properties.
+function Panel:RenderSeatControls(member)
+    local seatId=member:GetAttribute("InstanceId")
+    local current=member:GetAttribute("SeatRole") or "Operator"
+    self:Section("Seat plate")
+    self:Value("Geometry","Flat resizable native seat")
+    self:Segment("Seat role",{
+        {id="Operator",label="Operator",tip="Orange · receives controls"},
+        {id="Passenger",label="Passenger",tip="Blue · riding only"},
+    },current)
+    if not simulating() then
+        self:ActionButton("APPLY SEAT ROLE",
+            "Switch the same physical plate between orange operator and blue passenger",function()
+                if self:Send({action="SetSeatRole",seatId=seatId,
+                    role=self.Flags["Seat role"]},true) then
+                    self:RenderContext()
+                end
+            end)
+    end
+    self:Section("Routed controls")
+    local relations=workspace:FindFirstChild("OPENWORKS_Relationships")
+    local controls={}
+    if relations then
+        for _,rel in ipairs(relations:GetChildren()) do
+            if rel:GetAttribute("OwnerUserId")==player.UserId
+                and rel:GetAttribute("SeatId")==seatId then
+                local kind=rel:GetAttribute("Kind")
+                if kind=="Rope" or (kind=="Bearing"
+                    and rel:GetAttribute("MotorEnabled")==true) then
+                    table.insert(controls,rel)
+                end
+            end
+        end
+    end
+    table.sort(controls,function(a,b)
+        return tostring(a:GetAttribute("RelationId"))
+            <tostring(b:GetAttribute("RelationId"))
+    end)
+    if #controls==0 then
+        self:Value("Assigned","None · Mechanics / Route to wire motors")
+    end
+    for index,rel in ipairs(controls) do
+        local id=rel:GetAttribute("RelationId")
+        local rope=rel:GetAttribute("Kind")=="Rope"
+        local displayName=rel:GetAttribute("ControlName")
+            or (if rope then "Winch "..index else "Motor "..index)
+        self:Section(tostring(index)..". "..displayName)
+        if not simulating() then
+            local nameField="Name "..index
+            local keyField="Key "..index
+            local secondField="Out key "..index
+            self:Field(nameField,displayName)
+            self:KeyPicker(keyField,rel:GetAttribute(
+                if rope then "RopeInKey" else "MotorKey") or
+                (if rope then "Z" else "F"),rope)
+            if rope then
+                self:KeyPicker(secondField,
+                    rel:GetAttribute("RopeOutKey") or "X",true)
+            end
+            self:ActionButton("SAVE "..displayName,
+                "Rename and bind this control on the operator seat",function()
+                    local ok=self:Send({action="ConfigureRoutedControl",
+                        relationId=id,
+                        name=self.Fields[nameField].Text,
+                        key=self.Fields[keyField].Text,
+                        secondKey=if rope then self.Fields[secondField].Text else nil,
+                    },true)
+                    if ok then self:RenderContext() end
+                end)
+            self:ActionButton("DISCONNECT "..displayName,
+                "Remove this logical control wire without changing its physics",function()
+                    if self:Send({action="RouteControl",relationId=id},true) then
+                        self:RenderContext()
+                    end
+                end)
+        else
+            self:Value("Key",rel:GetAttribute(
+                if rope then "RopeInKey" else "MotorKey") or "F")
+            if rope then
+                self:Value("Pay out",rel:GetAttribute("RopeOutKey") or "X")
+            end
+        end
+    end
+end
+
 function Panel:RenderObject(node)
     local member=node.members and node.members[1]
     if not own(member) then self:Value("Selection","Unavailable") return end
     self:Section(if node.kind=="component" then "Component" else "Primitive")
     self:Value("Name",node.name)
     if node.kind=="component" then self:Value("Parts",#node.members) end
+    if member:GetAttribute("TemplateId")=="SeatPlate" then
+        self:RenderSeatControls(member)
+        return
+    end
     local part=member.PrimaryPart
     if part then self:Value("Size (U)",formatVector(part.Size)) end
     -- Legacy saved AssemblyId is intentionally ignored: connected
