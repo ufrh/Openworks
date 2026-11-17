@@ -563,6 +563,7 @@ local function finalizeNewPrimitive(player,model,payload)
             rollDegrees=mate.rollDegrees,
             reverse=mate.reverse==true,
             fitTargets=mate.fitTargets,
+            fitMovingIds=mate.fitMovingIds,
             approach=payload.position,
             position=payload.position,
             orientation=payload.orientation,
