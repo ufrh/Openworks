@@ -22,11 +22,16 @@ function Runtime.OperatorSeatId(player,session)
     return nil
 end
 function Runtime.CanControl(player,session,seatId)
-    if type(seatId)~="string" or seatId=="" then return true end
-    -- When the active mechanism has NO seat, freecam/manual bindings
-    -- remain compatible even if a motor was routed elsewhere on the plot.
+    -- A no-seat mechanism always retains ordinary freecam controls.
     if not session or not session.Seats then return true end
-    return Runtime.OperatorSeatId(player,session)==seatId
+    local _,humanoid=humanoidFor(player)
+    local sitting=humanoid and humanoid.SeatPart
+    local operatorId=Runtime.OperatorSeatId(player,session)
+    -- Passenger seats are for riding, not a second set of steering keys.
+    -- Unrouted motors remain accessible on foot or from an operator seat.
+    if sitting and sitting:IsA("Seat") and not operatorId then return false end
+    if type(seatId)~="string" or seatId=="" then return true end
+    return operatorId==seatId
 end
 function Runtime.Start(player,graph,copies,session)
     local candidates={}
