@@ -35,9 +35,6 @@ local Smart=require(ReplicatedStorage:WaitForChild("Openworks")
 local Simulation = {}
 Simulation.__index = Simulation
 
-local MAX_PARTS = 128
-local MAX_JOINTS = 64
-local MAX_COLLISION_PAIRS = 1200
 -- If the client disappears or drops its held-input stream, never leave a
 -- running motor behind. The client pulses every 0.1s during LMB hold.
 local CRANK_HOLD_TIMEOUT = 0.5
@@ -734,10 +731,6 @@ function Simulation:Graph(player, seed)
             table.insert(connected, edge)
         end
     end
-    if #models > MAX_PARTS or #connected > MAX_JOINTS then
-        return nil, "Assembly exceeds simulation safety limits (128 parts / 64 joints)"
-    end
-
     return { models = models, edges = connected,
         bodies = bodies, included = visited, rootKey = seedKey,
         assemblyId=assemblyId,assemblyName=seed:GetAttribute("AssemblyName") }
@@ -929,7 +922,10 @@ function Simulation:Start(player, payload)
         -- runtime; saved legacy K pairs are only construction metadata.
 
         -- 3. Rebuild authored relationships against the CLONED bodies.
-        local collisionExclusions = 0
+        -- Deduplicate collision exclusions shared by multiple authored
+        -- joints. There is no artificial global physics size cap.
+        local collisionExclusions = {}
+        local collisionExclusionCount=0
         for _, edge in ipairs(graph.edges) do
             local target = copies[edge.target:GetAttribute("InstanceId")]
             local source = copies[edge.source:GetAttribute("InstanceId")]
@@ -1102,15 +1098,26 @@ function Simulation:Start(player, payload)
                 for _, right in ipairs(sourceBody) do
                     for _, lp in ipairs(copyParts[left:GetAttribute("InstanceId")] or {}) do
                         for _, rp in ipairs(copyParts[right:GetAttribute("InstanceId")] or {}) do
-                            collisionExclusions += 1
-                            if collisionExclusions > MAX_COLLISION_PAIRS then
-                                error("Connected bodies are too complex for collision exclusions")
+                            local leftSet=collisionExclusions[lp]
+                            if not leftSet then
+                                leftSet={}
+                                collisionExclusions[lp]=leftSet
                             end
-                            local no = Instance.new("NoCollisionConstraint")
-                            no.Name = "JointCollisionExclusion"
-                            no.Part0 = lp
-                            no.Part1 = rp
-                            no.Parent = runtime
+                            if not leftSet[rp] then
+                                leftSet[rp]=true
+                                local rightSet=collisionExclusions[rp]
+                                if not rightSet then
+                                    rightSet={}
+                                    collisionExclusions[rp]=rightSet
+                                end
+                                rightSet[lp]=true
+                                local no=Instance.new("NoCollisionConstraint")
+                                no.Name="JointCollisionExclusion"
+                                no.Part0=lp
+                                no.Part1=rp
+                                no.Parent=runtime
+                                collisionExclusionCount+=1
+                            end
                         end
                     end
                 end
