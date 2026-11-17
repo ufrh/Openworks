@@ -481,6 +481,7 @@ local MOTOR_KEYS={
     B=true,N=true,M=true,V=true,Z=true,X=true,C=true,
     One=true,Two=true,Three=true,Four=true,
 }
+local SEAT_ONLY_KEYS={W=true,A=true,S=true,D=true,Q=true,E=true}
 -- Optional motor drive mounted on an existing real shaft-in-hole bearing.
 -- No authoring endpoint, direction or force can be conjured from empty air.
 function Mechanical:TuneBearingMotor(player,request)
@@ -500,7 +501,9 @@ function Mechanical:TuneBearingMotor(player,request)
         or (driveType~="Continuous" and driveType~="Servo")
         or (inputMode~="Hold" and inputMode~="Toggle")
         or type(angle)~="number" or angle~=angle or math.abs(angle)>180
-        or type(key)~="string" or not MOTOR_KEYS[key]
+        or type(key)~="string"
+        or not (MOTOR_KEYS[key]
+            or (joint:GetAttribute("SeatId")~=nil and SEAT_ONLY_KEYS[key]))
         or type(speed)~="number" or speed~=speed
         or math.abs(speed)<0.05 or math.abs(speed)>35
         or type(torque)~="number" or torque~=torque
