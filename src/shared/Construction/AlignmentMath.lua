@@ -76,9 +76,12 @@ function Alignment.ShaftIn(members)
 end
 
 function Alignment.IsOffsetValid(units)
-    return type(units) == "number" and units == units
-        and math.abs(units * 2 - math.round(units * 2)) < 0.0001
-        and math.abs(units) <= Alignment.MaxOffsetUnits
+    -- Half-unit increments are an EDITING control, not a geometry
+    -- restriction. The midpoint between real guide centers can fall at
+    -- fractional units (e.g. 0.25 U). Preserve it exactly through
+    -- preview, server transform and final relationship validation.
+    return type(units)=="number" and units==units
+        and math.abs(units)<=Alignment.MaxOffsetUnits
 end
 
 -- Physical translational stops are the TWO END FACES OF THE HOUSING,
@@ -206,7 +209,7 @@ function Alignment.Plan(members, shaft, target, offsetUnits, rollDegrees)
         return nil, "Shaft roll must be between -360 and 360 degrees"
     end
     if not Alignment.IsOffsetValid(offsetUnits) then
-        return nil, "Insertion offset must be in 0.5-U increments within +/-64 U"
+        return nil, "Insertion offset must be finite and within +/-64 U"
     end
     if not Alignment.IsShaft(shaft) then
         return nil, "Select a Cylinder shaft or a component containing one"
@@ -276,7 +279,7 @@ function Alignment.ReversePlan(members, opening, fixedShaft, offsetUnits, rollDe
         return nil,"Choose a hole-bearing body and a fixed Cylinder shaft"
     end
     if not Alignment.IsOffsetValid(offsetUnits) then
-        return nil,"Insertion depth uses 0.5 U increments"
+        return nil,"Insertion depth must be finite and within +/-64 U"
     end
     local lo,hi,why=Alignment.InsertionBounds(fixedShaft,opening)
     if not lo then return nil,why end
