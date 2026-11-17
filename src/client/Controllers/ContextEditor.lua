@@ -1210,12 +1210,57 @@ function Panel:RenderRelation(node)
     if other then
         self:Value("Connected to",other.Name)
     end
-    if simulating() and kind~="Spring" then
+    if simulating() and kind~="Spring" and kind~="Rope" then
         self:Value("Editing","Stop simulation to change settings")
         return
     end
 
-    if kind=="Spring" then
+    if kind=="Rope" then
+        self:Section("Rope · tension only")
+        self:Value("Behavior","Slack shortens freely; winch pulls, never pushes")
+        local currentLength=(rel:GetAttribute("RopeLength") or 0.5)/Grid.Unit
+        local minLength=(rel:GetAttribute("RopeMinLength")
+            or Grid.Unit*Grid.MinSizeStepU)/Grid.Unit
+        local maxLength=(rel:GetAttribute("RopeMaxLength")
+            or rel:GetAttribute("RopeLength") or 0.5)/Grid.Unit
+        self:Field("Length (U)",math.round(currentLength*100)/100)
+        self:RangeSlider("Length (U)",0.25,
+            math.max(128,math.ceil(maxLength)),0.25,false)
+        self:Field("Min (U)",math.round(minLength*100)/100)
+        self:Field("Max (U)",math.round(maxLength*100)/100)
+        self:Field("Speed (U/s)",rel:GetAttribute("RopeSpeedU") or 4)
+        self:RangeSlider("Speed (U/s)",0.25,64,0.25,false)
+        self:Field("Winch force",rel:GetAttribute("RopeForce") or 15000)
+        self:RangeSlider("Winch force",10,1000000,10,true)
+        self:KeyPicker("Retract key",rel:GetAttribute("RopeInKey") or "Z")
+        self:KeyPicker("Pay out key",rel:GetAttribute("RopeOutKey") or "X")
+        local function applyRope()
+            local length=tonumber(self.Fields["Length (U)"].Text)
+            local minimum=tonumber(self.Fields["Min (U)"].Text)
+            local maximum=tonumber(self.Fields["Max (U)"].Text)
+            local speed=tonumber(self.Fields["Speed (U/s)"].Text)
+            local force=tonumber(self.Fields["Winch force"].Text)
+            if not (length and minimum and maximum and speed and force) then
+                self:Message("Enter valid rope lengths, speed and winch force")
+                return
+            end
+            local ok=self:Send({action="TuneRope",relationId=node.id,
+                ropeLength=length*Grid.Unit,
+                ropeMinLength=minimum*Grid.Unit,
+                ropeMaxLength=maximum*Grid.Unit,
+                ropeSpeedU=speed,ropeForce=force,
+                ropeInKey=self.Fields["Retract key"].Text,
+                ropeOutKey=self.Fields["Pay out key"].Text},true)
+            if ok then self:Message("Rope saved") end
+        end
+        self:ActionButton("SAVE","Apply rope limits, winch and keybinds",
+            applyRope)
+        if simulating() then
+            self:Value("During Simulate",
+                "Hold the retract/pay-out keys to adjust rope")
+        end
+
+    elseif kind=="Spring" then
         self:Section("Spring")
         local applySpring=function() end
         local function afterDrag()
