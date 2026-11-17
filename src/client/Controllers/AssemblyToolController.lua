@@ -1,9 +1,7 @@
 --!strict
--- Dedicated Assembly TOOL. Click one connected mechanism to select the
--- complete authored construction; Alt+click remains single-part override.
--- Names and membership are still explicitly confirmed and saved.
--- Detection is server-authoritative and traverses real mechanical links.
--- Simulate previews the entire aimed registered assembly in PURPLE.
+-- Simulation preflight paints the one implicitly connected mechanism
+-- detected by the SERVER, in purple. No saved assembly ID or membership
+-- selection is required; construction links define membership.
 local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
 local UIS=game:GetService("UserInputService")
@@ -57,6 +55,8 @@ function Tool.new(tools)
         Selected={},Busy=false,LastMessage=nil,MessageUntil=0,
         PreviewRoot=nil,PreviewCache="",PreviewOutlines={},
         PreviewModels=nil,IgnoreConfirmUntil=0,
+        ConnectedSeedId=nil,ConnectedIds=nil,ConnectedQueryAt=0,
+        ConnectedBusy=false,ConnectedRequest=0,
         LastTick=0,Connections={},
         VerticalHeld=nil,VerticalElapsed=0,
     },Tool)
@@ -606,6 +606,10 @@ function Tool:ClearVisuals()
     self.PreviewCache=""
     self.PreviewOutlines={}
     self.PreviewModels=nil
+    self.ConnectedSeedId=nil
+    self.ConnectedIds=nil
+    self.ConnectedQueryAt=0
+    self.ConnectedRequest+=1
     player:SetAttribute("OPENWORKS_HoverAssemblyId","")
 end
 
@@ -706,6 +710,44 @@ function Tool:ShowGroundingVisuals()
     end
 end
 
+-- The same authoritative graph is used for purple hover and P/start.
+-- Refresh while aimed so newly attached shafts/gears appear automatically.
+-- Requests are asynchronous: the RenderStepped UI never waits on a remote.
+function Tool:RefreshConnectedPreview(seed)
+    local id=instanceId(seed)
+    if id~=self.ConnectedSeedId then
+        self.ConnectedSeedId=id
+        self.ConnectedIds=nil
+        self.ConnectedQueryAt=0
+        self.ConnectedRequest+=1
+        self.PreviewCache=""
+    end
+    if not id or self.ConnectedBusy
+        or os.clock()-self.ConnectedQueryAt<0.8 then return end
+    self.ConnectedBusy=true
+    self.ConnectedQueryAt=os.clock()
+    local request=self.ConnectedRequest
+    task.spawn(function()
+        local ok,response=pcall(function()
+            return RS:WaitForChild(Config.RequestName):InvokeServer({
+                action="DetectConnectedAssembly",seedId=id,
+            })
+        end)
+        self.ConnectedBusy=false
+        if request~=self.ConnectedRequest or self.Mode~="Simulate" then
+            return
+        end
+        if ok and type(response)=="table" and response.ok
+            and type(response.data)=="table" then
+            self.ConnectedIds=response.data
+        else
+            -- On a brief rate limit retain the last known good preview;
+            -- P/start always recomputes on the server independently.
+            if not self.ConnectedIds then self.ConnectedIds={id} end
+        end
+    end)
+end
+
 function Tool:Tick()
     self:OnModeChanged(self.Tools.ActiveId)
     if self.LastMessage and os.clock()>self.MessageUntil then
@@ -723,14 +765,20 @@ function Tool:Tick()
         end
     elseif self.Mode=="Simulate"
         and player:GetAttribute("OPENWORKS_Simulating")~=true then
-        -- Mirror P: selection in the explorer takes precedence over aim.
+        local aimed=self:Pick()
         local chosen=self.UnifiedExplorer and self.UnifiedExplorer.Selected
-        local seed=chosen and chosen.kind=="assembly"
-            and chosen.members and chosen.members[1] or self:Pick()
-        local assemblyId=seed and seed:GetAttribute("AssemblyId")
-        if type(assemblyId)=="string" and assemblyId~="" then
-            members=self:OwnedAssembly(assemblyId)
+        local seed=aimed or (chosen and chosen.members
+            and chosen.members[1] or nil)
+        self:RefreshConnectedPreview(seed)
+        local byId={}
+        for _,model in ipairs(ownedModels()) do
+            byId[instanceId(model)]=model
         end
+        for _,id in ipairs(self.ConnectedIds or {}) do
+            local model=byId[id]
+            if model then table.insert(members,model) end
+        end
+        if #members==0 and seed then members={seed} end
     end
     self:ShowGroundingVisuals()
     self:ShowVisuals(members,PURPLE)
