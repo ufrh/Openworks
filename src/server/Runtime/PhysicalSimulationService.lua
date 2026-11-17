@@ -314,6 +314,10 @@ local function setMotorDrive(motor, relation)
     motor.On=false
     motor.NativeSpeed=0
     motor.LastInput=0
+    -- Start the commanded angle at the actual hinge position. A servo
+    -- setpoint that instantly jumps 90 degrees can jerk a free chassis.
+    motor.ServoTarget=motor.Constraint.CurrentAngle
+    motor.ServoVelocity=0
     -- Positional servos must actuate the relative HINGE, not spin the
     -- wheel/shaft assembly against world space. World-space velocity
     -- motors can whip an otherwise free chassis when steering.
@@ -324,7 +328,7 @@ local function setMotorDrive(motor, relation)
     motor.Constraint.ServoMaxTorque=motor.Torque
     motor.Constraint.AngularSpeed=math.max(0.05,math.abs(motor.Speed))
     motor.Constraint.AngularResponsiveness=
-        math.clamp(motor.Acceleration/8,2,12)
+        math.clamp(math.sqrt(motor.Acceleration)*0.65,2,6)
     motor.Drive.MaxTorque=motor.Torque
     motor.Drive.AngularVelocity=Vector3.zero
     motor.Drive.Enabled=false
@@ -357,7 +361,9 @@ local function stopMotor(motor)
     motor.On=false
     motor.NativeSpeed=0
     motor.LastInput=0
+    motor.ServoVelocity=0
     if motor.Constraint and motor.Constraint.Parent then
+        motor.ServoTarget=motor.Constraint.CurrentAngle
         motor.Constraint.ActuatorType=Enum.ActuatorType.None
     end
     if motor.Drive and motor.Drive.Parent then
@@ -421,33 +427,52 @@ function Simulation:StepCranks(dt)
                 motor.Held=false
                 motor.On=false
             end
-            local desired=if motor.On then motor.Speed else 0
+            local dtSafe=math.clamp(dt,0,0.07)
             if motor.DriveType=="Servo" then
-                -- Use the HingeConstraint's native relative-angle servo.
-                -- It rotates the shaft against its housing, rather than
-                -- enforcing world angular velocity on a free vehicle.
+                -- One physical HingeConstraint is the only servo actuator.
+                -- Slew the COMMANDED angle with bounded acceleration and
+                -- limit how far the target can lead the REAL shaft. This
+                -- avoids instant ninety-degree solver impulses, overshoot
+                -- and choppy high-torque steering on a free vehicle.
                 local constraint=motor.Constraint
                 local current=constraint.CurrentAngle
                 local goal=if motor.On then motor.TargetAngle else 0
-                local diff=math.rad(goal-current)
-                diff=math.atan2(math.sin(diff),math.cos(diff))
-                desired=if math.abs(diff)<math.rad(0.2) then 0
-                    else math.clamp(diff*5,
-                        -math.abs(motor.Speed),math.abs(motor.Speed))
-                constraint.TargetAngle=goal
-                constraint.AngularSpeed=math.max(0.05,math.abs(motor.Speed))
-                constraint.AngularResponsiveness=
-                    math.clamp(motor.Acceleration/8,2,12)
-                constraint.ServoMaxTorque=motor.Torque
+                if type(motor.ServoTarget)~="number" then
+                    motor.ServoTarget=current
+                end
+                local error=math.rad(goal-motor.ServoTarget)
+                local topSpeed=math.abs(motor.Speed)
+                local wantedSpeed=math.clamp(error*5,-topSpeed,topSpeed)
+                local accel=motor.Acceleration*dtSafe
+                motor.ServoVelocity=math.clamp(
+                    (motor.ServoVelocity or 0)
+                        +math.clamp(wantedSpeed-(motor.ServoVelocity or 0),
+                            -accel,accel),
+                    -topSpeed,topSpeed)
+                local nextAngle=motor.ServoTarget
+                    +math.deg(motor.ServoVelocity*dtSafe)
+                if (goal-motor.ServoTarget)*(goal-nextAngle)<=0 then
+                    nextAngle=goal
+                    motor.ServoVelocity=0
+                end
+                -- The positional target cannot run far ahead of a
+                -- physically stalled wheel: keep a small, finite lead.
+                local maxLead=math.clamp(math.deg(topSpeed*0.09),4,15)
+                nextAngle=math.clamp(nextAngle,
+                    current-maxLead,current+maxLead)
+                motor.ServoTarget=nextAngle
+                motor.NativeSpeed=motor.ServoVelocity
+                constraint.TargetAngle=nextAngle
                 constraint.ActuatorType=Enum.ActuatorType.Servo
-            end
-            local dtSafe=math.clamp(dt,0,0.07)
-            local ease=(desired-motor.NativeSpeed)
-                *(1-math.exp(-8*dtSafe))
-            local ramp=motor.Acceleration*dtSafe
-            motor.NativeSpeed+=math.clamp(ease,-ramp,ramp)
-            if math.abs(motor.NativeSpeed)<0.008 and desired==0 then
-                motor.NativeSpeed=0
+            else
+                local desired=if motor.On then motor.Speed else 0
+                local ease=(desired-motor.NativeSpeed)
+                    *(1-math.exp(-8*dtSafe))
+                local ramp=motor.Acceleration*dtSafe
+                motor.NativeSpeed+=math.clamp(ease,-ramp,ramp)
+                if math.abs(motor.NativeSpeed)<0.008 and desired==0 then
+                    motor.NativeSpeed=0
+                end
             end
             -- Drive along the ACTUAL bearing axis, not an approximate
             -- primitive RightVector. Tiny axis disagreement otherwise adds
