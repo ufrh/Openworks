@@ -12,6 +12,7 @@ tools=read("src/shared/Construction/SubtoolDefinitions.lua")
 physical=read("src/server/Runtime/PhysicalSimulationService.lua")
 rack=read("src/server/Runtime/RackSimulationService.lua")
 runtime=read("src/server/Runtime/SeatRuntime.lua")
+plot=read("src/server/Runtime/PlotService.lua")
 motor=read("src/client/Controllers/MotorControlController.lua")
 rope=read("src/shared/Construction/RopeMath.lua")
 camera=read("src/client/Controllers/CameraController.lua")
@@ -61,6 +62,17 @@ checks={
  "Both active simulation engines transition into/out of seat state":
     all('SeatRuntime.Start(player,graph,copies,session)' in s
         and 'SeatRuntime.Stop(player,session)' in s for s in (physical,rack)),
+ "Authoring seat cannot snag hidden builder avatar":
+    "part.Disabled=true" in seat
+    and "part.CanTouch=false" in seat
+    and "seat.Disabled=false" in runtime
+    and "seat.CanTouch=true" in runtime,
+ "Vehicle handoff preserves avatar physics and detaches SeatWeld":
+    'OPENWORKS_OriginalCollision' in plot
+    and 'OPENWORKS_OriginalTransparency' in plot
+    and 'desc:GetAttribute("OPENWORKS_OriginalCollision")' in runtime
+    and 'local weld=seat:FindFirstChild("SeatWeld")' in runtime
+    and 'if weld and weld:IsA("Weld") then weld:Destroy() end' in runtime,
  "Routed motors and winches require server-verified operator occupancy":
     'local operatorId=Runtime.OperatorSeatId(player,session)' in runtime
     and 'return operatorId==seatId' in runtime
