@@ -354,9 +354,21 @@ function ComponentService:Duplicate(player, payload)
     local componentId = if payload.ids then nil
         else HttpService:GenerateGUID(false)
     local anchorOldId = payload.anchorId
-    local idMap = {}
-    for _, part in ipairs(planned) do
-        idMap[part.instanceId] = HttpService:GenerateGUID(false)
+    local idMap={}
+    local newComponentIds={}
+    local groupAnchors={}
+    for _,part in ipairs(planned) do
+        idMap[part.instanceId]=HttpService:GenerateGUID(false)
+        local oldCid=part.componentId
+        if payload.ids and type(oldCid)=="string" and oldCid~="" then
+            if not newComponentIds[oldCid] then
+                newComponentIds[oldCid]=HttpService:GenerateGUID(false)
+            end
+            -- All members are included, validated by Plan. Preserve
+            -- each grouped body's identity when multi-copying a chassis.
+            groupAnchors[oldCid]=part.componentAnchorId
+                or groupAnchors[oldCid] or part.instanceId
+        end
     end
 
     -- Copy only fully INTERNAL authored relations. No copied joint may
@@ -383,7 +395,8 @@ function ComponentService:Duplicate(player, payload)
                 else nil
             spec.secondTargetId=if original.secondTargetId then
                 idMap[original.secondTargetId] else nil
-            spec.componentId=componentId
+            spec.componentId=if payload.ids then
+                newComponentIds[original.componentId] else componentId
             if type(original.fitPointsJSON)=="string"
                 and original.fitPointsJSON~="" then
                 local decodedOK,points=pcall(function()
@@ -435,9 +448,15 @@ function ComponentService:Duplicate(player, payload)
         local newState = copied(desired)
         -- Copy remaps every internal relationship independently. External
         -- attachments and saved assembly membership are not inherited.
-        newState.instanceId = idMap[desired.instanceId]
-        newState.componentId = componentId
-        newState.componentAnchorId = if componentId then idMap[anchorOldId] else nil
+        newState.instanceId=idMap[desired.instanceId]
+        local originalCid=desired.componentId
+        local newCid=if payload.ids then newComponentIds[originalCid]
+            else componentId
+        newState.componentId=newCid
+        newState.componentAnchorId=if not newCid then nil
+            elseif payload.ids then
+                idMap[groupAnchors[originalCid]]
+            else idMap[anchorOldId]
         newState.assemblyId = nil
         newState.assemblyName = nil
         newState.grounded = false
