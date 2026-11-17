@@ -16,7 +16,6 @@ local Persistence={}
 Persistence.__index=Persistence
 local STORE_NAME="OPENWORKS_ManualPlots_v1"
 local SCHEMA_VERSION=1
-local MAX_JOINTS=128
 local MAX_BYTES=3200000
 
 local function finite(n)
@@ -257,9 +256,10 @@ function Persistence:Decode(player,document)
         or type(document.joints)~="table" then
         return nil,"Save format is unsupported"
     end
-    if #document.parts>d.config.MaxPartsPerPlayer
-        or #document.joints>MAX_JOINTS then
-        return nil,"Save exceeds construction or relationship limits"
+    -- Relationship count has no artificial cap. Keep the separate
+    -- construction quota and DataStore document-size validation.
+    if #document.parts>d.config.MaxPartsPerPlayer then
+        return nil,"Save exceeds the construction part quota"
     end
     local parsed,ids,readyIds={},{},{}
     local preserved={parts={},joints={},reasons={}}
