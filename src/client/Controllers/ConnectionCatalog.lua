@@ -26,6 +26,7 @@ local LABELS={
     FreeFit="Fit only",
     Weld="Rigid weld",
     Spring="Spring",
+    Rope="Rope · adjustable winch",
     CrankCoupling="Couple hand crank",
     Rigid="Rigid gear / pulley hub",
     Belt="Connect pulleys with a friction belt",
@@ -94,6 +95,9 @@ function Catalog.Pair(first,second)
         -- A gear on a shaft MUST rigidly weld: it cannot independently
         -- rotate or have a spring in the same physical hub interface.
         if not hub then add("Spring") end
+        -- A rope is an independent tension-only link; no bore, shaft,
+        -- pulley or matching face geometry is required.
+        add("Rope")
     end
     return options
 end
