@@ -69,11 +69,17 @@ function Runtime.Start(player,graph,copies,session)
     hum.AutoRotate=true
     for _,desc in ipairs(char:GetDescendants()) do
         if desc:IsA("BasePart") and not desc:FindFirstAncestorOfClass("Tool") then
-            desc.Transparency=if desc.Name=="HumanoidRootPart" then 1 else 0
-            desc.CanCollide=desc.Name~="HumanoidRootPart"
-            desc.CanTouch=true
+            local visible=desc:GetAttribute("OPENWORKS_OriginalTransparency")
+            if type(visible)=="number" then desc.Transparency=visible end
+            local collision=desc:GetAttribute("OPENWORKS_OriginalCollision")
+            if type(collision)=="boolean" then desc.CanCollide=collision end
+            local touch=desc:GetAttribute("OPENWORKS_OriginalTouch")
+            if type(touch)=="boolean" then desc.CanTouch=touch end
+            local shadow=desc:GetAttribute("OPENWORKS_OriginalShadow")
+            if type(shadow)=="boolean" then desc.CastShadow=shadow end
         elseif desc:IsA("Decal") then
-            desc.Transparency=0
+            local visible=desc:GetAttribute("OPENWORKS_OriginalTransparency")
+            if type(visible)=="number" then desc.Transparency=visible end
         end
     end
     local initial=candidates[1].seat
@@ -93,6 +99,13 @@ function Runtime.Stop(player,session)
     local char,hum=humanoidFor(player)
     local root=char and char:FindFirstChild("HumanoidRootPart")
     if hum then hum.Sit=false end
+    -- Sever the native SeatWeld BEFORE teleporting the invisible build
+    -- avatar home. Otherwise a still-attached player can yank the entire
+    -- simulated chassis across the plot for one physics step.
+    for _,seat in pairs(session.Seats) do
+        local weld=seat:FindFirstChild("SeatWeld")
+        if weld and weld:IsA("Weld") then weld:Destroy() end
+    end
     if root then
         local origin=player:GetAttribute("OPENWORKS_PlotOrigin")
         if typeof(origin)=="Vector3" and char then
