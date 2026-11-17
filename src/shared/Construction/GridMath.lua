@@ -30,6 +30,19 @@ local function axisCenter(value, length, increment)
     return nearest(value, increment, offset)
 end
 
+-- Quantize numeric construction dimensions in U, not raw studs.
+-- Each axis rounds independently so a simultaneous XYZ resize remains
+-- valid at intermediate stops even when the requested deltas differ.
+function Grid.QuantizeSize(size,stepU)
+    if typeof(size)~="Vector3" then return size end
+    local stride=Grid.Unit*(stepU or Grid.NumericSizeStepU)
+    return Vector3.new(
+        math.round(size.X/stride)*stride,
+        math.round(size.Y/stride)*stride,
+        math.round(size.Z/stride)*stride
+    )
+end
+
 function Grid.HasFractionalSize(size)
     if typeof(size) ~= "Vector3" then return false end
     for _, n in ipairs({ size.X, size.Y, size.Z }) do
