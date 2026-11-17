@@ -935,8 +935,21 @@ function Controller:OpenMateChoice(mode)
     end
     -- Bore users can still choose "Adjust depth / roll first",
     -- then click once more to reopen this picker after adjustments.
-    if match.kind=="Bore" and not self.LockedAlignment then
-        if not self:BeginAlignmentPositioning() then return false end
+    if match.kind=="Bore" then
+        if not self.LockedAlignment
+            and not self:BeginAlignmentPositioning() then return false end
+        -- The render preview is throttled to ~30Hz; a click immediately
+        -- after scrolling may otherwise commit OLD fitTargets and OLD
+        -- validation for the NEW insertion depth. Recompute the exact
+        -- locked pose synchronously before showing relationship choices.
+        self.LastPreviewCheck=0
+        self:UpdatePreview()
+        match=self.SmartMatch
+        if not match or not self.PreviewValid or not self.PreviewCF then
+            self:Message(self.PreviewReason or
+                "All guide holes must be engaged before connecting")
+            return true
+        end
     end
     self.PendingMateChoice=mode
     self.DirectDragCandidate=nil
