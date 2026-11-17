@@ -103,7 +103,7 @@ end
 -- Both directions supported: shaft->hole and hole->shaft.
 function Insertion.Resolve(ghost:Model,source:Model,target:Model,
     movingShaft:boolean,previewCF:CFrame,preferredU:number,ignored,
-    requiredHoles):
+    requiredHoles,requiredMovingHoles):
     (CFrame?,number?,string?)
     local shaft=if movingShaft then source else target
     local hole=if movingShaft then target else source
@@ -149,6 +149,17 @@ function Insertion.Resolve(ghost:Model,source:Model,target:Model,
                 if not MultiFit.Check(shaftModel,otherHole) then
                     fits=nil
                     failure="Shaft must pass through every aligned guide hole"
+                    break
+                end
+            end
+        end
+        if fits and not movingShaft and requiredMovingHoles then
+            -- Every coaxial moving lug must remain engaged on the
+            -- stationary shaft after the reverse insertion is resolved.
+            for _,otherHole in ipairs(requiredMovingHoles) do
+                if not MultiFit.Check(otherHole,shaftModel) then
+                    fits=nil
+                    failure="Every moving guide hole must remain on the shaft"
                     break
                 end
             end
