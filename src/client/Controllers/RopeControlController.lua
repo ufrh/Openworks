@@ -50,8 +50,12 @@ end
 
 function Controller:Start()
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
-        if processed or not self:Active() then return end
+        if not self:Active() then return end
         local key=input.KeyCode.Name
+        -- Roblox's character movement can mark A/D handled even during
+        -- engineering simulation. Honor explicitly bound steering cables
+        -- while still respecting text entry and open property dialogs.
+        if processed and key~="A" and key~="D" then return end
         if self:HasRopeKey(key) then
             self.Held[key]=true
             self.Remote:FireServer(key,true)
