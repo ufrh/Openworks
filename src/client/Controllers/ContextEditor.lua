@@ -663,7 +663,7 @@ function Panel:RunSimulationAction(action,node)
     if action~="stop" and (self.Tools.PrimaryId~="AssemblySimulation"
         or self.Tools.SubtoolId~="Simulation") then return false end
     if action=="run" then
-        if running or not node or node.kind~="assembly" then return false end
+        if running or not node then return false end
         local seed=node.members and node.members[1]
         if not own(seed) then return false end
         local ok=self.Mechanics:StartRegisteredAssembly(seed)
@@ -674,7 +674,7 @@ function Panel:RunSimulationAction(action,node)
         end
         return ok
     elseif not running then
-        self:Message("Select a saved assembly to simulate")
+        self:Message("Aim at any part of a connected mechanism")
         return false
     end
     if action=="stop" then
@@ -711,22 +711,21 @@ function Panel:RenderSimulationControls(node)
     local running=simulating()
     if not running then
         self:Value("Status","Ready")
-        if node and node.kind=="assembly" and node.members
-            and #node.members>0 then
+        if node and node.members and #node.members>0 then
             self:Value("Selected",node.name)
-            self:Value("Included primitives",#node.members)
-            self:ActionButton("Run assembly",
-                "Simulate exactly the registered assembly members",function()
+            self:Value("Scope","All physically connected parts")
+            self:ActionButton("Run connected mechanism",
+                "Auto-detect and simulate every connected part",function()
                     self:RunSimulationAction("run",node)
                 end)
         else
-            self:Value("Target","Select a registered assembly")
+            self:Value("Target","Aim at a connected mechanism")
         end
         return
     end
     self:Value("Status",if player:GetAttribute(
         "OPENWORKS_SimulationPaused")==true then "Paused" else "Running")
-    self:Value("Assembly",self.Mechanics.SimAssemblyName or "Registered assembly")
+    self:Value("Assembly",self.Mechanics.SimAssemblyName or "Connected mechanism")
     self:ActionButton("Stop and return to build",
         "Stop physics and restore the authored construction",function()
             self:RunSimulationAction("stop",node)
@@ -1075,20 +1074,8 @@ function Panel:RenderObject(node)
     if node.kind=="component" then self:Value("Parts",#node.members) end
     local part=member.PrimaryPart
     if part then self:Value("Size (U)",formatVector(part.Size)) end
-    local assemblyId=member:GetAttribute("AssemblyId")
-    if type(assemblyId)=="string" and assemblyId~="" then
-        self:Value("Assembly",member:GetAttribute("AssemblyName") or "Assembly")
-        self:ActionButton("Open assembly",
-            "Inspect the exact registered assembly",function()
-                for _,a in ipairs(self.Snapshot.assemblies) do
-                    if a.id==assemblyId then
-                        self.Selected=a
-                        self:RenderContext()
-                        return
-                    end
-                end
-            end)
-    end
+    -- Legacy saved AssemblyId is intentionally ignored: connected
+    -- mechanics define current simulation membership on demand.
     if not simulating() then
         self:Section("Appearance")
         self:Cycle("Material",Materials.List(),
@@ -1165,6 +1152,10 @@ function Panel:RenderObject(node)
                     end
                 end)
         end
+    end
+    if self.Tools.PrimaryId=="AssemblySimulation"
+        and self.Tools.SubtoolId=="Simulation" then
+        self:RenderSimulationControls(node)
     end
     if node.kind=="component" and self.Tools.PrimaryId=="Mechanics"
         and not simulating() then
@@ -1510,18 +1501,11 @@ function Panel:RenderRelation(node)
 end
 
 function Panel:RenderAssembly(node)
-    self:Section("Registered assembly")
-    self:Value("Name",node.name)
-    self:Value("Primitives",#node.members)
+    -- Old named entries may remain in saved plots, but they do NOT decide
+    -- which primitives participate in physics anymore.
+    self:Section("Connected mechanism")
+    self:Value("Scope","Detected automatically from real connections")
     if self.Tools.PrimaryId=="AssemblySimulation"
-        and self.Tools.SubtoolId=="AssemblyEditor"
-        and not simulating() then
-        self:ActionButton("Edit membership",
-            "Open centered assembly editing workflow",function()
-                self.AssemblyTool:LoadExisting(node.members[1])
-                self:FocusAssemblyName()
-            end)
-    elseif self.Tools.PrimaryId=="AssemblySimulation"
         and self.Tools.SubtoolId=="Simulation" then
         self:RenderSimulationControls(node)
     end
