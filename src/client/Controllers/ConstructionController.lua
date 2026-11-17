@@ -2612,6 +2612,10 @@ end
 -- starts from the original opposite-face-anchored grip pose.
 -- Both growth and shrink requests are handled. If already blocked at
 -- the old size, keep that size rather than jumping through a neighbor.
+-- Grip increments determine requested motion, NOT the contact boundary.
+-- Once a snapped step would penetrate, binary-search the exact first
+-- obstruction between the original face and that step. The returned
+-- fractional step is persisted as a precise U dimension by the server.
 function Controller:ClampScaleSteps(drag,requestedSteps,candidate):number
     if not self.ScaleMode then return 0 end
     local ghost=if self.Mode=="Edit" then self.ScaleGhost else self.Preview
@@ -2622,18 +2626,22 @@ function Controller:ClampScaleSteps(drag,requestedSteps,candidate):number
         local cf,size=candidate(steps)
         return cf~=nil and self:ScaleClear(cf,size)
     end
-    local sign=if requestedSteps>0 then 1 else -1
-    local requested=math.abs(requestedSteps)
     local chosen=0
-    -- Monotonic face expansion intersects a solid once; shrink/retract
-    -- can only reduce an initially clear footprint.
     if clear(requestedSteps) then
         chosen=requestedSteps
-    else
-        local low,high=0,requested
-        while low<high do
-            local mid=math.floor((low+high+1)/2)
-            if clear(mid*sign) then low=mid else high=mid-1 end
+    elseif clear(0) then
+        local sign=if requestedSteps>0 then 1 else -1
+        local low,high=0,math.abs(requestedSteps)
+        -- Precise physical-space stop: at most 16 checks, independent
+        -- of normal 0.25 U/other user-selected resize increments.
+        for _=1,16 do
+            if (high-low)*drag.StepU*Grid.Unit<0.00025 then break end
+            local midpoint=(low+high)*0.5
+            if clear(midpoint*sign) then
+                low=midpoint
+            else
+                high=midpoint
+            end
         end
         chosen=low*sign
     end
