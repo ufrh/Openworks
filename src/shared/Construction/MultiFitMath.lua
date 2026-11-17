@@ -182,11 +182,24 @@ function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
     end
     local shafts={}
     local movingHoles=0
+    -- Discover potential UNGROUPED guide patterns before they already
+    -- align. The old check demanded Fit.Check at the current pose,
+    -- preventing the rotation solver from ever seeing the other posts.
+    local reach=Grid.Unit*1.5
+    local origin=primary:GetPivot().Position
     for _,member in ipairs(movingMembers) do
         if Alignment.IsShaft(member) then table.insert(shafts,member) end
         if Alignment.TargetAxis(member) and not transmissionHub(member) then
             movingHoles+=1
         end
+        if Alignment.IsShaft(member)
+            or (Alignment.TargetAxis(member) and not transmissionHub(member)) then
+            local position=((delta or CFrame.identity)*member:GetPivot()).Position
+            reach=math.max(reach,(position-origin).Magnitude+Grid.Unit*0.75)
+        end
+    end
+    local function candidateNear(candidate)
+        return (candidate:GetPivot().Position-origin).Magnitude<=reach
     end
     if movingHoles>0 and #shafts==0 then
         for _,candidate in ipairs(all or {}) do
@@ -194,12 +207,14 @@ function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
                 and candidate:GetAttribute("OwnerUserId")
                     ==primary:GetAttribute("OwnerUserId")
                 and Alignment.IsShaft(candidate) then
-                local matched=false
-                for _,hole in ipairs(movingMembers) do
-                    if Alignment.TargetAxis(hole) and not transmissionHub(hole)
-                        and Fit.Check(hole,candidate,delta) then
-                        matched=true
-                        break
+                local matched=candidateNear(candidate)
+                if not matched then
+                    for _,hole in ipairs(movingMembers) do
+                        if Alignment.TargetAxis(hole) and not transmissionHub(hole)
+                            and Fit.Check(hole,candidate,delta) then
+                            matched=true
+                            break
+                        end
                     end
                 end
                 if matched then
@@ -221,8 +236,9 @@ function Fit.StationarySet(movingMembers,primary,all,delta,ignored)
                 -- Gears/pulleys are auto-welded on bore fit, never guides.
                 and not transmissionHub(candidate)
                 then
+                local near=candidateNear(candidate)
                 for _,shaft in ipairs(shafts) do
-                    if Fit.Check(shaft,candidate,delta) then
+                    if near or Fit.Check(shaft,candidate,delta) then
                         table.insert(result,candidate)
                         known[candidate]=true
                         break
@@ -292,6 +308,47 @@ function Fit.CenteredShaftOffset(shaft,primary,candidates)
     local step=math.clamp(math.round(midpointU*2),
         math.ceil(lowU*2-1e-6),math.floor(highU*2+1e-6))
     return step*0.5,count,holes
+end
+
+-- Reverse case: a cluster of coaxial MOVING hole blocks should be
+-- centered along the ONE fixed shaft as well. The source hole's axial
+-- offset is shifted so that the extreme moving guide centers straddle
+-- the stationary shaft midpoint.
+function Fit.CenteredReverseOffset(movingMembers,primaryHole,fixedShaft)
+    if not Alignment.TargetAxis(primaryHole)
+        or not Alignment.IsShaft(fixedShaft) then return nil end
+    local primaryAxis=primaryHole:GetPivot():VectorToWorldSpace(
+        Alignment.TargetAxis(primaryHole)).Unit
+    local origin=primaryHole:GetPivot().Position
+    local shaftDiameter=math.max(fixedShaft.PrimaryPart.Size.Y,
+        fixedShaft.PrimaryPart.Size.Z)
+    local lowU,highU=Alignment.InsertionBounds(fixedShaft,primaryHole)
+    if not lowU then return nil end
+    local minDepth,maxDepth,count=0,0,1
+    for _,hole in ipairs(movingMembers) do
+        if hole==primaryHole or not hole.PrimaryPart
+            or not Alignment.TargetAxis(hole)
+            or transmissionHub(hole) then continue end
+        local axis=hole:GetPivot():VectorToWorldSpace(
+            Alignment.TargetAxis(hole)).Unit
+        if math.abs(axis:Dot(primaryAxis))<Fit.AxisTolerance then continue end
+        local delta=hole:GetPivot().Position-origin
+        local depth=delta:Dot(primaryAxis)
+        if (delta-primaryAxis*depth).Magnitude
+            >math.min(Fit.RadialTolerance,Grid.Unit*0.09) then continue end
+        local diameter=Bore.OpeningDiameter(hole)
+        if not diameter or diameter<shaftDiameter+0.002
+            or math.abs(depth)>fixedShaft.PrimaryPart.Size.X
+                +hole.PrimaryPart.Size.Magnitude*0.5 then continue end
+        minDepth=math.min(minDepth,depth)
+        maxDepth=math.max(maxDepth,depth)
+        count+=1
+    end
+    if count<2 then return nil end
+    local midpointU=(minDepth+maxDepth)*0.5/Grid.Unit
+    local step=math.clamp(math.round(midpointU*2),
+        math.ceil(lowU*2-1e-6),math.floor(highU*2+1e-6))
+    return step*0.5,count
 end
 
 -- If both sides contain the same number of guide sockets (e.g. four
