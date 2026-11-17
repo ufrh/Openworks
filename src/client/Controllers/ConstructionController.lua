@@ -674,7 +674,7 @@ function Controller:RefreshHUD()
             else "Double-click member to edit • G move • E interior • U ungroup"
     elseif #self.SelectedParts > 1 then
         self.DetailLabel.Text = tostring(#self.SelectedParts) .. " primitives selected"
-        self.HelpLabel.Text = "C combine  •  Shift+click to change selection"
+        self.HelpLabel.Text = "Shift+click add/remove • G move • F copy • Shift+K weld • C group ungrouped"
     elseif self.EditingComponentId then
         self.DetailLabel.Text = (self.Selected and self.Selected.Name or "Editing component")
             .. "  /  component interior"
@@ -1445,25 +1445,47 @@ function Controller:SetComponentSelection(componentId, membersOverride)
 end
 
 function Controller:ToggleMultiSelection(model)
-    if model:GetAttribute("ComponentId") then return end
+    if not model or model:GetAttribute("OwnerUserId")~=player.UserId then return end
     self:CancelPending()
-    -- Starting multi-selection after selecting a component begins a fresh
-    -- selection; grouped primitives cannot be mixed into a new component.
-    local members = if self.SelectedComponentId then {} else table.clone(self.SelectedParts)
-    local index = table.find(members, model)
-    if index then
-        table.remove(members, index)
-    else
-        table.insert(members, model)
+    -- Shift-click adds/removes complete components as one selection unit.
+    -- The server independently checks full membership before a group move.
+    local members=table.clone(self.SelectedParts)
+    local componentId=model:GetAttribute("ComponentId")
+    local picked=if type(componentId)=="string" and componentId~=""
+        then self:ComponentMembers(componentId) else {model}
+    if #picked==0 then return end
+    local selected={}
+    for _,item in ipairs(members) do selected[item]=true end
+    local fullySelected=true
+    for _,item in ipairs(picked) do
+        if not selected[item] then fullySelected=false break end
     end
-    self.SelectedParts = members
-    self.SelectedComponentId = nil
-    self.GroupAnchor = nil
-    self.Selected = if #members == 1 then members[1] else nil
+    if fullySelected then
+        for _,item in ipairs(picked) do selected[item]=nil end
+    else
+        for _,item in ipairs(picked) do selected[item]=true end
+    end
+    local updated,seen={},{}
+    for _,item in ipairs(members) do
+        if selected[item] and item.Parent and not seen[item] then
+            seen[item]=true
+            table.insert(updated,item)
+        end
+    end
+    for _,item in ipairs(picked) do
+        if selected[item] and item.Parent and not seen[item] then
+            seen[item]=true
+            table.insert(updated,item)
+        end
+    end
+    self.SelectedParts=updated
+    self.SelectedComponentId=nil
+    self.GroupAnchor=nil
+    self.Selected=if #updated==1 then updated[1] else nil
     if self.Selected then
-        self.CurrentId = self.Selected:GetAttribute("TemplateId")
-        self.CurrentSize = self.Selected.PrimaryPart.Size
-        self.Steps = attributesSteps(self.Selected)
+        self.CurrentId=self.Selected:GetAttribute("TemplateId")
+        self.CurrentSize=self.Selected.PrimaryPart.Size
+        self.Steps=attributesSteps(self.Selected)
     end
     self:RefreshSelectionHighlights()
     if self.Layered then self.Layered:RefreshVisuals() end
@@ -2769,8 +2791,8 @@ function Controller:VerticalNudge(key)
         -- silently grouping them or moving any unselected construction.
         scope,ids="Primitives",{}
         for _,model in ipairs(selected) do
-            if not model or not model.Parent or model:GetAttribute("ComponentId") then
-                self:Message("Multi-nudge only supports independent primitives")
+            if not model or not model.Parent then
+                self:Message("Selection changed; choose parts again")
                 return false
             end
             table.insert(ids,model:GetAttribute("InstanceId"))
