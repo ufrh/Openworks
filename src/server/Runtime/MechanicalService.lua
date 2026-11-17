@@ -283,16 +283,19 @@ function Mechanical:Restore(player, spec)
             folder:Destroy()
             return false,why or "Spring endpoints are unavailable"
         end
-        -- All restored spring relationships use the general free model.
+        -- The spring's prismatic guide shares these attachment frames.
+        -- Its X axis points between the two saved mounting positions.
         folder:SetAttribute("SpringMode",mode)
         local world0,world1=SpringMath.Frames(source,target,mode)
+        local guide0,guide1=SpringMath.AxisFrames(world0,world1,
+            targetPart.CFrame.UpVector)
         local att0=Instance.new("Attachment")
         att0.Name="SpringFixedEnd"
-        att0.CFrame=targetPart.CFrame:ToObjectSpace(CFrame.new(world0))
+        att0.CFrame=targetPart.CFrame:ToObjectSpace(guide0)
         att0.Parent=targetPart
         local att1=Instance.new("Attachment")
         att1.Name="SpringMovingEnd"
-        att1.CFrame=sourcePart.CFrame:ToObjectSpace(CFrame.new(world1))
+        att1.CFrame=sourcePart.CFrame:ToObjectSpace(guide1)
         att1.Parent=sourcePart
         for _,a in ipairs({att0,att1}) do
             local ref=Instance.new("ObjectValue")
@@ -317,8 +320,17 @@ function Mechanical:Restore(player, spec)
         spring.Radius=SpringMath.Radius(source,target,mode)
         spring.Thickness=math.clamp(spring.Radius*0.085,0.012,0.065)
         spring.Parent=folder
-        -- No special-case auto guide. Slider or Cylindrical relationships
-        -- are independently authored if linear motion needs guidance.
+        -- The only allowed DOF is compression/extension along the spring
+        -- axis. This is one authored Spring relationship, not an extra
+        -- player-authored Slider or motor.
+        local guide=Instance.new("PrismaticConstraint")
+        guide.Name="SpringAxisGuide"
+        guide.Attachment0=att0
+        guide.Attachment1=att1
+        guide.LimitsEnabled=false
+        guide.ActuatorType=Enum.ActuatorType.None
+        guide.Enabled=true
+        guide.Parent=folder
     else
         -- Gear bores are legitimate joint housings, but never accept an
         -- off-center restored hinge or a slider that can leave the hub.
@@ -1608,7 +1620,7 @@ function Mechanical:CreateSpring(player,request)
     local created,err=self:Restore(player,spec)
     if not created then return false,err end
     self.D.commitAssembly(player,{}, {},spec)
-    return true,"Spring connected between both components (no automatic travel guide)"
+    return true,"Spring connected • single-axis compression and extension"
 end
 
 function Mechanical:TuneSpring(player,request)
