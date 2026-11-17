@@ -186,6 +186,7 @@ function Persistence:Encode(player)
                 grounded=snap.grounded,
                 assembly=snap.assemblyId,
                 assemblyName=snap.assemblyName,
+                seatRole=snap.seatRole,
                 roll=snap.shaftRollDegrees,
                 offset=snap.alignedOffsetU,
                 material=snap.materialId,
@@ -277,6 +278,9 @@ function Persistence:Decode(player,document)
             or not short(record.anchor,64)
             or not short(record.assembly,64)
             or not short(record.assemblyName,80)
+            or (record.seatRole~=nil
+                and record.seatRole~="Operator"
+                and record.seatRole~="Passenger")
             or not short(record.alignedOpening,64)
             or not PaintCatalog.IsValidFinish(
                 record.paintFinish or "Factory")
@@ -327,6 +331,7 @@ function Persistence:Decode(player,document)
         readyIds[record.id]=true
         table.insert(parsed,{
             instanceId=record.id,templateId=record.template,
+            seatRole=record.seatRole,
             position=pos,size=size,steps=record.steps,orientation=cf,
             componentId=record.component,componentAnchorId=record.anchor,
             fitPivotLocal=pivot,componentFitPivotLocal=componentPivot,
