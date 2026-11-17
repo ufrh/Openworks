@@ -16,6 +16,7 @@ local definitions={
         Default="Connect",
         Items={
             {Id="Connect",Key=Enum.KeyCode.C,LegacyMode="Mechanics"},
+            {Id="Route",Key=Enum.KeyCode.R,LegacyMode="Mechanics"},
         },
     },
     AssemblySimulation={
