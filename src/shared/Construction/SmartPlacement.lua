@@ -954,13 +954,32 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                         -math.max(0,meshes-1)*0.5
                 end
             end
+            local centeredHoles=nil
+            if cf and kind=="Bore" and isShaft then
+                -- The first hovered hole chooses the AXIS, not the final
+                -- shaft midpoint. For multiple coaxial guide holes use
+                -- the middle of their extreme centers, irrespective of
+                -- which lug was aimed at. Handles grouped/welded guides
+                -- and nearby independent lugs that one shaft can bridge.
+                local centered,count,holes=MultiFit.CenteredShaftOffset(
+                    source,target,allTargets or targets)
+                if centered and count and count>1 then
+                    local plan=Alignment.Plan(
+                        members,source,target,centered,roll or 0)
+                    if plan then
+                        cf=plan.delta*ghost:GetPivot()
+                        offset=centered
+                        centeredHoles=holes
+                    end
+                end
+            end
             if cf and kind=="Bore" then
                 -- A through-hole can have a solid backstop. Instead of
                 -- centering the shaft into that obstruction (red forever),
                 -- search valid insertion depth on the same 0.5U lattice.
                 -- Probe EVERY moving member; never clip a hidden flange.
                 local resolved,newDepth=BoreInsertion.Resolve(ghost,
-                    source,target,isShaft,cf,offset or 0,ignored)
+                    source,target,isShaft,cf,offset or 0,ignored,centeredHoles)
                 if resolved then
                     cf=resolved
                     offset=newDepth
@@ -1061,6 +1080,7 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score,
                     fittedCount=fitted and #fitted or 0,
+                    centeredGuideCount=centeredHoles and #centeredHoles or 0,
                     snugDiameter=if kind=="Bore" and isShaft
                         then source:GetAttribute("OPENWORKS_AutoSnugDiameter")
                         else nil}
