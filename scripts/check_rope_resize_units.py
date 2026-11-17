@@ -20,6 +20,7 @@ assembly=src("src/client/Controllers/AssemblyController.lua")
 catalog=src("src/client/Controllers/ConnectionCatalog.lua")
 context=src("src/client/Controllers/ContextEditor.lua")
 index=src("src/client/Controllers/AuthoredIndex.lua")
+smart=src("src/shared/Construction/SmartPlacement.lua")
 grid=src("src/shared/Construction/GridMath.lua")
 scale=src("src/client/Controllers/ResizeGizmo.lua")
 build=src("src/client/Controllers/ConstructionController.lua")
@@ -108,7 +109,8 @@ checks={
         and 'or self.Pending == "ComponentMove")' in build
         and 'self.Pending~="Copy" and self.Pending~="ComponentCopy"' in build,
     "Component shafts can snug-fit into holes":
-        '#members~=1 or members[1]~=shaft' not in mechanical
+        '#members~=1 or members[1]~=shaft' not in smart
+        and 'newSource or reverse or #members~=1' not in mechanical
         and "allowedSnug=Bore.SnugDiameter(shaft,opening)" in mechanical,
     "Servo uses single relative hinge actuator on free vehicle":
         "constraint.ActuatorType=Enum.ActuatorType.Servo" in physical
