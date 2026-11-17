@@ -76,10 +76,6 @@ function Kinematics.new(graph,copies)
     -- in the simulation graph (not the authored world or its save).
     -- Do not infer a joint from mere touching / gear tooth contact.
     local motorShafts={}
-    local rootByModel={}
-    for _,model in ipairs(graph.models) do
-        rootByModel[model]=identifier(model)
-    end
     for _,edge in ipairs(graph.edges) do
         if edge.kind=="Bearing"
             and edge.relation:GetAttribute("MotorEnabled")==true
@@ -88,35 +84,46 @@ function Kinematics.new(graph,copies)
         end
     end
     local inferredMounts=0
-    local usedGear={}
-    for _,original in ipairs(graph.models) do
-        if isGear(original) and identifier(original) then
-            -- A gear already in a welded rigid group cannot be stolen by
-            -- a second shaft: it may belong to a separate compound stage.
-            for _,shaft in pairs(motorShafts) do
-                local shaftId=identifier(shaft)
-                local gearId=identifier(original)
-                local shaftGroup=root(shaftId)
-                local gearGroup=root(gearId)
-                if shaftGroup and gearGroup and shaftGroup~=gearGroup
-                    and not usedGear[gearId] then
-                    local fits=Smart.HubFits(shaft,original)
-                    if fits then
-                        -- Never merge a gear from a separately welded
-                        -- housing/other-shaft group: only orphan hubs.
-                        local groupMembers=0
-                        for _,model in ipairs(graph.models) do
-                            if root(identifier(model))==gearGroup then
-                                groupMembers+=1
-                            end
-                        end
-                        if groupMembers==1 then
-                            parent[gearGroup]=shaftGroup
-                            usedGear[gearId]=true
-                            inferredMounts+=1
-                        end
-                    end
-                end
+    for _,gear in ipairs(graph.models) do
+        local gearId=identifier(gear)
+        if not isGear(gear) or not gearId then continue end
+        local gearGroup=root(gearId)
+        -- Do not steal welded compound gears or housing structural parts:
+        -- automatic repair applies to standalone already-seated hubs only.
+        local size=0
+        for _,member in ipairs(graph.models) do
+            if root(identifier(member))==gearGroup then size+=1 end
+        end
+        if size~=1 then continue end
+        local compatible={}
+        for shaftId,shaft in pairs(motorShafts) do
+            local shaftGroup=root(shaftId)
+            if shaftGroup and shaftGroup~=gearGroup
+                and Smart.HubFits(shaft,gear) then
+                local distance=math.abs((gear:GetPivot().Position
+                    -shaft:GetPivot().Position)
+                    :Dot(shaft:GetPivot().RightVector))
+                table.insert(compatible,{Id=shaftId,Group=shaftGroup,
+                    Distance=distance})
+            end
+        end
+        table.sort(compatible,function(a,b)
+            if math.abs(a.Distance-b.Distance)<1e-5 then
+                return a.Id<b.Id
+            end
+            return a.Distance<b.Distance
+        end)
+        if #compatible>0 then
+            -- Multiple indistinguishable shafts through one hub are
+            -- ambiguous. Never attach it to an arbitrary input motor.
+            if #compatible>1
+                and math.abs(compatible[1].Distance-compatible[2].Distance)
+                    <0.025 then
+                warn("[OPENWORKS][MOTOR] Ambiguous loose gear hub; "
+                    .."Smart Fit it to one shaft to save an explicit mount")
+            else
+                parent[gearGroup]=compatible[1].Group
+                inferredMounts+=1
             end
         end
     end
