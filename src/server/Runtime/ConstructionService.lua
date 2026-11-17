@@ -1179,7 +1179,7 @@ local function verticalMove(player,payload)
     end
     commitBatch(player,before,after)
     return true,"Moved "..tostring(#selected).." primitives "
-        ..tostring(step).." studs on "..axis
+        ..string.format("%.2f U",step/Grid.Unit).." on "..axis
 end
 
 local function setMaterial(player,payload)
