@@ -1,7 +1,6 @@
 --!strict
--- UI v2 assembly simulation router. The shaft-centric transmission uses
--- native physics for gear/belt assemblies; keep the proven rack/guide
--- kinematics path for any registered assembly containing racks.
+-- Auto-connected mechanism router. Shaft-centric transmissions use native
+-- physics; real rack/guide connections select the rack kinematics engine.
 -- Each engine owns ONLY its active player's session. No authored graph is
 -- mutated in order to decide which simulation implementation should run.
 local ReplicatedStorage=game:GetService("ReplicatedStorage")
@@ -36,18 +35,18 @@ function Unified:Choose(player,payload)
         return self.Physical
     end
     local seed=self.D.findOwned(player,payload.seedId)
-    local assemblyId=seed and seed:GetAttribute("AssemblyId")
-    if type(assemblyId)~="string" or assemblyId=="" then
-        return self.Physical
-    end
+    if not seed then return self.Physical end
+    local ok,reason,ids=self.D.assemblies:DetectConnected(player,{
+        seedId=payload.seedId,
+    })
+    if not ok then return nil,reason end
     local rack=false
     local memberIds={}
+    for _,id in ipairs(ids) do memberIds[id]=true end
     for _,model in ipairs(self.D.folder:GetChildren()) do
         if model:IsA("Model")
             and model:GetAttribute("OwnerUserId")==player.UserId
-            and model:GetAttribute("AssemblyId")==assemblyId then
-            local id=model:GetAttribute("InstanceId")
-            if type(id)=="string" then memberIds[id]=true end
+            and memberIds[model:GetAttribute("InstanceId")] then
             local kind=GearMath.Kind(model)
             if kind=="Rack" or kind=="RackGuide" then rack=true end
         end
@@ -65,10 +64,10 @@ function Unified:Choose(player,payload)
         end
     end
     if rack and hasVectorJoint then
-        return nil,"Vector Joint with rack/guide assemblies is not yet supported by the rack engine; use a separate registered assembly"
+        return nil,"Vector Joint with rack/guide assemblies is not yet supported by the rack engine; separate those connections into independent mechanisms"
     end
     if rack and hasBelt then
-        return nil,"Rack + friction belt assemblies cannot simulate together yet; split into separate registered assemblies"
+        return nil,"Rack + friction belt assemblies cannot simulate together yet; separate those connections into independent mechanisms"
     end
     return if rack then self.Rack else self.Physical
 end
