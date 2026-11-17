@@ -670,8 +670,9 @@ function Simulation:Start(player, payload)
 
     local graph, reason = self:Graph(player, seed)
     if not graph then return false, reason end
-    local unregisteredGears=countNearbyUnregisteredGears(
-        player,graph,d.folder)
+    -- All validated gear contacts are now in the detected graph.
+    -- Nearby but unmeshed geometry is simply a separate mechanism.
+    local unregisteredGears=0
 
     local session = {
         Originals = {},
