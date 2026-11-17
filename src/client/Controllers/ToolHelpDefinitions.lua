@@ -84,7 +84,7 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
             put(rows,"X / I","X-ray / isolate")
             put(rows,"J / Shift+J","Avatar reference / move")
             put(rows,"Right click","Mechanical settings")
-            put(rows,"Backspace","Delete selected part")
+            put(rows,"Backspace","Delete selection")
             put(rows,"Ctrl+Z / Y","Undo / redo")
         end
     elseif primary=="Mechanics" then
