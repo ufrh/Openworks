@@ -1964,6 +1964,47 @@ function Mechanical:CoupleHandCrank(player,request,newSource)
     return true,"Hand crank sized to shaft and rigidly coupled"
 end
 
+-- Conservative two-way oriented solid-bounds proximity check.
+-- The physics overlap query can miss exactly flush CSG or cylinder ends.
+-- Use this same test for authored welds and joint detachment, with a
+-- slightly wider tolerance during manual fabrication.
+local function stillTouching(a,b,tolerance)
+    if not a or not b or not a.PrimaryPart or not b.PrimaryPart then
+        return false
+    end
+    local function nearOnAxes(first,second)
+        local cf=first.CFrame
+        local delta=cf:PointToObjectSpace(second.Position)
+        local x,y,z=cf.RightVector,cf.UpVector,cf.LookVector
+        local bx,by,bz=second.CFrame.RightVector,
+            second.CFrame.UpVector,second.CFrame.LookVector
+        local h=second.Size*0.5
+        local epsilon=tolerance or 0.012
+        local function fits(offset,half,axis)
+            local reach=math.abs(axis:Dot(bx))*h.X
+                +math.abs(axis:Dot(by))*h.Y
+                +math.abs(axis:Dot(bz))*h.Z
+            return math.abs(offset)<=half+reach+epsilon
+        end
+        return fits(delta.X,first.Size.X*0.5,x)
+            and fits(delta.Y,first.Size.Y*0.5,y)
+            and fits(delta.Z,first.Size.Z*0.5,z)
+    end
+    for _,left in ipairs(a:GetDescendants()) do
+        if not left:IsA("BasePart") or not left.CanCollide
+            or left:GetAttribute("GearPivotOnly")==true then continue end
+        for _,right in ipairs(b:GetDescendants()) do
+            if right:IsA("BasePart") and right.CanCollide
+                and right:GetAttribute("GearPivotOnly")~=true
+                and nearOnAxes(left,right) and nearOnAxes(right,left) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+
 -- Single and multi-weld use the same server-authoritative proximity,
 -- clearance and competing-relationship checks. Never weld at a distance.
 local function weldPairValid(self,player,source,target)
@@ -1990,24 +2031,15 @@ local function weldPairValid(self,player,source,target)
             if ok and #hit>0 then close=true break end
         end
     end
+    -- A manually selected RIGID weld may attach an ordinary shaft or
+    -- cylinder to the exterior of a drilled-hole housing. The shaft need
+    -- not be coaxial with or inserted into the hole. A flush face should
+    -- not be rejected because the narrow collision query missed it.
+    -- An explicit weld still requires closely adjoining solid bounds:
+    -- distant objects cannot be connected through this action.
+    if not close then close=stillTouching(source,target,0.03) end
     if not close then
-        -- A drilled block can be rigidly joined to an inserted shaft with
-        -- genuine clearance; no metal-to-metal surface contact is needed.
-        -- Ordinary parts and unengaged, distant shafts still cannot weld.
-        local shaft=if Alignment.IsShaft(source) then source
-            else if Alignment.IsShaft(target) then target else nil
-        local hole=if shaft==source then target else source
-        local name=string.lower(tostring(hole:GetAttribute("TemplateId")
-            or hole.Name)):gsub("[%s_%-]","")
-        local drilled=string.find(name,"drilledblock",1,true)~=nil
-            or string.find(name,"holeblock",1,true)~=nil
-        if not shaft or not drilled then
-            return false,"Weld requires contact or an inserted shaft in a drilled block"
-        end
-        local fitted,why=Bore.ShaftFits(shaft,hole)
-        if not fitted then
-            return false,why or "Shaft must be aligned and inserted through the hole"
-        end
+        return false,"Rigid weld requires adjoining surfaces; shaft-to-hole fitting is only for motion joints"
     end
     -- A rigid weld must not sit alongside an already-authored motion joint
     -- between the same bodies; remove the old relationship deliberately.
@@ -2992,41 +3024,6 @@ end
 -- authenticated relationship remains physically adjacent after editing.
 -- It never creates a new relationship. A world-space SAT-lite test in both
 -- local frames detects face-touch while tolerating tiny CSG seam gaps.
-local function stillTouching(a,b)
-    if not a or not b or not a.PrimaryPart or not b.PrimaryPart then
-        return false
-    end
-    local function nearOnAxes(first,second)
-        local cf=first.CFrame
-        local delta=cf:PointToObjectSpace(second.Position)
-        local x,y,z=cf.RightVector,cf.UpVector,cf.LookVector
-        local bx,by,bz=second.CFrame.RightVector,
-            second.CFrame.UpVector,second.CFrame.LookVector
-        local h=second.Size*0.5
-        local epsilon=0.012
-        local function fits(offset,half,axis)
-            local reach=math.abs(axis:Dot(bx))*h.X
-                +math.abs(axis:Dot(by))*h.Y
-                +math.abs(axis:Dot(bz))*h.Z
-            return math.abs(offset)<=half+reach+epsilon
-        end
-        return fits(delta.X,first.Size.X*0.5,x)
-            and fits(delta.Y,first.Size.Y*0.5,y)
-            and fits(delta.Z,first.Size.Z*0.5,z)
-    end
-    for _,left in ipairs(a:GetDescendants()) do
-        if not left:IsA("BasePart") or not left.CanCollide
-            or left:GetAttribute("GearPivotOnly")==true then continue end
-        for _,right in ipairs(b:GetDescendants()) do
-            if right:IsA("BasePart") and right.CanCollide
-                and right:GetAttribute("GearPivotOnly")~=true
-                and nearOnAxes(left,right) and nearOnAxes(right,left) then
-                return true
-            end
-        end
-    end
-    return false
-end
 
 -- A normal construction transform must not keep invisible joints spanning
 -- independently moved geometry. Springs and ropes are exempt: stretching
