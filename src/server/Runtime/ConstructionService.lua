@@ -687,6 +687,77 @@ local function duplicatePrimitive(player,payload)
     return finalizeNewPrimitive(player,model,payload)
 end
 
+-- Server-authoritative resize fallback. A client can suggest a final
+-- size, but the server probes the actual authored CSG and mechanical fits,
+-- returning the LARGEST clear Unit increment. All probes are restored
+-- before committing the single chosen history transaction.
+local function maximumClearResize(player,model,entry,before,proposed,opening)
+    local difference=proposed.size-before.size
+    local largest=math.max(math.abs(difference.X),
+        math.abs(difference.Y),math.abs(difference.Z))
+    local stepU=if proposed.numericPrecision then Grid.NumericSizeStepU
+        else Grid.MinSizeStepU
+    local ticks=math.max(1,math.round(largest/(Grid.Unit*stepU)))
+    local targetSize=proposed.size
+    local targetPosition=proposed.position
+    local ignore={[model]=true}
+    local cid=before.componentId
+    if type(cid)=="string" and cid~="" then
+        for _,member in ipairs(components:Members(player,cid)) do
+            ignore[member]=true
+        end
+    end
+
+    local function trial(tick)
+        local fraction=tick/ticks
+        local state=table.clone(proposed)
+        state.size=before.size:Lerp(targetSize,fraction)
+        state.position=before.position:Lerp(targetPosition,fraction)
+        if not validState(player,entry,state) then return false,state end
+        applyState(model,state)
+        local okay=mechanical:ValidateResize(player,before.instanceId)
+        if not okay then return false,state end
+        local aligned=opening and Alignment.IsShaft(model)
+        if aligned and not Bore.ShaftFits(model,opening) then
+            return false,state
+        end
+        local fitMap=nil
+        if aligned then
+            local all={}
+            for _,other in ipairs(folder:GetChildren()) do
+                if other:IsA("Model")
+                    and other:GetAttribute("OwnerUserId")==player.UserId
+                    and other~=model then table.insert(all,other) end
+            end
+            local stations=MultiFit.StationarySet({model},opening,all)
+            local matches=MultiFit.Find({model},stations)
+            if matches then
+                local valid=MultiFit.Unique(matches,before.instanceId,
+                    opening:GetAttribute("InstanceId"))
+                fitMap=MultiFit.AllowMap(valid)
+            end
+        end
+        return not intersectsConstructed(model,ignore,
+            if aligned then opening else nil,
+            if aligned then before.instanceId else nil,fitMap),state
+    end
+
+    local accepted,state=trial(ticks)
+    if not accepted then
+        local low,high=0,ticks-1
+        while low<high do
+            local midpoint=math.floor((low+high+1)/2)
+            local valid=trial(midpoint)
+            if valid then low=midpoint else high=midpoint-1 end
+        end
+        local _,candidate=trial(low)
+        state=candidate
+    end
+    -- The actual edit happens ONCE in update(), not on probe attempts.
+    applyState(model,before)
+    return state,not accepted
+end
+
 local function update(player, payload)
     local model = findOwned(player, payload.instanceId)
     if not model then return false, "Select a piece you own" end
@@ -765,6 +836,24 @@ local function update(player, payload)
             math.abs(proposed.size.Y-before.size.Y)>0.0001
             or math.abs(proposed.size.Z-before.size.Z)>0.0001) then
             return false,"Aligned shafts resize along length only (X axis)"
+        end
+    end
+    -- If the requested grip expansion is blocked, stop at the greatest
+    -- valid 0.25-U (or numeric 0.01-U) size instead of rejecting/resetting.
+    -- This applies only to explicitly flagged resize operations. Ordinary
+    -- moves and placement retain their exact collision validation.
+    local resizeClamped=false
+    if payload.clampResize==true
+        and typeof(proposed.size)=="Vector3"
+        and typeof(proposed.position)=="Vector3"
+        and (proposed.size-before.size).Magnitude>0.0001 then
+        proposed,resizeClamped=maximumClearResize(
+            player,model,entry,before,proposed,opening)
+        if (proposed.size-before.size).Magnitude<0.0001
+            and (proposed.position-before.position).Magnitude<0.0001 then
+            return true,"",{
+                size=before.size,position=before.position,clamped=true,
+            }
         end
     end
     local valid, reason = validState(player, entry, proposed)
@@ -864,7 +953,9 @@ local function update(player, payload)
     else
         commitRecord(player,before,after)
     end
-    return true,after.instanceId
+    return true,after.instanceId,{
+        size=after.size,position=after.position,clamped=resizeClamped,
+    }
 end
 
 local function rotatePrimitiveWorld(player,payload)
@@ -1592,7 +1683,10 @@ local function handle(player, payload)
     local message = tostring(extra or "")
     if result and action == "Place" then message = "Placed" end
     if result and action == "DuplicatePrimitive" then message = "Duplicated" end
-    if result and action == "Update" then message = "Updated" end
+    if result and action == "Update" then
+        message=if type(detail)=="table" and detail.clamped==true
+            then "Maximum clear size reached" else "Updated"
+    end
     return {
         ok = result == true,
         message = if result and (action == "Group" or action == "DuplicateComponent")
@@ -1604,7 +1698,8 @@ local function handle(player, payload)
         assemblyId=if result and (action=="CreateAssembly"
             or action=="UpdateAssembly") then detail else nil,
         data=if result and (bankAction
-            or action=="DetectConnectedAssembly") then detail else nil,
+            or action=="DetectConnectedAssembly" or action=="Update")
+            then detail else nil,
     }
 end
 
