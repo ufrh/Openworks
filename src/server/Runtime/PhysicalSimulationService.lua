@@ -294,10 +294,27 @@ function Simulation:StopCrank(session,id)
     if session.ActiveCrankId==id then session.ActiveCrankId=nil end
 end
 
--- Motor is a powered SHAFT bearing, not a motorized housing. Use the
--- identical native AngularVelocity actuator as a HandCrank. The bearing
--- constraint remains passive so it only holds the shaft on its axle.
-local function setMotorDrive(motor, relation)
+-- Continuous motors keep their independent shaft-speed actuator.
+-- SERVO motors use ONLY the native HingeConstraint Servo. No secondary
+-- AngularVelocity, custom velocity profiling, angle lead or Lua PID.
+local function ensureContinuousDrive(motor)
+    if motor.Drive and motor.Drive.Parent then return motor.Drive end
+    local attachment=Instance.new("Attachment")
+    attachment.Name="PoweredMotorShaftAxis"
+    attachment.Parent=motor.Shaft
+    local drive=Instance.new("AngularVelocity")
+    drive.Name="PoweredMotor_ShaftOnlyDrive"
+    drive.Attachment0=attachment
+    drive.RelativeTo=Enum.ActuatorRelativeTo.World
+    drive.MaxTorque=3000
+    drive.Enabled=false
+    drive.AngularVelocity=Vector3.zero
+    drive.Parent=motor.Runtime
+    motor.Drive=drive
+    return drive
+end
+
+local function setMotorDrive(motor,relation)
     motor.Key=relation:GetAttribute("MotorKey") or "F"
     motor.Speed=relation:GetAttribute("MotorSpeed") or 3
     motor.Torque=math.clamp(relation:GetAttribute("MotorTorque") or 3000,1,100000)
@@ -314,41 +331,35 @@ local function setMotorDrive(motor, relation)
     motor.On=false
     motor.NativeSpeed=0
     motor.LastInput=0
-    -- Start the commanded angle at the actual hinge position. A servo
-    -- setpoint that instantly jumps 90 degrees can jerk a free chassis.
-    motor.ServoTarget=motor.Constraint.CurrentAngle
-    motor.ServoVelocity=0
-    -- Positional servos must actuate the relative HINGE, not spin the
-    -- wheel/shaft assembly against world space. World-space velocity
-    -- motors can whip an otherwise free chassis when steering.
-    motor.Constraint.ActuatorType=if motor.DriveType=="Servo"
-        then Enum.ActuatorType.Servo else Enum.ActuatorType.None
-    motor.Constraint.AngularVelocity=0
-    motor.Constraint.TargetAngle=if motor.DriveType=="Servo"
-        then motor.ServoTarget else 0
-    motor.Constraint.ServoMaxTorque=motor.Torque
-    motor.Constraint.AngularSpeed=math.max(0.05,math.abs(motor.Speed))
-    motor.Constraint.AngularResponsiveness=
-        math.clamp(math.sqrt(motor.Acceleration)*0.65,2,6)
-    motor.Drive.MaxTorque=motor.Torque
-    motor.Drive.AngularVelocity=Vector3.zero
-    motor.Drive.Enabled=false
+    local hinge=motor.Constraint
+    hinge.AngularVelocity=0
+    if motor.DriveType=="Servo" then
+        if motor.Drive then
+            local axis=motor.Drive.Attachment0
+            motor.Drive:Destroy()
+            if axis then axis:Destroy() end
+            motor.Drive=nil
+        end
+        -- Roblox's native servo owns all acceleration, torque and angle
+        -- convergence. AngularResponsiveness=45 is the engine default;
+        -- legacy MotorAcceleration is for continuous motors ONLY.
+        hinge.AngularSpeed=math.abs(motor.Speed)
+        hinge.ServoMaxTorque=motor.Torque
+        hinge.AngularResponsiveness=45
+        hinge.TargetAngle=0
+        hinge.ActuatorType=Enum.ActuatorType.Servo
+    else
+        hinge.ActuatorType=Enum.ActuatorType.None
+        local drive=ensureContinuousDrive(motor)
+        drive.MaxTorque=motor.Torque
+        drive.AngularVelocity=Vector3.zero
+        drive.Enabled=false
+    end
 end
 
-local function makeMotor(constraint, shaft,relation,runtime)
-    local attachment=Instance.new("Attachment")
-    attachment.Name="PoweredMotorShaftAxis"
-    attachment.Parent=shaft
-    local drive=Instance.new("AngularVelocity")
-    drive.Name="PoweredMotor_ShaftOnlyDrive"
-    drive.Attachment0=attachment
-    drive.RelativeTo=Enum.ActuatorRelativeTo.World
-    drive.MaxTorque=3000
-    drive.Enabled=false
-    drive.AngularVelocity=Vector3.zero
-    drive.Parent=runtime
+local function makeMotor(constraint,shaft,relation,runtime)
     local motor={
-        Constraint=constraint,Drive=drive,Shaft=shaft,
+        Constraint=constraint,Shaft=shaft,Runtime=runtime,
         ShaftId=relation:GetAttribute("SourceId"),
         RelationId=relation:GetAttribute("RelationId"),
     }
@@ -362,9 +373,8 @@ local function stopMotor(motor)
     motor.On=false
     motor.NativeSpeed=0
     motor.LastInput=0
-    motor.ServoVelocity=0
     if motor.Constraint and motor.Constraint.Parent then
-        motor.ServoTarget=motor.Constraint.CurrentAngle
+        motor.Constraint.TargetAngle=0
         motor.Constraint.ActuatorType=Enum.ActuatorType.None
     end
     if motor.Drive and motor.Drive.Parent then
@@ -429,9 +439,13 @@ function Simulation:StepCranks(dt)
         end
         if session.Gears then session.Gears:ClearDrives() end
         for _,motor in ipairs(session.Motors or {}) do
-            local drive=motor.Drive
             local shaft=motor.Shaft
-            if not drive or not drive.Parent or not shaft or not shaft.Parent then
+            local drive=motor.Drive
+            local hinge=motor.Constraint
+            if not shaft or not shaft.Parent
+                or not hinge or not hinge.Parent
+                or (motor.DriveType~="Servo"
+                    and (not drive or not drive.Parent)) then
                 stopMotor(motor)
                 continue
             end
@@ -444,68 +458,31 @@ function Simulation:StepCranks(dt)
                 motor.Held=false
                 motor.On=false
             end
-            local dtSafe=math.clamp(dt,0,0.07)
             if motor.DriveType=="Servo" then
-                -- One physical HingeConstraint is the only servo actuator.
-                -- Slew the COMMANDED angle with bounded acceleration and
-                -- limit how far the target can lead the REAL shaft. This
-                -- avoids instant ninety-degree solver impulses, overshoot
-                -- and choppy high-torque steering on a free vehicle.
-                local constraint=motor.Constraint
-                local current=constraint.CurrentAngle
-                local goal=if motor.On then motor.TargetAngle else 0
-                if type(motor.ServoTarget)~="number" then
-                    motor.ServoTarget=current
-                end
-                local error=math.rad(goal-motor.ServoTarget)
-                local topSpeed=math.abs(motor.Speed)
-                local wantedSpeed=math.clamp(error*5,-topSpeed,topSpeed)
-                local accel=motor.Acceleration*dtSafe
-                motor.ServoVelocity=math.clamp(
-                    (motor.ServoVelocity or 0)
-                        +math.clamp(wantedSpeed-(motor.ServoVelocity or 0),
-                            -accel,accel),
-                    -topSpeed,topSpeed)
-                local nextAngle=motor.ServoTarget
-                    +math.deg(motor.ServoVelocity*dtSafe)
-                if (goal-motor.ServoTarget)*(goal-nextAngle)<=0 then
-                    nextAngle=goal
-                    motor.ServoVelocity=0
-                end
-                -- The positional target cannot run far ahead of a
-                -- physically stalled wheel: keep a small, finite lead.
-                local maxLead=math.clamp(math.deg(topSpeed*0.09),4,15)
-                nextAngle=math.clamp(nextAngle,
-                    current-maxLead,current+maxLead)
-                motor.ServoTarget=nextAngle
-                motor.NativeSpeed=motor.ServoVelocity
-                constraint.TargetAngle=nextAngle
-                constraint.ActuatorType=Enum.ActuatorType.Servo
-            else
-                local desired=if motor.On then motor.Speed else 0
-                local ease=(desired-motor.NativeSpeed)
-                    *(1-math.exp(-8*dtSafe))
-                local ramp=motor.Acceleration*dtSafe
-                motor.NativeSpeed+=math.clamp(ease,-ramp,ramp)
-                if math.abs(motor.NativeSpeed)<0.008 and desired==0 then
-                    motor.NativeSpeed=0
-                end
+                -- Direct native servo control: the key changes ONLY the
+                -- HingeConstraint target. Roblox handles movement, speed,
+                -- damping and torque without a Lua motion controller.
+                hinge.TargetAngle=if motor.On then motor.TargetAngle else 0
+                hinge.ActuatorType=Enum.ActuatorType.Servo
+                continue
             end
-            -- Drive along the ACTUAL bearing axis, not an approximate
-            -- primitive RightVector. Tiny axis disagreement otherwise adds
-            -- an off-axis force and can twist a free hole housing.
-            local bearingAxis=if motor.Constraint.Attachment1
-                then motor.Constraint.Attachment1.WorldAxis
+
+            -- Existing continuous motor behavior is unchanged.
+            local dtSafe=math.clamp(dt,0,0.07)
+            local desired=if motor.On then motor.Speed else 0
+            local ease=(desired-motor.NativeSpeed)
+                *(1-math.exp(-8*dtSafe))
+            local ramp=motor.Acceleration*dtSafe
+            motor.NativeSpeed+=math.clamp(ease,-ramp,ramp)
+            if math.abs(motor.NativeSpeed)<0.008 and desired==0 then
+                motor.NativeSpeed=0
+            end
+            local bearingAxis=if hinge.Attachment1
+                then hinge.Attachment1.WorldAxis
                 else shaft.CFrame.RightVector
-            -- Only continuous shaft drives use world AngularVelocity.
-            -- Servo joints are controlled by their ONE native relative
-            -- hinge actuator; running both would over-constrain the car.
-            drive.AngularVelocity=if motor.DriveType=="Servo"
-                then Vector3.zero else bearingAxis*motor.NativeSpeed
-            drive.Enabled=motor.DriveType~="Servo"
-                and math.abs(motor.NativeSpeed)>0.0001
-            if motor.On or (motor.DriveType=="Servo"
-                and math.abs(motor.NativeSpeed)>0.008) then
+            drive.AngularVelocity=bearingAxis*motor.NativeSpeed
+            drive.Enabled=math.abs(motor.NativeSpeed)>0.0001
+            if motor.On then
                 markVectorSource(session,shaft,motor.Torque)
             end
             if session.Gears and math.abs(motor.NativeSpeed)>0.008 then
@@ -1539,8 +1516,8 @@ function Simulation:SyncRelationship(player,relation)
                     and relation:GetAttribute("MotorEnabled")~=true
                 constraint.LowerAngle=relation:GetAttribute("LowerLimit") or -180
                 constraint.UpperAngle=relation:GetAttribute("UpperLimit") or 180
-                -- Config changes reuse the SAME shaft actuator; no hinge
-                -- motor is ever reactivated during a relationship edit.
+                -- Live edits recreate only the appropriate actuator:
+                -- native Hinge Servo or continuous shaft-speed drive.
                 constraint.ActuatorType=Enum.ActuatorType.None
                 constraint.AngularVelocity=0
                 local enabled=relation:GetAttribute("MotorEnabled")==true
