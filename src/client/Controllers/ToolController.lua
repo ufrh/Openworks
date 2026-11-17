@@ -115,7 +115,9 @@ function ToolController:HandleShortcut(input,processed)
     self.ConsumedInput=nil
     if processed or not self.PrimaryId
         or UserInputService:GetFocusedTextBox()
-        or player:GetAttribute("OPENWORKS_CursorUIOpen")==true
+        or (player:GetAttribute("OPENWORKS_CursorUIOpen")==true
+            and not (self.PrimaryId=="Mechanics"
+                and self.SubtoolId=="Route"))
         or player:GetAttribute("OPENWORKS_PlotMenuOpen")==true
         or player:GetAttribute("OPENWORKS_PropertiesOpen")==true
         or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
