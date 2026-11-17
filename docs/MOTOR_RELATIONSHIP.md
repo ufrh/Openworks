@@ -27,20 +27,18 @@ OpenWorks now routes simulation through
   the motor controls its input shaft through the same
   `GearKinematics:Step` path as the hand crank.
 
-Both engines use `BearingSupport`: a drilled housing that is genuinely
-standalone is kept stationary when supporting a powered or geared shaft.
-A housing structurally welded into a vehicle chassis is **not automatically
-anchored**; it stays on the moving chassis and the bearing never receives
-motor actuation. A `ComponentId` editor group is **not a structural weld**:
-even if a loose motor housing belongs to a saved editor component, it still
-gets stationary bearing support. Only genuine rigid weld groups are
-considered chassis structure; multi-part tube chassis are never
-auto-anchored. Previously grounded motor shaft/drive-gear groups are
-released in temporary simulation state only. A shaft welded to its housing
-is rejected as mechanically locked. The motor drive follows the actual
-`HingeConstraint.Attachment1.WorldAxis` rather than an approximate
-primitive orientation. Authored construction hinges remain passive and
-never act as a second, housing-side motor.
+Both engines use `BearingSupport` for **rigid-group validation only**.
+No bearing or motor automatically anchors, grounds, or locks its housing,
+regardless of editor grouping or whether it has a welded chassis. A housing
+remains a mobile physical body (or moves with its real welded structure)
+unless the builder explicitly sets **Grounded**. Grounding is never silently
+removed from a rotor either: an explicitly grounded motor shaft reports
+a construction error. Powered motor bearings are passive native hinges
+with no motor actuator or angular hard-stop, so they cannot transmit
+powered rotation to the housing through the hinge. The motor drive follows
+the actual `HingeConstraint.Attachment1.WorldAxis`. A shaft welded to its
+housing is rejected as mechanically locked. Authored construction hinges
+also remain passive and never act as a second housing-side motor.
 
 Studio Output prints `[OPENWORKS][SIM ROUTER]` with the selected engine and
 `[OPENWORKS][MOTOR] ACTIVE ...` with motor and gear counts.
@@ -73,12 +71,13 @@ one of the connected parts and open its **Motor** relationship to configure it.
 | Continuous | rotates while pressed, stops on release | press to run, press again to stop |
 | Servo | approaches target while held, returns to neutral 0° on release | press to target angle, press again to neutral 0° |
 
-The motor drives the **shaft**, never the hole-block housing. Standalone
-motor and passive bearing housings along the powered/geared shaft are fixed
-in simulation so they cannot counter-rotate. Housing blocks welded to a
-moving chassis stay with that chassis instead of freezing the whole car.
-The driven shaft and every gear welded to its rigid group are released
-from grounding in temporary simulation state; authored flags remain saved.
+The motor drives the **shaft**, never the hole-block housing. All passive
+and powered bearing housings remain **unanchored by default** and keep
+their independently simulated movement. A housing welded to a vehicle
+moves with that vehicle, not with its axle's rotation. The only anchored
+members are those explicitly marked Grounded by the builder. If the
+builder explicitly grounds a motor shaft/gear rotor, simulation rejects
+the conflicting configuration rather than silently changing their flags.
 
 - **No mounted gear:** the active physical engine keeps a passive
   `HingeConstraint` for axle positioning and a shaft-only
@@ -125,10 +124,11 @@ requirement.
 3. In Simulate, test Continuous/Hold, Continuous/Toggle, Servo/Hold,
    Servo/Toggle; press/release key and switch direction. Repeat with and
    without a gear **rigidly welded** to the motor shaft.
-4. Verify the hole block remains motionless while its shaft rotates, and
-   confirm the welded input gear drives meshed output gears. Keep the
-   housing ungrounded for the first test; the motor should supply its
-   default support when no other part was explicitly grounded.
+4. Verify a free drilled housing remains **unanchored** while the shaft
+   rotates independently and its gear drives the meshed outputs. A free
+   housing can still move or tumble under external physics; no hidden
+   angular stabilizer or world anchor is allowed. For a fixed test fixture,
+   explicitly mark its support Grounded in the Assembly tool.
 5. Verify torque/speed, servo target and any native-hinge angle limits.
 6. Stop/restart simulation, save/reload plot, undo/redo creation/settings,
    and disconnect/reconnect shaft. Check no phantom drive persists.
