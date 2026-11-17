@@ -1288,11 +1288,13 @@ function Mechanical:SmartMate(player, request, newSource)
     end
     local fittedTravel=if fitPairs and #fitPairs>1
         then MultiFit.SymmetricTravel(fitPairs) else nil
+    -- Multiple separated guide holes may permit rotation but ZERO
+    -- axial motion. That is a valid fitted configuration: native linear
+    -- limits collapse to zero instead of rejecting the entire relation
+    -- selection and bouncing the user back into the fit picker.
     if (typeName=="Slider" or typeName=="Cylindrical")
         and fittedTravel and fittedTravel<0.25 then
-        if reverse then d.applyState(shaft,fixedShaftBefore) end
-        restoreMoving()
-        return false,"The fitted rods leave no sliding travel; change insertion depth"
+        fittedTravel=0
     end
     if typeName=="FreeFit" and (not hubGears or #hubGears==0) then
         local after={}
