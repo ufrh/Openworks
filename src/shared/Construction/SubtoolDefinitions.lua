@@ -19,9 +19,8 @@ local definitions={
         },
     },
     AssemblySimulation={
-        Default="AssemblyEditor",
+        Default="Simulation",
         Items={
-            {Id="AssemblyEditor",Key=Enum.KeyCode.E,LegacyMode="Assembly"},
             {Id="Simulation",Key=Enum.KeyCode.Y,LegacyMode="Simulate"},
         },
     },
