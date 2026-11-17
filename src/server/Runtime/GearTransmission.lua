@@ -14,7 +14,6 @@ local HandCrankMath=require(ReplicatedStorage:WaitForChild("Openworks")
 local Transmission={}
 Transmission.__index=Transmission
 
-local MAX_GEARS=40
 local SCAN_INTERVAL=0.20
 local STALL_REPORT_INTERVAL=2.0
 -- Input motors already validate their maximum speed (35 rad/s).
@@ -103,9 +102,6 @@ function Transmission.new(graph,copies,runtime)
                     Teeth=original:GetAttribute("GearTeeth")}
                 table.insert(group.Gears,entry)
                 table.insert(gears,entry)
-                if #gears>MAX_GEARS then
-                    error("Too many gears (maximum 40 per assembly)")
-                end
                 if not group.Root then group.Root=clone.PrimaryPart end
             end
         end
