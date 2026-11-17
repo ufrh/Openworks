@@ -1105,16 +1105,30 @@ function Simulation:Start(player, payload)
         end
         local hasExplicitGround = next(explicitGround) ~= nil
         session.GroundKeys = explicitGround
-        if not hasExplicitGround then
-            -- A motor's housing is the STATIONARY support, never the
-            -- rotating shaft or its drive gear. In an assembly without
-            -- authored grounding, anchor the hole block automatically.
-            -- If a player explicitly grounded something else, respect
-            -- their authored mechanical support instead.
-            for _,edge in ipairs(graph.edges) do
-                if edge.kind=="Bearing"
-                    and edge.relation:GetAttribute("MotorEnabled")==true then
-                    session.GroundKeys[edge.b]=true
+        -- Motor hardware has a fixed stator (the drilled hole block).
+        -- Always ground THAT housing, even if an unrelated support was
+        -- explicitly grounded. A motor must not spin the block to make
+        -- the shaft look stationary. The shaft's actual rigid group is
+        -- separate and receives the rotational input.
+        for _,edge in ipairs(graph.edges) do
+            if edge.kind=="Bearing"
+                and edge.relation:GetAttribute("MotorEnabled")==true then
+                session.GroundKeys[edge.b]=true
+                local shaftId=edge.source:GetAttribute("InstanceId")
+                local holeId=edge.target:GetAttribute("InstanceId")
+                if session.Gears:IsKinematic(holeId) then
+                    error("Motor housing is welded to a gear or shaft. "
+                        .."Remove that rigid weld: hole blocks must stay fixed")
+                end
+                if session.GroundKeys[edge.a] then
+                    error("Motor shaft is grounded. Release the shaft or "
+                        .."its welded gear; ground only the housing")
+                end
+                local gearGroup=session.Gears.ById[shaftId]
+                local housingGroup=session.Gears.ById[holeId]
+                if gearGroup and housingGroup and gearGroup==housingGroup then
+                    error("Motor shaft and hole block are rigidly welded "
+                        .."together. Remove the weld so only the shaft spins")
                 end
             end
         end
@@ -1197,6 +1211,11 @@ function Simulation:Start(player, payload)
 
     self:SetStatus(player,true,next(session.GroundKeys)~=nil)
     player:SetAttribute("OPENWORKS_SimulationPaused",false)
+    if session.Gears and session.Gears.InferredMotorMounts>0 then
+        warn(string.format("[OPENWORKS][MOTOR] Recovered %d un-welded fitted gear hub(s) "
+            .."for this simulation. Refit those hubs with Smart Fit to "
+            .."persist their mounts.",session.Gears.InferredMotorMounts))
+    end
     return true,(session.AssemblyName
         and (tostring(session.AssemblyName).." • ") or "")
         .. (if next(session.GroundKeys)
