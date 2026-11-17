@@ -17,6 +17,9 @@ physical = source("src/server/Runtime/PhysicalSimulationService.lua")
 rack = source("src/server/Runtime/RackSimulationService.lua")
 transmission = source("src/server/Runtime/GearTransmission.lua")
 kinematics = source("src/server/Runtime/GearKinematics.lua")
+bearings = source("src/server/Runtime/BearingSupport.lua")
+assembly = source("src/server/Runtime/AssemblyService.lua")
+assembly_tool = source("src/client/Controllers/AssemblyToolController.lua")
 
 checks = {
     "ConstructionService boots Unified": 'require(script.Parent:WaitForChild("UnifiedSimulationService"))' in construction,
@@ -39,6 +42,16 @@ checks = {
     "Gear transmission accepts shaft commands": "function Transmission:SetDrive(id,speed,budget,worldAxis)" in transmission,
     "Kinematic solver accepts servo goals": "function Kinematics:Step(dt,drivenId,shaftAxis,inputSpeed,servoGoal)" in kinematics,
     "Runtime path is visible in Studio Output": "[OPENWORKS][SIM ROUTER]" in router,
+    "Physical isolated bearings": "BearingSupport.Resolve(" in physical,
+    "Rack isolated bearings": "BearingSupport.Resolve(" in rack,
+    "Bearings do not auto-anchor welded chassis": "#housing.Models==1" in bearings,
+    "Bearings reject shaft welded to housing": "rotor==housing" in bearings,
+    "Fast gear stages have separate output ceiling": "local MAX_OUTPUT_SPEED=240" in transmission,
+    "Gear ratios are still tooth-count based": "ratio=-left.Teeth/right.Teeth" in transmission,
+    "Output drive torque follows ratio and load": "local outputTorque=drive.Weight/ratio" in transmission,
+    "One-click connected assembly detection": "function Service:DetectConnected" in assembly,
+    "Assembly detection traverses physical gear meshes": "GearMath.AutoMeshable" in assembly,
+    "Assembly click sends detection request": 'action="DetectConnectedAssembly"' in assembly_tool,
 }
 for label, ok in checks.items():
     print(f"{'PASS' if ok else 'FAIL'}: {label}")
