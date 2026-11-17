@@ -115,6 +115,8 @@ function Mechanical:Snapshot(relation)
         motorDriveType=relation:GetAttribute("MotorDriveType") or "Continuous",
         motorInputMode=relation:GetAttribute("MotorInputMode") or "Hold",
         motorTargetAngle=relation:GetAttribute("MotorTargetAngle") or 90,
+        seatId=relation:GetAttribute("SeatId"),
+        controlName=relation:GetAttribute("ControlName"),
     }
 end
 
@@ -232,6 +234,8 @@ function Mechanical:Restore(player, spec)
     folder:SetAttribute("MotorDriveType",spec.motorDriveType or "Continuous")
     folder:SetAttribute("MotorInputMode",spec.motorInputMode or "Hold")
     folder:SetAttribute("MotorTargetAngle",spec.motorTargetAngle or 90)
+    folder:SetAttribute("SeatId",spec.seatId)
+    folder:SetAttribute("ControlName",spec.controlName)
 
     local targetPart, sourcePart = target.PrimaryPart, source.PrimaryPart
     if not targetPart or not sourcePart then
