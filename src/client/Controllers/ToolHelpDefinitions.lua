@@ -108,40 +108,22 @@ function Help.Context(tools,build,mechanics,assemblyTool,player)
         put(rows,"Right click","Connections")
         put(rows,"Ctrl+Z / Y","Undo / redo")
     elseif primary=="AssemblySimulation" then
-        if sub=="AssemblyEditor" then
-            local drafting=assemblyTool.Stage=="Selecting"
-            title=if drafting then "ASSEMBLY / SELECT" else "ASSEMBLY"
-            if drafting then
-                put(rows,"Click","Select connected mechanism")
-                put(rows,"Alt+Click","Toggle one primitive")
-                put(rows,"R","Choose assembled parts")
-                put(rows,"Enter","Save assembly")
-                put(rows,"Esc","Cancel")
-            else
-                put(rows,"Click","Detect connected assembly")
-                put(rows,"N","New / rename assembly")
-            end
-            put(rows,"G","Ground / unground")
-            put(rows,"Alt+Arrows","Nudge assembly")
-            put(rows,"Shift+Alt+Arrows","Fine nudge")
-            put(rows,"Right click","Connections")
-            put(rows,"Ctrl+Z / Y","Undo / redo")
+        local running=player:GetAttribute("OPENWORKS_Simulating")==true
+        title=if running then "SIMULATING" else "CONNECTED MECHANISM"
+        put(rows,"P",if running then "Stop simulation"
+            else "Simulate aimed mechanism")
+        if running then
+            put(rows,"O","Pause / resume")
+            put(rows,"U","Reset")
+            put(rows,"I","Inspect mechanism")
+            put(rows,"Motor key","Drive motor")
+            put(rows,"Rope keys","Hold retract / pay out (Z / X default)")
+            put(rows,"Hold LMB","Hand crank")
         else
-            local running=player:GetAttribute("OPENWORKS_Simulating")==true
-            title=if running then "SIMULATING" else "SIMULATION"
-            put(rows,"P",if running then "Stop" else "Run assembly")
-            if running then
-                put(rows,"O","Pause / resume")
-                put(rows,"U","Reset")
-                put(rows,"I","Inspect mechanism")
-                put(rows,"Motor key","Drive motor")
-                put(rows,"Rope keys","Hold retract / pay out (Z / X default)")
-                put(rows,"Hold LMB","Hand crank")
-            else
-                put(rows,"G","Ground part")
-            end
-            put(rows,"Right click","Inspect connections")
+            put(rows,"Aim","Preview connected parts in purple")
+            put(rows,"G","Ground / unground aimed part")
         end
+        put(rows,"Right click","Inspect connections")
     end
     -- Every important action is discoverable in each tool, with a
     -- scrollable sidebar rather than a truncated handful of shortcuts.
