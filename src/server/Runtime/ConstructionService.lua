@@ -1352,6 +1352,7 @@ local function handle(player, payload)
     local smartAction = action == "SmartMate"
     local assemblyAction=action=="CreateAssembly"
         or action=="UpdateAssembly"
+        or action=="DetectConnectedAssembly"
     if action ~= "Place" and action ~= "DuplicatePrimitive"
         and action ~= "Update" and action ~= "Delete"
         and action ~= "Undo" and action ~= "Redo"
@@ -1539,6 +1540,9 @@ local function handle(player, payload)
         if action=="UpdateAssembly" then
             return assemblies:Update(player,payload)
         end
+        if action=="DetectConnectedAssembly" then
+            return assemblies:DetectConnected(player,payload)
+        end
         if action == "AdjustJoint" then return mechanical:AdjustJoint(player, payload) end
         if action == "TuneBearingMotor" then
             return mechanical:TuneBearingMotor(player,payload)
@@ -1563,13 +1567,15 @@ local function handle(player, payload)
     end
     local metadataOnly=bankAction or action=="SetFitPivot"
         or action=="CreateAssembly" or action=="UpdateAssembly"
+        or action=="DetectConnectedAssembly"
         or action=="Group" or action=="Ungroup"
         or action=="SetGrounded"
     -- Mark dirty BEFORE optional geometry rebuild: a rebuild error must
     -- not silently discard the already-committed edit from autosaving.
     if result and persistence and not simulationAction
         and (not bankAction or action=="PlaceComponentBank")
-        and action~="GetMechanismInfo" then
+        and action~="GetMechanismInfo"
+        and action~="DetectConnectedAssembly" then
         persistence:MarkDirty(player)
     end
     if result and mechanical and not simulationAction
@@ -1588,8 +1594,10 @@ local function handle(player, payload)
             then extra else nil,
         componentId = if result and (action == "Group" or action == "DuplicateComponent")
             then extra else nil,
-        assemblyId=if result and assemblyAction then detail else nil,
-        data=if result and bankAction then detail else nil,
+        assemblyId=if result and (action=="CreateAssembly"
+            or action=="UpdateAssembly") then detail else nil,
+        data=if result and (bankAction
+            or action=="DetectConnectedAssembly") then detail else nil,
     }
 end
 
