@@ -81,7 +81,8 @@ function Transmission.new(graph,copies,runtime)
             if not group then
                 group={Id=key,Models={},Gears={},ShaftCandidates={},Root=nil,
                     AxisSource=nil,VelocityActuator=nil,VirtualSpeed=0,
-                    TargetSpeed=0,Grounded=false,Braking=false}
+                    TargetSpeed=0,Grounded=false,Braking=false,
+                    ActiveDrive=false,DriveTorque=0}
                 groups[key]=group
             end
             table.insert(group.Models,clone)
@@ -351,6 +352,13 @@ end
 -- controls. This eliminates self-chasing jitter after releasing a drive.
 function Transmission:Step(dt)
     dt=math.clamp(dt,1/240,0.07)
+    -- These flags represent THIS heartbeat's actual powered graph.
+    -- Do not mistake a cached target speed or coast-down brake for a
+    -- motor: Vector Joints must never backfeed a stale speed command.
+    for _,group in pairs(self.Groups) do
+        group.ActiveDrive=false
+        group.DriveTorque=0
+    end
     self.ScanElapsed+=dt
     if self.ScanElapsed>=SCAN_INTERVAL then
         self.ScanElapsed=0
@@ -433,6 +441,12 @@ function Transmission:Step(dt)
                     -MAX_OUTPUT_SPEED,MAX_OUTPUT_SPEED)
                 group.VirtualSpeed=group.TargetSpeed
                 group.Braking=true
+                if unanchored(group) then
+                    group.ActiveDrive=true
+                    group.DriveTorque=math.clamp(
+                        drive.Weight/math.max(0.1,math.abs(factor[group] or 1)),
+                        10,MAX_OUTPUT_TORQUE)
+                end
                 if group~=lead and unanchored(group) then
                     local actuator=group.VelocityActuator
                     if actuator then
@@ -539,6 +553,8 @@ end
 function Transmission:StopMotion()
     self:ClearDrives()
     for _,group in pairs(self.Groups) do
+        group.ActiveDrive=false
+        group.DriveTorque=0
         if group.VelocityActuator then
             group.VelocityActuator.AngularVelocity=Vector3.zero
             group.VelocityActuator.Enabled=false
