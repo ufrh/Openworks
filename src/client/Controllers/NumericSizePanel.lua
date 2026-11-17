@@ -35,7 +35,7 @@ function Numeric.new(gui)
         })
     end
     text(frame,"PRECISE DIMENSIONS",16,11,270,25,15)
-    text(frame,"All values in U • exact to 0.01 U",16,38,300,20,11,
+    text(frame,"All values in U • exact to "..tostring(Grid.NumericSizeStepU).." U",16,38,300,20,11,
         Color3.fromRGB(146,180,199))
     for i,name in ipairs({"X","Y","Z"}) do
         text(frame,name,16,65+(i-1)*36,26,29,13)
@@ -108,16 +108,16 @@ function Numeric:Apply()
     for i=1,3 do
         local n=tonumber(self.Fields[i].Text)
         if not n or n~=n or n==math.huge or n==-math.huge
-            or n<0.25 or n>Grid.MaxUnits then
+            or n<Grid.MinSizeStepU or n>Grid.MaxUnits then
             self.Status.Text="Enter a value between 0.25 and 64 U"
             return
         end
-        local ticks=n*100
+        local ticks=n/Grid.NumericSizeStepU
         if math.abs(ticks-math.round(ticks))>1e-5 then
-            self.Status.Text="Use at most two decimal places (0.01 U)"
+            self.Status.Text="Use exact "..tostring(Grid.NumericSizeStepU).." U increments"
             return
         end
-        v[i]=math.round(ticks)/100
+        v[i]=math.round(ticks)*Grid.NumericSizeStepU
     end
     if self.Mode=="UniformDiameter_1U" then
         v[2],v[3]=v[1],v[1]
