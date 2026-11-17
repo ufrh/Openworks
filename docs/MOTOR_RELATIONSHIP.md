@@ -41,7 +41,10 @@ one of the connected parts and open its **Motor** relationship to configure it.
 
 The motor drives the **shaft**, never the hole-block housing. If the assembly
 has no explicit grounding, its motor hole block is grounded automatically
-to keep the housing stationary. User-authored grounding takes precedence.
+to keep the housing stationary. **The motor's hole block is always fixed in
+simulation**, even when other parts were explicitly grounded. The driven
+shaft and every gear welded to its rigid group are always released from
+grounding during simulation; this does not modify saved construction flags.
 
 - **No mounted gear:** the continuous drive uses a passive
   `HingeConstraint` with a smooth, torque-limited `AngularVelocity`
@@ -52,8 +55,13 @@ to keep the housing stationary. User-authored grounding takes precedence.
   complete shaft-and-gear rigid group. No native hinge motor is allowed to
   compete with it. The motor's key input drives the **same shaft ID and axle
   orientation** as a hand crank; its welded input gear, meshed output gears
-  and compound trains advance together. Server Heartbeat integrates rotation
-  without a fixed 60 Hz gate. Geared servo control uses a signed, unwrapped
+  and compound trains advance together. For older builds where a
+  concentric, clearance-validated gear sits on the shaft but the Hub weld is
+  absent, the simulation temporarily includes that orphan gear in the shaft
+  group. The author should Smart Fit that gear to save the weld permanently;
+  geometrically invalid hubs are rejected with a useful error. Server
+  Heartbeat integrates rotation without a fixed 60 Hz gate. Geared servo
+  control uses a signed, unwrapped
   shaft angle with a capped target displacement to prevent overshoot.
 - **Torque:** native shaft motors and servos honor physical drive budgets.
   Geared groups are kinematic, like hand-crank-driven gear trains, so their
