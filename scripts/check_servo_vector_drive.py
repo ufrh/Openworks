@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Active-engine source regression: smooth servos and powered Vector Joint drive.
+"""Active-engine source regression: native servos and powered Vector Joint drive.
 
 Static integration checks only; a free chassis and loaded shaft must still
 be playtested in Roblox Studio.
@@ -19,19 +19,23 @@ router=src("src/server/Runtime/UnifiedSimulationService.lua")
 checks={
     "Normal assemblies route through active physical runtime":
         'return if rack then self.Rack else self.Physical' in router,
-    "Physical servo ramps position instead of jumping to final angle":
-        'local nextAngle=motor.ServoTarget' in physical
-        and 'motor.ServoVelocity=math.clamp(' in physical
-        and 'nextAngle=math.clamp(nextAngle,' in physical
-        and 'constraint.TargetAngle=nextAngle' in physical,
-    "Physical servo has one relative hinge actuator, not a second world motor":
-        'constraint.ActuatorType=Enum.ActuatorType.Servo' in physical
-        and 'drive.Enabled=motor.DriveType~="Servo"' in physical
-        and 'then Vector3.zero else bearingAxis*motor.NativeSpeed' in physical,
-    "Rack native servos use same position and acceleration ramp":
-        'motor.ServoTarget=nextAngle' in rack
+    "Physical native Servo receives direct key-selected target angle":
+        'hinge.TargetAngle=if motor.On then motor.TargetAngle else 0' in physical
+        and 'hinge.AngularSpeed=math.abs(motor.Speed)' in physical
+        and 'hinge.ServoMaxTorque=motor.Torque' in physical
+        and 'hinge.AngularResponsiveness=45' in physical,
+    "Physical servo has no custom controller or second world drive":
+        'ServoVelocity' not in physical
+        and 'ServoTarget' not in physical
+        and 'motor.DriveType=="Servo" then' in physical
+        and 'if motor.DriveType=="Servo" then\n                -- Direct native servo control' in physical
+        and 'if motor.On then\n                markVectorSource(session,shaft,motor.Torque)' in physical,
+    "Rack physical servo is native; kinematic rack servo fails explicitly":
+        'hinge.TargetAngle=if motor.On then motor.TargetAngle else 0' in rack
         and 'hinge.ActuatorType=Enum.ActuatorType.Servo' in rack
-        and 'motor.Drive.Enabled=motor.DriveType~="Servo"' in rack,
+        and 'if motor.Kinematic and motor.DriveType=="Servo" then' in rack
+        and 'ServoVelocity' not in rack
+        and 'ServoTarget' not in rack,
     "Vector Joint retains unrestrained ball pivot":
         'Instance.new("BallSocketConstraint")' in vector
         and 'ball.TwistLimitsEnabled=false' in vector
@@ -51,8 +55,8 @@ checks={
         'local slip=math.clamp(omegaA-j.Sign*omegaB,-25,25)' in vector
         and 'j.TorqueA.Torque=-axisA*effort' in vector
         and 'j.TorqueB.Torque=axisB*(j.Sign*effort)' in vector,
-    "Physical runtime feeds real motor crank and gear sources":
-        'markVectorSource(session,shaft,motor.Torque)' in physical
+    "Physical runtime feeds real continuous motor crank and gear sources":
+        'if motor.On then\n                markVectorSource(session,shaft,motor.Torque)' in physical
         and 'markVectorSource(session,root,HandCrankMath.MaxTorque)' in physical
         and 'group.ActiveDrive and group.Root' in physical,
     "Gear relay cannot reuse old commanded speed after motor release":
