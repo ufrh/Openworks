@@ -500,7 +500,7 @@ function Panel:OnConstructionSelection()
     if self.Feedback then self.Feedback:Clear("context-selection") end
 end
 
-function Panel:SelectWorldAtCenter()
+function Panel:SelectWorldAtCenter(preserveBuildSelection)
     local camera=workspace.CurrentCamera
     local authored=workspace:FindFirstChild(Config.FolderName)
     if not camera or not authored then return nil end
@@ -518,7 +518,8 @@ function Panel:SelectWorldAtCenter()
     params.IgnoreWater=true
     local hit=workspace:Raycast(ray.Origin,ray.Direction*Grid.MaxDistance,params)
     if not hit then
-        self:Select(nil,false)
+        -- Inspecting empty space should not destroy an Edit multi-selection.
+        if not preserveBuildSelection then self:Select(nil,false) end
         return nil
     end
     local model=hit.Instance
@@ -533,7 +534,7 @@ function Panel:SelectWorldAtCenter()
     -- Show its joints rather than silently expanding to an entire editor
     -- component containing unrelated internal connections.
     local node=self:NodeForModel(model,self.Tools.PrimaryId=="Build")
-    self:Select(node,true)
+    self:Select(node,not preserveBuildSelection)
     return node
 end
 
@@ -1620,7 +1621,7 @@ function Panel:Start()
             and not player:GetAttribute("OPENWORKS_CursorUIOpen")
             and not player:GetAttribute("OPENWORKS_PlotMenuOpen")
             and not player:GetAttribute("OPENWORKS_PropertiesOpen") then
-            local node=self:SelectWorldAtCenter()
+            local node=self:SelectWorldAtCenter(self.Tools.PrimaryId=="Edit")
             if node then self:OpenForNode(node,UIS:GetMouseLocation())
             else self:CloseContext() end
         end
