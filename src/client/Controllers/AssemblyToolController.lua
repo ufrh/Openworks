@@ -17,7 +17,6 @@ local WorldMotion=require(script.Parent:WaitForChild("WorldMotion"))
 
 local player=Players.LocalPlayer
 local PURPLE=Color3.fromRGB(179,115,255)
-local MAX_SELECTION=128
 local Tool={}
 Tool.__index=Tool
 
@@ -454,16 +453,6 @@ function Tool:ToggleMember(model,forceSingle)
                 return
             end
         end
-    end
-    local current=0
-    for _ in pairs(self.Selected) do current+=1 end
-    local added=0
-    for _,item in ipairs(targets) do
-        if not self.Selected[instanceId(item)] then added+=1 end
-    end
-    if not allSelected and current+added>MAX_SELECTION then
-        self:Tell("Assemblies support up to 128 primitives")
-        return
     end
     for _,item in ipairs(targets) do
         local id=instanceId(item)
