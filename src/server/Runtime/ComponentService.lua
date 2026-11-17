@@ -18,7 +18,6 @@ local RotationMath = require(ReplicatedStorage:WaitForChild("Openworks")
 
 local ComponentService = {}
 ComponentService.__index = ComponentService
-local MAX_GROUP = 128
 
 local function copied(data)
     local result = table.clone(data)
@@ -80,8 +79,8 @@ end
 
 function ComponentService:Group(player, payload)
     if type(payload.ids) ~= "table" then return false, "Select multiple primitives" end
-    if #payload.ids < 2 or #payload.ids > MAX_GROUP then
-        return false, "Select between 2 and 128 primitives"
+    if #payload.ids<2 then
+        return false,"Select at least 2 primitives"
     end
 
     local models, ids = {}, {}
@@ -158,9 +157,8 @@ function ComponentService:Plan(player, payload)
     if payload.ids~=nil then
         -- Temporary selection may include complete grouped components.
         -- Verify ownership and whole-component membership on the server.
-        if type(payload.ids)~="table" or #payload.ids<2
-            or #payload.ids>128 then
-            return nil,nil,"Select between 2 and 128 primitives"
+        if type(payload.ids)~="table" or #payload.ids<2 then
+            return nil,nil,"Select at least 2 primitives"
         end
         local seen={}
         members={}
@@ -435,9 +433,6 @@ function ComponentService:Duplicate(player, payload)
             end
             table.insert(relationships,spec)
         end
-        if d.mechanical:Count(player)+#relationships>128 then
-            return false,"Not enough mechanical relationship slots for copy"
-        end
     end
 
     local candidates, after = {}, {}
@@ -514,8 +509,8 @@ end
 -- groups. Connected relations are captured in the SAME undo transaction.
 function ComponentService:DeleteSelection(player,payload)
     local ids=payload.ids
-    if type(ids)~="table" or #ids<2 or #ids>128 then
-        return false,"Select between 2 and 128 parts to delete"
+    if type(ids)~="table" or #ids<2 then
+        return false,"Select at least 2 parts to delete"
     end
     local selected,seen={},{}
     for _,id in ipairs(ids) do
