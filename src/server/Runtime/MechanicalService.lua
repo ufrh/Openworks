@@ -877,7 +877,7 @@ function Mechanical:SmartMate(player, request, newSource)
         local requestedSnug=request.shaftDiameter
         local allowedSnug=nil
         if requestedSnug~=nil then
-            if newSource or reverse or #members~=1
+            if newSource or reverse
                 or typeof(requestedSnug)~="number" then
                 return false,"Invalid shaft resize in this fit"
             end
