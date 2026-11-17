@@ -373,22 +373,14 @@ function Mechanical:Restore(player, spec)
         constraint.Attachment0 = attachment0
         constraint.Attachment1 = attachment1
         constraint.Enabled=true
-        -- Only a physical shaft fitted through an opening can be driven.
-        -- The bearing keeps its real rotation axis and no fake joint exists.
-        if constraint:IsA("HingeConstraint") and spec.motorEnabled==true then
-            constraint.ActuatorType=if spec.motorDriveType=="Servo"
-                then Enum.ActuatorType.Servo else Enum.ActuatorType.Motor
+        -- Authored-world hinges are passive, including saved Motor
+        -- relationships. Only the ACTIVE physical/rack simulation creates
+        -- a shaft actuator. An authoring hinge motor can otherwise apply
+        -- unintended torque to the housing while the simulation is live.
+        constraint.ActuatorType=Enum.ActuatorType.None
+        if constraint:IsA("HingeConstraint") then
             constraint.AngularVelocity=0
             constraint.TargetAngle=0
-            constraint.AngularSpeed=math.abs(tonumber(spec.motorSpeed) or 3)
-            constraint.ServoMaxTorque=math.clamp(
-                tonumber(spec.motorTorque) or 3000,1,100000)
-            constraint.MotorMaxTorque=math.clamp(
-                tonumber(spec.motorTorque) or 3000,1,100000)
-            constraint.MotorMaxAcceleration=math.clamp(
-                tonumber(spec.motorAcceleration) or 40,0.1,1000)
-        else
-            constraint.ActuatorType=Enum.ActuatorType.None
         end
         -- A slider/cylinder ALWAYS has hard mechanical travel stops.
         -- User limits can narrow them but can never permit the shaft
@@ -496,9 +488,9 @@ function Mechanical:TuneBearingMotor(player,request)
     joint:SetAttribute("MotorTargetAngle",angle)
     local hinge=joint:FindFirstChildOfClass("HingeConstraint")
     if hinge then
-        hinge.ActuatorType=if not enabled then Enum.ActuatorType.None
-            elseif driveType=="Servo" then Enum.ActuatorType.Servo
-            else Enum.ActuatorType.Motor
+        -- Tuning edits metadata only; never power the authored hinge.
+        -- The live runtime reads these motor settings for shaft-only drive.
+        hinge.ActuatorType=Enum.ActuatorType.None
         hinge.AngularVelocity=0
         hinge.MotorMaxTorque=torque
         hinge.MotorMaxAcceleration=accel
@@ -2713,10 +2705,9 @@ function Mechanical:ApplyJointEdit(player, record, undo)
         if spec.kind == "Bearing" then
             constraint.LowerAngle = spec.lowerLimit or -180
             constraint.UpperAngle = spec.upperLimit or 180
-            constraint.ActuatorType=if not spec.motorEnabled
-                then Enum.ActuatorType.None
-                elseif spec.motorDriveType=="Servo" then Enum.ActuatorType.Servo
-                else Enum.ActuatorType.Motor
+            -- Undo/redo must not reactivate the obsolete housing-side
+            -- authored hinge actuator. The runtime motor is shaft-only.
+            constraint.ActuatorType=Enum.ActuatorType.None
             constraint.AngularVelocity=0
             constraint.TargetAngle=0
             constraint.AngularSpeed=math.abs(spec.motorSpeed or 3)
