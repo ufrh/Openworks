@@ -20,6 +20,7 @@ kinematics = source("src/server/Runtime/GearKinematics.lua")
 bearings = source("src/server/Runtime/BearingSupport.lua")
 assembly = source("src/server/Runtime/AssemblyService.lua")
 assembly_tool = source("src/client/Controllers/AssemblyToolController.lua")
+mechanics = source("src/server/Runtime/MechanicalService.lua")
 
 checks = {
     "ConstructionService boots Unified": 'require(script.Parent:WaitForChild("UnifiedSimulationService"))' in construction,
@@ -27,7 +28,7 @@ checks = {
     "Physical shaft-only actuator": 'drive.Name="PoweredMotor_ShaftOnlyDrive"' in physical,
     "Physical bearing is passive": "constraint.ActuatorType=Enum.ActuatorType.None" in physical,
     "Physical motor transmits to mounted gears": "session.Gears:SetDrive(motor.ShaftId,motor.NativeSpeed" in physical,
-    "Physical always anchors stator": "for key in pairs(motorStators)" in physical,
+    "Physical resolves actual rigid bearing supports": "BearingSupport.Resolve(" in physical,
     "Physical frees motor rotor group": 'session.GroundKeys["p:"..tostring(id)]=nil' in physical,
     "Physical servo/hold/toggle": all(x in physical for x in (
         'motor.DriveType=="Servo"', 'motor.InputMode=="Toggle"',
@@ -35,7 +36,7 @@ checks = {
     "Rack motors register before kinematic skip": 'makeMotor(edge,nil,p1,runtime,true)' in rack,
     "Rack motors use actual kinematic solver": "if motorDrive then motorDrive.Speed" in rack
         and "session.Gears:Step(dt," in rack,
-    "Rack always anchors stator": "for key in pairs(motorStators)" in rack,
+    "Rack resolves actual rigid bearing supports": "BearingSupport.Resolve(" in rack,
     "Rack servo/hold/toggle": all(x in rack for x in (
         'motor.DriveType=="Servo"', 'motor.InputMode=="Toggle"',
         "motor.ShaftId")),
@@ -44,7 +45,19 @@ checks = {
     "Runtime path is visible in Studio Output": "[OPENWORKS][SIM ROUTER]" in router,
     "Physical isolated bearings": "BearingSupport.Resolve(" in physical,
     "Rack isolated bearings": "BearingSupport.Resolve(" in rack,
-    "Bearings do not auto-anchor welded chassis": "#housing.Models==1" in bearings,
+    "Bearings do not confuse editor components with chassis welds":
+        "ComponentId is just an EDITOR selection group" in bearings
+        and "GetAttribute(\"ComponentId\")" not in bearings
+        and "isStandaloneSupportGroup(housing)" in bearings,
+    "Standalone housings fixed from actual rigid group":
+        "groundKeys[key]=true" in bearings
+        and "if not isStandaloneSupportGroup(housing)" in bearings,
+    "Motor spin uses exact bearing hinge axis":
+        "motor.Constraint.Attachment1.WorldAxis" in physical,
+    "Authoring hinges never power the housing":
+        "constraint.ActuatorType=Enum.ActuatorType.None" in mechanics
+        and "hinge.ActuatorType=Enum.ActuatorType.None" in mechanics
+        and "Enum.ActuatorType.Motor" not in mechanics,
     "Bearings reject shaft welded to housing": "rotor==housing" in bearings,
     "Fast gear stages have separate output ceiling": "local MAX_OUTPUT_SPEED=240" in transmission,
     "Gear ratios are still tooth-count based": "ratio=-left.Teeth/right.Teeth" in transmission,
