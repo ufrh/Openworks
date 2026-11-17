@@ -1175,10 +1175,20 @@ function Controller:Start()
         end
     end))
     table.insert(self.Connections,UserInputService.InputBegan:Connect(function(input,processed)
-        if not self.Active or UserInputService:GetFocusedTextBox()
+        if (not self.Active
+            and player:GetAttribute("OPENWORKS_SimulationHasSeat")~=true)
+            or UserInputService:GetFocusedTextBox()
             or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
             or self.Tools:WasConsumed(input) then return end
         local key=input.KeyCode
+        -- Seated humanoids can unequip the native Simulate tool. P remains
+        -- the authoritative exit even after that normal Roblox behavior.
+        if self:IsSimulating()
+            and player:GetAttribute("OPENWORKS_SimulationHasSeat")==true
+            and key==Enum.KeyCode.P then
+            if not processed then self:StopRegisteredAssembly() end
+            return
+        end
         if self.Construction and
             (self.Construction.PendingMateChoice
                 or (self.Construction.Numeric and self.Construction.Numeric.Active)) then
