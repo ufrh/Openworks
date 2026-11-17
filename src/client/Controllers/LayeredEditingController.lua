@@ -160,22 +160,25 @@ function Layered:DepthModels(exclude)
     return layers
 end
 
-function Layered:Select(model)
-    local parent = self.Parent
-    if not model then parent:SetSelection(nil) return end
-
-    local componentId = model:GetAttribute("ComponentId")
+function Layered:Select(model,additive)
+    local parent=self.Parent
+    if not model then
+        if not additive then parent:SetSelection(nil) end
+        return
+    end
+    local componentId=model:GetAttribute("ComponentId")
     if parent.EditingComponentId then
-        if parent.EditingComponentId == componentId then
+        if parent.EditingComponentId==componentId then
             parent:SetSelection(model)
         else
-            parent:Message("Exit component editing to select other parts")
+            parent:Message("Press E to leave component editing")
         end
+    elseif additive then
+        -- Shift-click toggles complete primitives/components, rather than
+        -- resetting the previous selection on grouped geometry.
+        parent:ToggleMultiSelection(model)
     elseif componentId then
         parent:SetComponentSelection(componentId)
-    elseif game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftShift)
-        or game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.RightShift) then
-        parent:ToggleMultiSelection(model)
     else
         parent:SetSelection(model)
     end
@@ -183,10 +186,12 @@ function Layered:Select(model)
 end
 
 function Layered:PickCurrent()
+    local shift=UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
     local layers=self:DepthModels(nil)
     if #layers==0 then
         self.LastClickedModel=nil
-        self:Select(nil)
+        self:Select(nil,shift)
         return
     end
     local alt=game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftAlt)
@@ -199,7 +204,7 @@ function Layered:PickCurrent()
         self.DepthIndex=index%#layers
         choice=layers[self.DepthIndex+1]
         self.LastClickedModel=nil
-        self:Select(choice)
+        self:Select(choice,shift)
         self.Parent:Message("Selected layer "..(self.DepthIndex+1)
             .."/"..#layers)
         return
@@ -218,12 +223,12 @@ function Layered:PickCurrent()
         self.LastClickAt=0
         self.Parent.DirectDragCandidate=nil
         self.Parent.EditingComponentId=id
-        self:Select(choice)
+        self:Select(choice,false)
         self.Parent:Message("Editing a member of the component • E exits")
     else
         self.LastClickedModel=choice
         self.LastClickAt=now
-        self:Select(choice)
+        self:Select(choice,shift)
     end
 end
 
@@ -259,7 +264,9 @@ function Layered:CycleDepth(backward)
     local index = if at then at - 1 else self.DepthIndex
     self.DepthIndex = (index + (if backward then -1 else 1)) % #layers
     local target = layers[self.DepthIndex + 1]
-    self:Select(target)
+    -- Shift+Tab chooses the previous depth layer; it is NOT a
+    -- Shift-click additive toggle.
+    self:Select(target,false)
     self.Parent:Message("Depth " .. tostring(self.DepthIndex + 1) .. "/" .. tostring(#layers))
 end
 
