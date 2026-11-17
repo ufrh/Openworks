@@ -12,6 +12,7 @@ local ORDER={
     "Pulleys",
     "Fasteners",
     "Actuators",
+    "Seats",
     "Other",
 }
 local RANK={}
@@ -45,6 +46,8 @@ local function familyFor(id,folder,model)
     if name:find("gear",1,true) or name:find("bevel",1,true)
         or family=="gear" or family=="bevel"
         then return "Gears" end
+    if family=="seat" or name=="seatplate" or category=="seats"
+        then return "Seats" end
     if name:find("crank",1,true) or name:find("motor",1,true)
         or category=="actuators" then return "Actuators" end
     if name:find("slot",1,true) or name:find("hole",1,true)
