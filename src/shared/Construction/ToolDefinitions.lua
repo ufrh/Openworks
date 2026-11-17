@@ -5,7 +5,7 @@ local definitions = {
     { Id = "Build", Name = "Build", Tooltip = "Place primitives and saved components" },
     { Id = "Edit", Name = "Edit", Tooltip = "Select, reshape, transform, paint and fit authored geometry" },
     { Id = "Mechanics", Name = "Mechanics", Tooltip = "Connect parts; right-click any part to configure relationships" },
-    { Id = "AssemblySimulation", Name = "Assembly & Simulation", Tooltip = "Manage assemblies and simulate machines" },
+    { Id = "AssemblySimulation", Name = "Simulate", Tooltip = "Auto-detect and simulate any connected mechanism" },
 }
 for _, definition in ipairs(definitions) do
     table.freeze(definition)
