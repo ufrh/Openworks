@@ -2,6 +2,8 @@
 -- Scrap Mechanic-style logical wiring: always-on-top adornment dots and
 -- lines. Mouse presses and releases select endpoints; server validates
 -- ownership and persists routing. NO physical constraint is created.
+-- Use Roblox SCREEN space for both GetMouseLocation and hit/ray helpers,
+-- so the top-bar GUI inset cannot displace click targets from their dots.
 local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
 local UIS=game:GetService("UserInputService")
@@ -148,7 +150,7 @@ function Route:Refresh()
         local camera=workspace.CurrentCamera
         if from and camera then
             local mouse=UIS:GetMouseLocation()
-            local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
+            local ray=camera:ScreenPointToRay(mouse.X,mouse.Y)
             local finish=ray.Origin+ray.Direction*math.max(8,
                 (from.position-ray.Origin).Magnitude)
             local hovered=self:AtMouse(points,mouse)
@@ -174,7 +176,7 @@ function Route:AtMouse(points,mouse)
     local best=nil
     local dist=26
     for key,point in pairs(points or self.Points) do
-        local screen,visible=camera:WorldToViewportPoint(point.position)
+        local screen,visible=camera:WorldToScreenPoint(point.position)
         if visible and screen.Z>0 then
             local distance=(Vector2.new(screen.X,screen.Y)-mouse).Magnitude
             if distance<dist then
@@ -192,7 +194,7 @@ function Route:RaySeatAtMouse(mouse)
     local camera=workspace.CurrentCamera
     local folder=workspace:FindFirstChild(Config.FolderName)
     if not camera or not folder then return nil end
-    local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
+    local ray=camera:ScreenPointToRay(mouse.X,mouse.Y)
     local params=RaycastParams.new()
     params.FilterType=Enum.RaycastFilterType.Include
     params.FilterDescendantsInstances={folder}
