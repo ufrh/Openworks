@@ -14,6 +14,7 @@ layered=read("src/client/Controllers/LayeredEditingController.lua")
 menu=read("src/client/Controllers/ContextEditor.lua")
 server=read("src/server/Runtime/MechanicalService.lua")
 construct=read("src/server/Runtime/ConstructionService.lua")
+alignment=read("src/shared/Construction/AlignmentMath.lua")
 checks={
     "Single shaft center spans the extreme guide holes, not the first target":
         "function Fit.CenteredShaftOffset(" in multifit
@@ -27,12 +28,21 @@ checks={
         "local function candidateNear(candidate)" in multifit
         and "if near or Fit.Check(shaft,candidate,delta) then" in multifit
         and "local matched=candidateNear(candidate)" in multifit,
-    "Auto shaft placement uses shared pattern midpoint and 0.5 U depth":
+    "Auto shaft placement preserves exact geometric midpoint":
         "MultiFit.CenteredShaftOffset(" in smart
         and "cf=plan.delta*ghost:GetPivot()" in smart
-        and "offset=centered" in smart,
-    "Insertion solver does not stop after fitting the first opening":
-        "for _,otherHole in ipairs(requiredHoles)" in insertion
+        and "offset=centered" in smart
+        and "return midpointU,count,holes" in multifit
+        and "math.round(midpointU*2)" not in multifit,
+    "Exact midpoint remains valid through plan and server offset checks":
+        "function Alignment.IsOffsetValid(units)" in alignment
+        and "math.abs(units)<=Alignment.MaxOffsetUnits" in alignment
+        and "math.abs(units * 2 - math.round(units * 2))" not in alignment,
+    "Insertion solver preserves true midpoint and rejects off-center fallback":
+        "local centered=(requiredHoles and #requiredHoles>1)" in insertion
+        and "local anchorU=if centered then preferredU else" in insertion
+        and "if not found and not centered then" in insertion
+        and "for _,otherHole in ipairs(requiredHoles)" in insertion
         and "for _,otherHole in ipairs(requiredMovingHoles)" in insertion
         and "MultiFit.Check(shaftModel,otherHole)" in insertion
         and "MultiFit.Check(otherHole,shaftModel)" in insertion,
@@ -60,6 +70,20 @@ checks={
         'parent:Message("Fit and relationship committed")' in layered
         and 'self:CancelAlignment()' in layered
         and 'selected.Stage="Fit"' not in layered[layered.index("function Layered:ConfirmAlignment()"):layered.index("function Layered:Click()")],
+    "Manual preview retains the array of moving models":
+        "local fixed,seenMoving={},{}" in layered
+        and "if not seenMoving[id] then" in layered
+        and "MultiFit.Completeness(\n            moving,targets,fitted,align.Reverse)" in layered,
+    "After a failed relationship commit the same kind is retried, no modal":
+        "selected.CommitKind=choice" in layered
+        and "if selected.CommitKind then" in layered
+        and "onChoice(selected.CommitKind)" in layered
+        and "self.PendingFitRelationKind=kind" in build
+        and "if self.PendingFitRelationKind then" in build,
+    "Zero axial clearance creates a rotation-only multi-hole joint":
+        "fittedTravel=0" in server
+        and "fittedTravel<0.25" in server
+        and "The fitted rods leave no sliding travel" not in server,
 }
 for title,okay in checks.items():
     print(("PASS" if okay else "FAIL")+": "+title)
