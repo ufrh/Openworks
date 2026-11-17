@@ -955,6 +955,20 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 end
             end
             local centeredHoles=nil
+            local centeredMovingHoles=nil
+            if cf and kind=="Bore" and isOpening and #members>1 then
+                local centered,count,holes=MultiFit.CenteredReverseOffset(
+                    members,source,target)
+                if centered and count and count>1 then
+                    local plan=Alignment.ReversePlan(
+                        members,source,target,centered,roll or 0)
+                    if plan then
+                        cf=plan.delta*ghost:GetPivot()
+                        offset=centered
+                        centeredMovingHoles=holes
+                    end
+                end
+            end
             if cf and kind=="Bore" and isShaft then
                 -- The first hovered hole chooses the AXIS, not the final
                 -- shaft midpoint. For multiple coaxial guide holes use
@@ -979,7 +993,8 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                 -- search valid insertion depth on the same 0.5U lattice.
                 -- Probe EVERY moving member; never clip a hidden flange.
                 local resolved,newDepth=BoreInsertion.Resolve(ghost,
-                    source,target,isShaft,cf,offset or 0,ignored,centeredHoles)
+                    source,target,isShaft,cf,offset or 0,ignored,
+                    centeredHoles,centeredMovingHoles)
                 if resolved then
                     cf=resolved
                     offset=newDepth
@@ -1080,7 +1095,22 @@ function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, 
                     reverse=kind=="Bore" and isOpening,
                     approach=approach,score=score,
                     fittedCount=fitted and #fitted or 0,
-                    centeredGuideCount=centeredHoles and #centeredHoles or 0,
+                    centeredGuideCount=if centeredHoles then #centeredHoles
+                        elseif centeredMovingHoles then #centeredMovingHoles else 0,
+                    requiredFitTargets=if centeredHoles then (function()
+                        local ids={}
+                        for _,hole in ipairs(centeredHoles) do
+                            table.insert(ids,hole:GetAttribute("InstanceId"))
+                        end
+                        return ids
+                    end)() else nil,
+                    requiredMovingFitIds=if centeredMovingHoles then (function()
+                        local ids={}
+                        for _,hole in ipairs(centeredMovingHoles) do
+                            table.insert(ids,hole:GetAttribute("InstanceId"))
+                        end
+                        return ids
+                    end)() else nil,
                     snugDiameter=if kind=="Bore" and isShaft
                         then source:GetAttribute("OPENWORKS_AutoSnugDiameter")
                         else nil}
