@@ -16,6 +16,8 @@ local JointFrames = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("JointFrames"))
 local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SpringMath"))
+local RopeMath=require(ReplicatedStorage:WaitForChild("Openworks")
+    :WaitForChild("Construction"):WaitForChild("RopeMath"))
 local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GridMath"))
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
@@ -223,8 +225,26 @@ function Simulation:InputMotor(player,key,holding)
     end
 end
 
+function Simulation:InputRope(player,key,holding)
+    local session=self.Sessions[player]
+    if not session or session.Paused or type(key)~="string"
+        or #key>20 or type(holding)~="boolean" then return end
+    local now=os.clock()
+    for _,rope in ipairs(session.Ropes or {}) do
+        RopeMath.Input(rope,key,holding,now)
+    end
+end
+
 function Simulation:StepCranks(dt)
     for owner,session in pairs(self.Sessions) do
+        -- A rope operates as a native, force-limited winch only while
+        -- its saved key is held. Letting go leaves tension-only slack.
+        if not session.Paused then
+            local now=os.clock()
+            for _,rope in ipairs(session.Ropes or {}) do
+                RopeMath.Step(rope,dt,now)
+            end
+        end
         local motorCommand=nil
         for _,motor in ipairs(session.Motors or {}) do
             if session.Paused then
@@ -519,7 +539,7 @@ function Simulation:Graph(player, seed)
                 and (kind == "Bearing" or kind == "Slider"
                     or kind == "Cylindrical" or kind == "Fixed"
                     or kind == "Spring" or kind == "Weld" or kind == "Bolt"
-) then
+                    or kind == "Rope") then
                 local a, b = bodyKey(source), bodyKey(target)
                 if a ~= b then
                     local edge = {source = source, target = target, kind = kind,
@@ -661,6 +681,7 @@ function Simulation:Start(player, payload)
         RackDirection=0,RackLastInput=0,
         Gears=nil,
         Motors={},
+        Ropes={},
         UnregisteredGears=unregisteredGears,
     }
     for _,edge in ipairs(graph.edges) do
@@ -743,6 +764,14 @@ function Simulation:Start(player, payload)
                 -- Legacy K relationships are OPTIONAL metadata.
                 -- Meshing and transmission use geometry every frame.
                 continue
+            elseif edge.kind=="Rope" then
+                local settings=RopeMath.Attributes(edge.relation)
+                local rope=RopeMath.Compile(edge.source,edge.target,
+                    p0,p1,runtime,settings,
+                    edge.relation:GetAttribute("RelationId"),false)
+                table.insert(session.Constraints,rope)
+                table.insert(session.Ropes,
+                    RopeMath.NewRuntime(rope,edge.relation))
             elseif session.Gears:IsKinematic(edge.source:GetAttribute("InstanceId"))
                 or session.Gears:IsKinematic(edge.target:GetAttribute("InstanceId")) then
                 -- Scripted gear groups use the SAME Kinematics:Step as a
@@ -1168,6 +1197,15 @@ function Simulation:SyncRelationship(player,relation)
         return false,"Relationship is outside the active simulation"
     end
     local kind=relation:GetAttribute("Kind")
+    if kind=="Rope" then
+        for _,rope in ipairs(session.Ropes or {}) do
+            if rope.RelationId==id then
+                RopeMath.ApplyTuning(rope,relation)
+                break
+            end
+        end
+        return true
+    end
     for _,constraint in ipairs(session.Constraints) do
         if constraint.Parent
             and constraint:GetAttribute("AuthoredRelationId")==id then
@@ -1261,6 +1299,9 @@ function Simulation:Pause(player)
     self:StopRack(session)
     for _,motor in ipairs(session.Motors or {}) do
         stopMotor(motor)
+    end
+    for _,rope in ipairs(session.Ropes or {}) do
+        RopeMath.Stop(rope)
     end
     if session.Gears then session.Gears:StopMotion() end
     local state = {}
