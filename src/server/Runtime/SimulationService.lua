@@ -1152,16 +1152,27 @@ function Simulation:Start(player, payload)
                     error("Motor housing is welded to a gear or shaft. "
                         .."Remove that rigid weld: hole blocks must stay fixed")
                 end
-                if session.GroundKeys[edge.a] then
-                    error("Motor shaft is grounded. Release the shaft or "
-                        .."its welded gear; ground only the housing")
-                end
                 local gearGroup=session.Gears.ById[shaftId]
                 local housingGroup=session.Gears.ById[holeId]
                 if gearGroup and housingGroup and gearGroup==housingGroup then
                     error("Motor shaft and hole block are rigidly welded "
                         .."together. Remove the weld so only the shaft spins")
                 end
+                -- Existing saves may have the shaft or a drive gear marked
+                -- Grounded. For a powered bearing that is backwards:
+                -- release the ENTIRE welded shaft/gear group at runtime,
+                -- keeping authored editor flags intact for undo and save.
+                -- The housing is anchored separately as the stator.
+                if gearGroup then
+                    for id,group in pairs(session.Gears.ById) do
+                        if group==gearGroup then
+                            session.GroundKeys["p:"..tostring(id)]=nil
+                        end
+                    end
+                else
+                    session.GroundKeys[edge.a]=nil
+                end
+                session.GroundKeys[edge.b]=true
             end
         end
         if not hasExplicitGround and not next(session.GroundKeys)
