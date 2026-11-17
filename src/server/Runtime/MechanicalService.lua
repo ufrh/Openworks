@@ -509,7 +509,17 @@ function Mechanical:TuneBearingMotor(player,request)
         or accel<0.1 or accel>1000 then
         return false,"Motor requires valid key, speed, torque and acceleration"
     end
+    if request.controlName~=nil and (
+        type(request.controlName)~="string"
+        or #request.controlName<1 or #request.controlName>40
+        or request.controlName:find("[%c]")
+        or not request.controlName:find("%S")) then
+        return false,"Motor name must be 1–40 printable characters"
+    end
     local old=self:Snapshot(joint)
+    if request.controlName~=nil then
+        joint:SetAttribute("ControlName",request.controlName)
+    end
     joint:SetAttribute("MotorEnabled",enabled)
     joint:SetAttribute("MotorKey",key)
     joint:SetAttribute("MotorSpeed",speed)
@@ -1681,8 +1691,18 @@ function Mechanical:TuneRope(player,request)
     end
     local settings,why=RopeMath.Settings(current,(p1-p0).Magnitude)
     if not settings then return false,why end
+    if request.controlName~=nil and (
+        type(request.controlName)~="string"
+        or #request.controlName<1 or #request.controlName>40
+        or request.controlName:find("[%c]")
+        or not request.controlName:find("%S")) then
+        return false,"Winch name must be 1–40 printable characters"
+    end
     local before=self:Snapshot(relation)
     RopeMath.Write(relation,settings)
+    if request.controlName~=nil then
+        relation:SetAttribute("ControlName",request.controlName)
+    end
     local rope=relation:FindFirstChildOfClass("RopeConstraint")
     if rope then
         rope.Length=settings.ropeLength
