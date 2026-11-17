@@ -1097,7 +1097,8 @@ def main() -> int:
           and 'mateKind="Hub"' in layered
           and 'relationKind=choice' in layered
           and 'parent.UnifiedExplorer:ChooseFit(' in layered
-          and 'selected.FittedCount or 1))' in layered)
+          and 'selected.FittedCount or 1,nil,' in layered
+          and 'self:CancelAlignment()' in layered)
     check("Simulation uses gear center axis for physical hinge",
           'JointFrames.ForOpening(edge.target)' in simulation
           and 'local explicit = axisOverride(model)' in read("src/shared/Construction/AlignmentMath.lua")
@@ -1140,7 +1141,8 @@ def main() -> int:
     check("One shaft can pierce several ungrouped owned bore models",
           'function Fit.StationarySet(movingMembers,primary,all,delta,ignored)' in multi_fit
           and 'if #shafts>0 and movingHoles==0 then' in multi_fit
-          and 'if Fit.Check(shaft,candidate,delta) then' in multi_fit
+          and 'if near or Fit.Check(shaft,candidate,delta) then' in multi_fit
+          and 'function Fit.CenteredShaftOffset(' in multi_fit
           and 'and not usedStationary[pair.stationaryId]' in multi_fit
           and 'and not usedMoving[pair.movingId]' in multi_fit
           and 'MultiFit.StationarySet(members,target,' in mechanical
