@@ -28,6 +28,7 @@ local FastenerLibrary = require(script.Parent:WaitForChild("FastenerLibrary"))
 local HandCrankLibrary = require(script.Parent:WaitForChild("HandCrankLibrary"))
 local ShaftLibrary = require(script.Parent:WaitForChild("ShaftLibrary"))
 local CompactHoleLibrary = require(script.Parent:WaitForChild("CompactHoleLibrary"))
+local SeatLibrary = require(script.Parent:WaitForChild("SeatLibrary"))
 local AssemblyService = require(script.Parent:WaitForChild("AssemblyService"))
 local PlotService = require(script.Parent:WaitForChild("PlotService"))
 local PlotPersistence = require(script.Parent:WaitForChild("PlotPersistence"))
@@ -125,6 +126,7 @@ local function snapshot(model)
     return {
         instanceId = model:GetAttribute("InstanceId"),
         templateId = model:GetAttribute("TemplateId"),
+        seatRole = model:GetAttribute("SeatRole"),
         position = model:GetPivot().Position,
         steps = {
             x = model:GetAttribute("RotX") or 0,
@@ -199,6 +201,9 @@ local function createFromTemplate(player, templateId, instanceId, bypassLimit)
 
     MaterialCatalog.Apply(model,"Steel")
     PaintCatalog.Apply(model,"Factory",nil)
+    if SeatLibrary.IsSeat(model) then
+        SeatLibrary.Apply(model,model:GetAttribute("SeatRole"))
+    end
     return model
 end
 
@@ -340,6 +345,9 @@ local function applyState(model, data)
         then data.materialId else "Steel")
     PaintCatalog.Apply(model,if PaintCatalog.IsValidFinish(data.paintFinish)
         then data.paintFinish else "Factory",data.paintColorHex)
+    if SeatLibrary.IsSeat(model) then
+        SeatLibrary.Apply(model,data.seatRole)
+    end
 end
 
 
@@ -1732,6 +1740,7 @@ function Service.Start()
     PulleyLibrary.Ensure()
     FastenerLibrary.Ensure()
     HandCrankLibrary.Ensure()
+    SeatLibrary.Ensure()
     -- The motor is a mechanical relation, never a prefab.
     -- Remove only the abandoned generated DCMotor template from older Studio
     -- places. Do not touch authored constructions or other actuator stock.
