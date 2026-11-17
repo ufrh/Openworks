@@ -770,18 +770,22 @@ function Simulation:Start(player, payload)
                 weld.Parent = runtime
             elseif edge.kind=="Spring" then
                 local mode=edge.relation:GetAttribute("SpringMode")
-                -- Old piston/plate labels are normalized to a free spring.
+                -- A spring always moves on a single linear axis. Guide
+                -- frames are shared with authoring so saved mechanisms
+                -- compile identically in both ACTIVE simulation engines.
                 mode="General"
                 local world0,world1=SpringMath.Frames(
                     edge.source,edge.target,mode
                 )
+                local guide0,guide1=SpringMath.AxisFrames(world0,world1,
+                    p0.CFrame.UpVector)
                 local s0=Instance.new("Attachment")
                 s0.Name="SimSpringFixed"
-                s0.CFrame=p0.CFrame:ToObjectSpace(CFrame.new(world0))
+                s0.CFrame=p0.CFrame:ToObjectSpace(guide0)
                 s0.Parent=p0
                 local s1=Instance.new("Attachment")
                 s1.Name="SimSpringMoving"
-                s1.CFrame=p1.CFrame:ToObjectSpace(CFrame.new(world1))
+                s1.CFrame=p1.CFrame:ToObjectSpace(guide1)
                 s1.Parent=p1
                 local spring=Instance.new("SpringConstraint")
                 spring.Name="Spring_"..mode
@@ -804,7 +808,21 @@ function Simulation:Start(player, payload)
                     edge.relation:GetAttribute("RelationId"))
                 spring.Parent=runtime
                 table.insert(session.Constraints,spring)
-                -- Free spring: no hidden prismatic or other motion guide.
+                -- The spring produces restoring force along this axis.
+                -- The native guide prevents lateral drift and relative
+                -- twisting, but allows UNLIMITED axis displacement here;
+                -- spring MinLength/MaxLength already govern its travel.
+                local guide=Instance.new("PrismaticConstraint")
+                guide.Name="SpringAxisGuide"
+                guide.Attachment0=s0
+                guide.Attachment1=s1
+                guide.LimitsEnabled=false
+                guide.ActuatorType=Enum.ActuatorType.None
+                guide.Enabled=true
+                guide:SetAttribute("AuthoredRelationId",
+                    edge.relation:GetAttribute("RelationId"))
+                guide.Parent=runtime
+                table.insert(session.Constraints,guide)
             else
                 local worldFrame = JointFrames.ForOpening(edge.target)
                 if not worldFrame then error("Joint opening axis is unavailable") end
