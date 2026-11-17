@@ -136,17 +136,15 @@ function Controller:IsSimulating()
     return player:GetAttribute("OPENWORKS_Simulating") == true
 end
 
--- One simulation lifecycle entry point shared by keyboard P and the unified
--- Assembly/Simulation Properties pane. Never start an unregistered mechanism.
+-- One simulation lifecycle entry point. Any owned primitive selects
+-- its entire connected mechanism; registration and naming are obsolete.
 function Controller:StartRegisteredAssembly(seed)
     if self.Busy or self:IsSimulating() or self.Mode~="Simulate"
         or not seed or not seed.Parent
         or seed:GetAttribute("OwnerUserId")~=player.UserId then return false end
     local id=seed:GetAttribute("InstanceId")
-    local assemblyId=seed:GetAttribute("AssemblyId")
-    if type(id)~="string" or type(assemblyId)~="string"
-        or assemblyId=="" then
-        self:Message("Select a registered assembly first")
+    if type(id)~="string" or id=="" then
+        self:Message("Aim at any part of the mechanism")
         return false
     end
     local ok=self:Request({
@@ -155,8 +153,8 @@ function Controller:StartRegisteredAssembly(seed)
     if ok then
         self:Reset()
         self.SimSeedId=id
-        self.SimAssemblyId=assemblyId
-        self.SimAssemblyName=seed:GetAttribute("AssemblyName") or "Assembly"
+        self.SimAssemblyId="connected:"..id
+        self.SimAssemblyName="Connected mechanism"
         if self.UnifiedExplorer then
             self.UnifiedExplorer:OnSimulationSessionChanged()
         end
@@ -185,10 +183,11 @@ function Controller:ToggleSimulation()
         self:StopRegisteredAssembly()
         return
     end
+    -- Crosshair selection wins; any connected part is a valid seed.
     local chosen=self.UnifiedExplorer and self.UnifiedExplorer.Selected
-    local seed=chosen and chosen.kind=="assembly"
-        and chosen.members and chosen.members[1] or nil
-    self:StartRegisteredAssembly(seed or self:Pick())
+    local seed=self:Pick() or (chosen and chosen.members
+        and chosen.members[1] or nil)
+    self:StartRegisteredAssembly(seed)
 end
 
 function Controller:Message(message)
@@ -257,14 +256,13 @@ function Controller:RefreshHUD()
         return
     end
     if self.Mode=="Simulate" then
-        self.Header.Text="SIMULATE / MECHANICAL ASSEMBLY"
+        self.Header.Text="SIMULATE / CONNECTED MECHANISM"
         if not self:IsSimulating() then
             local aimed=self:Pick()
-            local name=aimed and aimed:GetAttribute("AssemblyName")
-            self.Detail.Text=if type(name)=="string" and name~=""
-                then name.."  /  REGISTERED"
-                else "No registered assembly selected"
-            self.Help.Text="P run ungrounded assembly • G configure grounding"
+            self.Detail.Text=if aimed then
+                "Connected mechanism  /  READY"
+                else "Aim at any connected part to simulate"
+            self.Help.Text="P simulate whole connected mechanism • G ground part"
         else
             local paused=player:GetAttribute("OPENWORKS_SimulationPaused")==true
             local grounded=player:GetAttribute("OPENWORKS_Grounded")~=false
