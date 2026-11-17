@@ -18,6 +18,7 @@ local SpringMath = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("SpringMath"))
 local RopeMath=require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("RopeMath"))
+local SeatRuntime=require(script.Parent:WaitForChild("SeatRuntime"))
 local Grid = require(ReplicatedStorage:WaitForChild("Openworks")
     :WaitForChild("Construction"):WaitForChild("GridMath"))
 local HandCrankMath = require(ReplicatedStorage:WaitForChild("Openworks")
@@ -158,6 +159,7 @@ local function ensureContinuousDrive(motor)
 end
 
 local function configureMotor(motor,relation)
+    motor.SeatId=relation:GetAttribute("SeatId")
     motor.Key=relation:GetAttribute("MotorKey") or "F"
     motor.Speed=relation:GetAttribute("MotorSpeed") or 3
     motor.Torque=math.clamp(relation:GetAttribute("MotorTorque") or 3000,1,100000)
@@ -245,6 +247,9 @@ function Simulation:InputMotor(player,key,holding)
     local now=os.clock()
     for _,motor in ipairs(session.Motors or {}) do
         if motor.Key~=key then continue end
+        if holding and not SeatRuntime.CanControl(player,session,motor.SeatId) then
+            continue
+        end
         if motor.InputMode=="Toggle" then
             if holding and not motor.Latched then motor.On=not motor.On end
             motor.Latched=holding
@@ -281,6 +286,11 @@ function Simulation:StepCranks(dt)
             if session.Paused then
                 stopMotor(motor)
                 continue
+            end
+            if motor.SeatId and not SeatRuntime.CanControl(owner,session,motor.SeatId) then
+                motor.Held=false
+                motor.On=false
+                motor.Latched=false
             end
             if motor.InputMode=="Hold" and (not motor.Held
                 or os.clock()-motor.LastInput>0.45) then
@@ -644,6 +654,7 @@ function Simulation:Stop(player)
     end
 
     self.Sessions[player] = nil
+    SeatRuntime.Stop(player,session)
     -- Remove live physics first, THEN bring edit geometry back.
     if session.World then session.World:Destroy() end
     for _, saved in ipairs(session.Originals) do
@@ -1185,6 +1196,7 @@ function Simulation:Start(player, payload)
         #session.Motors,#session.Gears.Gears))
 
     self:SetStatus(player,true,next(session.GroundKeys)~=nil)
+    SeatRuntime.Start(player,graph,copies,session)
     player:SetAttribute("OPENWORKS_SimulationPaused",false)
     return true,(session.AssemblyName
         and (tostring(session.AssemblyName).." • ") or "")
