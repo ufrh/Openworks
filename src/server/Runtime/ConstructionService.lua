@@ -1002,8 +1002,8 @@ local function verticalMove(player,payload)
     if scope=="Primitives" then
         -- The caller's exact Shift-selection; one transaction, no grouping.
         local ids=payload.ids
-        if type(ids)~="table" or #ids<2 or #ids>128 then
-            return false,"Select 2–128 distinct primitives"
+        if type(ids)~="table" or #ids<2 then
+            return false,"Select at least 2 distinct primitives"
         end
         local seen={}
         for _,primitiveId in ipairs(ids) do
@@ -1037,8 +1037,8 @@ local function verticalMove(player,payload)
             return false,"Invalid nudge selection scope"
         end
     end
-    if #selected==0 or #selected>128 then
-        return false,"Selection unavailable or too large"
+    if #selected==0 then
+        return false,"Selection unavailable"
     end
     -- All Y movement is quantized, with an optional Shift fine-step.
     -- The server chooses the actual increment, not the client.
