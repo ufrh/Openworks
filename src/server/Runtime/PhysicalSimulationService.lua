@@ -1384,38 +1384,39 @@ function Simulation:SyncRelationship(player,relation)
                 constraint.LimitsEnabled=relation:GetAttribute("LimitsEnabled")==true
                 constraint.LowerAngle=relation:GetAttribute("LowerLimit") or -180
                 constraint.UpperAngle=relation:GetAttribute("UpperLimit") or 180
-                local enabled=relation:GetAttribute("MotorEnabled")==true
-                constraint.ActuatorType=if enabled then Enum.ActuatorType.Motor
-                    else Enum.ActuatorType.None
+                -- Config changes reuse the SAME shaft actuator; no hinge
+                -- motor is ever reactivated during a relationship edit.
+                constraint.ActuatorType=Enum.ActuatorType.None
                 constraint.AngularVelocity=0
-                constraint.MotorMaxTorque=math.clamp(
-                    relation:GetAttribute("MotorTorque") or 3000,1,100000)
-                constraint.MotorMaxAcceleration=math.clamp(
-                    relation:GetAttribute("MotorAcceleration") or 40,0.1,1000)
+                local enabled=relation:GetAttribute("MotorEnabled")==true
                 local found=nil
                 for _,motor in ipairs(session.Motors) do
-                    if motor.RelationId==id then found=motor break end
+                    if motor.RelationId==id then
+                        found=motor
+                        break
+                    end
                 end
                 if found then
-                    found.Key=relation:GetAttribute("MotorKey") or "F"
-                    found.Speed=relation:GetAttribute("MotorSpeed") or 3
-                    found.Held=false
-                    found.LastInput=0
-                    if not enabled then
-                        for index=#session.Motors,1,-1 do
-                            if session.Motors[index]==found then
-                                table.remove(session.Motors,index)
+                    stopMotor(found)
+                    if enabled then
+                        setMotorDrive(found,relation)
+                    else
+                        if found.Drive then found.Drive:Destroy() end
+                        for i=#session.Motors,1,-1 do
+                            if session.Motors[i]==found then
+                                table.remove(session.Motors,i)
                                 break
                             end
                         end
                     end
                 elseif enabled then
-                    table.insert(session.Motors,{
-                        Constraint=constraint,RelationId=id,
-                        Key=relation:GetAttribute("MotorKey") or "F",
-                        Speed=relation:GetAttribute("MotorSpeed") or 3,
-                        Held=false,LastInput=0,
-                    })
+                    local shaft=constraint.Attachment1
+                        and constraint.Attachment1.Parent
+                    local joints=session.World:FindFirstChild("PhysicsJoints")
+                    if shaft and shaft:IsA("BasePart") and joints then
+                        table.insert(session.Motors,
+                            makeMotor(constraint,shaft,relation,joints))
+                    end
                 end
             elseif (kind=="Slider" or kind=="Cylindrical")
                 and (constraint:IsA("PrismaticConstraint")
@@ -1458,8 +1459,7 @@ function Simulation:Pause(player)
         self:StopCrank(session,crankId)
     end
     for _,motor in ipairs(session.Motors or {}) do
-        motor.Held=false
-        if motor.Constraint.Parent then motor.Constraint.AngularVelocity=0 end
+        stopMotor(motor)
     end
     if session.Gears then session.Gears:StopMotion() end
     if session.Belts then session.Belts:StopMotion() end
