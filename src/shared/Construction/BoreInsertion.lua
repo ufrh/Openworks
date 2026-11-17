@@ -102,7 +102,8 @@ end
 -- of distance from the intended position, without modifying dimensions.
 -- Both directions supported: shaft->hole and hole->shaft.
 function Insertion.Resolve(ghost:Model,source:Model,target:Model,
-    movingShaft:boolean,previewCF:CFrame,preferredU:number,ignored):
+    movingShaft:boolean,previewCF:CFrame,preferredU:number,ignored,
+    requiredHoles):
     (CFrame?,number?,string?)
     local shaft=if movingShaft then source else target
     local hole=if movingShaft then target else source
@@ -141,6 +142,17 @@ function Insertion.Resolve(ghost:Model,source:Model,target:Model,
         local fits=MultiFit.Check(
             if movingShaft then shaftModel else holeModel,
             if movingShaft then holeModel else shaftModel)
+        if fits and movingShaft and requiredHoles then
+            -- A clear fit at the first hole is NOT enough when the same
+            -- shaft is expected to span several independent lugs.
+            for _,otherHole in ipairs(requiredHoles) do
+                if not MultiFit.Check(shaftModel,otherHole) then
+                    fits=nil
+                    failure="Shaft must pass through every aligned guide hole"
+                    break
+                end
+            end
+        end
         if fits then
             local clear,reason=Insertion.Clear(ghost,ignored)
             if clear then
