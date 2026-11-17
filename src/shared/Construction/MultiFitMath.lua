@@ -252,6 +252,7 @@ function Fit.CenteredShaftOffset(shaft,primary,candidates)
     if not lowU then return nil end
     local minDepth,maxDepth=0,0
     local count=1
+    local holes={primary}
     local primarySize=primary.PrimaryPart.Size
     local primaryLocal=Alignment.TargetAxis(primary)
     local primaryThickness=math.abs(primaryLocal.X)*primarySize.X
@@ -282,6 +283,7 @@ function Fit.CenteredShaftOffset(shaft,primary,candidates)
         minDepth=math.min(minDepth,depth)
         maxDepth=math.max(maxDepth,depth)
         count+=1
+        table.insert(holes,hole)
     end
     if count<2 then return nil end
     -- The midpoint of the extreme guides, not an average biased toward
@@ -289,7 +291,7 @@ function Fit.CenteredShaftOffset(shaft,primary,candidates)
     local midpointU=(minDepth+maxDepth)*0.5/Grid.Unit
     local step=math.clamp(math.round(midpointU*2),
         math.ceil(lowU*2-1e-6),math.floor(highU*2+1e-6))
-    return step*0.5,count
+    return step*0.5,count,holes
 end
 
 -- If both sides contain the same number of guide sockets (e.g. four
