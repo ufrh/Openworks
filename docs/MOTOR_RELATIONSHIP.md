@@ -31,9 +31,16 @@ Both engines use `BearingSupport`: a drilled housing that is genuinely
 standalone is kept stationary when supporting a powered or geared shaft.
 A housing structurally welded into a vehicle chassis is **not automatically
 anchored**; it stays on the moving chassis and the bearing never receives
-motor actuation. Previously grounded motor shaft/drive-gear groups are
+motor actuation. A `ComponentId` editor group is **not a structural weld**:
+even if a loose motor housing belongs to a saved editor component, it still
+gets stationary bearing support. Only genuine rigid weld groups are
+considered chassis structure; multi-part tube chassis are never
+auto-anchored. Previously grounded motor shaft/drive-gear groups are
 released in temporary simulation state only. A shaft welded to its housing
-is rejected as mechanically locked.
+is rejected as mechanically locked. The motor drive follows the actual
+`HingeConstraint.Attachment1.WorldAxis` rather than an approximate
+primitive orientation. Authored construction hinges remain passive and
+never act as a second, housing-side motor.
 
 Studio Output prints `[OPENWORKS][SIM ROUTER]` with the selected engine and
 `[OPENWORKS][MOTOR] ACTIVE ...` with motor and gear counts.
