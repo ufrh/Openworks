@@ -196,8 +196,13 @@ function ComponentService:Plan(player, payload)
         end
     end
     if not anchor then return nil, nil, "Invalid component anchor" end
-    if anchor ~= FitOrigin.ComponentAnchor(members) then
-        return nil, nil, "Component alignment anchor changed; reselect it"
+    -- A temporary multi-selection has no single authored ComponentAnchorId.
+    -- Always choose its geometric center, matching the Edit preview.
+    -- A real saved component retains its own authored fit anchor.
+    local expected=if payload.ids then ComponentGeometry.CentralPrimitive(members)
+        else FitOrigin.ComponentAnchor(members)
+    if anchor ~= expected then
+        return nil,nil,"Selection alignment anchor changed; select parts again"
     end
 
     local anchorState = d.snapshot(anchor)
