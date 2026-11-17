@@ -29,7 +29,10 @@ checks = {
     "Physical bearing is passive": "constraint.ActuatorType=Enum.ActuatorType.None" in physical,
     "Physical motor transmits to mounted gears": "session.Gears:SetDrive(motor.ShaftId,motor.NativeSpeed" in physical,
     "Physical resolves actual rigid bearing supports": "BearingSupport.Resolve(" in physical,
-    "Physical frees motor rotor group": 'session.GroundKeys["p:"..tostring(id)]=nil' in physical,
+    "Physical honors authored grounds only":
+        "session.GroundKeys=explicitGround" in physical
+        and "session.GroundKeys[edge.b]=true" not in physical
+        and 'session.GroundKeys["p:"..tostring(id)]=nil' not in physical,
     "Physical servo/hold/toggle": all(x in physical for x in (
         'motor.DriveType=="Servo"', 'motor.InputMode=="Toggle"',
         "motor.Constraint.CurrentAngle")),
@@ -45,20 +48,25 @@ checks = {
     "Runtime path is visible in Studio Output": "[OPENWORKS][SIM ROUTER]" in router,
     "Physical isolated bearings": "BearingSupport.Resolve(" in physical,
     "Rack isolated bearings": "BearingSupport.Resolve(" in rack,
-    "Bearings do not confuse editor components with chassis welds":
-        "ComponentId is just an EDITOR selection group" in bearings
-        and "GetAttribute(\"ComponentId\")" not in bearings
-        and "isStandaloneSupportGroup(housing)" in bearings,
-    "Standalone housings fixed from actual rigid group":
-        "groundKeys[key]=true" in bearings
-        and "if not isStandaloneSupportGroup(housing)" in bearings,
+    "Bearing support is validation only, NEVER automatic anchoring":
+        "groundKeys is read-only here" in bearings
+        and "groundKeys[key]=true" not in bearings
+        and "grouped" not in bearings.lower(),
+    "Physical motor angular limits do not torque housing":
+        'and edge.relation:GetAttribute("MotorEnabled")~=true' in physical,
+    "Rack motor angular limits do not torque housing":
+        'and edge.relation:GetAttribute("MotorEnabled")~=true' in rack,
+    "Rack honors authored grounds only":
+        "session.GroundKeys=explicitGround" in rack
+        and "session.GroundKeys[edge.b]=true" not in rack
+        and 'session.GroundKeys["p:"..tostring(id)]=nil' not in rack,
     "Motor spin uses exact bearing hinge axis":
         "motor.Constraint.Attachment1.WorldAxis" in physical,
     "Authoring hinges never power the housing":
         "constraint.ActuatorType=Enum.ActuatorType.None" in mechanics
         and "hinge.ActuatorType=Enum.ActuatorType.None" in mechanics
         and "Enum.ActuatorType.Motor" not in mechanics,
-    "Bearings reject shaft welded to housing": "rotor==housing" in bearings,
+    "Bearings reject shaft welded to housing": "shaftGroup==housingGroup" in bearings,
     "Fast gear stages have separate output ceiling": "local MAX_OUTPUT_SPEED=240" in transmission,
     "Gear ratios are still tooth-count based": "ratio=-left.Teeth/right.Teeth" in transmission,
     "Output drive torque follows ratio and load": "local outputTorque=drive.Weight/ratio" in transmission,
