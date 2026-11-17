@@ -1019,64 +1019,38 @@ function Simulation:Start(player, payload)
                 end
             end
         end
-        local hasExplicitGround = next(explicitGround) ~= nil
-        session.GroundKeys = explicitGround
-        -- Retain real mobile chassis dynamics. Only isolated drilled
-        -- housings supporting powered/geared shafts become stationary.
-        -- Bearing constraints transfer no commanded motor rotation.
+        -- A motor bearing never grants grounding to its housing.
+        -- Nor may simulation silently remove a player's explicit ground.
+        -- Both bodies stay physically mobile unless the builder chose
+        -- Grounded on a member of their actual rigid welded group.
+        session.GroundKeys=explicitGround
+        local mobileHousings,bearingGroups,groundedHousings=
+            BearingSupport.Resolve(graph,session.Gears,session.GroundKeys)
         for _,edge in ipairs(graph.edges) do
             if edge.kind=="Bearing" and edge.relation
                 and edge.relation:GetAttribute("MotorEnabled")==true then
                 local rotor=session.Gears.ById[
                     edge.source:GetAttribute("InstanceId")]
                 if rotor then
-                    for id,group in pairs(session.Gears.ById) do
-                        if group==rotor then
-                            session.GroundKeys["p:"..tostring(id)]=nil
+                    for _,part in ipairs(graph.models) do
+                        local id=part:GetAttribute("InstanceId")
+                        if session.Gears.ById[id]==rotor
+                            and explicitGround["p:"..tostring(id)] then
+                            error("Motor rotor is explicitly grounded. "
+                                .."Unground its shaft/drive gear to rotate")
                         end
                     end
-                else
-                    session.GroundKeys[edge.a]=nil
                 end
             end
         end
-        local standaloneSupports,supportCandidates,structuralSupports=
-            BearingSupport.Resolve(graph,session.Gears,session.GroundKeys)
         print(string.format(
             "[OPENWORKS][BEARING][RackSimulationService] "
-            .."support groups anchored=%d, eligible=%d, "
-            .."welded into moving structure=%d",
-            standaloneSupports,supportCandidates,structuralSupports))
-        if not hasExplicitGround and standaloneSupports==0
-            and session.Grounded then
-            -- Aim-at-crank must not ground the actuator you're about to
-            -- turn. Prefer the BEARING HOUSING of a crank mechanism.
-            local hasCrank=false
-            for _,model in ipairs(graph.models) do
-                if HandCrankMath.IsCrank(model) then hasCrank=true break end
-            end
-            local groundedKey=if hasCrank then nil else graph.rootKey
-            if hasCrank then
-                for _,edge in ipairs(graph.edges) do
-                    if (edge.kind=="Bearing" or edge.kind=="Slider"
-                            or edge.kind=="Cylindrical")
-                        and Alignment.TargetAxis(edge.target)
-                        and not HandCrankMath.IsCrank(edge.target)
-                        and type(edge.target:GetAttribute("GearTeeth"))~="number" then
-                        groundedKey=edge.b
-                        break
-                    end
-                end
-            end
-            -- Without a real bearing housing and without explicit ground,
-            -- a crank mechanism is FREE rather than freezing the crank.
-            if groundedKey then session.GroundKeys[groundedKey]=true end
-        end
+            .."passive groups=%d, free housings=%d, "
+            .."explicitly grounded housings=%d (no auto-grounding)",
+            bearingGroups,mobileHousings,groundedHousings))
 
-        -- Bearing housings support geared axles translationally without
-        -- applying any native Roblox hinge force to gear rotation. Loose
-        -- geared shafts instead fall as one scripted rigid body; a free
-        -- bearing-mounted gear follows the shaft's movement.
+        -- Native bearings are passive revolute joints; motor inputs apply
+        -- shaft-only world-relative AngularVelocity with no grounded stator.
         session.Gears:ConfigureSupport(graph,copies,session.GroundKeys,
             created,player.Character,d.folder)
 
