@@ -190,7 +190,9 @@ local function configureMotor(motor,relation)
         hinge.AngularVelocity=0
         hinge.AngularSpeed=math.abs(motor.Speed)
         hinge.ServoMaxTorque=motor.Torque
-        hinge.AngularResponsiveness=45
+        -- Native servo damping, not a scripted motion loop. The Roblox
+        -- default of 45 can overshoot light shafts at high torque.
+        hinge.AngularResponsiveness=12
         hinge.TargetAngle=0
         hinge.ActuatorType=Enum.ActuatorType.Servo
     else
@@ -290,8 +292,13 @@ function Simulation:StepCranks(dt)
                 -- native hinge's target; Roblox applies all motion.
                 local hinge=motor.Constraint
                 if hinge and hinge.Parent then
-                    hinge.TargetAngle=if motor.On then motor.TargetAngle else 0
-                    hinge.ActuatorType=Enum.ActuatorType.Servo
+                    local goal=if motor.On then motor.TargetAngle else 0
+                    -- Leave the solver alone while idle: change native
+                    -- target and mode only on actual control transitions.
+                    if hinge.TargetAngle~=goal then hinge.TargetAngle=goal end
+                    if hinge.ActuatorType~=Enum.ActuatorType.Servo then
+                        hinge.ActuatorType=Enum.ActuatorType.Servo
+                    end
                 end
                 continue
             end
