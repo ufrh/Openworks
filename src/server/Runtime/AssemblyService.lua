@@ -11,7 +11,6 @@ local GearMath=require(RS:WaitForChild("Openworks")
 
 local Service={}
 Service.__index=Service
-local MAX_MEMBERS=128
 local MAX_NAME=48
 
 function Service.new(deps)
@@ -124,9 +123,6 @@ function Service:DetectConnected(player,payload)
             if not visited[nextId] then
                 visited[nextId]=true
                 table.insert(queue,nextId)
-                if #queue>MAX_MEMBERS then
-                    return false,"Mechanism exceeds 128 parts; split into assemblies"
-                end
             end
         end
     end
@@ -151,8 +147,8 @@ function Service:Requested(player,payload)
     if type(ids)~="table" then
         return nil,"Select at least one primitive or component"
     end
-    if #ids==0 or #ids>MAX_MEMBERS then
-        return nil,"Assemblies must contain 1–128 primitives"
+    if #ids==0 then
+        return nil,"Select at least one assembly primitive"
     end
     local unique,chosen={},{}
     for _,id in ipairs(ids) do
