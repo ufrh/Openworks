@@ -692,12 +692,16 @@ end
 
 function Simulation:Graph(player, seed)
     local d = self.D
-    -- Simulation is NEVER allowed to compile an arbitrary graph. Every
-    -- participant must first belong to a deliberately registered Assembly.
-    local assemblyId=seed:GetAttribute("AssemblyId")
-    if type(assemblyId)~="string" or assemblyId=="" then
-        return nil,"Equip Assembly, press N, name it, select parts and press Enter before simulating"
-    end
+    -- Always compile the current SERVER-DETECTED connected mechanism.
+    -- Manual names, old AssemblyId metadata and selection lists do not
+    -- define physics membership. The same detector powers purple hover.
+    local ok,reasonOrMessage,ids=d.assemblies:DetectConnected(player,{
+        seedId=seed:GetAttribute("InstanceId"),
+    })
+    if not ok then return nil,reasonOrMessage end
+    local selected={}
+    for _,id in ipairs(ids) do selected[id]=true end
+    local assemblyId="connected:"..tostring(seed:GetAttribute("InstanceId"))
     local owned = {}
     local bodies = {}
     for _, model in ipairs(d.folder:GetChildren()) do
@@ -765,13 +769,13 @@ function Simulation:Graph(player, seed)
         end
     end
 
-    -- A registered assembly is the ONLY scope. Disconnected mechanisms
-    -- deliberately added to the registration also simulate together;
-    -- registering one mechanism never silently includes other plots.
+    -- No disconnected named group can join the simulation. Resolve only
+    -- connected IDs returned by the authoritative mechanical graph.
     local visited={}
     local queue={}
-    for _,model in pairs(owned) do
-        if model:GetAttribute("AssemblyId")==assemblyId then
+    for _,id in ipairs(ids) do
+        local model=owned[id]
+        if model then
             local memberKey=bodyKey(model)
             if not visited[memberKey] then
                 visited[memberKey]=true
@@ -780,24 +784,8 @@ function Simulation:Graph(player, seed)
         end
     end
     if not visited[seedKey] or #queue==0 then
-        return nil,"Selected component is not registered to that assembly"
+        return nil,"Selected mechanism is no longer available"
     end
-
-    -- Do not compile HALF of an assembled mechanism. If the player adds
-    -- a shaft, crank or gear later, it must explicitly be selected into
-    -- the registered assembly using the dedicated Assembly tool.
-    for _,edge in ipairs(edges) do
-        local left=visited[edge.a]==true
-        local right=visited[edge.b]==true
-        if left~=right then
-            return nil,"A physically connected part is outside this assembly. Equip Assembly, select it and add the missing part"
-        end
-    end
-    -- A single primitive may be deliberately included from an editor
-    -- component. ComponentId is a selection group, NEVER a mechanical weld,
-    -- so partial editor grouping alone is not a physics error. Crossing
-    -- an actual mechanical relationship still requires both sides above.
-
     local models = {}
     for _, key in ipairs(queue) do
         for _, model in ipairs(bodies[key] or {}) do
@@ -812,7 +800,7 @@ function Simulation:Graph(player, seed)
     end
     return { models = models, edges = connected,
         bodies = bodies, included = visited, rootKey = seedKey,
-        assemblyId=assemblyId,assemblyName=seed:GetAttribute("AssemblyName") }
+        assemblyId=assemblyId,assemblyName="Connected mechanism" }
 end
 
 function Simulation:Stop(player)
@@ -851,10 +839,8 @@ function Simulation:Start(player, payload)
     local d = self.D
     local seed = d.findOwned(player, payload.seedId)
     if not seed then return false, "Aim at a constructed part you own" end
-    local assemblyId=seed:GetAttribute("AssemblyId")
-    if type(assemblyId)~="string" or assemblyId=="" then
-        return false,"Simulation requires an assembly. Equip Assembly, press N, select members and press Enter"
-    end
+    -- Any owned part is a valid simulation seed. Connected membership is
+    -- recomputed at start from real relationships, never saved lists.
     if not d.nearPlayer(player, seed:GetPivot().Position) then
         return false, "Mechanism is out of construction range"
     end
