@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify smooth live servos and powered Vector Joint transmission
+        run: python3 scripts/check_servo_vector_drive.py
       - name: Verify OPENWORKS current architecture
         run: python3 scripts/verify_source.py
       - name: Verify procedural prefab geometry topology
@@ -38,8 +40,6 @@ jobs:
         run: python3 scripts/check_cardinal_gear_geometry.py
       - name: Verify staged replacement gear mesh publisher
         run: python3 scripts/check_mesh_replacement_transaction.py
-      - name: Verify smooth live servos and powered Vector Joint transmission
-        run: python3 scripts/check_servo_vector_drive.py
       - name: Verify Edit-mode primitive and component duplication
         run: python3 scripts/check_edit_duplication.py
       - name: Verify compact gear bores, Edit copy fitting and rotation stop
