@@ -413,14 +413,20 @@ function Simulation:StepCranks(dt)
             if math.abs(motor.NativeSpeed)<0.008 and desired==0 then
                 motor.NativeSpeed=0
             end
-            drive.AngularVelocity=shaft.CFrame.RightVector*motor.NativeSpeed
+            -- Drive along the ACTUAL bearing axis, not an approximate
+            -- primitive RightVector. Tiny axis disagreement otherwise adds
+            -- an off-axis force and can twist a free hole housing.
+            local bearingAxis=if motor.Constraint.Attachment1
+                then motor.Constraint.Attachment1.WorldAxis
+                else shaft.CFrame.RightVector
+            drive.AngularVelocity=bearingAxis*motor.NativeSpeed
             -- A servo at rest still holds its position. Continuous motors
             -- release force at rest as a hand crank does.
             drive.Enabled=motor.DriveType=="Servo"
                 or math.abs(motor.NativeSpeed)>0.0001
             if session.Gears and math.abs(motor.NativeSpeed)>0.008 then
                 session.Gears:SetDrive(motor.ShaftId,motor.NativeSpeed,
-                    motor.Torque,shaft.CFrame.RightVector)
+                    motor.Torque,bearingAxis)
             end
         end
         local character=owner.Character
