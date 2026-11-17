@@ -2,7 +2,8 @@
 -- All player-facing construction dimensions are in U, never mm.
 local UNIT = 0.25
 local Grid = { Unit = UNIT, MaxUnits = 64, MaxDistance = 55,
-    MinSizeStepU = 0.25, DefaultSizeStepU = 0.25 }
+    MinSizeStepU = 0.25, DefaultSizeStepU = 0.25,
+    FitDiameterStepU=0.05, NumericSizeStepU=0.01 }
 
 local function nearest(value, step, offset)
     return math.floor((value - offset) / step + 0.5) * step + offset
@@ -81,8 +82,8 @@ function Grid.FromSurface(hitPosition, surfaceNormal, size, rotation)
         + math.abs(normal.Y) * dimensionsWorld.Y
         + math.abs(normal.Z) * dimensionsWorld.Z
     local desired = hitPosition + normal * (depth / 2 + 0.001)
-    -- The placement lattice is fixed at 0.5 U; dimensions originally
-    -- authored in quarter Units remain valid for backward compatibility.
+    -- Placement uses the SAME default 0.25-U lattice as resize grips;
+    -- dimensions authored in quarter Units retain exact parity.
     -- The final support-plane correction uses exact world coordinates.
     local target = Grid.SnapCenter(
         desired, size, rotation, Grid.DefaultSizeStepU
@@ -162,9 +163,11 @@ function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter, numeri
 
     -- Numeric sizing has 0.01-U resolution; the world still imposes
     -- minimum dimensions, maximum dimensions, and shape-specific axes.
-    local positionStep=if numericPrecision==true then 0.01 else Grid.MinSizeStepU
-    local diameterStep=if numericPrecision==true then 0.01
-        elseif fineDiameter==true then 0.05 else Grid.MinSizeStepU
+    local positionStep=if numericPrecision==true then Grid.NumericSizeStepU
+        else Grid.MinSizeStepU
+    local diameterStep=if numericPrecision==true then Grid.NumericSizeStepU
+        elseif fineDiameter==true then Grid.FitDiameterStepU
+        else Grid.MinSizeStepU
     if resizeMode == "XYZ_1U" then
         -- Full cylinder stock from older Studio libraries can advertise
         -- XYZ instead of LengthAndDiameter. Server fitPrecision is only
@@ -183,7 +186,8 @@ function Grid.ValidSize(templateSize, proposed, resizeMode, fineDiameter, numeri
     elseif resizeMode == "LengthAndDiameter_1U" then
         return unitValid(proposed.X,positionStep)
             and unitValid(proposed.Y,diameterStep,
-                if fineDiameter then 0.05 else Grid.MinSizeStepU)
+                if fineDiameter then Grid.FitDiameterStepU
+                else Grid.MinSizeStepU)
             and math.abs(proposed.Y - proposed.Z) < 0.001
     elseif resizeMode == "LengthOnly_1U" then
         return unitValid(proposed.X,positionStep)
