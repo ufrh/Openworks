@@ -755,6 +755,38 @@ function Simulation:Start(player, payload)
         -- ZERO Roblox physical constraints, including internal welds.
         session.Gears=GearKinematics.new(graph,copies)
 
+        -- A visually concentric input gear that is NOT actually fitted
+        -- cannot share the motor shaft's rotation. Explain the real
+        -- problem instead of starting a silently dead drive gear.
+        for _,edge in ipairs(graph.edges) do
+            if edge.kind=="Bearing"
+                and edge.relation:GetAttribute("MotorEnabled")==true then
+                local shaft=edge.source
+                local shaftId=shaft:GetAttribute("InstanceId")
+                if not session.Gears:IsKinematic(shaftId)
+                    and shaft.PrimaryPart then
+                    local shaftCF=shaft:GetPivot()
+                    local shaftAxis=shaftCF.RightVector
+                    for _,gear in ipairs(graph.models) do
+                        if type(gear:GetAttribute("GearTeeth"))=="number"
+                            and gear.PrimaryPart then
+                            local delta=gear:GetPivot().Position-shaftCF.Position
+                            local radial=(delta-shaftAxis
+                                *delta:Dot(shaftAxis)).Magnitude
+                            local reach=(shaft.PrimaryPart.Size.X
+                                +gear.PrimaryPart.Size.X)*0.5
+                            if radial<0.055 and math.abs(
+                                delta:Dot(shaftAxis))<reach then
+                                error("Motor drive gear is seated near the shaft "
+                                    .."but is not a valid rigid hub fit. "
+                                    .."Smart Fit the gear onto that shaft.")
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
         -- A prefab is a physical primitive even if it has several geometry
         -- Parts (bolt heads / gear teeth). Only those INTERNAL parts are welded.
         -- Separately authored primitives remain independent without explicit
@@ -1206,6 +1238,10 @@ function Simulation:Start(player, payload)
     if not success then
         warn("[OPENWORKS] Simulation compile failed: " .. tostring(failure))
         self:Stop(player)
+        local motorProblem=tostring(failure):match("(Motor [^\r\n]+)")
+        if motorProblem then
+            return false,motorProblem
+        end
         return false, "Could not compile simulation (see Studio Output)"
     end
 
