@@ -14,7 +14,7 @@ local definitions=require(ReplicatedStorage:WaitForChild("Openworks")
 
 local Palette={}
 Palette.__index=Palette
-local PANEL_W=222
+local PANEL_W=264
 local LEFT=14
 local TOP=63
 local ROW_H=32
@@ -125,7 +125,7 @@ function Palette:CreateUI()
         BackgroundTransparency=1,BorderSizePixel=0,
         Position=UDim2.fromOffset(8,TITLE_H),
         Size=UDim2.new(1,-16,1,-TITLE_H-10),
-        ScrollBarThickness=3,
+        ScrollBarThickness=5,
         ScrollingDirection=Enum.ScrollingDirection.Y,
         AutomaticCanvasSize=Enum.AutomaticSize.Y,
         CanvasSize=UDim2.fromOffset(0,0),
@@ -198,9 +198,10 @@ function Palette:RenderControls(info)
             BorderSizePixel=0,
             Size=UDim2.new(1,0,0,29),
         })
-        local w=if #item.key>=10 then 94
-            elseif #item.key>=7 then 83
-            elseif #item.key>=5 then 74 else 60
+        local w=if #item.key>=15 then 112
+            elseif #item.key>=10 then 100
+            elseif #item.key>=7 then 87
+            elseif #item.key>=5 then 75 else 58
         local key=keycap(row,item.key,w)
         key.Position=UDim2.fromOffset(4,3)
         local action=label(row,item.action,w+11,2,1,25,
@@ -216,6 +217,8 @@ function Palette:SignatureOf()
         tostring(tools.PrimaryId or ""),
         tostring(tools.SubtoolId or ""),
         tostring(self.Build.Mode or ""),
+        tostring(#(self.Build.SelectedParts or {})),
+        tostring(self.Build.SelectedComponentId or ""),
         tostring(self.Build.ScaleMode),
         tostring(self.Build.CatalogOpen),
         tostring(self.Build.CurrentBank and self.Build.CurrentBank.id or ""),
