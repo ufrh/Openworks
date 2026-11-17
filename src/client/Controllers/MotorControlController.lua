@@ -8,6 +8,16 @@ local RunService=game:GetService("RunService")
 local player=Players.LocalPlayer
 local Controller={}
 Controller.__index=Controller
+local SEAT_KEYS={W=true,A=true,S=true,D=true,Q=true,E=true}
+local function drivingSeat()
+    local char=player.Character
+    local hum=char and char:FindFirstChildOfClass("Humanoid")
+    local seat=hum and hum.SeatPart
+    if not seat then return false end
+    local model=seat:FindFirstAncestorOfClass("Model")
+    return model~=nil and model:GetAttribute("SeatRole")=="Operator"
+        and model:GetAttribute("OwnerUserId")==player.UserId
+end
 function Controller.new(assembly)
     return setmetatable({Assembly=assembly,
         Remote=RS:WaitForChild("OPENWORKS_MotorControl"),
@@ -23,6 +33,9 @@ function Controller:Active()
         and not UIS:GetFocusedTextBox()
 end
 function Controller:HasMotorKey(key)
+    -- Vehicle movement keys must not accidentally run motors while
+    -- walking or flying the construction camera.
+    if SEAT_KEYS[key] and not drivingSeat() then return false end
     local folder=workspace:FindFirstChild("OPENWORKS_Relationships")
     if not folder then return false end
     for _,joint in ipairs(folder:GetChildren()) do
@@ -41,8 +54,11 @@ function Controller:Release()
 end
 function Controller:Start()
     table.insert(self.Connections,UIS.InputBegan:Connect(function(input,processed)
-        if processed or not self:Active() then return end
+        if not self:Active() then return end
         local key=input.KeyCode.Name
+        -- Roblox's default character controls can consume WASD even
+        -- while seated. They remain valid explicitly routed motor keys.
+        if processed and not (SEAT_KEYS[key] and drivingSeat()) then return end
         if self:HasMotorKey(key) then
             self.Held[key]=true
             self.Remote:FireServer(key,true)
