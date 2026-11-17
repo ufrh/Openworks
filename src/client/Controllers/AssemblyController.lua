@@ -296,6 +296,8 @@ function Controller:RefreshHUD()
             then "Choose hand crank, then the shaft END • rigid coupling • Esc cancel"
             elseif self.PairKind=="Spring"
             then "Select two components • spring slides on one axis only • Esc cancel"
+            elseif self.PairKind=="Rope"
+            then "Select two parts • adjustable tensile rope • Esc cancel"
             elseif self.PairKind=="Bolt"
             then "Choose two aligned holes • physical bolt inserted"
             else "Choose two touching surfaces • permanent weld"
@@ -680,6 +682,8 @@ function Controller:CommitConnect(kind,first,second)
         request={
             action="CreateVectorJoint",sourceId=firstId,targetId=secondId,
         }
+    elseif kind=="Rope" then
+        request={action="CreateRope",sourceId=firstId,targetId=secondId}
     elseif kind=="Spring" then
         local source,target=first,second
         if Alignment.IsShaft(second) and Alignment.TargetAxis(first) then
