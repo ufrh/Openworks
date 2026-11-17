@@ -15,7 +15,6 @@ local FRICTION=0.8
 local RESPONSE=12
 local MIN_INERTIA=0.001
 local MAX_FORCE=55000
-local MAX_LOOPS=24
 local VISUAL_INTERVAL=0.08
 
 local function id(model)
@@ -81,7 +80,6 @@ function Transmission.new(graph,copies,runtime)
         visual:Update(path)
         table.insert(loops,{A=a,B=b,GroupA=ga,GroupB=gb,
             RestLength=rest,Visual=visual,VisibleElapsed=0})
-        if #loops>MAX_LOOPS then error("Maximum 24 belts per assembly") end
     end
     for _,loop in ipairs(loops) do
         for _,group in ipairs({loop.GroupA,loop.GroupB}) do
