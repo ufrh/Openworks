@@ -83,7 +83,10 @@ function Service:DetectConnected(player,payload)
     if self.D.mechanical then
         for _,relation in ipairs(self.D.mechanical.Folder:GetChildren()) do
             if relation:IsA("Folder")
-                and relation:GetAttribute("OwnerUserId")==player.UserId then
+                and relation:GetAttribute("OwnerUserId")==player.UserId
+                -- Old Gear links are metadata only. Actual teeth must
+                -- mesh NOW, as checked by GearMath below.
+                and relation:GetAttribute("Kind")~="Gear" then
                 local source=relation:GetAttribute("SourceId")
                 join(source,relation:GetAttribute("TargetId"))
                 join(source,relation:GetAttribute("SecondTargetId"))
