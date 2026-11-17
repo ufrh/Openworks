@@ -186,6 +186,29 @@ function Route:AtMouse(points,mouse)
     end
     return best
 end
+-- A click anywhere on the actual flat seat plate must work too;
+-- the visible always-on-top dot is a handle, not a tiny mandatory hitbox.
+function Route:RaySeatAtMouse(mouse)
+    local camera=workspace.CurrentCamera
+    local folder=workspace:FindFirstChild(Config.FolderName)
+    if not camera or not folder then return nil end
+    local ray=camera:ViewportPointToRay(mouse.X,mouse.Y)
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Include
+    params.FilterDescendantsInstances={folder}
+    params.IgnoreWater=true
+    local hit=workspace:Raycast(ray.Origin,ray.Direction*400,params)
+    if not hit then return nil end
+    local model=hit.Instance
+    while model and model.Parent~=folder do model=model.Parent end
+    if not model or model:GetAttribute("TemplateId")~="SeatPlate"
+        or model:GetAttribute("OwnerUserId")~=player.UserId then
+        return nil
+    end
+    local id=model:GetAttribute("InstanceId")
+    return self.Points["seat:"..tostring(id)]
+end
+
 function Route:OpenSeat(point)
     self.SelectedSeatId=point.id
     if not self.Editor then return end
@@ -198,7 +221,9 @@ function Route:Begin(input,processed)
     if not self:Active() or processed or UIS:GetFocusedTextBox()
         or player:GetAttribute("OPENWORKS_ExplorerOpen")==true
         or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
-    local point=self:AtMouse(self.Points,UIS:GetMouseLocation())
+    local mouse=UIS:GetMouseLocation()
+    local point=self:AtMouse(self.Points,mouse)
+        or self:RaySeatAtMouse(mouse)
     if point then self.Drag={key=point.key,point=point} end
 end
 function Route:Finish(input)
@@ -206,7 +231,9 @@ function Route:Finish(input)
     local drag=self.Drag
     self.Drag=nil
     if not drag or not self:Active() then return end
-    local dest=self:AtMouse(self.Points,UIS:GetMouseLocation())
+    local mouse=UIS:GetMouseLocation()
+    local dest=self:AtMouse(self.Points,mouse)
+        or self:RaySeatAtMouse(mouse)
     if dest and dest.key~=drag.key and dest.kind~=drag.point.kind then
         local control=if dest.kind=="control" then dest else drag.point
         local seat=if dest.kind=="seat" then dest else drag.point
