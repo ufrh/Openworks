@@ -414,7 +414,9 @@ function Simulation:InputRope(player,key,holding)
         or #key>20 or type(holding)~="boolean" then return end
     local now=os.clock()
     for _,rope in ipairs(session.Ropes or {}) do
-        RopeMath.Input(rope,key,holding,now)
+        if not holding or SeatRuntime.CanControl(player,session,rope.SeatId) then
+            RopeMath.Input(rope,key,holding,now)
+        end
     end
 end
 
@@ -441,7 +443,11 @@ function Simulation:StepCranks(dt)
         if not session.Paused then
             local now=os.clock()
             for _,rope in ipairs(session.Ropes or {}) do
-                RopeMath.Step(rope,dt,now)
+                if rope.SeatId and not SeatRuntime.CanControl(owner,session,rope.SeatId) then
+                    RopeMath.Stop(rope)
+                else
+                    RopeMath.Step(rope,dt,now)
+                end
             end
         end
         if session.Gears then session.Gears:ClearDrives() end
