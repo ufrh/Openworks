@@ -80,5 +80,22 @@ function Paint.Apply(model:Model,finishId:string?,hex:string?)
         if paintColor then part.Color=paintColor end
         if part:IsA("PartOperation") then part.UsePartColor=true end
     end
+    -- Preserve quartz glass and tube tint through regular Build/Edit paint.
+    if model:GetAttribute("QuartzTube")==true then
+        local quartzColor=paintColor or Color3.fromRGB(110,210,235)
+        for _,part in ipairs(model:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Material=Enum.Material.Glass
+                part.MaterialVariant=""
+                part.Color=quartzColor
+                part.Transparency=0.7
+                part.Reflectance=0
+                part.CastShadow=false
+                if part:IsA("PartOperation") then
+                    part.UsePartColor=true
+                end
+            end
+        end
+    end
 end
 return table.freeze(Paint)
