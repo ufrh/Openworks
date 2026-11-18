@@ -11,6 +11,7 @@ local Bore = require(script.Parent:WaitForChild("BoreClearance"))
 local HandCrankMath = require(script.Parent:WaitForChild("HandCrankMath"))
 local Grid = require(script.Parent:WaitForChild("GridMath"))
 local MultiFit = require(script.Parent:WaitForChild("MultiFitMath"))
+local QuartzFit = require(script.Parent:WaitForChild("QuartzPortFit"))
 local BoreInsertion=require(script.Parent:WaitForChild("BoreInsertion"))
 local Smart = {}
 Smart.SnapDistance = 0.55 -- deliberately small general socket capture
@@ -705,6 +706,9 @@ end
 function Smart.Find(ghost: Model, targets: {Model}, ignored, preferred: Model?, aimRay,
     allTargets: {Model}?, aimedModel: Model?)
 
+    -- Try universal physical sockets before mechanical-only fit solvers.
+    local quartzMatch=QuartzFit.Find(ghost,targets,ignored,preferred)
+    if quartzMatch then return quartzMatch,{quartzMatch} end
     local members=Smart.Members(ghost)
     if #members==0 then return nil end
     -- Cache welded/editor-group scope per scan to avoid redundant network
@@ -1236,6 +1240,36 @@ function Smart.NearbyTargets(folder: Folder?, playerUserId: number,
                 or (model:GetPivot().Position-reference).Magnitude<=range
                 or hubRay<=aimThreshold then
                 table.insert(targets,model)
+            end
+        end
+    end
+    -- Tiny quartz endpoints need a much tighter, port-aware search
+    -- than a body's bounding-box center.
+    if moving and QuartzFit.HasPorts(moving) then
+        local movingPorts=QuartzFit.Ports(moving)
+        local known={}
+        for _,item in ipairs(targets) do known[item]=true end
+        for _,candidate in ipairs(folder:GetChildren()) do
+            if candidate:IsA("Model") and candidate.PrimaryPart
+                and candidate:GetAttribute("OwnerUserId")==playerUserId
+                and not known[candidate]
+                and not (ignored and ignored[candidate])
+                and QuartzFit.HasPorts(candidate) then
+                local close=false
+                for _,a in ipairs(movingPorts) do
+                    for _,b in ipairs(QuartzFit.Ports(candidate)) do
+                        if (a.WorldPosition-b.WorldPosition).Magnitude
+                            <= QuartzFit.CaptureDistance+0.08 then
+                            close=true
+                            break
+                        end
+                    end
+                    if close then break end
+                end
+                if close then
+                    table.insert(targets,candidate)
+                    known[candidate]=true
+                end
             end
         end
     end
