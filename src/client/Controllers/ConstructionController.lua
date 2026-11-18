@@ -839,6 +839,24 @@ function Controller:UpdateFitIndicators(match)
             end
         end
     end
+    -- World-space snap point: unobtrusive halo plus a precise center dot.
+    -- Bore/multifit already supplies its own individual member markers.
+    if match and match.kind~="Bore" and match.target
+        and match.target.PrimaryPart then
+        local point=if typeof(match.approach)=="Vector3"
+            then match.approach else match.target:GetPivot().Position
+        local tint=if self.PreviewValid
+            then Color3.fromRGB(69,226,168)
+            else Color3.fromRGB(238,82,97)
+        table.insert(desired,{
+            cf=CFrame.new(point),color=tint,
+            radius=0.11,transparency=0.80,onTop=true
+        })
+        table.insert(desired,{
+            cf=CFrame.new(point),color=tint,
+            radius=0.045,transparency=0,onTop=true
+        })
+    end
     if #desired==0 then
         if self.FitIndicatorRoot then self.FitIndicatorRoot:Destroy() end
         self.FitIndicatorRoot=nil
@@ -857,8 +875,8 @@ function Controller:UpdateFitIndicators(match)
         if not dot then
             dot=Instance.new("SphereHandleAdornment")
             dot.Name="FitPoint_"..i
-            dot.Radius=0.068
-            dot.AlwaysOnTop=false
+            dot.Radius=item.radius or 0.068
+            dot.AlwaysOnTop=item.onTop==true
             dot.Parent=self.FitIndicatorRoot
             self.FitIndicatorDots[i]=dot
         end
@@ -872,7 +890,9 @@ function Controller:UpdateFitIndicators(match)
             dot.Visible=false
         end
         dot.Color3=item.color
-        dot.Transparency=0.08
+        dot.Radius=item.radius or 0.068
+        dot.AlwaysOnTop=item.onTop==true
+        dot.Transparency=item.transparency or 0.08
     end
     for i=#self.FitIndicatorDots,#desired+1,-1 do
         self.FitIndicatorDots[i]:Destroy()
@@ -1949,6 +1969,10 @@ function Controller:UpdatePreview()
                 self.PreviewReason=why
             end
         end
+        -- Quartz endpoints may touch their chosen socket face.
+        if match and match.kind=="Quartz" then
+            ignore[match.target]=true
+        end
         local clear,obstruction=PreviewFeedback.Check(
             self.Preview,ignore,nil,nil,approved)
         if self.PreviewValid==false then
@@ -2080,7 +2104,8 @@ function Controller:Place(chosenKind)
                 or self.SmartMatch.kind=="Bore"
                 or self.SmartMatch.kind=="CrankCoupling"
                 or self.SmartMatch.kind=="Hub"
-                or self.SmartMatch.kind=="Pivot")
+                or self.SmartMatch.kind=="Pivot"
+                or self.SmartMatch.kind=="Quartz")
             then self.PreviewCF.Rotation else nil,
         autoMate=if self.SmartMatch and self.SmartMatch.kind~="Pivot"
             and (self.Pending~="Copy"
@@ -2090,12 +2115,15 @@ function Controller:Place(chosenKind)
                 or self.SmartMatch.kind=="Hub"
                 or self.SmartMatch.kind=="BoltHole"
                 or self.SmartMatch.kind=="CrankCoupling"
-                or self.SmartMatch.kind=="Bore") then {
+                or self.SmartMatch.kind=="Bore"
+                or self.SmartMatch.kind=="Quartz") then {
             -- A copied gear/bolt/crank fitted to a shaft or opening is
             -- still an actual mount. Only ambiguous Bore fits refrain
             -- from authoring mechanical relationships during F-copy.
             kind=self.SmartMatch.kind,
             targetId=self.SmartMatch.target:GetAttribute("InstanceId"),
+            sourcePortName=self.SmartMatch.sourcePortName,
+            targetPortName=self.SmartMatch.targetPortName,
             relationKind=chosenKind or self.SmartMatch.relationKind,
             offsetUnits=self.SmartMatch.offsetUnits,
             rollDegrees=self.SmartMatch.rollDegrees,
