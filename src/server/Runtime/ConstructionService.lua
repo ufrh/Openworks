@@ -39,6 +39,7 @@ local HandCrankMath = require(construction:WaitForChild("HandCrankMath"))
 local DEFAULT_METAL_COLOR = Color3.fromRGB(78, 83, 91)
 local MaterialCatalog=require(construction:WaitForChild("MaterialCatalog"))
 local PaintCatalog=require(construction:WaitForChild("PaintCatalog"))
+local QuartzFit=require(construction:WaitForChild("QuartzPortFit"))
 local PrefabCollision=require(construction:WaitForChild("PrefabCollision"))
 
 local Service = {}
@@ -549,6 +550,23 @@ local function finalizeNewPrimitive(player,model,payload)
             return false, "Invalid automatic attachment"
         end
         local mate=payload.autoMate
+        if mate.kind=="Quartz" then
+            local target=if type(mate.targetId)=="string"
+                then findOwned(player,mate.targetId) else nil
+            if not target or not QuartzFit.AreConnected(model,target,
+                mate.sourcePortName,mate.targetPortName) then
+                model:Destroy()
+                return false,"Quartz endpoints are not correctly aligned"
+            end
+            -- Transport connectivity does not imply a mechanical weld.
+            if intersectsConstructed(model,target) then
+                model:Destroy()
+                return false,"Quartz placement intersects constructed geometry"
+            end
+            local after=snapshot(model)
+            commitRecord(player,nil,after)
+            return true,after.instanceId
+        end
         if mate.kind=="CrankCoupling" then
             local ok,why=mechanical:CoupleHandCrank(player,{
                 sourceId=model:GetAttribute("InstanceId"),
@@ -613,12 +631,14 @@ local function place(player, payload)
             and (payload.autoMate.kind=="BoltHole"
                 or payload.autoMate.kind=="Bore"
                 or payload.autoMate.kind=="CrankCoupling"
-                or payload.autoMate.kind=="Hub")
+                or payload.autoMate.kind=="Hub"
+                or payload.autoMate.kind=="Quartz")
             then payload.orientation else nil,
         freePosition=payload.autoMate and (payload.autoMate.kind=="BoltHole"
             or payload.autoMate.kind=="Bore"
             or payload.autoMate.kind=="CrankCoupling"
-                or payload.autoMate.kind=="Hub"),
+                or payload.autoMate.kind=="Hub"
+                or payload.autoMate.kind=="Quartz"),
     }
     proposed.resizePrecision = Grid.HasFractionalSize(proposed.size)
     -- New generic Cylinders can be auto-snugged into a real drilled bore.
