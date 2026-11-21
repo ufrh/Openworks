@@ -45,3 +45,13 @@ The prototype uses a 32-block maximum per player to stay within the FORGE snapsh
 The repository now has **one** Rojo project, **one** FORGE runtime and **one** set of OpenWorks services. No old client/server scripts or obsolete architecture docs from the placeholder are carried forward.
 
 `main` was updated with a normal parented commit; previous commits are still recoverable via Git history. No archive branch was created.
+
+## Cleaning an existing Studio place
+
+The GitHub `main` branch has been replaced, but Rojo's `$ignoreUnknownInstances` setting intentionally **does not delete unrelated existing Studio Instances**. If reusing an old OpenWorks place, stop Play and remove only the old script containers:
+
+- `ReplicatedStorage.Openworks` (old lowercase-w name, not the new `ReplicatedStorage.OpenWorks`)
+- `ServerScriptService.Openworks`
+- `StarterPlayer.StarterPlayerScripts.Openworks`
+
+Leave the new `ReplicatedStorage.FORGE`, `ReplicatedStorage.OpenWorks`, `ServerScriptService.FORGE`, `ServerScriptService.Services`, and `StarterPlayerScripts.Controllers` untouched. Don't clear other Studio assets, terrain or unrelated player scripts. A new empty baseplate place avoids all legacy leftovers.
