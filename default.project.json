@@ -1,20 +1,26 @@
 {
-  "name": "OPENWORKS",
+  "name": "OPENWORKS 2.0",
   "servePort": 34872,
   "tree": {
     "$className": "DataModel",
     "ReplicatedStorage": {
       "$className": "ReplicatedStorage",
       "$ignoreUnknownInstances": true,
-      "Openworks": {
-        "$path": "src/shared"
+      "FORGE": {
+        "$path": "src/ReplicatedStorage/FORGE"
+      },
+      "OpenWorks": {
+        "$path": "src/ReplicatedStorage/OpenWorks"
       }
     },
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "$ignoreUnknownInstances": true,
-      "Openworks": {
-        "$path": "src/server"
+      "FORGE": {
+        "$path": "src/ServerScriptService/FORGE"
+      },
+      "Services": {
+        "$path": "src/ServerScriptService/Services"
       }
     },
     "StarterPlayer": {
@@ -22,8 +28,11 @@
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
         "$ignoreUnknownInstances": true,
-        "Openworks": {
-          "$path": "src/client"
+        "FORGE": {
+          "$path": "src/StarterPlayerScripts/FORGE"
+        },
+        "Controllers": {
+          "$path": "src/StarterPlayerScripts/Controllers"
         }
       }
     }
