@@ -23,7 +23,12 @@ function PersistenceService:Load(userId)
         warn("[OpenWorks] Cannot load player document; working in volatile mode: " .. tostring(saved))
         return Document.New(), false
     end
-    return Document.Sanitize(saved), true
+    local document, valid = Document.Sanitize(saved)
+    if not valid then
+        warn("[OpenWorks] Invalid or unsupported saved document; working in volatile mode to protect stored data")
+        return document, false
+    end
+    return document, true
 end
 
 function PersistenceService:Save(userId, document)
