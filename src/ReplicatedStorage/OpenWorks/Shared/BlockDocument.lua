@@ -34,39 +34,48 @@ local function validTick(value, magnitude, allowZero)
 end
 
 function Document.Sanitize(saved)
-    if type(saved) ~= "table" or saved.version ~= Document.Version then
-        return Document.New()
+    if saved == nil then
+        return Document.New(), true
+    end
+    if type(saved) ~= "table" or saved.version ~= Document.Version
+        or not validTick(saved.revision, 1000000000, true) or saved.revision < 0
+        or type(saved.blocks) ~= "table" then
+        return Document.New(), false
     end
 
+    local count = 0
+    for key in pairs(saved.blocks) do
+        if type(key) ~= "number" or key % 1 ~= 0 or key < 1
+            or key > Document.MaxBlocks then
+            return Document.New(), false
+        end
+        count += 1
+    end
     local result = Document.New()
     local seen = {}
-    if type(saved.blocks) ~= "table" then
-        return result
-    end
-    for _, block in ipairs(saved.blocks) do
-        if #result.blocks >= Document.MaxBlocks then break end
-        if type(block) == "table"
-            and type(block.id) == "string"
-            and #block.id > 0 and #block.id <= 80
-            and not seen[block.id]
-            and validTick(block.x, 2048000, true)
-            and validTick(block.y, 2048000, true)
-            and validTick(block.z, 2048000, true)
-            and validTick(block.sx, 32000, false)
-            and validTick(block.sy, 32000, false)
-            and validTick(block.sz, 32000, false)
-        then
-            seen[block.id] = true
-            table.insert(result.blocks, {
-                id = block.id,
-                x = block.x, y = block.y, z = block.z,
-                sx = block.sx, sy = block.sy, sz = block.sz,
-            })
+    for index = 1, count do
+        local block = saved.blocks[index]
+        if type(block) ~= "table"
+            or type(block.id) ~= "string"
+            or #block.id == 0 or #block.id > 80
+            or seen[block.id]
+            or not validTick(block.x, 2048000, true)
+            or not validTick(block.y, 2048000, true)
+            or not validTick(block.z, 2048000, true)
+            or not validTick(block.sx, 32000, false)
+            or not validTick(block.sy, 32000, false)
+            or not validTick(block.sz, 32000, false) then
+            return Document.New(), false
         end
+        seen[block.id] = true
+        table.insert(result.blocks, {
+            id = block.id,
+            x = block.x, y = block.y, z = block.z,
+            sx = block.sx, sy = block.sy, sz = block.sz,
+        })
     end
-    result.revision = if validTick(saved.revision, 1000000000, true) and saved.revision >= 0
-        then saved.revision else 0
-    return result
+    result.revision = saved.revision
+    return result, true
 end
 
 function Document.Find(document, id)
