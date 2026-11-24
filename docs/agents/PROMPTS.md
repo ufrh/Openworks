@@ -1,6 +1,6 @@
 # Specialist prompts
 
-Paste the relevant section into each agent's Instructions. Also attach the shared Engineering Standards skill or paste AGENTS.md. Each agent must retrieve current repository standards at the start of work.
+Use these role descriptions as reference material for temporary specialist briefs within an Architect-led run, not as instructions to configure persistent agents. The Architect supplies the task scope, evidence, revision, boundaries, acceptance criteria and handoff requirements described in WORKFLOW.md. Each specialist must retrieve current repository standards and applicable source at the start of work.
 
 ## OpenWorks — Architect
 
