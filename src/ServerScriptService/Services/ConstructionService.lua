@@ -159,6 +159,7 @@ local function loadPlayer(player)
         undo = {},
         redo = {},
         dirty = false,
+        saving = false,
     }
     profiles[player] = profile
     ConstructionService:GetDependency("GeometryService"):Sync(player, document)
@@ -167,11 +168,21 @@ end
 
 local function savePlayer(player)
     local profile = profiles[player]
-    if profile and profile.dirty and profile.persistent then
-        if ConstructionService:GetDependency("PersistenceService"):Save(player.UserId, profile.document) then
-            profile.dirty = false
-        end
+    if not profile or not profile.persistent then return end
+
+    -- Serialize saves for this profile so an older write cannot finish last.
+    while profile.saving do
+        task.wait()
     end
+    if not profile.dirty then return end
+
+    profile.saving = true
+    local savedDocument = Document.Snapshot(profile.document)
+    local ok = ConstructionService:GetDependency("PersistenceService"):Save(player.UserId, savedDocument)
+    if ok and profile.document.revision == savedDocument.revision then
+        profile.dirty = false
+    end
+    profile.saving = false
 end
 
 function ConstructionService:Start()
