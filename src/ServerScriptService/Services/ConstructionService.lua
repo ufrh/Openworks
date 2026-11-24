@@ -178,8 +178,13 @@ local function savePlayer(player)
 
     profile.saving = true
     local savedDocument = Document.Snapshot(profile.document)
-    local ok = ConstructionService:GetDependency("PersistenceService"):Save(player.UserId, savedDocument)
-    if ok and profile.document.revision == savedDocument.revision then
+    local called, saved = pcall(function()
+        return ConstructionService:GetDependency("PersistenceService"):Save(player.UserId, savedDocument)
+    end)
+    if not called then
+        warn("[OpenWorks] Save failed unexpectedly: " .. tostring(saved))
+    end
+    if called and saved and profile.document.revision == savedDocument.revision then
         profile.dirty = false
     end
     profile.saving = false
