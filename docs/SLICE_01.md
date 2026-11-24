@@ -13,6 +13,13 @@
 7. Try constructing before your player character spawns, moving beyond 70 studs from your character, supplying an invalid block id or stale revision from an exploit harness: server must reject commands.
 8. Disconnect a player: their runtime Parts should be cleaned up; player data should remain in DataStore.
 
+## Persistence regression checks
+
+- In Studio Play, run `require(game.ReplicatedStorage.OpenWorks.Tests.BlockDocument)()` in the server command bar. It checks fresh and valid documents plus malformed, unsupported, duplicate, sparse and oversized saved data.
+- With an isolated test datastore and a controlled delayed save, edit while the save is in flight. Confirm the newer revision remains dirty and is saved on the next save, including when the player leaves while the earlier save is pending.
+- Seed invalid or unsupported data only in an isolated test datastore. Confirm load reports volatile mode and subsequent edits do not overwrite the stored value. Do not modify production player data for this test.
+- These checks require Studio or a controlled Roblox test harness; the document test alone does not prove DataStore scheduling or cross-server safety.
+
 ## Engineering checks
 
 - No direct server authority is given to client-rendered ghost or selection.
